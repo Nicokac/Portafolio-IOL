@@ -9,7 +9,8 @@ import re
 import json
 import logging
 from functools import lru_cache
-from shared.utils import get_config, _to_float
+from shared.utils import _to_float
+from shared.config import get_config
 
 import numpy as np
 import pandas as pd
@@ -22,39 +23,6 @@ def clean_symbol(s: str) -> str:
     s = str(s or "").upper().strip()
     s = s.replace("\u00A0", "").replace("\u200B", "")
     return re.sub(r"[^A-Z0-9._-]", "", s)
-
-
-@lru_cache(maxsize=1)
-def get_config() -> dict:
-    """
-    Carga configuración desde JSON (ruta por env PORTFOLIO_CONFIG_PATH o 'config.json').
-    Se cachea en memoria para todo el proceso.
-    Estructura esperada (opcional):
-    {
-      "cedear_to_us": {"AAPL":"AAPL", ...},
-      "etfs": ["SPY","DIA", ...],
-      "scale_overrides": {"AL30": 0.01, "S10N5": 0.01}
-    }
-    """
-    path = os.getenv("PORTFOLIO_CONFIG_PATH", "config.json")
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            cfg = json.load(f) or {}
-            # Saneos mínimos
-            if not isinstance(cfg.get("cedear_to_us", {}), dict):
-                cfg["cedear_to_us"] = {}
-            if not isinstance(cfg.get("etfs", []), list):
-                cfg["etfs"] = []
-            if not isinstance(cfg.get("scale_overrides", {}), dict):
-                cfg["scale_overrides"] = {}
-            return cfg
-    except FileNotFoundError:
-        logger.warning("No se encontró archivo de configuración: %s", path)
-        return {}
-    except Exception as e:
-        logger.error("Error cargando configuración %s: %s", path, e)
-        return {}
-
 
 # ---------- Clasificación y escala ----------
 
@@ -331,7 +299,7 @@ def _classify_sym_cache(sym: str) -> str:
 
 class PortfolioService:
     """Fachada del portafolio que envuelve tus funciones ya existentes."""
-    def normalize_positions(self, payload):
+    def normalize_positions(self, payload: dict | list) -> pd.DataFrame:
         return normalize_positions(payload)
 
     def calc_rows(self, price_fn, df_pos, exclude_syms=None):

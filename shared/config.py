@@ -4,6 +4,10 @@ import os, json
 from pathlib import Path
 from typing import Any, Dict
 from dotenv import load_dotenv
+from functools import lru_cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Raíz del proyecto (donde están app.py, .env, config.json, etc.)
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -53,3 +57,23 @@ class Settings:
         self.fx_tarjeta_multiplier: float = float(os.getenv("FX_TARJETA_MULTIPLIER", cfg.get("FX_TARJETA_MULTIPLIER", 1.35)))
 
 settings = Settings()
+
+@lru_cache(maxsize=1)
+def get_config() -> dict:
+    path = os.getenv("PORTFOLIO_CONFIG_PATH", "config.json")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = json.load(f) or {}
+            if not isinstance(cfg.get("cedear_to_us", {}), dict):
+                cfg["cedear_to_us"] = {}
+            if not isinstance(cfg.get("etfs", []), list):
+                cfg["etfs"] = []
+            if not isinstance(cfg.get("scale_overrides", {}), dict):
+                cfg["scale_overrides"] = {}
+            return cfg
+    except FileNotFoundError:
+        logger.warning("No se encontró archivo de configuración: %s", path)
+        return {}
+    except Exception as e:
+        logger.error("Error cargando configuración %s: %s", path, e)
+        return {}
