@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+requests
+python-dotenv
+iolConn==0.4.2
+plotly
+yfinance
+pandas_ta
+setuptools

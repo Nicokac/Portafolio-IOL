@@ -1,0 +1,27 @@
+{
+  "cedear_to_us": {
+    "AAPL": "AAPL",
+    "AMZN": "AMZN",
+    "MSFT": "MSFT",
+    "NVDA": "NVDA",
+    "GOOGL": "GOOGL",
+    "MELI": "MELI",
+    "T": "T",
+    "NEM": "NEM",
+    "CRM": "CRM",
+    "BABA": "BABA",
+    "AMD": "AMD",
+    "MCD": "MCD",
+    "DISN": "DIS",
+    "DIA": "DIA",
+    "SPY": "SPY"
+  },
+  "etfs": ["SPY", "DIA"],
+  "acciones_ar": ["YPFD", "LOMA", "TECO2", "GGAL", "PAMP", "TXAR", "BMA", "BBAR"],
+  "fci_symbols": ["IOLPORA", "ADBAICA", "PRPEDOB"],
+  "scale_overrides": {
+    "AL29": 0.01, "AL30": 0.01, "AL35": 0.01, "AL41": 0.01,
+    "GD29": 0.01, "GD30": 0.01, "GD35": 0.01, "GD38": 0.01, "GD41": 0.01,
+    "AE38": 0.01, "S10N5": 0.01
+  }
+}

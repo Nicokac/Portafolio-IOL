@@ -1,0 +1,38 @@
+# --- Python / bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+
+# --- Entornos / IDE
+env/
+.venv/
+venv/
+.vscode/
+.idea/
+
+# --- SO / varios
+.DS_Store
+Thumbs.db
+
+# --- Streamlit / caches locales
+.streamlit/
+.cache/
+
+# --- Config y secretos (¡no subir!)
+.env
+*.env
+tokens_iol.json
+
+# --- Datos locales (ajusta según uses)
+data/
+*.csv
+*.parquet
+*.xlsx
+
+# --- Logs y builds
+*.log
+logs/
+dist/
+build/
