@@ -1,4 +1,4 @@
-# portfolio_service.py
+# application\portfolio_service.py
 # Lógica de negocio: normalización de posiciones y cálculo de métricas P/L
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import re
 import json
 import logging
 from functools import lru_cache
+from shared.utils import get_config, _to_float
 
 import numpy as np
 import pandas as pd
@@ -16,29 +17,6 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 # ---------- Helpers y configuración ----------
-
-def _to_float(x) -> Optional[float]:
-    """
-    Conversión robusta a float:
-    - Acepta números y strings con coma decimal o punto de miles ("1.234,56" -> 1234.56).
-    - Devuelve None si no puede convertir.
-    """
-    if x is None:
-        return None
-    if isinstance(x, (int, float)):
-        return float(x)
-    s = str(x).strip().replace(" ", "")
-    # "1.234,56" -> "1234.56"
-    if "," in s and s.count(",") == 1 and s.rfind(",") > s.rfind("."):
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except Exception:
-        return None
-
-
 def clean_symbol(s: str) -> str:
     """Normaliza el símbolo: mayúsculas, sin espacios raros, sólo chars permitidos."""
     s = str(s or "").upper().strip()
@@ -365,9 +343,6 @@ class PortfolioService:
     # Accesos directos por si los necesitas
     def classify_asset(self, row):
         return classify_asset(row)
-
-    def get_config(self):
-        return get_config()
 
     def clean_symbol(self, sym: str) -> str:
         return clean_symbol(sym)

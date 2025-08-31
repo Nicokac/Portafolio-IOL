@@ -1,5 +1,8 @@
+# shared\utils.py
 from __future__ import annotations
+import json
 import numpy as np
+from functools import lru_cache
 
 def _as_float_or_none(x) -> float | None:
     try:
@@ -43,3 +46,24 @@ def format_percent(value: float | None) -> str:
     if v is None:
         return "—"
     return f"{v:.2f} %"
+
+@lru_cache()
+def get_config() -> dict:
+    with open("config.json", encoding="utf-8") as f:
+        return json.load(f)
+
+def _to_float(x) -> float | None:
+    if x is None:
+        return None
+    if isinstance(x, (int, float)):
+        return float(x)
+    s = str(x).strip().replace(" ", "")
+    # "1.234,56" -> "1234.56"
+    if "," in s and s.count(",") == 1 and s.rfind(",") > s.rfind("."):
+        s = s.replace(".", "").replace(",", ".")
+    else:
+        s = s.replace(",", ".")
+    try:
+        return float(s)
+    except Exception:
+        return None
