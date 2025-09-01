@@ -18,6 +18,7 @@ from ui.tables import render_totals, render_table
 from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
 from ui.fundamentals import render_fundamental_data
+from ui.ui_settings import init_ui, render_ui_controls
 from ui.charts import (
     plot_pl_topn,
     plot_donut_tipo,
@@ -47,7 +48,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-st.set_page_config(page_title="IOL — Portafolio en vivo (solo lectura)", layout="wide")
+#st.set_page_config(page_title="IOL — Portafolio en vivo (solo lectura)", layout="wide")
+# Configuración de UI centralizada (tema y layout)
+init_ui()
 
 # === Cache de alto nivel ===
 @st.cache_resource
@@ -162,6 +165,7 @@ def main():
         available_types = sorted({ psvc.classify_asset_cached(s) for s in all_symbols if psvc.classify_asset_cached(s) })
 
         controls: Controls = render_sidebar(all_symbols, available_types)
+        render_ui_controls()
 
         refresh_secs  = controls.refresh_secs
         hide_cash     = controls.hide_cash
