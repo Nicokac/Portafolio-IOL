@@ -1,3 +1,4 @@
+# infrastructure\iol\client.py
 from __future__ import annotations
 from .ports import IIOLProvider
 from .legacy.iol_client import IOLClient as _LegacyIOLClient  # <- ahora desde legacy

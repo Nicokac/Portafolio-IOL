@@ -1,4 +1,4 @@
-# fundamentals.py
+# ui\fundamentals.py
 from __future__ import annotations
 import streamlit as st
 from shared.utils import _is_none_nan_inf, format_number, format_percent

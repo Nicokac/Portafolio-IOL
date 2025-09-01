@@ -1,4 +1,4 @@
-# fx_panels.py
+# ui\fx_panels.py
 from __future__ import annotations
 import pandas as pd
 import streamlit as st
