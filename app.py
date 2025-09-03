@@ -19,7 +19,6 @@ from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
 from ui.fundamentals import render_fundamental_data
 from ui.ui_settings import init_ui, render_ui_controls
-from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
 from ui.charts import (
     plot_pl_topn,
@@ -34,7 +33,6 @@ from ui.charts import (
 
 # Infra: IOL + FX + cache quotes
 from infrastructure.iol.client import build_iol_client
-#from infrastructure.iol.auth import IOLAuth
 from infrastructure.iol.ports import IIOLProvider
 from infrastructure.fx.provider import FXProviderAdapter
 from infrastructure.cache.quote_cache import get_quote_cached
@@ -50,7 +48,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-#st.set_page_config(page_title="IOL — Portafolio en vivo (solo lectura)", layout="wide")
 # Configuración de UI centralizada (tema y layout)
 init_ui()
 
@@ -98,24 +95,10 @@ def main():
 
     # ===== HEADER =====
     render_header()
-    #hcol1, hcol2 = st.columns([4, 1])
     _, hcol2 = st.columns([4, 1])
     with hcol2:
         now = datetime.now()
         st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
-        # c1, c2 = st.columns(2)
-        # if c1.button("⟳ Refrescar"):
-        #     st.session_state["last_refresh"] = time.time()
-        #     st.rerun()
-        # if c2.button("🔄 Relogin"):
-        #     try:
-        #         IOLAuth(user, password).clear_tokens()
-        #         st.session_state["client_salt"] = int(time.time())
-        #         st.success("Tokens eliminados. Recargando…")
-        #         st.rerun()
-        #     except Exception as e:
-        #         st.error(f"No se pudo limpiar tokens: {e}")
-        #         st.stop()
         render_action_menu(user, password)
 
     # ===== LAYOUT DOS COLUMNAS =====
