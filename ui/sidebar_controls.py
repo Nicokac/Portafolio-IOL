@@ -5,7 +5,7 @@ import streamlit as st
 from domain.models import Controls
 
 def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Controls:
-    st.sidebar.header("Controles")
+    st.sidebar.header("🎛️ Controles")
 
     all_symbols = list(all_symbols or [])
     available_types = list(available_types or [])
@@ -26,25 +26,42 @@ def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Contro
     order_index = order_options.index(defaults["order_by"]) if defaults["order_by"] in order_options else 0
 
     with st.sidebar.form("controls_form"):
-        refresh_secs = st.slider("⟳ Refrescar cada (seg)", 5, 120, defaults["refresh_secs"], step=5)
-        hide_cash    = st.checkbox("Ocultar IOLPORA / PARKING", value=defaults["hide_cash"])
-        show_usd     = st.toggle("Mostrar valores en USD CCL", value=defaults["show_usd"])
+        # refresh_secs = st.slider("⟳ Refrescar cada (seg)", 5, 120, defaults["refresh_secs"], step=5)
+        # hide_cash    = st.checkbox("Ocultar IOLPORA / PARKING", value=defaults["hide_cash"])
+        # show_usd     = st.toggle("Mostrar valores en USD CCL", value=defaults["show_usd"])
+        st.markdown("### ⏱️ Actualización")
+        st.caption("Configura la frecuencia de refresco.")
+        refresh_secs = st.slider("Intervalo (seg)", 5, 120, defaults["refresh_secs"], step=5)
 
+        st.markdown("### 🔍 Filtros")
+        st.caption("Limita los activos que se muestran.")
+        hide_cash = st.checkbox("Ocultar IOLPORA / PARKING", value=defaults["hide_cash"])
         symbol_query = st.text_input("Buscar símbolo", value=defaults["symbol_query"], placeholder="p.ej. NVDA")
         selected_syms = st.multiselect(
             "Filtrar por símbolo",
             all_symbols,
-            default=[s for s in (defaults["selected_syms"] or []) if s in all_symbols] or all_symbols
+            default=[s for s in (defaults["selected_syms"] or []) if s in all_symbols] or all_symbols,
         )
         selected_types = st.multiselect(
             "Filtrar por tipo",
             available_types,
-            default=[t for t in (defaults["selected_types"] or available_types) if t in available_types]
+            default=[t for t in (defaults["selected_types"] or available_types) if t in available_types],
         )
 
+        st.markdown("### 💱 Moneda")
+        st.caption("Muestra valores en pesos o en USD CCL.")
+        show_usd = st.toggle("Mostrar valores en USD CCL", value=defaults["show_usd"])
+
+        st.markdown("### ↕️ Orden")
+        st.caption("Define el orden de la tabla.")
         order_by = st.selectbox("Ordenar por", order_options, index=order_index)
-        desc     = st.checkbox("Descendente", value=defaults["desc"])
-        top_n    = st.slider("Top N para gráficos", 5, 50, defaults["top_n"], step=5)
+        # desc     = st.checkbox("Descendente", value=defaults["desc"])
+        # top_n    = st.slider("Top N para gráficos", 5, 50, defaults["top_n"], step=5)
+        desc = st.checkbox("Descendente", value=defaults["desc"])
+
+        st.markdown("### 📈 Gráficos")
+        st.caption("Cantidad de elementos en las visualizaciones.")
+        top_n = st.slider("Top N", 5, 50, defaults["top_n"], step=5)
 
         c1, c2 = st.columns(2)
         apply_btn = c1.form_submit_button("Aplicar")
