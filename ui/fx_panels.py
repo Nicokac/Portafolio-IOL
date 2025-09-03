@@ -3,10 +3,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 from shared.utils import _as_float_or_none, format_percent
+from .palette import get_active_palette
 
 def _highlight_ccl(row):
     if str(row.get("Tipo", "")).upper() == "CCL":
-        return ["background-color: #1b5e20; color: white; font-weight: 700"] * len(row)
+        # return ["background-color: #1b5e20; color: white; font-weight: 700"] * len(row)
+        pal = get_active_palette()
+        style = f"background-color: {pal.highlight_bg}; color: {pal.highlight_text}; font-weight: 700"
+        return [style] * len(row)
     return [""] * len(row)
 
 def render_fx_panel(rates: dict):

@@ -5,29 +5,30 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from .palette import get_active_palette
 
 # =========================
 # Tema / colores unificados
 # =========================
-BG          = "#0e1117"
-PLOT_BG     = "#0e1117"
-GRID_COLOR  = "rgba(255,255,255,0.08)"
-FONT_COLOR  = "#e5e5e5"
+# BG          = "#0e1117"
+# PLOT_BG     = "#0e1117"
+# GRID_COLOR  = "rgba(255,255,255,0.08)"
+# FONT_COLOR  = "#e5e5e5"
 FONT_FAMILY = "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
 
 # Mostrar/ocultar títulos de ejes desde un flag único
 SHOW_AXIS_TITLES = True
 
 # Paleta clara por tipo
-PALETTE = {
-    "CEDEAR": "#7DB3FF",
-    "Bono":   "#8EE0A1",
-    "Acción": "#F7A6A6",
-    "ETF":    "#C9B6FF",
-    "FCI":    "#A7E3EB",
-    "Letra":  "#B6E08E",
-    "Otro":   "#E0E0E0",
-}
+# PALETTE = {
+#     "CEDEAR": "#7DB3FF",
+#     "Bono":   "#8EE0A1",
+#     "Acción": "#F7A6A6",
+#     "ETF":    "#C9B6FF",
+#     "FCI":    "#A7E3EB",
+#     "Letra":  "#B6E08E",
+#     "Otro":   "#E0E0E0",
+# }
 
 # Paleta estable por símbolo
 _SYMBOL_PALETTE = (
@@ -36,12 +37,20 @@ _SYMBOL_PALETTE = (
     + px.colors.qualitative.Light24
 )
 
+def _rgba(hex_color: str, alpha: float) -> str:
+    """Convert hex color to rgba string with given alpha."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
 def _symbol_color_map(symbols: list[str]) -> dict[str, str]:
     return {s: _SYMBOL_PALETTE[i % len(_SYMBOL_PALETTE)] for i, s in enumerate(symbols)}
 
 def _color_discrete_map(df: pd.DataFrame, tipo_col: str = "tipo"):
+    pal = get_active_palette()
     tipos = [t for t in df[tipo_col].dropna().unique().tolist()]
-    return {t: PALETTE.get(t, "#D8D8D8") for t in tipos}
+    # return {t: PALETTE.get(t, "#D8D8D8") for t in tipos}
+    return {t: pal.categories.get(t, pal.accent) for t in tipos}
 
 def _si(n: float) -> str:
     try:
@@ -50,17 +59,23 @@ def _si(n: float) -> str:
         return str(n)
 
 def _apply_layout(fig: go.Figure, title: str | None = None, *, show_legend=True, y0_line=False):
+    pal = get_active_palette()
     fig.update_layout(
         title=({"text": title, "x": 0.0, "xanchor": "left"} if title else None),
-        font=dict(family=FONT_FAMILY, color=FONT_COLOR, size=14),
-        paper_bgcolor=BG,
-        plot_bgcolor=PLOT_BG,
+        # font=dict(family=FONT_FAMILY, color=FONT_COLOR, size=14),
+        # paper_bgcolor=BG,
+        # plot_bgcolor=PLOT_BG,
+        font=dict(family=FONT_FAMILY, color=pal.text, size=14),
+        paper_bgcolor=pal.bg,
+        plot_bgcolor=pal.plot_bg,
         margin=dict(l=16, r=12, t=48 if title else 24, b=32),
         legend_title_text="",
         showlegend=show_legend,
     )
-    fig.update_xaxes(showgrid=False, zeroline=False, linecolor=GRID_COLOR)
-    fig.update_yaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=y0_line, zerolinecolor=GRID_COLOR)
+    # fig.update_xaxes(showgrid=False, zeroline=False, linecolor=GRID_COLOR)
+    # fig.update_yaxes(showgrid=True, gridcolor=GRID_COLOR, zeroline=y0_line, zerolinecolor=GRID_COLOR)
+    fig.update_xaxes(showgrid=False, zeroline=False, linecolor=pal.grid)
+    fig.update_yaxes(showgrid=True, gridcolor=pal.grid, zeroline=y0_line, zerolinecolor=pal.grid)
     return fig
 
 # =========================
@@ -161,12 +176,15 @@ def plot_bubble_pl_vs_costo(df: pd.DataFrame, x_axis: str, y_axis: str):
                     "pl": ":,.0f" if "pl" in d else True,
                     "valor_ok": ":,.0f"},
     )
+    pal = get_active_palette()    
     if SHOW_AXIS_TITLES:
         fig.update_xaxes(title=x_axis.replace("_", " ").capitalize(), tickformat=",")
-        fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     else:
         fig.update_xaxes(title=None, tickformat=",")
-        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     return _apply_layout(fig)
 
 def plot_heat_pl_pct(df: pd.DataFrame):
@@ -187,12 +205,15 @@ def plot_heat_pl_pct(df: pd.DataFrame):
         category_orders={"simbolo": d["simbolo"].astype(str).tolist()},
     )
     fig.update_traces(hovertemplate="%{x}: %{y:.2f}%<extra></extra>")
+    pal = get_active_palette()
     if SHOW_AXIS_TITLES:
         fig.update_xaxes(title="símbolo")
-        fig.update_yaxes(title="P/L %", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title="P/L %", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title="P/L %", zeroline=True, zerolinecolor=pal.grid)
     else:
         fig.update_xaxes(title=None)
-        fig.update_yaxes(title=None, zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title=None, zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title=None, zeroline=True, zerolinecolor=pal.grid)
     return _apply_layout(fig, show_legend=False)
 
 # ==============================
@@ -240,12 +261,15 @@ def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
         cliponaxis=False,
     )
 
+    pal = get_active_palette()
     if SHOW_AXIS_TITLES:
         fig.update_xaxes(title="símbolo")
-        fig.update_yaxes(title="P/L diario", tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title="P/L diario", tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title="P/L diario", tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     else:
         fig.update_xaxes(title=None)
-        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
 
     return _apply_layout(fig, show_legend=False, y0_line=True)
 
@@ -272,20 +296,24 @@ def plot_pl_daily_vs_total(df: pd.DataFrame, n: int = 20):
     if d_long.empty:
         return None
     order = d["simbolo"].astype(str).tolist()
+    pal = get_active_palette()
     fig = px.bar(
         d_long, x="simbolo", y="valor", color="métrica",
         barmode="group",
-        color_discrete_sequence=["#6EA8FE","#9AD0F5"],
+        # color_discrete_sequence=["#6EA8FE","#9AD0F5"],
+        color_discrete_sequence=[pal.accent, pal.positive],
         hover_data={"valor": ":,.0f"},
         category_orders={"simbolo": order},
     )
     fig.update_traces(texttemplate="%{y:,.0f}", textposition="outside", cliponaxis=False)
     if SHOW_AXIS_TITLES:
         fig.update_xaxes(title="símbolo")
-        fig.update_yaxes(title="Valor", tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title="Valor", tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title="Valor", tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     else:
         fig.update_xaxes(title=None)
-        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=GRID_COLOR)
+        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     return _apply_layout(fig, show_legend=True)
 
 # ============================
@@ -313,12 +341,26 @@ def plot_price_ma_bbands(df: pd.DataFrame, simbolo: str):
 
     # Bandas de Bollinger
     if {"BB_U","BB_L"}.issubset(df.columns):
+        pal = get_active_palette()
         fig.add_trace(go.Scatter(x=df.index, y=df["BB_U"], name="Banda Sup", mode="lines", line=dict(width=1)))
-        fig.add_trace(go.Scatter(x=df.index, y=df["BB_L"], name="Banda Inf", mode="lines", fill="tonexty", fillcolor="rgba(125,179,255,0.10)", line=dict(width=1)))
+        # fig.add_trace(go.Scatter(x=df.index, y=df["BB_L"], name="Banda Inf", mode="lines", fill="tonexty", fillcolor="rgba(125,179,255,0.10)", line=dict(width=1)))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["BB_L"],
+                name="Banda Inf",
+                mode="lines",
+                fill="tonexty",
+                fillcolor=_rgba(pal.accent, 0.10),
+                line=dict(width=1),
+            )
+        )
     if "BB_M" in df:
         fig.add_trace(go.Scatter(x=df.index, y=df["BB_M"], name="Banda Media", mode="lines", line=dict(width=1, dash="dot")))
 
-    fig.update_yaxes(tickformat=",", title=None, gridcolor=GRID_COLOR)
+    # fig.update_yaxes(tickformat=",", title=None, gridcolor=GRID_COLOR)
+    pal = get_active_palette()
+    fig.update_yaxes(tickformat=",", title=None, gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title=f"Precio + MAs + Bollinger — {simbolo}", show_legend=True)
 
@@ -327,10 +369,14 @@ def plot_rsi(df: pd.DataFrame):
     if df is None or df.empty or "RSI" not in df:
         return None
     fig = go.Figure()
+    pal = get_active_palette()
     fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", mode="lines"))
-    fig.add_hrect(y0=70, y1=100, fillcolor="rgba(255,0,0,0.08)", line_width=0)
-    fig.add_hrect(y0=0,  y1=30,  fillcolor="rgba(0,255,0,0.08)", line_width=0)
-    fig.update_yaxes(range=[0,100], title=None, gridcolor=GRID_COLOR)
+    # fig.add_hrect(y0=70, y1=100, fillcolor="rgba(255,0,0,0.08)", line_width=0)
+    # fig.add_hrect(y0=0,  y1=30,  fillcolor="rgba(0,255,0,0.08)", line_width=0)
+    # fig.update_yaxes(range=[0,100], title=None, gridcolor=GRID_COLOR)
+    fig.add_hrect(y0=70, y1=100, fillcolor=_rgba(pal.negative, 0.08), line_width=0)
+    fig.add_hrect(y0=0,  y1=30,  fillcolor=_rgba(pal.positive, 0.08), line_width=0)
+    fig.update_yaxes(range=[0,100], title=None, gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title="RSI (14)", show_legend=False)
 
@@ -339,8 +385,10 @@ def plot_volume(df: pd.DataFrame):
     if df is None or df.empty or "Volume" not in df:
         return None
     fig = go.Figure()
+    pal = get_active_palette()
     fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name="Volumen"))
-    fig.update_yaxes(title=None, tickformat=",", gridcolor=GRID_COLOR)
+    # fig.update_yaxes(title=None, tickformat=",", gridcolor=GRID_COLOR)
+    fig.update_yaxes(title=None, tickformat=",", gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title="Volumen", show_legend=False)
 
@@ -399,8 +447,11 @@ def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow:
     # 2) RSI (si existe)
     if "RSI" in df_ind:
         fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=2, col=1)
-        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor="red", opacity=0.08, row=2, col=1)
-        fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor="green", opacity=0.08, row=2, col=1)
+        # fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor="red", opacity=0.08, row=2, col=1)
+        # fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor="green", opacity=0.08, row=2, col=1)
+        pal = get_active_palette()
+        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=2, col=1)
+        fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=2, col=1)
         fig.update_yaxes(title_text="RSI (14)", range=[0, 100], row=2, col=1)
 
     # 3) Volumen (si existe)

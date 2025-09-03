@@ -10,6 +10,7 @@ from shared.utils import (
     format_number,
     format_price,
 )
+from .palette import get_active_palette
 
 def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
     total_val  = float(np.nansum(df_view.get("valor_actual", pd.Series(dtype=float)).values))
@@ -114,13 +115,16 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     df_tbl = pd.DataFrame(fmt_rows)
 
     def _color_pl(col: pd.Series):
+        pal = get_active_palette()
         styles = []
         for v in col:
             s = str(v or "").strip()
             if s.startswith("-"):
-                styles.append("color: #E57373; font-weight: 600;")
+                # styles.append("color: #E57373; font-weight: 600;")
+                styles.append(f"color: {pal.negative}; font-weight: 600;")
             elif s not in {"—", ""}:
-                styles.append("color: #81C784; font-weight: 600;")
+                # styles.append("color: #81C784; font-weight: 600;")
+                styles.append(f"color: {pal.positive}; font-weight: 600;")
             else:
                 styles.append("")
         return styles

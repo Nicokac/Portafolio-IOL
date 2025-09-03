@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import streamlit as st
 import time
 from infrastructure.iol.auth import IOLAuth
+from .palette import get_palette
 
 @dataclass
 class UISettings:
@@ -26,25 +27,26 @@ def apply_settings(settings: UISettings) -> None:
         page_title="IOL — Portafolio en vivo (solo lectura)",
         layout=settings.layout,
     )
-    # Streamlit aún no expone toggle de tema vía API, así que usamos CSS simple
-    if settings.theme == "dark":
-        st.markdown(
-            """
-            <style>
-            :root { color-scheme: dark; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            """
-            <style>
-            :root { color-scheme: light; }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
+    pal = get_palette(settings.theme)
+    st.markdown(
+        f"""
+        <style>
+        :root {{
+            color-scheme: {settings.theme};
+            --color-bg: {pal.bg};
+            --color-text: {pal.text};
+            --color-positive: {pal.positive};
+            --color-negative: {pal.negative};
+            --color-accent: {pal.accent};
+        }}
+        html, body, [data-testid="stAppViewContainer"] {{
+            background-color: var(--color-bg);
+            color: var(--color-text);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def init_ui() -> UISettings:
