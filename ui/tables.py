@@ -120,10 +120,8 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         for v in col:
             s = str(v or "").strip()
             if s.startswith("-"):
-                # styles.append("color: #E57373; font-weight: 600;")
                 styles.append(f"color: {pal.negative}; font-weight: 600;")
             elif s not in {"—", ""}:
-                # styles.append("color: #81C784; font-weight: 600;")
                 styles.append(f"color: {pal.positive}; font-weight: 600;")
             else:
                 styles.append("")

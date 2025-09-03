@@ -26,9 +26,6 @@ def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Contro
     order_index = order_options.index(defaults["order_by"]) if defaults["order_by"] in order_options else 0
 
     with st.sidebar.form("controls_form"):
-        # refresh_secs = st.slider("⟳ Refrescar cada (seg)", 5, 120, defaults["refresh_secs"], step=5)
-        # hide_cash    = st.checkbox("Ocultar IOLPORA / PARKING", value=defaults["hide_cash"])
-        # show_usd     = st.toggle("Mostrar valores en USD CCL", value=defaults["show_usd"])
         st.markdown("### ⏱️ Actualización")
         st.caption("Configura la frecuencia de refresco.")
         refresh_secs = st.slider("Intervalo (seg)", 5, 120, defaults["refresh_secs"], step=5)
@@ -55,8 +52,6 @@ def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Contro
         st.markdown("### ↕️ Orden")
         st.caption("Define el orden de la tabla.")
         order_by = st.selectbox("Ordenar por", order_options, index=order_index)
-        # desc     = st.checkbox("Descendente", value=defaults["desc"])
-        # top_n    = st.slider("Top N para gráficos", 5, 50, defaults["top_n"], step=5)
         desc = st.checkbox("Descendente", value=defaults["desc"])
 
         st.markdown("### 📈 Gráficos")
