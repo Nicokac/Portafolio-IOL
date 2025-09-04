@@ -106,10 +106,21 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
-            row["Val. (USD CCL)"]  = format_money((float(r["valor_actual"])/rate) if not _is_none_nan_inf(r["valor_actual"]) else None, "USD")
-            row["Costo (USD CCL)"] = format_money((float(r["costo"])/rate) if not _is_none_nan_inf(r["costo"]) else None, "USD")
-            row["P/L (USD CCL)"]   = format_money((float(r["pl"])/rate) if not _is_none_nan_inf(r["pl"]) else None, "USD")
-
+            # row["Val. (USD CCL)"]  = format_money((float(r["valor_actual"])/rate) if not _is_none_nan_inf(r["valor_actual"]) else None, "USD")
+            # row["Costo (USD CCL)"] = format_money((float(r["costo"])/rate) if not _is_none_nan_inf(r["costo"]) else None, "USD")
+            # row["P/L (USD CCL)"]   = format_money((float(r["pl"])/rate) if not _is_none_nan_inf(r["pl"]) else None, "USD")
+            row["Val. (USD CCL)"] = format_money(
+                (float(r["valor_actual"]) / rate) if not _is_none_nan_inf(r["valor_actual"]) else None,
+                "USD",
+            )
+            row["Costo (USD CCL)"] = format_money(
+                (float(r["costo"]) / rate) if not _is_none_nan_inf(r["costo"]) else None,
+                "USD",
+            )
+            row["P/L (USD CCL)"] = format_money(
+                (float(r["pl"]) / rate) if not _is_none_nan_inf(r["pl"]) else None,
+                "USD",
+            )
         fmt_rows.append(row)
 
     df_tbl = pd.DataFrame(fmt_rows)
@@ -134,18 +145,55 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     else:
         y_min, y_max = -10.0, 10.0
 
+    # Descripciones de columnas (tooltips)
+    column_help = {
+        "BCBA": "Mercado de negociación",
+        "Símbolo": "Ticker del activo",
+        "Tipo": "Clasificación del instrumento",
+        "Cantidad": "Cantidad de títulos en cartera",
+        "Último precio": "Última cotización disponible",
+        "Valorizado": "Valor actual (cantidad * último precio)",
+        "Costo": "Costo total de adquisición",
+        "P/L Acumulado": "Ganancia/Pérdida desde la compra",
+        "P/L diaria": "Ganancia/Pérdida de la rueda actual",
+        "Val. (USD CCL)": "Valorizado en USD usando CCL",
+        "Costo (USD CCL)": "Costo en USD usando CCL",
+        "P/L (USD CCL)": "Ganancia/Pérdida en USD usando CCL",
+    }
+
+    column_config: dict[str, st.column_config.Column] = {}
+    for col, help_txt in column_help.items():
+        if col in df_tbl.columns:
+            column_config[col] = st.column_config.Column(label=col, help=help_txt)
+
+    column_config["Intradía %"] = st.column_config.LineChartColumn(
+        label="Intradía %",
+        width="small",
+        y_min=y_min,
+        y_max=y_max,
+        help="Variación diaria (%) intradía — últimos puntos",
+    )
+
     st.subheader("Detalle por símbolo")
+    csv_data = df_tbl.to_csv(index=False).encode("utf-8")
+    st.download_button("⬇️ Exportar CSV", csv_data, file_name="portafolio.csv", mime="text/csv")
+    st.markdown(
+        "<style>div[data-testid='stDataFrame'] thead tr th{position:sticky;top:0;background:var(--color-bg);}</style>",
+        unsafe_allow_html=True,
+    )
     st.dataframe(
         df_tbl.style.apply(_color_pl, subset=["P/L Acumulado", "P/L diaria"]),
         use_container_width=True,
         hide_index=True,
-        column_config={
-            "Intradía %": st.column_config.LineChartColumn(
-                label="Intradía %",
-                width="small",
-                y_min=y_min,
-                y_max=y_max,
-                help="Variación diaria (%) intradía — últimos puntos",
-            )
-        },
+        # column_config={
+        #     "Intradía %": st.column_config.LineChartColumn(
+        #         label="Intradía %",
+        #         width="small",
+        #         y_min=y_min,
+        #         y_max=y_max,
+        #         help="Variación diaria (%) intradía — últimos puntos",
+        #     )
+        # },
+        height=420,
+        column_config=column_config,
     )

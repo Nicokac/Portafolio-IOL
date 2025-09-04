@@ -7,14 +7,6 @@ import plotly.express as px
 from shared.utils import _as_float_or_none, format_percent
 from .palette import get_active_palette
 
-# def _highlight_ccl(row):
-#     if str(row.get("Tipo", "")).upper() == "CCL":
-#         # return ["background-color: #1b5e20; color: white; font-weight: 700"] * len(row)
-#         pal = get_active_palette()
-#         style = f"background-color: {pal.highlight_bg}; color: {pal.highlight_text}; font-weight: 700"
-#         return [style] * len(row)
-#     return [""] * len(row)
-
 def render_fx_panel(rates: dict):
     st.subheader("💵 Cotizaciones del dólar (ARS por USD)")
     if not rates:
@@ -22,7 +14,6 @@ def render_fx_panel(rates: dict):
         return
 
     rows = []
-    # order = ["oficial","mayorista","ahorro","tarjeta","blue","mep","ccl","cripto"]
     order = ["oficial", "mayorista", "ahorro", "tarjeta", "blue", "mep", "ccl", "cripto"]
     labels = {
         "oficial": "Oficial",
@@ -48,10 +39,6 @@ def render_fx_panel(rates: dict):
     for k in order:
         if k in rates and _as_float_or_none(rates[k]) is not None:
             val = float(rates[k])
-            # rows.append({
-            #     "Tipo": "CCL" if k == "ccl" else labels.get(k, k),
-            #     "ARS / USD": f"$ {val:,.2f}".replace(",", "_").replace(".", ",").replace("_",".")
-            # })
             label = labels.get(k, k)
             rows.append(
                 {
@@ -67,7 +54,6 @@ def render_fx_panel(rates: dict):
         return
 
     df_fx = pd.DataFrame(rows)
-    # _ = st.dataframe(df_fx.style.apply(_highlight_ccl, axis=1), use_container_width=True, hide_index=True)
 
     pal = get_active_palette()
     st.markdown(
@@ -101,10 +87,6 @@ def render_spreads(rates: dict):
         st.info("Sin cotizaciones para calcular brechas.")
         return
 
-    # ccl       = _as_float_or_none(rates.get("ccl"))
-    # oficial   = _as_float_or_none(rates.get("oficial"))
-    # blue      = _as_float_or_none(rates.get("blue"))
-    # mep       = _as_float_or_none(rates.get("mep"))
     ccl = _as_float_or_none(rates.get("ccl"))
     oficial = _as_float_or_none(rates.get("oficial"))
     blue = _as_float_or_none(rates.get("blue"))
@@ -117,9 +99,6 @@ def render_spreads(rates: dict):
         return (a / b - 1.0) * 100.0
 
     rows = [
-        # {"Par": "Oficial vs CCL",   "Brecha": format_percent(pct(ccl, oficial))},
-        # {"Par": "Blue vs CCL",      "Brecha": format_percent(pct(ccl, blue))},
-        # {"Par": "MEP vs CCL",       "Brecha": format_percent(pct(ccl, mep))},
         {"Par": "Oficial vs CCL", "Brecha": format_percent(pct(ccl, oficial))},
         {"Par": "Blue vs CCL", "Brecha": format_percent(pct(ccl, blue))},
         {"Par": "MEP vs CCL", "Brecha": format_percent(pct(ccl, mep))},
@@ -135,8 +114,6 @@ def render_fx_history(history: pd.DataFrame):
     if history is None or history.empty:
         st.info("Aún no hay historial para graficar.")
         return
-    # hist = history.sort_values("ts_dt").set_index("ts_dt")
-    # cols = [c for c in ["ccl","mep","blue","oficial"] if c in hist.columns]
     hist = history.sort_values("ts_dt")
     cols = [c for c in ["ccl", "mep", "blue", "oficial"] if c in hist.columns]
     if not cols:

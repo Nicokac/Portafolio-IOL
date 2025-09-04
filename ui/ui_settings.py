@@ -48,7 +48,6 @@ def apply_settings(settings: UISettings) -> None:
         unsafe_allow_html=True,
     )
 
-
 def init_ui() -> UISettings:
     """Convenience helper to obtain current settings and apply them."""
     s = get_settings()
