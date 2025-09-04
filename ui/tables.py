@@ -106,9 +106,6 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
-            # row["Val. (USD CCL)"]  = format_money((float(r["valor_actual"])/rate) if not _is_none_nan_inf(r["valor_actual"]) else None, "USD")
-            # row["Costo (USD CCL)"] = format_money((float(r["costo"])/rate) if not _is_none_nan_inf(r["costo"]) else None, "USD")
-            # row["P/L (USD CCL)"]   = format_money((float(r["pl"])/rate) if not _is_none_nan_inf(r["pl"]) else None, "USD")
             row["Val. (USD CCL)"] = format_money(
                 (float(r["valor_actual"]) / rate) if not _is_none_nan_inf(r["valor_actual"]) else None,
                 "USD",
@@ -185,15 +182,6 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         df_tbl.style.apply(_color_pl, subset=["P/L Acumulado", "P/L diaria"]),
         use_container_width=True,
         hide_index=True,
-        # column_config={
-        #     "Intradía %": st.column_config.LineChartColumn(
-        #         label="Intradía %",
-        #         width="small",
-        #         y_min=y_min,
-        #         y_max=y_max,
-        #         help="Variación diaria (%) intradía — últimos puntos",
-        #     )
-        # },
         height=420,
         column_config=column_config,
     )

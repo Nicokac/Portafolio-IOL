@@ -228,6 +228,8 @@ def get_fundamental_data(ticker: str) -> dict:
 
         plausible_yield = None if yield_val > MAX_PLAUSIBLE_YIELD else yield_val
 
+        roe = info.get("returnOnEquity")
+        margin = info.get("profitMargins")
         data = {
             "name": info.get("shortName", "N/A"),
             "sector": info.get("sector", "N/A"),
@@ -235,6 +237,10 @@ def get_fundamental_data(ticker: str) -> dict:
             "market_cap": info.get("marketCap", 0),
             "pe_ratio": info.get("trailingPE"),
             "dividend_yield": plausible_yield,
+            "price_to_book": info.get("priceToBook"),
+            "return_on_equity": roe * 100 if roe is not None else None,
+            "profit_margin": margin * 100 if margin is not None else None,
+            "debt_to_equity": info.get("debtToEquity"),
         }
         return data
     except Exception as e:
