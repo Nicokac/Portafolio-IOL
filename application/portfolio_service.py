@@ -194,45 +194,80 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 # ---------- Cálculo de métricas ----------
 
 def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
-    """
-    Calcula por fila:
-      - ultimo, valor_actual, costo, pl, pl_%  (acumulado)
-      - pl_d, pld_%                            (variación del día)
-    Aplica factor de escala (0.01 p/ bonos/letras por VN 100) donde corresponda.
+    """Calcula métricas de valuación y P/L para cada posición.
 
-    get_quote_fn(mercado, simbolo) puede devolver:
-      - float | None                    -> último precio
-      - dict con claves heterogéneas    -> p.ej. {"last": float|None, "chg_pct": float|None}
+    La lógica original iteraba fila por fila; aquí se vectoriza el cálculo:
+      * Se construye un DataFrame con cotizaciones (``last`` y ``chg_pct``) y
+        se une a ``df_pos`` por ``simbolo``/``mercado``.
+      * ``classify_symbol`` y ``scale_for`` se aplican sobre columnas completas.
+      * Las métricas ``valor_actual``, ``costo`` y P/L se derivan mediante
+        operaciones vectorizadas de ``pandas``.
     """
+    cols = [
+        "simbolo",
+        "mercado",
+        "tipo",
+        "cantidad",
+        "ppc",
+        "ultimo",
+        "valor_actual",
+        "costo",
+        "pl",
+        "pl_%",
+        "pl_d",
+        "pld_%",
+    ]
+
     if df_pos is None or df_pos.empty:
-        return pd.DataFrame(columns=[
-            "simbolo", "mercado", "tipo", "cantidad", "ppc",
-            "ultimo", "valor_actual", "costo", "pl", "pl_%",
-            "pl_d", "pld_%"
-        ])
+        # return pd.DataFrame(columns=[
+        #     "simbolo", "mercado", "tipo", "cantidad", "ppc",
+        #     "ultimo", "valor_actual", "costo", "pl", "pl_%",
+        #     "pl_d", "pld_%"
+        # ])
+        return pd.DataFrame(columns=cols)
 
+    # Normalización básica y exclusiones ---------------------------------
+    df = df_pos.copy()
+    df["simbolo"] = df["simbolo"].map(clean_symbol)
+    df["mercado"] = df["mercado"].astype(str).str.lower()
     ex = {clean_symbol(s) for s in (exclude_syms or [])}
-    rows: List[Dict[str, Any]] = []
+    # rows: List[Dict[str, Any]] = []
 
-    for _, p in df_pos.iterrows():
-        simbolo = clean_symbol(p["simbolo"])
-        if simbolo in ex:
-            continue
+    df = df[~df["simbolo"].isin(ex)]
+    if df.empty:
+        return pd.DataFrame(columns=cols)
 
-        mercado = str(p["mercado"]).lower()
-        cantidad = _to_float(p["cantidad"]) or 0.0
-        ppc = _to_float(p.get("costo_unitario")) or 0.0  # precio prom. compra por unidad
+    # for _, p in df_pos.iterrows():
+    #     simbolo = clean_symbol(p["simbolo"])
+    #     if simbolo in ex:
+    #         continue
+    df["cantidad"] = df["cantidad"].map(_to_float).fillna(0.0)
+    df["ppc"] = df.get("costo_unitario", np.nan).map(_to_float).fillna(0.0)
+
+        # mercado = str(p["mercado"]).lower()
+        # cantidad = _to_float(p["cantidad"]) or 0.0
+        # ppc = _to_float(p.get("costo_unitario")) or 0.0  # precio prom. compra por unidad
+
+    # ----- Cotizaciones -------------------------------------------------
+    uniq = df[["mercado", "simbolo"]].drop_duplicates().reset_index(drop=True)
 
         # ----- cotización (acepta float o dict) -----
+    def _fetch(row: pd.Series) -> pd.Series:
         last, chg_pct = None, None
         q = None
         try:
-            q = get_quote_fn(mercado, simbolo)
+            # q = get_quote_fn(mercado, simbolo)
+            q = get_quote_fn(row["mercado"], row["simbolo"])
         except Exception as e:
-            logger.debug("get_quote_fn lanzó excepción para %s:%s -> %s", mercado, simbolo, e)
+            # logger.debug("get_quote_fn lanzó excepción para %s:%s -> %s", mercado, simbolo, e)
+            logger.debug(
+                "get_quote_fn lanzó excepción para %s:%s -> %s",
+                row["mercado"],
+                row["simbolo"],
+                e,
+            )
 
         if isinstance(q, dict):
-            # campos comunes para precio
             for k in ("last", "ultimo", "ultimoPrecio", "precio", "close", "cierre"):
                 if k in q:
                     last = _to_float(q.get(k))
@@ -242,49 +277,79 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         else:
             last = _to_float(q)
 
-        # Tipo y escala
-        tipo = classify_symbol(simbolo)
-        scale = scale_for(simbolo, tipo)
+        # # Tipo y escala
+        # tipo = classify_symbol(simbolo)
+        # scale = scale_for(simbolo, tipo)
 
-        # Valoraciones (acumulado)
-        costo = cantidad * ppc * scale
-        valor = (cantidad * last * scale) if last is not None else np.nan
-        pl = (valor - costo) if not np.isnan(valor) else np.nan
-        pl_pct = (pl / costo * 100.0) if costo else np.nan
+        # # Valoraciones (acumulado)
+        # costo = cantidad * ppc * scale
+        # valor = (cantidad * last * scale) if last is not None else np.nan
+        # pl = (valor - costo) if not np.isnan(valor) else np.nan
+        # pl_pct = (pl / costo * 100.0) if costo else np.nan
 
-        # ----- P/L diaria -----
-        # Si 'valor' es el valor ACTUAL y 'chg_pct' es el % vs cierre previo,
-        # el P/L diario en $ es: V_actual - V_previo = V_actual * (p/100) / (1 + p/100)
-        if (chg_pct is not None) and (valor == valor):  # no-NaN
-            denom = 1.0 + (float(chg_pct) / 100.0)
-            if denom != 0:
-                pl_d = float(valor) * (float(chg_pct) / 100.0) / denom
-                pld_pct = float(chg_pct)
-            else:
-                pl_d = np.nan
-                pld_pct = np.nan
-        else:
-            pl_d = np.nan
-            pld_pct = np.nan
+        # # ----- P/L diaria -----
+        # # Si 'valor' es el valor ACTUAL y 'chg_pct' es el % vs cierre previo,
+        # # el P/L diario en $ es: V_actual - V_previo = V_actual * (p/100) / (1 + p/100)
+        # if (chg_pct is not None) and (valor == valor):  # no-NaN
+        #     denom = 1.0 + (float(chg_pct) / 100.0)
+        #     if denom != 0:
+        #         pl_d = float(valor) * (float(chg_pct) / 100.0) / denom
+        #         pld_pct = float(chg_pct)
+        #     else:
+        #         pl_d = np.nan
+        #         pld_pct = np.nan
+        # else:
+        #     pl_d = np.nan
+        #     pld_pct = np.nan
 
-        rows.append(
-            {
-                "simbolo": simbolo,
-                "mercado": mercado.upper(),
-                "tipo": tipo,
-                "cantidad": cantidad,
-                "ppc": ppc,
-                "ultimo": last,
-                "valor_actual": valor,
-                "costo": costo,
-                "pl": pl,
-                "pl_%": pl_pct,
-                "pl_d": pl_d,
-                "pld_%": pld_pct,
-            }
-        )
+        # rows.append(
+        #     {
+        #         "simbolo": simbolo,
+        #         "mercado": mercado.upper(),
+        #         "tipo": tipo,
+        #         "cantidad": cantidad,
+        #         "ppc": ppc,
+        #         "ultimo": last,
+        #         "valor_actual": valor,
+        #         "costo": costo,
+        #         "pl": pl,
+        #         "pl_%": pl_pct,
+        #         "pl_d": pl_d,
+        #         "pld_%": pld_pct,
+        #     }
+        # )
+        return pd.Series({"last": last, "chg_pct": chg_pct})
 
-    return pd.DataFrame(rows)
+    quotes_df = uniq.apply(_fetch, axis=1)
+    quotes_df = pd.concat([uniq, quotes_df], axis=1)
+
+    df = df.merge(quotes_df, on=["mercado", "simbolo"], how="left")
+
+    # ----- Clasificación y escala --------------------------------------
+    df["tipo"] = df["simbolo"].map(classify_symbol)
+    df["scale"] = df.apply(lambda r: scale_for(r["simbolo"], r["tipo"]), axis=1)
+
+    # ----- Valoraciones -------------------------------------------------
+    df["ultimo"] = df["last"]
+    df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
+    df["valor_actual"] = df["cantidad"] * df["ultimo"] * df["scale"]
+    df["pl"] = df["valor_actual"] - df["costo"]
+    df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
+
+    # ----- P/L diario ---------------------------------------------------
+    pct = df["chg_pct"].astype(float) / 100.0
+    denom = 1.0 + pct
+    df["pl_d"] = np.where(
+        df["valor_actual"].notna() & df["chg_pct"].notna() & (denom != 0),
+        df["valor_actual"] * pct / denom,
+        np.nan,
+    )
+    df["pld_%"] = df["chg_pct"]
+
+        # return pd.DataFrame(rows)
+    # Orden final --------------------------------------------------------
+    df["mercado"] = df["mercado"].str.upper()
+    return df[cols]
 
 # --- Agregar al final de application/portfolio_service.py ---
 from functools import lru_cache
@@ -313,4 +378,5 @@ class PortfolioService:
         return classify_asset(row)
 
     def clean_symbol(self, sym: str) -> str:
+        # return clean_symbol(sym)
         return clean_symbol(sym)
