@@ -35,7 +35,7 @@ from ui.charts import (
 from infrastructure.iol.client import build_iol_client
 from infrastructure.iol.ports import IIOLProvider
 from infrastructure.fx.provider import FXProviderAdapter
-from infrastructure.cache.quote_cache import get_quote_cached
+#from infrastructure.cache.quote_cache import get_quote_cached
 
 # App facades
 from application.portfolio_service import PortfolioService
@@ -65,12 +65,32 @@ def fetch_portfolio(_cli: IIOLProvider):
     return data
 
 @st.cache_data(ttl=settings.cache_ttl_quotes)
-def fetch_last_price(_cli: IIOLProvider, mercado: str, simbolo: str):
+# def fetch_last_price(_cli: IIOLProvider, mercado: str, simbolo: str):
+def fetch_quotes_bulk(_cli: IIOLProvider, items):
+    get_bulk = getattr(_cli, "get_quotes_bulk", None)
     try:
-        return _cli.get_last_price(mercado=mercado, simbolo=simbolo)
+        # return _cli.get_last_price(mercado=mercado, simbolo=simbolo)
+        if callable(get_bulk):
+            return get_bulk(items)
     except Exception as e:
-        logger.warning("get_last_price(%s, %s) falló: %s", mercado, simbolo, e)
-        return None
+        # logger.warning("get_last_price(%s, %s) falló: %s", mercado, simbolo, e)
+        # return None
+        logger.warning("get_quotes_bulk falló: %s", e)
+    out = {}
+    max_workers = getattr(settings, "max_quote_workers", 12)
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
+        futs = {
+            ex.submit(_cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
+            for m, s in items
+        }
+        for fut in as_completed(futs):
+            key = futs[fut]
+            try:
+                out[key] = fut.result()
+            except Exception as e:
+                logger.warning("get_quote failed for %s:%s -> %s", key[0], key[1], e)
+                out[key] = {"last": None, "chg_pct": None}
+    return out
 
 @st.cache_resource
 def get_fx_provider() -> FXProviderAdapter:
@@ -167,21 +187,31 @@ def main():
         if selected_syms:
             df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
 
-        st.session_state.pop("last_price_errors", None)
+        # st.session_state.pop("last_price_errors", None)
+        pairs = list(
+            df_pos[["mercado", "simbolo"]]
+            .drop_duplicates()
+            .astype({"mercado": str, "simbolo": str})
+            .itertuples(index=False, name=None)
+        )
+        quotes_map = fetch_quotes_bulk(cli, pairs)
 
         df_view = psvc.calc_rows(
-            lambda mercado, simbolo=None: fetch_last_price(cli, mercado, simbolo or mercado),
+            # lambda mercado, simbolo=None: fetch_last_price(cli, mercado, simbolo or mercado),
+            lambda mercado, simbolo=None: quotes_map.get(
+                (str(mercado).lower(), str((simbolo or mercado)).upper()), {}
+            ),
             df_pos,
             exclude_syms=[],
         )
 
-        if st.session_state.get("last_price_errors"):
-            errs = st.session_state["last_price_errors"]
-            sample = errs[:3]
-            msg = "Se reautenticó datos de mercado. Si persiste, probá ‘🔄 Relogin’. "
-            msg += "Errores ejemplo: " + ", ".join([f"{e['simbolo']}({e['mercado']}): {e['err']}" for e in sample])
-            st.info(msg)
-            st.session_state.pop("last_price_errors", None)
+        # if st.session_state.get("last_price_errors"):
+        #     errs = st.session_state["last_price_errors"]
+        #     sample = errs[:3]
+        #     msg = "Se reautenticó datos de mercado. Si persiste, probá ‘🔄 Relogin’. "
+        #     msg += "Errores ejemplo: " + ", ".join([f"{e['simbolo']}({e['mercado']}): {e['err']}" for e in sample])
+        #     st.info(msg)
+        #     st.session_state.pop("last_price_errors", None)
 
         if not df_view.empty:
             df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
@@ -195,45 +225,57 @@ def main():
                 df_view = df_view[df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)].copy()
 
         # === Cotizaciones diarias en paralelo ===
-        if not df_view.empty:
+        # if not df_view.empty:
+        #     st.session_state.setdefault("quotes_hist", {})
+        #     now_ts = int(time.time())
+        #     symbols_to_query = (
+        #         df_view[["mercado", "simbolo"]]
+        #         .drop_duplicates()
+        #         .astype({"mercado": str, "simbolo": str})
+        #         .to_dict("records")
+        #     )
+        #     quotes_cache = {}
+        #     max_workers = getattr(settings, "max_quote_workers", 12)
+        #     with ThreadPoolExecutor(max_workers=min(max_workers, len(symbols_to_query) or 1)) as ex:
+        #         futures = {
+        #             ex.submit(get_quote_cached, cli, it["mercado"], it["simbolo"]): (it["mercado"].lower(), it["simbolo"].upper())
+        #             for it in symbols_to_query
+        #         }
+        #         for fut in as_completed(futures):
+        #             mkt, sym = futures[fut]
+        #             try:
+        #                 quote = fut.result()
+        #                 quotes_cache[(mkt, sym)] = quote.get("chg_pct")
+        #                 chg = quote.get("chg_pct")
+        #                 if isinstance(chg, (int, float)):
+        #                     st.session_state["quotes_hist"].setdefault(sym, [])
+        #                     if (not st.session_state["quotes_hist"][sym]) or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts):
+        #                         st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
+        #                         maxlen = getattr(settings, "quotes_hist_maxlen", 500)
+        #                         st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
+        #             except Exception as e:
+        #                 logger.warning("get_quote_cached failed for %s:%s -> %s", mkt, sym, e)
+
+            chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
+            map_keys = df_view.apply(lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1)
+            # df_view["chg_%"] = map_keys.map(quotes_cache)
+
+            df_view["chg_%"] = map_keys.map(chg_map)
+            df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
+            # df_view["valor_actual"] = pd.to_numeric(df_view["valor_actual"], errors="coerce")
+            # denom = 100.0 + df_view["chg_%"]
+            # mask = df_view["chg_%"].notna() & df_view["valor_actual"].notna() & (denom != 0)
+            # df_view.loc[mask, "pl_d"] = df_view.loc[mask, "valor_actual"] * df_view.loc[mask, "chg_%"] / denom
+
             st.session_state.setdefault("quotes_hist", {})
             now_ts = int(time.time())
-            symbols_to_query = (
-                df_view[["mercado", "simbolo"]]
-                .drop_duplicates()
-                .astype({"mercado": str, "simbolo": str})
-                .to_dict("records")
-            )
-            quotes_cache = {}
-            max_workers = getattr(settings, "max_quote_workers", 12)
-            with ThreadPoolExecutor(max_workers=min(max_workers, len(symbols_to_query) or 1)) as ex:
-                futures = {
-                    ex.submit(get_quote_cached, cli, it["mercado"], it["simbolo"]): (it["mercado"].lower(), it["simbolo"].upper())
-                    for it in symbols_to_query
-                }
-                for fut in as_completed(futures):
-                    mkt, sym = futures[fut]
-                    try:
-                        quote = fut.result()
-                        quotes_cache[(mkt, sym)] = quote.get("chg_pct")
-                        chg = quote.get("chg_pct")
-                        if isinstance(chg, (int, float)):
-                            st.session_state["quotes_hist"].setdefault(sym, [])
-                            if (not st.session_state["quotes_hist"][sym]) or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts):
-                                st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
-                                maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                                st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
-                    except Exception as e:
-                        logger.warning("get_quote_cached failed for %s:%s -> %s", mkt, sym, e)
-
-            map_keys = df_view.apply(lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1)
-            df_view["chg_%"] = map_keys.map(quotes_cache)
-
-            df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
-            df_view["valor_actual"] = pd.to_numeric(df_view["valor_actual"], errors="coerce")
-            denom = 100.0 + df_view["chg_%"]
-            mask = df_view["chg_%"].notna() & df_view["valor_actual"].notna() & (denom != 0)
-            df_view.loc[mask, "pl_d"] = df_view.loc[mask, "valor_actual"] * df_view.loc[mask, "chg_%"] / denom
+            for (mkt, sym), chg in chg_map.items():
+                if isinstance(chg, (int, float)):
+                    st.session_state["quotes_hist"].setdefault(sym, [])
+                    if (not st.session_state["quotes_hist"][sym]) or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts):
+                        st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
+                        maxlen = getattr(settings, "quotes_hist_maxlen", 500)
+                        st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
 
         ccl_rate = (fetch_fx_rates() or {}).get("ccl")
 
