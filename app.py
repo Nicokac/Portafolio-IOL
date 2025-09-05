@@ -16,9 +16,10 @@ from domain.models import Controls
 # UI
 from ui.header import render_header
 from ui.tables import render_totals, render_table
-from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
+#from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
+from ui.fx_panels import render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
-from ui.fundamentals import render_fundamental_data
+from ui.fundamentals import render_fundamental_data, render_fundamental_ranking
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
 from ui.charts import (
@@ -120,7 +121,8 @@ def main():
         st.stop()
 
     # ===== HEADER =====
-    render_header()
+    #render_header()
+    render_header(rates=fetch_fx_rates())
     _, hcol2 = st.columns([4, 1])
     with hcol2:
         now = datetime.now()
@@ -132,7 +134,7 @@ def main():
 
     with side_col:
         rates = fetch_fx_rates() or {}
-        render_fx_panel(rates)
+        #render_fx_panel(rates)
         render_spreads(rates)
 
         c_ts = rates.get("_ts")
@@ -242,7 +244,7 @@ def main():
         ccl_rate = (fetch_fx_rates() or {}).get("ccl")
 
         # === TABS ===
-        tabs = st.tabs(["📂 Portafolio", "📊 Análisis avanzado", "🎲 Análisis de Riesgo", "🔎 Análisis de activos"])
+        tabs = st.tabs(["📂 Portafolio", "📊 Análisis avanzado", "🎲 Análisis de Riesgo", "📑 Análisis fundamental", "🔎 Análisis de activos"])
 
         # Pestaña 1
         with tabs[0]:
@@ -372,6 +374,17 @@ def main():
 
         # Pestaña 4
         with tabs[3]:
+            st.subheader("Análisis fundamental del portafolio")
+            portfolio_symbols = df_view["simbolo"].tolist()
+            if portfolio_symbols:
+                with st.spinner("Descargando datos fundamentales…"):
+                    fund_df = tasvc.portfolio_fundamentals(portfolio_symbols)
+                render_fundamental_ranking(fund_df)
+            else:
+                st.info("No hay símbolos en el portafolio para analizar.")
+
+        # Pestaña 5
+        with tabs[4]:
             st.subheader("Indicadores técnicos por activo")
             if not all_symbols:
                 st.info("No hay símbolos en el portafolio para analizar.")
@@ -395,7 +408,6 @@ def main():
                         with cols[3]:
                             sma_slow = st.number_input("SMA larga", min_value=10, max_value=250, value=50, step=5)
 
-                        # df_ind = tasvc.indicators_for(sym, period=period, interval=interval, sma_fast=sma_fast, sma_slow=sma_slow)
                         with st.expander("Parámetros adicionales"):
                             c1, c2, c3 = st.columns(3)
                             macd_fast = c1.number_input("MACD rápida", min_value=5, max_value=50, value=12, step=1)

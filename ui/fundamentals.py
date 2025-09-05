@@ -60,14 +60,6 @@ def render_fundamental_data(data: dict):
     st.subheader(f"Análisis Fundamental: {data.get('name', '—')}")
     st.caption(f"**Sector:** {data.get('sector', '—')} | **Web:** {data.get('website', '—')}")
 
-    # col1, col2, col3 = st.columns(3)
-    # col1.metric("Capitalización de Mercado", f"US$ {format_number(data.get('market_cap'))}")
-
-    # pe = data.get("pe_ratio")
-    # col2.metric("Ratio P/E (TTM)", "—" if _is_none_nan_inf(pe) else f"{float(pe):.2f}")
-
-    # col3.metric("Rendimiento por Dividendo", format_percent(data.get("dividend_yield")))
-
     rows = []
     for key, meta in INDICATORS.items():
         val = data.get(key)
@@ -83,3 +75,30 @@ def render_fundamental_data(data: dict):
         
     st.table(pd.DataFrame(rows))
     st.divider()
+
+def render_fundamental_ranking(df: pd.DataFrame):
+    """Muestra ranking y filtros por métricas fundamentales/ESG."""
+    if df is None or df.empty:
+        st.info("No se pudieron obtener datos fundamentales.")
+        return
+
+    sectors = sorted([s for s in df["sector"].dropna().unique()])
+    sector = st.selectbox("Sector", ["Todos"] + sectors)
+    if sector != "Todos":
+        df = df[df["sector"] == sector]
+
+    metric = st.selectbox(
+        "Ordenar por",
+        ["market_cap", "pe_ratio", "revenue_growth", "earnings_growth", "esg_score"],
+        index=0,
+    )
+    df_sorted = df.sort_values(by=metric, ascending=False)
+    st.dataframe(df_sorted.reset_index(drop=True))
+
+    neg_growth = df_sorted[df_sorted["earnings_growth"].notna() & (df_sorted["earnings_growth"] < 0)]
+    if not neg_growth.empty:
+        st.warning("Alerta: crecimiento de ganancias negativo en algunos activos.")
+
+    low_esg = df_sorted[df_sorted["esg_score"].notna() & (df_sorted["esg_score"] < 30)]
+    if not low_esg.empty:
+        st.warning("Alerta ESG: puntajes ESG bajos detectados.")

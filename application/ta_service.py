@@ -327,6 +327,37 @@ def get_fundamental_data(ticker: str) -> dict:
         logging.error(f"Error al obtener datos fundamentales para {ticker}: {e}")
         return {"error": f"No se pudo contactar a la API para {ticker}."}
 
+@st.cache_data
+def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
+    """Devuelve un DataFrame con métricas fundamentales y ESG para cada símbolo."""
+    rows = []
+    for sym in simbolos:
+        ticker = map_to_us_ticker(sym)
+        if not ticker:
+            continue
+        try:
+            stock = yf.Ticker(ticker)
+            info = stock.info or {}
+            sustain = getattr(stock, "sustainability", None)
+            esg_score = None
+            if isinstance(sustain, pd.DataFrame) and not sustain.empty:
+                if "Value" in sustain.columns and "totalEsg" in sustain.index:
+                    esg_score = _to_float(sustain.loc["totalEsg", "Value"])
+            rows.append(
+                {
+                    "symbol": sym,
+                    "name": info.get("shortName"),
+                    "sector": info.get("sector"),
+                    "market_cap": info.get("marketCap"),
+                    "pe_ratio": info.get("trailingPE"),
+                    "revenue_growth": info.get("revenueGrowth"),
+                    "earnings_growth": info.get("earningsQuarterlyGrowth"),
+                    "esg_score": esg_score,
+                }
+            )
+        except Exception as e:
+            logger.warning("fundamental error %s: %s", sym, e)
+    return pd.DataFrame(rows)
 
 @st.cache_data
 def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFrame:
@@ -390,10 +421,6 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
 
 class TAService:
     """Fachada de análisis técnico que envuelve las funciones existentes."""
-    # def indicators_for(self, sym: str, *, period: str = "6mo", interval: str = "1d",
-    #                    sma_fast: int = 20, sma_slow: int = 50):
-    #     return fetch_with_indicators(sym, period=period, interval=interval,
-    #                                  sma_fast=sma_fast, sma_slow=sma_slow)
 
     def indicators_for(
         self,
@@ -444,3 +471,6 @@ class TAService:
 
     def map_to_us_ticker(self, sym: str) -> str | None:
         return map_to_us_ticker(sym)
+    
+    def portfolio_fundamentals(self, simbolos: List[str]) -> pd.DataFrame:
+        return portfolio_fundamentals(simbolos)
