@@ -395,7 +395,37 @@ def main():
                         with cols[3]:
                             sma_slow = st.number_input("SMA larga", min_value=10, max_value=250, value=50, step=5)
 
-                        df_ind = tasvc.indicators_for(sym, period=period, interval=interval, sma_fast=sma_fast, sma_slow=sma_slow)
+                        # df_ind = tasvc.indicators_for(sym, period=period, interval=interval, sma_fast=sma_fast, sma_slow=sma_slow)
+                        with st.expander("Parámetros adicionales"):
+                            c1, c2, c3 = st.columns(3)
+                            macd_fast = c1.number_input("MACD rápida", min_value=5, max_value=50, value=12, step=1)
+                            macd_slow = c2.number_input("MACD lenta", min_value=10, max_value=200, value=26, step=1)
+                            macd_signal = c3.number_input("MACD señal", min_value=5, max_value=50, value=9, step=1)
+                            c4, c5, c6 = st.columns(3)
+                            atr_win = c4.number_input("ATR ventana", min_value=5, max_value=200, value=14, step=1)
+                            stoch_win = c5.number_input("Estocástico ventana", min_value=5, max_value=200, value=14, step=1)
+                            stoch_smooth = c6.number_input("Estocástico suavizado", min_value=1, max_value=50, value=3, step=1)
+                            c7, c8, c9 = st.columns(3)
+                            ichi_conv = c7.number_input("Ichimoku conv.", min_value=1, max_value=50, value=9, step=1)
+                            ichi_base = c8.number_input("Ichimoku base", min_value=2, max_value=100, value=26, step=1)
+                            ichi_span = c9.number_input("Ichimoku span B", min_value=2, max_value=200, value=52, step=1)
+
+                        df_ind = tasvc.indicators_for(
+                            sym,
+                            period=period,
+                            interval=interval,
+                            sma_fast=sma_fast,
+                            sma_slow=sma_slow,
+                            macd_fast=macd_fast,
+                            macd_slow=macd_slow,
+                            macd_signal=macd_signal,
+                            atr_win=atr_win,
+                            stoch_win=stoch_win,
+                            stoch_smooth=stoch_smooth,
+                            ichi_conv=ichi_conv,
+                            ichi_base=ichi_base,
+                            ichi_span=ichi_span,
+                        )
                         if df_ind.empty:
                             st.info("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
                         else:
@@ -413,6 +443,15 @@ def main():
                                         st.info(a)
                             else:
                                 st.caption("Sin alertas técnicas en la última vela.")
+
+                            st.subheader("Backtesting")
+                            strat = st.selectbox("Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0)
+                            bt = tasvc.backtest(df_ind, strategy=strat)
+                            if bt.empty:
+                                st.info("Sin datos suficientes para el backtesting.")
+                            else:
+                                st.line_chart(bt["equity"])
+                                st.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
 
     # Auto-refresh
     if "last_refresh" not in st.session_state:

@@ -387,41 +387,87 @@ def plot_correlation_heatmap(prices_df: pd.DataFrame):
 
 def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow: int):
     """
-    Crea el gráfico compuesto de análisis técnico con subplots.
-    Requiere columnas: Close; opcionales: SMA_FAST, SMA_SLOW, EMA, BB_L/BB_M/BB_U, RSI, Volume
+    Gráfico compuesto con precio e indicadores técnicos.
+    Requiere columna Close; opcionales SMA/EMA/Bollinger/RSI/MACD/Stoch/ATR/Ichimoku/Volume
     """
     if df_ind is None or df_ind.empty or "Close" not in df_ind:
         return None
 
     fig = make_subplots(
-        rows=3, cols=1,
+        # rows=3, cols=1,
+        rows=6,
+        cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
-        row_heights=[0.55, 0.20, 0.25],
+        # row_heights=[0.55, 0.20, 0.25],
+        row_heights=[0.35, 0.15, 0.15, 0.15, 0.10, 0.10],
     )
 
     # 1) Precio + Indicadores
     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["Close"], name="Close", mode="lines"), row=1, col=1)
-    if "SMA_FAST" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
-    if "SMA_SLOW" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_SLOW"], name=f"SMA {sma_slow}", mode="lines"), row=1, col=1)
-    if "EMA" in df_ind:      fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA 21", mode="lines"), row=1, col=1)
-    if "BB_U" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")), row=1, col=1)
-    if "BB_L" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")), row=1, col=1)
+    # if "SMA_FAST" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
+    # if "SMA_SLOW" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_SLOW"], name=f"SMA {sma_slow}", mode="lines"), row=1, col=1)
+    # if "EMA" in df_ind:      fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA 21", mode="lines"), row=1, col=1)
+    # if "BB_U" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")), row=1, col=1)
+    # if "BB_L" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")), row=1, col=1)
+    if "SMA_FAST" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
+    if "SMA_SLOW" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_SLOW"], name=f"SMA {sma_slow}", mode="lines"), row=1, col=1)
+    if "EMA" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA", mode="lines"), row=1, col=1)
+    if "BB_U" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")), row=1, col=1)
+    if "BB_L" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")), row=1, col=1)
+    if {"ICHI_CONV", "ICHI_BASE"}.issubset(df_ind.columns):
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_CONV"], name="Ichimoku Conv", mode="lines"), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_BASE"], name="Ichimoku Base", mode="lines"), row=1, col=1)
+    if {"ICHI_A", "ICHI_B"}.issubset(df_ind.columns):
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_A"], name="Ichimoku A", line=dict(width=0), showlegend=False), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_B"], name="Ichimoku B", fill="tonexty", line=dict(width=0), fillcolor="rgba(200,200,200,0.2)", showlegend=False), row=1, col=1)
     fig.update_yaxes(title_text="Precio", row=1, col=1)
 
-    # 2) RSI (si existe)
+    # 2) MACD (si existe)
+    if "MACD" in df_ind:
+        fig.add_trace(go.Bar(x=df_ind.index, y=df_ind.get("MACD_HIST"), name="MACD Hist"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["MACD"], name="MACD", mode="lines"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["MACD_SIGNAL"], name="Señal", mode="lines"), row=2, col=1)
+        fig.update_yaxes(title_text="MACD", row=2, col=1)
+
+    # 3) RSI
     if "RSI" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=2, col=1)
+        # fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=2, col=1)
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=3, col=1)
         pal = get_active_palette()
-        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=2, col=1)
-        fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=2, col=1)
-        fig.update_yaxes(title_text="RSI (14)", range=[0, 100], row=2, col=1)
+    #     fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=2, col=1)
+    #     fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=2, col=1)
+    #     fig.update_yaxes(title_text="RSI (14)", range=[0, 100], row=2, col=1)
 
-    # 3) Volumen (si existe)
+    # # 3) Volumen (si existe)
+        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=3, col=1)
+        fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=3, col=1)
+        fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
+
+    # 4) Estocástico
+    if "STOCH_K" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["STOCH_K"], name="%K", mode="lines"), row=4, col=1)
+        if "STOCH_D" in df_ind:
+            fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["STOCH_D"], name="%D", mode="lines"), row=4, col=1)
+        fig.update_yaxes(title_text="Estocástico", range=[0, 100], row=4, col=1)
+
+    # 5) ATR
+    if "ATR" in df_ind:
+        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ATR"], name="ATR", mode="lines"), row=5, col=1)
+        fig.update_yaxes(title_text="ATR", row=5, col=1)
+
+    # 6) Volumen
     if "Volume" in df_ind:
-        fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=3, col=1)
-        fig.update_yaxes(title_text="Volumen", row=3, col=1)
-
+        # fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=3, col=1)
+        # fig.update_yaxes(title_text="Volumen", row=3, col=1)
+        fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=6, col=1)
+        fig.update_yaxes(title_text="Volumen", row=6, col=1)
+        
     _apply_layout(fig, show_legend=True)
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), legend_title_text="")
     return fig
