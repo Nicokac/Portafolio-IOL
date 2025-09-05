@@ -2,6 +2,7 @@
 from __future__ import annotations
 import logging
 from typing import Optional, List
+from .portfolio_service import get_config, clean_symbol, map_to_us_ticker
 
 import numpy as np
 import pandas as pd
@@ -24,7 +25,7 @@ except ImportError:  # pragma: no cover
     from ta.momentum import RSIIndicator
 
 # === Import refactorizado: get_config / clean_symbol (ya no existe load_config)
-from .portfolio_service import get_config, clean_symbol
+from .portfolio_service import get_config, clean_symbol, map_to_us_ticker
 
 logger = logging.getLogger(__name__)
 CONFIG = get_config()

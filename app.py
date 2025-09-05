@@ -303,12 +303,18 @@ def main():
                 if fig:
                     _ = st.plotly_chart(fig, use_container_width=True)
                     st.caption("""
-                        Un heatmap de correlación muestra cómo se mueven los activos entre sí. 
-                        **Azul (cercano a 1)**: Se mueven juntos. 
-                        **Rojo (cercano a -1)**: Se mueven en direcciones opuestas. 
-                        **Blanco (cercano a 0)**: No tienen relación. 
+                        Un heatmap de correlación muestra cómo se mueven los activos entre sí.
+                        **Azul (cercano a 1)**: Se mueven juntos.
+                        **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
+                        **Blanco (cercano a 0)**: No tienen relación.
                         Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                     """)
+                else:
+                    st.warning(f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación.")
+            else:
+                st.info("Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación.")
+
+            st.subheader("Análisis de Riesgo")
             if portfolio_symbols:
                 with st.spinner("Descargando históricos…"):
                     prices_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period="1y")
@@ -316,7 +322,6 @@ def main():
                 if prices_df.empty or bench_df.empty:
                     st.info("No se pudieron obtener datos históricos para calcular métricas de riesgo.")
                 else:
-                    st.warning(f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación.")
                     returns_df = compute_returns(prices_df)
                     bench_ret = compute_returns(bench_df).squeeze()
                     weights = (
@@ -359,24 +364,10 @@ def main():
                         shocks = {}
                         for sym in returns_df.columns:
                             shocks[sym] = st.number_input(f"Shock {sym} (%)", value=0.0, step=1.0) / 100.0
-                        stressed = apply_stress(weights, shocks)
-                        st.write(f"Retorno con shocks: {stressed - 1:.2%}")
-
-                        st.subheader("Correlación del Portafolio")
-                        fig = plot_correlation_heatmap(prices_df)
-                        if fig:
-                            _ = st.plotly_chart(fig, use_container_width=True)
-                            st.caption("""
-                                Un heatmap de correlación muestra cómo se mueven los activos entre sí.
-                                **Azul (cercano a 1)**: Se mueven juntos.
-                                **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
-                                **Blanco (cercano a 0)**: No tienen relación.
-                                Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
-                            """)
-                        else:
-                            st.info("No se pudo calcular la correlación del portafolio.")
+                        base_prices = pd.Series(1.0, index=weights.index)
+                        stressed_val = apply_stress(base_prices, weights, shocks)
+                        st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
             else:
-                st.info("Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación.")
                 st.info("No hay símbolos en el portafolio para analizar.")
 
         # Pestaña 4

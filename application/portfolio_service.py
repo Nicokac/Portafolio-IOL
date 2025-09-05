@@ -24,6 +24,20 @@ def clean_symbol(s: str) -> str:
     s = s.replace("\u00A0", "").replace("\u200B", "")
     return re.sub(r"[^A-Z0-9._-]", "", s)
 
+def map_to_us_ticker(simbolo: str) -> Optional[str]:
+    s = clean_symbol(simbolo)
+    cfg = get_config()
+    cedear_map = cfg.get("cedear_to_us", {}) or {}
+
+    if s in cedear_map:
+        return clean_symbol(cedear_map[s])
+
+    # ⛑️ Fallback si es una acción local
+    if s in cfg.get("acciones_ar", []):
+        return s + ".BA"  # yfinance usa sufijo .BA para acciones argentinas
+
+    return None
+
 # ---------- Clasificación y escala ----------
 
 def classify_symbol(sym: str) -> str:
