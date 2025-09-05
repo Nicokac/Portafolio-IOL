@@ -4,6 +4,7 @@
 from __future__ import annotations
 import os, time, hashlib
 import pandas as pd
+import numpy as np
 import streamlit as st
 from datetime import datetime
 import logging
@@ -35,11 +36,19 @@ from ui.charts import (
 from infrastructure.iol.client import build_iol_client
 from infrastructure.iol.ports import IIOLProvider
 from infrastructure.fx.provider import FXProviderAdapter
-#from infrastructure.cache.quote_cache import get_quote_cached
 
 # App facades
 from application.portfolio_service import PortfolioService
 from application.ta_service import TAService  # <- también la clase
+from application.risk_service import (
+    compute_returns,
+    annualized_volatility,
+    beta,
+    historical_var,
+    markowitz_optimize,
+    monte_carlo_simulation,
+    apply_stress,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,16 +74,13 @@ def fetch_portfolio(_cli: IIOLProvider):
     return data
 
 @st.cache_data(ttl=settings.cache_ttl_quotes)
-# def fetch_last_price(_cli: IIOLProvider, mercado: str, simbolo: str):
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
     try:
-        # return _cli.get_last_price(mercado=mercado, simbolo=simbolo)
         if callable(get_bulk):
             return get_bulk(items)
     except Exception as e:
-        # logger.warning("get_last_price(%s, %s) falló: %s", mercado, simbolo, e)
-        # return None
+
         logger.warning("get_quotes_bulk falló: %s", e)
     out = {}
     max_workers = getattr(settings, "max_quote_workers", 12)
@@ -205,14 +211,6 @@ def main():
             exclude_syms=[],
         )
 
-        # if st.session_state.get("last_price_errors"):
-        #     errs = st.session_state["last_price_errors"]
-        #     sample = errs[:3]
-        #     msg = "Se reautenticó datos de mercado. Si persiste, probá ‘🔄 Relogin’. "
-        #     msg += "Errores ejemplo: " + ", ".join([f"{e['simbolo']}({e['mercado']}): {e['err']}" for e in sample])
-        #     st.info(msg)
-        #     st.session_state.pop("last_price_errors", None)
-
         if not df_view.empty:
             df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
 
@@ -224,48 +222,12 @@ def main():
             if symbol_q:
                 df_view = df_view[df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)].copy()
 
-        # === Cotizaciones diarias en paralelo ===
-        # if not df_view.empty:
-        #     st.session_state.setdefault("quotes_hist", {})
-        #     now_ts = int(time.time())
-        #     symbols_to_query = (
-        #         df_view[["mercado", "simbolo"]]
-        #         .drop_duplicates()
-        #         .astype({"mercado": str, "simbolo": str})
-        #         .to_dict("records")
-        #     )
-        #     quotes_cache = {}
-        #     max_workers = getattr(settings, "max_quote_workers", 12)
-        #     with ThreadPoolExecutor(max_workers=min(max_workers, len(symbols_to_query) or 1)) as ex:
-        #         futures = {
-        #             ex.submit(get_quote_cached, cli, it["mercado"], it["simbolo"]): (it["mercado"].lower(), it["simbolo"].upper())
-        #             for it in symbols_to_query
-        #         }
-        #         for fut in as_completed(futures):
-        #             mkt, sym = futures[fut]
-        #             try:
-        #                 quote = fut.result()
-        #                 quotes_cache[(mkt, sym)] = quote.get("chg_pct")
-        #                 chg = quote.get("chg_pct")
-        #                 if isinstance(chg, (int, float)):
-        #                     st.session_state["quotes_hist"].setdefault(sym, [])
-        #                     if (not st.session_state["quotes_hist"][sym]) or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts):
-        #                         st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
-        #                         maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-        #                         st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
-        #             except Exception as e:
-        #                 logger.warning("get_quote_cached failed for %s:%s -> %s", mkt, sym, e)
-
             chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
             map_keys = df_view.apply(lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1)
             # df_view["chg_%"] = map_keys.map(quotes_cache)
 
             df_view["chg_%"] = map_keys.map(chg_map)
             df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
-            # df_view["valor_actual"] = pd.to_numeric(df_view["valor_actual"], errors="coerce")
-            # denom = 100.0 + df_view["chg_%"]
-            # mask = df_view["chg_%"].notna() & df_view["valor_actual"].notna() & (denom != 0)
-            # df_view.loc[mask, "pl_d"] = df_view.loc[mask, "valor_actual"] * df_view.loc[mask, "chg_%"] / denom
 
             st.session_state.setdefault("quotes_hist", {})
             now_ts = int(time.time())
@@ -332,6 +294,7 @@ def main():
         with tabs[2]:
             st.subheader("Análisis de Correlación del Portafolio")
             corr_period = st.selectbox("Calcular correlación sobre el último período:", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
+            st.subheader("Análisis de Riesgo")
             portfolio_symbols = df_view["simbolo"].tolist()
             if len(portfolio_symbols) >= 2:
                 with st.spinner(f"Calculando correlación ({corr_period})…"):
@@ -346,10 +309,75 @@ def main():
                         **Blanco (cercano a 0)**: No tienen relación. 
                         Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                     """)
+            if portfolio_symbols:
+                with st.spinner("Descargando históricos…"):
+                    prices_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period="1y")
+                    bench_df = tasvc.portfolio_history(simbolos=["^GSPC"], period="1y")
+                if prices_df.empty or bench_df.empty:
+                    st.info("No se pudieron obtener datos históricos para calcular métricas de riesgo.")
                 else:
                     st.warning(f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación.")
+                    returns_df = compute_returns(prices_df)
+                    bench_ret = compute_returns(bench_df).squeeze()
+                    weights = (
+                        df_view.set_index("simbolo")["valor_actual"].astype(float)
+                        .reindex(returns_df.columns)
+                        .dropna()
+                    )
+                    weights = weights / weights.sum() if not weights.empty else weights
+                    if weights.empty or returns_df.empty:
+                        st.info("No hay suficientes datos para calcular métricas de riesgo.")
+                    else:
+                        port_ret = returns_df.mul(weights, axis=1).sum(axis=1)
+                        vol = annualized_volatility(port_ret)
+                        b = beta(port_ret, bench_ret)
+                        var_95 = historical_var(port_ret)
+                        opt_w = markowitz_optimize(returns_df)
+
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Volatilidad anualizada", f"{vol:.2%}" if vol == vol else "N/A")
+                        c2.metric("Beta vs S&P 500", f"{b:.2f}" if b == b else "N/A")
+                        c3.metric("VaR 5%", f"{var_95:.2%}" if var_95 == var_95 else "N/A")
+
+                        st.subheader("Pesos óptimos (Markowitz)")
+                        if opt_w.empty:
+                            st.info("No se pudieron calcular pesos óptimos.")
+                        else:
+                            st.dataframe(pd.DataFrame({"peso": opt_w}))
+
+                        st.subheader("Simulación Monte Carlo")
+                        n_sims = st.number_input("N° simulaciones", min_value=100, value=1000, step=100)
+                        horizon = st.number_input("Horizonte (días)", min_value=1, value=30, step=1)
+                        sims = monte_carlo_simulation(returns_df, weights, n_sims=int(n_sims), horizon=int(horizon))
+                        if sims.size:
+                            hist, bins = np.histogram(sims, bins=20)
+                            st.bar_chart(pd.DataFrame({"freq": hist}, index=bins[:-1]))
+                        else:
+                            st.info("Sin datos para la simulación Monte Carlo.")
+
+                        st.subheader("Escenarios de stress")
+                        shocks = {}
+                        for sym in returns_df.columns:
+                            shocks[sym] = st.number_input(f"Shock {sym} (%)", value=0.0, step=1.0) / 100.0
+                        stressed = apply_stress(weights, shocks)
+                        st.write(f"Retorno con shocks: {stressed - 1:.2%}")
+
+                        st.subheader("Correlación del Portafolio")
+                        fig = plot_correlation_heatmap(prices_df)
+                        if fig:
+                            _ = st.plotly_chart(fig, use_container_width=True)
+                            st.caption("""
+                                Un heatmap de correlación muestra cómo se mueven los activos entre sí.
+                                **Azul (cercano a 1)**: Se mueven juntos.
+                                **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
+                                **Blanco (cercano a 0)**: No tienen relación.
+                                Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
+                            """)
+                        else:
+                            st.info("No se pudo calcular la correlación del portafolio.")
             else:
                 st.info("Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación.")
+                st.info("No hay símbolos en el portafolio para analizar.")
 
         # Pestaña 4
         with tabs[3]:
