@@ -42,8 +42,8 @@ def map_to_us_ticker(simbolo: str) -> Optional[str]:
 
 def classify_symbol(sym: str) -> str:
     """
-    Clasifica por símbolo usando listas del config (cedears/etfs) y heurísticas.
-    Devuelve una de: 'CEDEAR','ETF','Bono','Letra','FCI','Acción','Otro'
+    Clasifica por símbolo usando listas del config (cedears/etfs) y patrones
+    configurables. Devuelve una de: 'CEDEAR','ETF','Bono','Letra','FCI','Acción','Otro'
     """
     s = clean_symbol(sym)
     cfg = get_config()
@@ -51,6 +51,7 @@ def classify_symbol(sym: str) -> str:
     etf_set = set(map(clean_symbol, cfg.get("etfs", []) or []))
     acciones_ar = set(map(clean_symbol, cfg.get("acciones_ar", []) or []))
     fci_set = set(map(clean_symbol, cfg.get("fci_symbols", []) or []))
+    pattern_map = cfg.get("classification_patterns", {}) or {}
 
     # Listas explícitas desde config
     if s in etf_set:

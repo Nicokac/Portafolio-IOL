@@ -68,6 +68,14 @@ def get_config() -> dict:
                 cfg["cedear_to_us"] = {}
             if not isinstance(cfg.get("etfs", []), list):
                 cfg["etfs"] = []
+            if not isinstance(cfg.get("acciones_ar", []), list):
+                cfg["acciones_ar"] = []
+            if not isinstance(cfg.get("fci_symbols", []), list):
+                cfg["fci_symbols"] = []
+            if not isinstance(cfg.get("scale_overrides", {}), dict):
+                cfg["scale_overrides"] = {}
+            if not isinstance(cfg.get("classification_patterns", {}), dict):
+                cfg["classification_patterns"] = {}
             if not isinstance(cfg.get("scale_overrides", {}), dict):
                 cfg["scale_overrides"] = {}
             return cfg
