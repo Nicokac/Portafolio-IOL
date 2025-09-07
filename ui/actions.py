@@ -2,9 +2,14 @@ from __future__ import annotations
 import time
 import streamlit as st
 from infrastructure.iol.auth import IOLAuth
+from shared.config import settings
 
-def render_action_menu(user: str, password: str) -> None:
-    """Render refresh and relogin actions in a compact popover."""
+
+def render_action_menu() -> None:
+    """Render refresh and logout actions in a compact popover."""
+    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+
     pop = st.popover("⚙️ Acciones")
     with pop:
         st.caption("Operaciones rápidas")
@@ -12,8 +17,8 @@ def render_action_menu(user: str, password: str) -> None:
         if c1.button("⟳ Refrescar", use_container_width=True):
             st.session_state["refresh_pending"] = True
             st.rerun()
-        if c2.button("🔄 Relogin", use_container_width=True):
-            st.session_state["relogin_pending"] = True
+        if c2.button("🔒 Cerrar sesión", use_container_width=True):
+            st.session_state["logout_pending"] = True
             st.rerun()
 
     if st.session_state.pop("refresh_pending", False):
@@ -22,23 +27,29 @@ def render_action_menu(user: str, password: str) -> None:
         st.session_state["show_refresh_toast"] = True
         st.rerun()
 
-    if st.session_state.pop("relogin_pending", False):
-        with st.spinner("Eliminando tokens..."):
+    if st.session_state.pop("logout_pending", False):
+        err = ""
+        with st.spinner("Cerrando sesión..."):
             try:
-                IOLAuth(user, password).clear_tokens()
-                st.session_state["client_salt"] = int(time.time())
-                st.session_state["relogin_done"] = True
+                IOLAuth(user or "", password or "").clear_tokens()
             except Exception as e:
-                st.session_state["relogin_error"] = str(e)
+                err = str(e)
+        st.session_state.clear()
+        if err:
+            st.session_state["logout_error"] = err
+        else:
+            st.session_state["logout_done"] = True
         st.rerun()
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")
 
-    if st.session_state.pop("relogin_done", False):
-        st.success("Tokens eliminados. Recargando…")
-
-    err = st.session_state.pop("relogin_error", "")
-    if err:
-        st.error(f"No se pudo limpiar tokens: {err}")
+    if st.session_state.pop("logout_done", False):
+        st.success("Sesión cerrada")
         st.stop()
+
+    err = st.session_state.pop("logout_error", "")
+    if err:
+        st.error(f"No se pudo cerrar sesión: {err}")
+        st.stop()
+

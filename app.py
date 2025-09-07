@@ -127,15 +127,23 @@ def get_fx_rates_cached():
         st.session_state["fx_rates_ts"] = now
     return st.session_state.get("fx_rates", {})
 
-def _build_client(user: str, password: str) -> IIOLProvider:
+def _build_client() -> IIOLProvider:
+    """Build an IOL client using credentials from session state or settings."""
+    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     salt = str(st.session_state.get("client_salt", ""))
     cache_key = hashlib.sha256(f"{user}:{password}:{salt}".encode()).hexdigest()
     return get_client_cached(cache_key, user, password)
 
 def main():
-    # Credenciales desde settings (cargadas de .env si existe)
-    user = settings.IOL_USERNAME
-    password = settings.IOL_PASSWORD
+    # --- CREDENCIALES ---
+    if not st.session_state.get("IOL_USERNAME") or not st.session_state.get("IOL_PASSWORD"):
+        st.text_input("Usuario", key="IOL_USERNAME")
+        st.text_input("Contraseña", type="password", key="IOL_PASSWORD")
+        st.stop()
+
+    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     if not user or not password:
         st.error("Falta IOL_USERNAME / IOL_PASSWORD en tu archivo .env")
         st.stop()
@@ -151,7 +159,7 @@ def main():
     with hcol2:
         now = datetime.now()
         st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
-        render_action_menu(user, password)
+        render_action_menu()
 
     # ===== LAYOUT DOS COLUMNAS =====
     main_col, side_col = st.columns([4, 1])
@@ -183,7 +191,7 @@ def main():
         tasvc = TAService()
 
         # --- DATA PORTAFOLIO ---
-        cli = _build_client(user, password)
+        cli = _build_client()
         with st.spinner("Cargando y actualizando portafolio... ⏳"):
             try:
                 payload = fetch_portfolio(cli)
