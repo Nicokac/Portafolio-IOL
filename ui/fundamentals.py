@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import pandas as pd
 import streamlit as st
+import plotly.express as px
 
 from shared.utils import _is_none_nan_inf, format_number, format_percent
+from .export import download_chart
 
 # Meta información de indicadores: etiqueta, formato, descripción y fuente
 INDICATORS = {
@@ -102,3 +104,37 @@ def render_fundamental_ranking(df: pd.DataFrame):
     low_esg = df_sorted[df_sorted["esg_score"].notna() & (df_sorted["esg_score"] < 30)]
     if not low_esg.empty:
         st.warning("Alerta ESG: puntajes ESG bajos detectados.")
+
+
+def render_sector_comparison(df: pd.DataFrame):
+    """Graficar métricas comparadas contra el promedio del sector."""
+    if df is None or df.empty:
+        return
+    st.subheader("Comparativa vs promedio del sector")
+    metrics = [
+        "pe_ratio",
+        "price_to_book",
+        "return_on_equity",
+        "profit_margin",
+        "debt_to_equity",
+    ]
+    metric = st.selectbox("Métrica", metrics)
+    dfm = df[df[metric].notna()].copy()
+    if dfm.empty:
+        st.info("No hay datos disponibles para la métrica seleccionada.")
+        return
+    dfm["sector_avg"] = dfm.groupby("sector")[metric].transform("mean")
+    dfm["rel"] = dfm[metric] / dfm["sector_avg"]
+    fig = px.bar(dfm, x="symbol", y="rel", color="sector", labels={"rel": "Ratio vs sector"})
+    fig.add_hline(
+        y=1,
+        line_dash="dash",
+        line_color="red",
+        annotation_text="Promedio sector",
+        annotation_position="top left",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    download_chart(fig, f"sector_{metric}.png")
+    st.caption(
+        "Valores mayores a 1 indican métricas por encima del promedio del sector (posible sobrevaluación)."
+    )

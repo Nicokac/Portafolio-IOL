@@ -19,7 +19,11 @@ from ui.tables import render_totals, render_table
 #from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
 from ui.fx_panels import render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
-from ui.fundamentals import render_fundamental_data, render_fundamental_ranking
+from ui.fundamentals import (
+    render_fundamental_data,
+    render_fundamental_ranking,
+    render_sector_comparison,
+)
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
 from ui.charts import (
@@ -430,6 +434,33 @@ def main():
                         c2.metric("Beta vs S&P 500", f"{b:.2f}" if b == b else "N/A")
                         c3.metric("VaR 5%", f"{var_95:.2%}" if var_95 == var_95 else "N/A")
 
+                        with st.expander("Volatilidad - evolución"):
+                            rolling_vol = port_ret.rolling(30).std() * np.sqrt(252)
+                            fig_vol = px.line(
+                                rolling_vol,
+                                labels={"index": "Fecha", "value": "Volatilidad anualizada"},
+                            )
+                            st.plotly_chart(fig_vol, use_container_width=True)
+                            download_chart(fig_vol, "volatilidad_rolling.png")
+                            st.caption(
+                                "La volatilidad refleja la variabilidad de los retornos; aquí se muestra en una ventana móvil de 30 días."
+                            )
+
+                        with st.expander("Distribución de retornos y VaR"):
+                            var_threshold = np.quantile(port_ret, 0.05)
+                            fig_var = px.histogram(port_ret, nbins=50)
+                            fig_var.add_vline(
+                                x=var_threshold,
+                                line_color="red",
+                                annotation_text="VaR 5%",
+                                annotation_position="top left",
+                            )
+                            st.plotly_chart(fig_var, use_container_width=True)
+                            download_chart(fig_var, "distribucion_var.png")
+                            st.caption(
+                                "El VaR al 5% indica que en el 95% de los días la pérdida no superará este umbral."
+                            )
+
                         st.subheader("Pesos óptimos (Markowitz)")
                         if opt_w.empty:
                             st.info("No se pudieron calcular pesos óptimos.")
@@ -447,9 +478,26 @@ def main():
                             st.info("Sin datos para la simulación Monte Carlo.")
 
                         st.subheader("Escenarios de stress")
+                        templates = {
+                            "Personalizado": None,
+                            "Caída moderada (-5%)": -0.05,
+                            "Crash severo (-20%)": -0.20,
+                            "Rally (+5%)": 0.05,
+                        }
+                        tmpl = st.selectbox("Plantilla preconfigurada", list(templates.keys()))
                         shocks = {}
-                        for sym in returns_df.columns:
-                            shocks[sym] = st.number_input(f"Shock {sym} (%)", value=0.0, step=1.0) / 100.0
+                        # for sym in returns_df.columns:
+                        #     shocks[sym] = st.number_input(f"Shock {sym} (%)", value=0.0, step=1.0) / 100.0
+                        if templates[tmpl] is None:
+                            for sym in returns_df.columns:
+                                shocks[sym] = st.number_input(
+                                    f"Shock {sym} (%)", value=0.0, step=1.0
+                                ) / 100.0
+                        else:
+                            shocks = {sym: templates[tmpl] for sym in returns_df.columns}
+                            st.caption(
+                                f"Aplicando un shock uniforme de {templates[tmpl]:.0%} a todos los activos."
+                            )
                         base_prices = pd.Series(1.0, index=weights.index)
                         stressed_val = apply_stress(base_prices, weights, shocks)
                         st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
@@ -464,6 +512,7 @@ def main():
                 with st.spinner("Descargando datos fundamentales…"):
                     fund_df = tasvc.portfolio_fundamentals(portfolio_symbols)
                 render_fundamental_ranking(fund_df)
+                render_sector_comparison(fund_df)
             else:
                 st.info("No hay símbolos en el portafolio para analizar.")
 
