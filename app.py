@@ -153,7 +153,6 @@ def main():
     fx_rates = get_fx_rates_cached()
 
     # ===== HEADER =====
-    #render_header()
     if not fx_rates:
         st.warning("No se pudieron obtener las cotizaciones del dólar.")
     render_header(rates=fx_rates)
