@@ -19,24 +19,20 @@ class IOLClientAdapter(IIOLProvider):
             data = self._cli.get_portfolio() or {}
             try:
                 PORTFOLIO_CACHE.parent.mkdir(parents=True, exist_ok=True)
-                cache_data = dict(data)
-                cache_data.pop("_cached", None)
                 PORTFOLIO_CACHE.write_text(
-                    json.dumps(cache_data, ensure_ascii=False, indent=2),
+                    json.dumps(data, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
             except Exception as e:
                 logger.debug("No se pudo guardar cache portafolio: %s", e)
-            data["_cached"] = False
             return data
         except Exception as e:
             logger.warning("get_portfolio falló: %s", e)
             try:
                 data = json.loads(PORTFOLIO_CACHE.read_text(encoding="utf-8"))
-                data["_cached"] = True
                 return data
             except Exception:
-                return {"activos": [], "_cached": True}
+                return {"activos": []}
 
     def get_last_price(self, mercado: str, simbolo: str):
         return self._cli.get_last_price(mercado=mercado, simbolo=simbolo)
