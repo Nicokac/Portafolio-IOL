@@ -117,6 +117,16 @@ def fetch_fx_rates():
         logger.warning("FX provider failed: %s", e)
         return {}
 
+def get_fx_rates_cached():
+    """Retrieve FX rates once per TTL and store them in session state."""
+    now = time.time()
+    ttl = getattr(settings, "cache_ttl_fx", 0)
+    last = st.session_state.get("fx_rates_ts", 0)
+    if "fx_rates" not in st.session_state or now - last > ttl:
+        st.session_state["fx_rates"] = fetch_fx_rates()
+        st.session_state["fx_rates_ts"] = now
+    return st.session_state.get("fx_rates", {})
+
 def _build_client(user: str, password: str) -> IIOLProvider:
     salt = str(st.session_state.get("client_salt", ""))
     cache_key = hashlib.sha256(f"{user}:{password}:{salt}".encode()).hexdigest()
@@ -130,13 +140,13 @@ def main():
         st.error("Falta IOL_USERNAME / IOL_PASSWORD en tu archivo .env")
         st.stop()
 
+    fx_rates = get_fx_rates_cached()
+
     # ===== HEADER =====
     #render_header()
-    # render_header(rates=fetch_fx_rates())
-    rates_header = fetch_fx_rates()
-    if not rates_header:
+    if not fx_rates:
         st.warning("No se pudieron obtener las cotizaciones del dólar.")
-    render_header(rates=rates_header)
+    render_header(rates=fx_rates)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
         now = datetime.now()
@@ -147,7 +157,7 @@ def main():
     main_col, side_col = st.columns([4, 1])
 
     with side_col:
-        rates = fetch_fx_rates() or {}
+        rates = fx_rates or {}
         #render_fx_panel(rates)
         if not rates:
             st.warning("No se pudieron obtener las cotizaciones del dólar.")
@@ -259,7 +269,7 @@ def main():
                         maxlen = getattr(settings, "quotes_hist_maxlen", 500)
                         st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
 
-        ccl_rate = (fetch_fx_rates() or {}).get("ccl")
+        ccl_rate = fx_rates.get("ccl")
 
         # === TABS ===
         tabs = st.tabs(["📂 Portafolio", "📊 Análisis avanzado", "🎲 Análisis de Riesgo", "📑 Análisis fundamental", "🔎 Análisis de activos"])
