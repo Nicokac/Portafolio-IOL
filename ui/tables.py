@@ -1,5 +1,5 @@
-# ui\tables.py
 from __future__ import annotations
+import math
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -44,7 +44,30 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         st.info("Sin datos para mostrar.")
         return
 
-    cols_order = ["mercado","simbolo","tipo","cantidad","ultimo","valor_actual","costo","pl","pl_%","pl_d","chg_%"]
+    palette = get_active_palette()
+    st.markdown(f"""
+        <style>
+        div[data-testid='stDataFrame'] thead tr th {{
+            position: sticky;
+            top: 0;
+            background-color: {palette.bg};
+            color: {palette.text};
+        }}
+        div[data-testid='stDataFrame'] tbody tr {{
+            background-color: {palette.bg};
+            color: {palette.text};
+        }}
+        div[data-testid='stDataFrame'] tbody td {{
+            transition: background-color 0.2s ease;
+        }}
+        div[data-testid='stDataFrame'] tbody td:hover {{
+            background-color: {palette.highlight_bg};
+            color: {palette.highlight_text};
+        }}
+        </style>
+    """, unsafe_allow_html=True)
+
+    cols_order = ["mercado", "simbolo", "tipo", "cantidad", "ultimo", "valor_actual", "costo", "pl", "pl_%", "pl_d", "chg_%"]
     for c in cols_order:
         if c not in df_view.columns:
             df_view[c] = np.nan
@@ -54,10 +77,23 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     except Exception:
         df_sorted = df_view.copy()
 
+    search = st.text_input("Buscar", "").strip().lower()
+    if search:
+        mask = (
+            df_sorted["simbolo"].astype(str).str.lower().str.contains(search)
+            | df_sorted["tipo"].astype(str).str.lower().str.contains(search)
+        )
+        df_sorted = df_sorted[mask]
+
+    if df_sorted.empty:
+        st.info("Sin datos para mostrar.")
+        return
+
     quotes_hist: dict = st.session_state.get("quotes_hist", {})
     SPARK_N = 30
 
     fmt_rows = []
+    chg_list: list[float | None] = []
     all_spark_vals: list[float] = []
 
     for _, r in df_sorted.iterrows():
@@ -66,7 +102,6 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         cur = _detect_currency(sym, tipo)
 
         row = {
-            "BCBA": str(r["mercado"]),
             "Símbolo": sym,
             "Tipo": tipo,
             "Cantidad": format_number(r["cantidad"]),
@@ -77,61 +112,41 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
         pl_val = r.get("pl")
         pl_pct_val = r.get("pl_%")
-        if not _is_none_nan_inf(pl_val):
-            label_pl = format_money(pl_val, currency=cur)
-            if not _is_none_nan_inf(pl_pct_val):
-                label_pl += f" ({float(pl_pct_val):.2f}%)"
-        else:
-            label_pl = "—"
-        row["P/L Acumulado"] = label_pl
+        row["P/L Acum Valor"] = format_money(pl_val, currency=cur) if not _is_none_nan_inf(pl_val) else "—"
+        row["P/L Acum %"] = f"{float(pl_pct_val):.2f}%" if not _is_none_nan_inf(pl_pct_val) else "—"
 
         pl_d_val = r.get("pl_d")
         chg_pct = r.get("chg_%")
-        if not _is_none_nan_inf(pl_d_val):
-            label_pld = format_money(pl_d_val, currency=cur)
-            if not _is_none_nan_inf(chg_pct):
-                label_pld += f" ({float(chg_pct):.2f} %)"
-        else:
-            label_pld = "—"
-        row["P/L diaria"] = label_pld
+        row["P/L diario Valor"] = format_money(pl_d_val, currency=cur) if not _is_none_nan_inf(pl_d_val) else "—"
+        row["P/L diario %"] = f"{float(chg_pct):.2f}%" if not _is_none_nan_inf(chg_pct) else "—"
+        chg_list.append(_as_float_or_none(chg_pct))
 
         hist = quotes_hist.get(sym.upper(), [])
-        vals = []
-        for h in hist:
-            v = _as_float_or_none(h.get("chg_pct"))
-            if v is not None:
-                vals.append(v)
-        vals = vals[-SPARK_N:]
+        vals = [
+            _as_float_or_none(h.get("chg_pct"))
+            for h in hist[-SPARK_N:] if _as_float_or_none(h.get("chg_pct")) is not None
+        ]
         row["Intradía %"] = vals if len(vals) >= 2 else None
         all_spark_vals.extend(vals)
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
-            row["Val. (USD CCL)"] = format_money(
-                (float(r["valor_actual"]) / rate) if not _is_none_nan_inf(r["valor_actual"]) else None,
-                "USD",
-            )
-            row["Costo (USD CCL)"] = format_money(
-                (float(r["costo"]) / rate) if not _is_none_nan_inf(r["costo"]) else None,
-                "USD",
-            )
-            row["P/L (USD CCL)"] = format_money(
-                (float(r["pl"]) / rate) if not _is_none_nan_inf(r["pl"]) else None,
-                "USD",
-            )
+            row["Val. (USD CCL)"] = format_money((float(r["valor_actual"]) / rate) if not _is_none_nan_inf(r["valor_actual"]) else None, "USD")
+            row["Costo (USD CCL)"] = format_money((float(r["costo"]) / rate) if not _is_none_nan_inf(r["costo"]) else None, "USD")
+            row["P/L (USD CCL)"] = format_money((float(r["pl"]) / rate) if not _is_none_nan_inf(r["pl"]) else None, "USD")
+
         fmt_rows.append(row)
 
     df_tbl = pd.DataFrame(fmt_rows)
 
     def _color_pl(col: pd.Series):
-        pal = get_active_palette()
         styles = []
         for v in col:
             s = str(v or "").strip()
             if s.startswith("-"):
-                styles.append(f"color: {pal.negative}; font-weight: 600;")
+                styles.append(f"color: {palette.negative}; font-weight: 600;")
             elif s not in {"—", ""}:
-                styles.append(f"color: {pal.positive}; font-weight: 600;")
+                styles.append(f"color: {palette.positive}; font-weight: 600;")
             else:
                 styles.append("")
         return styles
@@ -143,17 +158,17 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     else:
         y_min, y_max = -10.0, 10.0
 
-    # Descripciones de columnas (tooltips)
     column_help = {
-        "BCBA": "Mercado de negociación",
         "Símbolo": "Ticker del activo",
         "Tipo": "Clasificación del instrumento",
         "Cantidad": "Cantidad de títulos en cartera",
         "Último precio": "Última cotización disponible",
         "Valorizado": "Valor actual (cantidad * último precio)",
         "Costo": "Costo total de adquisición",
-        "P/L Acumulado": "Ganancia/Pérdida desde la compra",
-        "P/L diaria": "Ganancia/Pérdida de la rueda actual",
+        "P/L Acum Valor": "Ganancia/Pérdida desde la compra",
+        "P/L Acum %": "Ganancia/Pérdida porcentual desde la compra",
+        "P/L diario Valor": "Ganancia/Pérdida de la rueda actual",
+        "P/L diario %": "Variación porcentual de la rueda actual",
         "Val. (USD CCL)": "Valorizado en USD usando CCL",
         "Costo (USD CCL)": "Costo en USD usando CCL",
         "P/L (USD CCL)": "Ganancia/Pérdida en USD usando CCL",
@@ -173,15 +188,19 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     )
 
     st.subheader("Detalle por símbolo")
-    # csv_data = df_tbl.to_csv(index=False).encode("utf-8")
-    # st.download_button("⬇️ Exportar CSV", csv_data, file_name="portafolio.csv", mime="text/csv")
     download_csv(df_tbl, "portafolio.csv")
-    st.markdown(
-        "<style>div[data-testid='stDataFrame'] thead tr th{position:sticky;top:0;background:var(--color-bg);}</style>",
-        unsafe_allow_html=True,
-    )
+
+    page_size = st.number_input("Filas por página", min_value=5, max_value=100, value=20, step=5)
+    total_pages = max(1, math.ceil(len(df_tbl) / page_size))
+    page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1)
+    start = (page - 1) * page_size
+    end = start + page_size
+
+    df_page = df_tbl.iloc[start:end]
+
     st.dataframe(
-        df_tbl.style.apply(_color_pl, subset=["P/L Acumulado", "P/L diaria"]),
+        df_page.style
+            .apply(_color_pl, subset=["P/L Acum Valor", "P/L diario Valor", "P/L Acum %", "P/L diario %"]),
         use_container_width=True,
         hide_index=True,
         height=420,
