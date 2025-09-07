@@ -7,6 +7,7 @@ from .portfolio_service import get_config, clean_symbol, map_to_us_ticker
 import numpy as np
 import pandas as pd
 import streamlit as st
+from requests.exceptions import HTTPError
 
 # yfinance para históricos
 try:
@@ -297,11 +298,19 @@ def get_fundamental_data(ticker: str) -> dict:
     if yf is None:
         st.warning("La librería 'yfinance' no está disponible.")
         return {}
+    
+    if ticker.startswith("^"):
+        return {}
 
     try:
+        if ticker.startswith("^"):
+            return {}
         MAX_PLAUSIBLE_YIELD = 20.0  # %
         stock = yf.Ticker(ticker)
-        info = stock.info
+        try:
+            info = stock.info
+        except HTTPError:
+            return {}
 
         if not info or info.get("marketCap") is None:
             return {"error": "No se encontraron datos fundamentales para este ticker."}
@@ -343,11 +352,14 @@ def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
     rows = []
     for sym in simbolos:
         ticker = map_to_us_ticker(sym)
-        if not ticker:
+        if not ticker or ticker.startswith("^"):
             continue
         try:
             stock = yf.Ticker(ticker)
-            info = stock.info or {}
+            try:
+                info = stock.info or {}
+            except HTTPError:
+                info = {}
             sustain = getattr(stock, "sustainability", None)
             esg_score = None
             if isinstance(sustain, pd.DataFrame) and not sustain.empty:
