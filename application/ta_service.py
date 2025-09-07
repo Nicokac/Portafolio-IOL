@@ -16,14 +16,6 @@ except ImportError:  # pragma: no cover
     subprocess.check_call([sys.executable, "-m", "pip", "install", "yfinance"])
     import yfinance as yf
 
-# # Usamos sólo RSI de la librería 'ta'
-# try:
-#     from ta.momentum import RSIIndicator
-# except ImportError:  # pragma: no cover
-#     import subprocess, sys
-#     subprocess.check_call([sys.executable, "-m", "pip", "install", "ta"])
-#     from ta.momentum import RSIIndicator
-# Indicadores técnicos (ta)
 try:  # pragma: no cover
     from ta.momentum import RSIIndicator, StochasticOscillator
     from ta.trend import MACD, IchimokuIndicator
@@ -137,15 +129,19 @@ def fetch_with_indicators(
         logger.info("No se pudo mapear %s a ticker US utilizable.", simbolo)
         return pd.DataFrame()
 
-    hist = yf.download(
-        ticker,
-        period=period,
-        interval=interval,
-        auto_adjust=False,
-        progress=False,
-        group_by="column",  # ayuda a evitar multiindex por ticker
-        threads=False,
-    )
+    try:
+        hist = yf.download(
+            ticker,
+            period=period,
+            interval=interval,
+            auto_adjust=False,
+            progress=False,
+            group_by="column",  # ayuda a evitar multiindex por ticker
+            threads=False,
+        )
+    except Exception as e:
+        logger.error("yfinance error (%s): %s", ticker, e)
+        return pd.DataFrame()
     if hist is None or hist.empty:
         return pd.DataFrame()
 

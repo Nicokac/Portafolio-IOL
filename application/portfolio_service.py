@@ -11,6 +11,7 @@ import logging
 from functools import lru_cache
 from shared.utils import _to_float
 from shared.config import get_config
+from infrastructure.asset_catalog import get_asset_catalog
 
 import numpy as np
 import pandas as pd
@@ -47,11 +48,16 @@ def classify_symbol(sym: str) -> str:
     """
     s = clean_symbol(sym)
     cfg = get_config()
+    catalog = get_asset_catalog()
     cedears_map = cfg.get("cedear_to_us", {}) or {}
     etf_set = set(map(clean_symbol, cfg.get("etfs", []) or []))
     acciones_ar = set(map(clean_symbol, cfg.get("acciones_ar", []) or []))
     fci_set = set(map(clean_symbol, cfg.get("fci_symbols", []) or []))
     pattern_map = cfg.get("classification_patterns", {}) or {}
+
+    # Catálogo centralizado
+    if s in catalog:
+        return catalog[s]
 
     # Listas explícitas desde config
     if s in etf_set:
@@ -66,6 +72,15 @@ def classify_symbol(sym: str) -> str:
         return "Bono"
     if s.startswith("S") and any(ch.isdigit() for ch in s):
         return "Letra"
+    # Clasificación basada en patrones configurables
+    for tipo, patterns in pattern_map.items():
+        for pat in patterns or []:
+            try:
+                if re.match(pat, s):
+                    return tipo
+            except re.error:
+                continue
+            
     if s in acciones_ar:
         return "Acción"
     if s.isalpha() and 3 <= len(s) <= 5:

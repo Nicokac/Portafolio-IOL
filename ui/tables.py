@@ -11,6 +11,7 @@ from shared.utils import (
     format_price,
 )
 from .palette import get_active_palette
+from .export import download_csv
 
 def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
     total_val  = float(np.nansum(df_view.get("valor_actual", pd.Series(dtype=float)).values))
@@ -172,8 +173,9 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     )
 
     st.subheader("Detalle por símbolo")
-    csv_data = df_tbl.to_csv(index=False).encode("utf-8")
-    st.download_button("⬇️ Exportar CSV", csv_data, file_name="portafolio.csv", mime="text/csv")
+    # csv_data = df_tbl.to_csv(index=False).encode("utf-8")
+    # st.download_button("⬇️ Exportar CSV", csv_data, file_name="portafolio.csv", mime="text/csv")
+    download_csv(df_tbl, "portafolio.csv")
     st.markdown(
         "<style>div[data-testid='stDataFrame'] thead tr th{position:sticky;top:0;background:var(--color-bg);}</style>",
         unsafe_allow_html=True,

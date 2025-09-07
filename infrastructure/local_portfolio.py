@@ -4,9 +4,10 @@ from typing import Any, Dict
 
 
 class LocalPortfolioRepository:
-    """Simple JSON-backed storage for portfolio positions.
+    """
+    Almacenamiento simple con respaldo JSON para posiciones de cartera.
 
-    The data layout follows the same structure returned by the IOL API:
+    El diseño de los datos sigue la misma estructura devuelta por la API de IOL:
     {"activos": [ ... ]}
     """
 
@@ -14,8 +15,9 @@ class LocalPortfolioRepository:
         self.path = Path(path)
 
     def load(self) -> Dict[str, Any]:
-        """Load portfolio from disk returning a dictionary.
-        If the file doesn't exist or is invalid, an empty portfolio is returned.
+        """
+        Cargar portafolio desde el disco devolviendo un diccionario.
+        Si el archivo no existe o no es válido, se devuelve un portafolio vacío.
         """
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
@@ -23,7 +25,7 @@ class LocalPortfolioRepository:
             return {"activos": []}
 
     def save(self, data: Dict[str, Any]) -> None:
-        """Persist portfolio data to disk."""
+        """Conservar los datos de la cartera en el disco."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(
             json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"

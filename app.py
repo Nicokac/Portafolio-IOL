@@ -32,6 +32,7 @@ from ui.charts import (
     plot_correlation_heatmap,
     plot_technical_analysis_chart,
 )
+from ui.export import download_chart
 
 # Infra: IOL + FX + cache quotes
 from infrastructure.iol.client import build_iol_client
@@ -105,7 +106,12 @@ def get_fx_provider() -> FXProviderAdapter:
 
 @st.cache_data(ttl=settings.cache_ttl_fx)
 def fetch_fx_rates():
-    return get_fx_provider().get_rates()
+    # return get_fx_provider().get_rates()
+    try:
+        return get_fx_provider().get_rates()
+    except Exception as e:
+        logger.warning("FX provider failed: %s", e)
+        return {}
 
 def _build_client(user: str, password: str) -> IIOLProvider:
     salt = str(st.session_state.get("client_salt", ""))
@@ -122,7 +128,11 @@ def main():
 
     # ===== HEADER =====
     #render_header()
-    render_header(rates=fetch_fx_rates())
+    # render_header(rates=fetch_fx_rates())
+    rates_header = fetch_fx_rates()
+    if not rates_header:
+        st.warning("No se pudieron obtener las cotizaciones del dólar.")
+    render_header(rates=rates_header)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
         now = datetime.now()
@@ -135,6 +145,8 @@ def main():
     with side_col:
         rates = fetch_fx_rates() or {}
         #render_fx_panel(rates)
+        if not rates:
+            st.warning("No se pudieron obtener las cotizaciones del dólar.")
         render_spreads(rates)
 
         c_ts = rates.get("_ts")
@@ -164,6 +176,9 @@ def main():
             except Exception as e:
                 st.error(f"Error al consultar portafolio: {e}")
                 st.stop()
+
+        if isinstance(payload, dict) and payload.get("_cached"):
+            st.warning("No se pudo contactar a IOL; mostrando datos del portafolio en caché.")
 
         if isinstance(payload, dict) and "message" in payload:
             st.info(f"ℹ️ Mensaje de IOL: \"{payload['message']}\"")
@@ -258,19 +273,35 @@ def main():
                 with colA:
                     st.subheader("P/L por símbolo (Top N)")
                     fig = plot_pl_topn(df_view, n=top_n)
-                    _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("Sin datos para graficar P/L Top N.")
+                    if fig is not None:
+                        st.plotly_chart(fig, use_container_width=True, key="pl_topn")
+                        download_chart(fig, "pl_topn.png")
+                    else:
+                        st.info("Sin datos para graficar P/L Top N.")
                 with colB:
                     st.subheader("Composición por tipo (Donut)")
                     fig = plot_donut_tipo(df_view)
-                    _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("No hay datos para el donut por tipo.")
+                    if fig is not None:
+                        st.plotly_chart(fig, use_container_width=True, key="donut_tipo")
+                        download_chart(fig, "composicion_tipo.png")
+                    else:
+                        st.info("No hay datos para el donut por tipo.")
 
                 st.subheader("Distribución por tipo (Valorizado)")
                 fig = plot_dist_por_tipo(df_view)
-                _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("No hay datos para la distribución por tipo.")
+                if fig is not None:
+                    st.plotly_chart(fig, use_container_width=True, key="dist_tipo")
+                    download_chart(fig, "distribucion_tipo.png")
+                else:
+                    st.info("No hay datos para la distribución por tipo.")
 
                 st.subheader("P/L diario por símbolo (Top N)")
                 fig = plot_pl_daily_topn(df_view, n=top_n)
-                _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("Aún no hay datos de P/L diario.")
+                if fig is not None:
+                    st.plotly_chart(fig, use_container_width=True, key="pl_diario")
+                    download_chart(fig, "pl_diario_topn.png")
+                else:
+                    st.info("Aún no hay datos de P/L diario.")
 
         # Pestaña 2
         with tabs[1]:
@@ -286,24 +317,30 @@ def main():
                     y_axis = st.selectbox("Eje Y", options=axis_options, index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1))
 
                 fig = plot_bubble_pl_vs_costo(df_view, x_axis=x_axis, y_axis=y_axis)
-                _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("No hay datos suficientes para el gráfico bubble.")
+                if fig is not None:
+                    st.plotly_chart(fig, use_container_width=True, key="bubble_pl_vs_costo")
+                    download_chart(fig, "bubble_pl_vs_costo.png")
+                else:
+                    st.info("No hay datos suficientes para el gráfico bubble.")
 
                 st.subheader("Heatmap de rendimiento (%) por símbolo")
                 fig = plot_heat_pl_pct(df_view)
-                _ = st.plotly_chart(fig, use_container_width=True) if fig is not None else st.info("No hay datos suficientes para el heatmap.")
+                if fig is not None:
+                    st.plotly_chart(fig, use_container_width=True, key="heatmap_rendimiento")
+                    download_chart(fig, "heat_pl_pct.png")
+                else:
+                    st.info("No hay datos suficientes para el heatmap.")
 
         # Pestaña 3
         with tabs[2]:
             st.subheader("Análisis de Correlación del Portafolio")
             corr_period = st.selectbox("Calcular correlación sobre el último período:", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
-            st.subheader("Análisis de Riesgo")
             portfolio_symbols = df_view["simbolo"].tolist()
             if len(portfolio_symbols) >= 2:
                 with st.spinner(f"Calculando correlación ({corr_period})…"):
                     hist_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period=corr_period)
                 fig = plot_correlation_heatmap(hist_df)
                 if fig:
-                    _ = st.plotly_chart(fig, use_container_width=True)
                     st.caption("""
                         Un heatmap de correlación muestra cómo se mueven los activos entre sí.
                         **Azul (cercano a 1)**: Se mueven juntos.
@@ -311,6 +348,8 @@ def main():
                         **Blanco (cercano a 0)**: No tienen relación.
                         Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                     """)
+                    st.plotly_chart(fig, use_container_width=True, key="corr_heatmap")
+                    download_chart(fig, "correlacion_portafolio.png")
                 else:
                     st.warning(f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación.")
             else:
@@ -442,7 +481,8 @@ def main():
                             st.info("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
                         else:
                             fig = plot_technical_analysis_chart(df_ind, sma_fast, sma_slow)
-                            _ = st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True, key="ta_chart")
+                            download_chart(fig, f"ta_{sym}.png")
                             alerts = tasvc.alerts_for(df_ind)
                             if alerts:
                                 for a in alerts:
