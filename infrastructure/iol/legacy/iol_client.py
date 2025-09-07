@@ -103,11 +103,12 @@ class IOLAuth:
             start = time.time()
             payload = {"username": self.user, "password": self.password, "grant_type": "password"}
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
             try:
+                r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
                 r.raise_for_status()
-            except requests.HTTPError as e:
-                raise RuntimeError(f"Login IOL falló ({r.status_code}). Detalle: {r.text[:300]}") from e
+            except requests.RequestException as e:
+                logger.warning("Login IOL falló: %s", e)
+                return {}
             self.tokens = r.json() or {}
             self._save_tokens(self.tokens)
             logger.info("IOL login ok en %d ms", _elapsed_ms(start))
@@ -121,12 +122,12 @@ class IOLAuth:
                 return self.login()
             payload = {"refresh_token": self.tokens["refresh_token"], "grant_type": "refresh_token"}
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
             try:
+                r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
                 r.raise_for_status()
-            except requests.HTTPError:
+            except requests.RequestException as e:
                 # si el refresh falla, re-login completo
-                logger.warning("Refresh falló; intentando login()")
+                logger.warning("Refresh falló; intentando login(): %s", e)
                 return self.login()
             self.tokens = r.json() or {}
             self._save_tokens(self.tokens)
@@ -146,7 +147,10 @@ class IOLAuth:
         # Nota: no chequeamos expiración aquí; _request se ocupa ante 401
         if not self.tokens.get("access_token"):
             self.login()
-        return {"Authorization": f"Bearer {self.tokens['access_token']}"}
+        token = self.tokens.get("access_token")
+        if not token:
+            return {}
+        return {"Authorization": f"Bearer {token}"}
 
 
 # =========================
@@ -173,7 +177,7 @@ class IOLClient:
         self._ensure_market_auth()
 
     # -------- Base request con retry/refresh --------
-    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
+    def _request(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
         """
         Request con:
         - Header Authorization dinámico
@@ -194,19 +198,25 @@ class IOLClient:
                     r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
                 r.raise_for_status()
                 return r
-            except Exception as e:
+            except requests.HTTPError as e:
                 last_exc = e
-                if attempt < RETRIES:
-                    time.sleep(BACKOFF_SEC * (attempt + 1))
-        assert last_exc is not None
-        raise last_exc
+                if e.response is not None and e.response.status_code == 404:
+                    logger.warning("%s %s devolvió 404", method, url)
+                    return None
+            except requests.RequestException as e:
+                last_exc = e
+            if attempt < RETRIES:
+                time.sleep(BACKOFF_SEC * (attempt + 1))
+        if last_exc:
+            logger.warning("Request %s %s falló: %s", method, url, last_exc)
+        return None
 
     # -------- Cuenta --------
     def get_portfolio(self) -> Dict[str, Any]:
         start = time.time()
         r = self._request("GET", PORTFOLIO_URL)
         logger.info("get_portfolio %s ms", _elapsed_ms(start))
-        return r.json()
+        return r.json() if r is not None else {}
 
     # -------- Mercado (iolConn) --------
     def _ensure_market_auth(self) -> None:
