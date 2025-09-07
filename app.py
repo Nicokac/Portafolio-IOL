@@ -68,11 +68,12 @@ logger = logging.getLogger(__name__)
 # Configuración de UI centralizada (tema y layout)
 init_ui()
 
-# Precarga credenciales desde settings en session_state
-if settings.IOL_USERNAME:
-    st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
-if settings.IOL_PASSWORD:
-    st.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
+# Precarga credenciales desde settings en session_state, salvo que se fuerce el login
+if not st.session_state.get("force_login"):
+    if settings.IOL_USERNAME:
+        st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
+    if settings.IOL_PASSWORD:
+        st.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
 
 # === Cache de alto nivel ===
 @st.cache_resource
