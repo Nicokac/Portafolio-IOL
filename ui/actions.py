@@ -7,8 +7,14 @@ from shared.config import settings
 
 def render_action_menu() -> None:
     """Render refresh and logout actions in a compact popover."""
-    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    # user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    # password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    if st.session_state.get("force_login"):
+        user = st.session_state.get("IOL_USERNAME")
+        password = st.session_state.get("IOL_PASSWORD")
+    else:
+        user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+        password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
 
     pop = st.popover("⚙️ Acciones")
     with pop:
