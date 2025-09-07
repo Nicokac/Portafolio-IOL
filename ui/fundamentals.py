@@ -6,7 +6,7 @@ import streamlit as st
 import plotly.express as px
 
 from shared.utils import _is_none_nan_inf, format_number, format_percent
-from .export import download_chart
+from .export import PLOTLY_CONFIG
 
 # Meta información de indicadores: etiqueta, formato, descripción y fuente
 INDICATORS = {
@@ -133,8 +133,7 @@ def render_sector_comparison(df: pd.DataFrame):
         annotation_text="Promedio sector",
         annotation_position="top left",
     )
-    st.plotly_chart(fig, use_container_width=True)
-    download_chart(fig, f"sector_{metric}.png")
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
     st.caption(
         "Valores mayores a 1 indican métricas por encima del promedio del sector (posible sobrevaluación)."
     )

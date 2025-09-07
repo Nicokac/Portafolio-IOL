@@ -37,7 +37,7 @@ from ui.charts import (
     plot_technical_analysis_chart,
 )
 import plotly.express as px
-from ui.export import download_chart
+from ui.export import PLOTLY_CONFIG
 
 # Infra: IOL + FX + cache quotes
 from infrastructure.iol.client import build_iol_client
@@ -287,32 +287,48 @@ def main():
                     st.subheader("P/L por símbolo (Top N)")
                     fig = plot_pl_topn(df_view, n=top_n)
                     if fig is not None:
-                        st.plotly_chart(fig, use_container_width=True, key="pl_topn")
-                        download_chart(fig, "pl_topn.png")
+                        st.plotly_chart(
+                            fig,
+                            use_container_width=True,
+                            key="pl_topn",
+                            config=PLOTLY_CONFIG,
+                        )
                     else:
                         st.info("Sin datos para graficar P/L Top N.")
                 with colB:
                     st.subheader("Composición por tipo (Donut)")
                     fig = plot_donut_tipo(df_view)
                     if fig is not None:
-                        st.plotly_chart(fig, use_container_width=True, key="donut_tipo")
-                        download_chart(fig, "composicion_tipo.png")
+                        st.plotly_chart(
+                            fig,
+                            use_container_width=True,
+                            key="donut_tipo",
+                            config=PLOTLY_CONFIG,
+                        )
                     else:
                         st.info("No hay datos para el donut por tipo.")
 
                 st.subheader("Distribución por tipo (Valorizado)")
                 fig = plot_dist_por_tipo(df_view)
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="dist_tipo")
-                    download_chart(fig, "distribucion_tipo.png")
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key="dist_tipo",
+                        config=PLOTLY_CONFIG,
+                    )
                 else:
                     st.info("No hay datos para la distribución por tipo.")
 
                 st.subheader("P/L diario por símbolo (Top N)")
                 fig = plot_pl_daily_topn(df_view, n=top_n)
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="pl_diario")
-                    download_chart(fig, "pl_diario_topn.png")
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key="pl_diario",
+                        config=PLOTLY_CONFIG,
+                    )
                 else:
                     st.info("Aún no hay datos de P/L diario.")
 
@@ -364,8 +380,12 @@ def main():
                     log_y=y_log,
                 )
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="bubble_chart")
-                    download_chart(fig, "bubble_pl_vs_costo.png")
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key="bubble_chart",
+                        config=PLOTLY_CONFIG,
+                    )
                     with st.expander("Descripción"):
                         st.caption(
                             "Cada burbuja representa un símbolo; el tamaño refleja el valor actual. Cambia ejes, escalas y paleta para explorar distintos ángulos."
@@ -381,8 +401,12 @@ def main():
                 )
                 fig = plot_heat_pl_pct(df_view, color_scale=heat_scale)
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="heatmap_chart")
-                    download_chart(fig, "heat_pl_pct.png")
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key="heatmap_chart",
+                        config=PLOTLY_CONFIG,
+                    )
                     with st.expander("Descripción"):
                         st.caption(
                             "El color indica la variación porcentual; prueba diferentes escalas para resaltar ganancias o pérdidas."
@@ -407,10 +431,16 @@ def main():
                         **Blanco (cercano a 0)**: No tienen relación.
                         Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                     """)
-                    st.plotly_chart(fig, use_container_width=True, key="corr_heatmap")
-                    download_chart(fig, "correlacion_portafolio.png")
+                    st.plotly_chart(
+                        fig,
+                        use_container_width=True,
+                        key="corr_heatmap",
+                        config=PLOTLY_CONFIG,
+                    )
                 else:
-                    st.warning(f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación.")
+                    st.warning(
+                        f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación."
+                    )
             else:
                 st.info("Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación.")
 
@@ -450,8 +480,11 @@ def main():
                                 rolling_vol,
                                 labels={"index": "Fecha", "value": "Volatilidad anualizada"},
                             )
-                            st.plotly_chart(fig_vol, use_container_width=True)
-                            download_chart(fig_vol, "volatilidad_rolling.png")
+                            st.plotly_chart(
+                                fig_vol,
+                                use_container_width=True,
+                                config=PLOTLY_CONFIG,
+                            )
                             st.caption(
                                 "La volatilidad refleja la variabilidad de los retornos; aquí se muestra en una ventana móvil de 30 días."
                             )
@@ -465,8 +498,11 @@ def main():
                                 annotation_text="VaR 5%",
                                 annotation_position="top left",
                             )
-                            st.plotly_chart(fig_var, use_container_width=True)
-                            download_chart(fig_var, "distribucion_var.png")
+                            st.plotly_chart(
+                                fig_var,
+                                use_container_width=True,
+                                config=PLOTLY_CONFIG,
+                            )
                             st.caption(
                                 "El VaR al 5% indica que en el 95% de los días la pérdida no superará este umbral."
                             )
@@ -585,8 +621,12 @@ def main():
                             st.info("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
                         else:
                             fig = plot_technical_analysis_chart(df_ind, sma_fast, sma_slow)
-                            st.plotly_chart(fig, use_container_width=True, key="ta_chart")
-                            download_chart(fig, f"ta_{sym}.png")
+                            st.plotly_chart(
+                                fig,
+                                use_container_width=True,
+                                key="ta_chart",
+                                config=PLOTLY_CONFIG,
+                            )
                             alerts = tasvc.alerts_for(df_ind)
                             if alerts:
                                 for a in alerts:
