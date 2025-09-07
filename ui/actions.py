@@ -35,6 +35,7 @@ def render_action_menu() -> None:
             except Exception as e:
                 err = str(e)
         st.session_state.clear()
+        st.session_state["force_login"] = True
         if err:
             st.session_state["logout_error"] = err
         else:
