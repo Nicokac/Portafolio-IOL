@@ -16,7 +16,6 @@ from domain.models import Controls
 # UI
 from ui.header import render_header
 from ui.tables import render_totals, render_table
-#from ui.fx_panels import render_fx_panel, render_spreads, render_fx_history
 from ui.fx_panels import render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
 from ui.fundamentals import (
@@ -27,6 +26,7 @@ from ui.fundamentals import (
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
 from ui.login import render_login_page
+from ui.footer import render_footer
 from ui.charts import (
     plot_pl_topn,
     plot_donut_tipo,
@@ -656,6 +656,8 @@ def main():
                             else:
                                 st.line_chart(bt["equity"])
                                 st.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
+
+    render_footer()
 
     # Auto-refresh
     if "last_refresh" not in st.session_state:

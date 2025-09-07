@@ -1,6 +1,6 @@
 # ui/__init__.py
 # Podés dejarlo mínimo:
-__all__ = ["header", "tables", "fx_panels", "sidebar_controls", "fundamentals", "ui_settings", "actions", "palette"]
+__all__ = ["header", "tables", "fx_panels", "sidebar_controls", "fundamentals", "ui_settings", "actions", "palette", "footer"]
 
 # (Opcional) Re-exportes cómodos:
 from .header import render_header
@@ -15,6 +15,7 @@ from .fundamentals import (
 from .ui_settings import init_ui, render_ui_controls, UISettings
 from .palette import get_palette, get_active_palette
 from .actions import render_action_menu
+from .footer import render_footer
 
 __all__ += [
     "render_header",
@@ -32,4 +33,5 @@ __all__ += [
     "render_action_menu",
     "get_palette",
     "get_active_palette",
+    "render_footer",
 ]
