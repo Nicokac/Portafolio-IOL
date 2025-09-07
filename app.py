@@ -26,6 +26,7 @@ from ui.fundamentals import (
 )
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
+from ui.login import render_login_page
 from ui.charts import (
     plot_pl_topn,
     plot_donut_tipo,
@@ -138,8 +139,7 @@ def _build_client() -> IIOLProvider:
 def main():
     # --- CREDENCIALES ---
     if not st.session_state.get("IOL_USERNAME") or not st.session_state.get("IOL_PASSWORD"):
-        st.text_input("Usuario", key="IOL_USERNAME")
-        st.text_input("Contraseña", type="password", key="IOL_PASSWORD")
+        render_login_page()
         st.stop()
 
     user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
