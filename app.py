@@ -26,6 +26,7 @@ from ui.fundamentals import (
 )
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.actions import render_action_menu
+from ui.footer import render_footer
 from ui.charts import (
     plot_pl_topn,
     plot_donut_tipo,
@@ -656,6 +657,8 @@ def main():
                             else:
                                 st.line_chart(bt["equity"])
                                 st.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
+
+    render_footer()
 
     # Auto-refresh
     if "last_refresh" not in st.session_state:
