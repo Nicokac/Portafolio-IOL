@@ -13,5 +13,7 @@ def render_login_page() -> None:
     with st.form("login_form"):
         st.text_input("Usuario", key="IOL_USERNAME")
         st.text_input("Contraseña", type="password", key="IOL_PASSWORD")
-        st.form_submit_button("Iniciar sesión")
+        submitted = st.form_submit_button("Iniciar sesión")
         render_footer()
+    if submitted:
+        st.session_state.pop("force_login", None)
