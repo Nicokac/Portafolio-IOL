@@ -68,6 +68,12 @@ logger = logging.getLogger(__name__)
 # Configuración de UI centralizada (tema y layout)
 init_ui()
 
+# Precarga credenciales desde settings en session_state
+if settings.IOL_USERNAME:
+    st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
+if settings.IOL_PASSWORD:
+    st.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
+
 # === Cache de alto nivel ===
 @st.cache_resource
 def get_client_cached(cache_key: str, user: str, password: str) -> IIOLProvider:
@@ -138,14 +144,10 @@ def _build_client() -> IIOLProvider:
 
 def main():
     # --- CREDENCIALES ---
-    if not st.session_state.get("IOL_USERNAME") or not st.session_state.get("IOL_PASSWORD"):
-        render_login_page()
-        st.stop()
-
     user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
     password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     if not user or not password:
-        st.error("Falta IOL_USERNAME / IOL_PASSWORD en tu archivo .env")
+        render_login_page()
         st.stop()
 
     fx_rates = get_fx_rates_cached()

@@ -8,6 +8,7 @@ from typing import Optional, Dict
 
 from infrastructure.http.session import build_session
 from shared.config import settings
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -121,8 +122,8 @@ class FXProviderAdapter:
                 j = r.json()
                 # bluelytics tiene "blue": {"value_avg": ...}
                 raw["blue"] = float(j["blue"]["value_avg"])
-        except Exception:
-            logger.info("No se pudo obtener blue")
+        except requests.RequestException as e:
+            logger.warning("No se pudo obtener blue: %s", e)
 
         # oficial / mep / ccl (dolarapi)
         for k in ("oficial", "mep", "ccl"):
@@ -132,8 +133,8 @@ class FXProviderAdapter:
                     j = r.json()
                     # dolarapi usa 'venta'
                     raw[k] = float(j["venta"])
-            except Exception:
-                logger.info("No se pudo obtener %s", k)
+            except requests.RequestException as e:
+                logger.warning("No se pudo obtener %s: %s", k, e)
 
         raw["_ts"] = int(time.time())
 
