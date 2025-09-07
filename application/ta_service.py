@@ -12,15 +12,15 @@ import streamlit as st
 try:
     import yfinance as yf
 except ImportError:  # pragma: no cover
-    import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "yfinance"])
-    import yfinance as yf
+    yf = None
+    logging.warning("La librería yfinance no está instalada.")
 
 try:  # pragma: no cover
     from ta.momentum import RSIIndicator, StochasticOscillator
     from ta.trend import MACD, IchimokuIndicator
     from ta.volatility import AverageTrueRange
-except Exception:  # Si la librería no está disponible, usamos stubs
+except ImportError:  # Si la librería no está disponible, usamos stubs
+    logging.warning("La librería ta no está instalada. Indicadores técnicos deshabilitados.")
     RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = AverageTrueRange = None
 
 # === Import refactorizado: get_config / clean_symbol (ya no existe load_config)
@@ -124,6 +124,10 @@ def fetch_with_indicators(
     'BB_L','BB_M','BB_U','RSI','MACD','MACD_SIGNAL','MACD_HIST','ATR',
     'STOCH_K','STOCH_D','ICHI_CONV','ICHI_BASE','ICHI_A','ICHI_B']
     """
+    if yf is None or RSIIndicator is None:
+        st.warning("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
+        return pd.DataFrame()
+
     ticker = map_to_us_ticker(simbolo)
     if not ticker:
         logger.info("No se pudo mapear %s a ticker US utilizable.", simbolo)
@@ -288,6 +292,10 @@ def get_fundamental_data(ticker: str) -> dict:
     """
     Obtiene datos fundamentales clave con yfinance. Filtra dividend yields implausibles (>20%).
     """
+    if yf is None:
+        st.warning("La librería 'yfinance' no está disponible.")
+        return {}
+
     try:
         MAX_PLAUSIBLE_YIELD = 20.0  # %
         stock = yf.Ticker(ticker)
@@ -326,6 +334,10 @@ def get_fundamental_data(ticker: str) -> dict:
 @st.cache_data
 def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
     """Devuelve un DataFrame con métricas fundamentales y ESG para cada símbolo."""
+    if yf is None:
+        st.warning("La librería 'yfinance' no está disponible.")
+        return pd.DataFrame()
+
     rows = []
     for sym in simbolos:
         ticker = map_to_us_ticker(sym)
@@ -366,6 +378,10 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
     - Mapea CEDEAR → US ticker para yfinance.
     - Renombra las columnas al **símbolo original** para que los gráficos muestren tus tickers.
     """
+    if yf is None:
+        st.warning("La librería 'yfinance' no está disponible.")
+        return pd.DataFrame()
+
     if not simbolos:
         return pd.DataFrame()
 

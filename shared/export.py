@@ -10,4 +10,7 @@ def df_to_csv_bytes(df: pd.DataFrame) -> bytes:
 
 def fig_to_png_bytes(fig: go.Figure) -> bytes:
     """Devuelve la figura renderizada como bytes PNG usando kaleido."""
-    return fig.to_image(format="png")
+    try:
+        return fig.to_image(format="png")
+    except Exception as e:  # pragma: no cover - depende de librerías externas
+        raise ValueError("kaleido no disponible") from e

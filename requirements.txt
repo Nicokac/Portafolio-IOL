@@ -6,6 +6,8 @@ python-dotenv
 iolConn==0.4.2
 plotly
 kaleido
+# Dependencias obligatorias para datos e indicadores técnicos
 yfinance
+ta
 pandas_ta
 setuptools
