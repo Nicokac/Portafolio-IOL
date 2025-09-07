@@ -23,7 +23,7 @@ def clean_symbol(s: str) -> str:
     """Normaliza el símbolo: mayúsculas, sin espacios raros, sólo chars permitidos."""
     s = str(s or "").upper().strip()
     s = s.replace("\u00A0", "").replace("\u200B", "")
-    return re.sub(r"[^A-Z0-9._-]", "", s)
+    return re.sub(r"[^A-Z0-9._^-]", "", s)
 
 def map_to_us_ticker(simbolo: str) -> Optional[str]:
     s = clean_symbol(simbolo)
@@ -249,11 +249,6 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     ]
 
     if df_pos is None or df_pos.empty:
-        # return pd.DataFrame(columns=[
-        #     "simbolo", "mercado", "tipo", "cantidad", "ppc",
-        #     "ultimo", "valor_actual", "costo", "pl", "pl_%",
-        #     "pl_d", "pld_%"
-        # ])
         return pd.DataFrame(columns=cols)
 
     # Normalización básica y exclusiones ---------------------------------
@@ -261,22 +256,13 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     df["simbolo"] = df["simbolo"].map(clean_symbol)
     df["mercado"] = df["mercado"].astype(str).str.lower()
     ex = {clean_symbol(s) for s in (exclude_syms or [])}
-    # rows: List[Dict[str, Any]] = []
 
     df = df[~df["simbolo"].isin(ex)]
     if df.empty:
         return pd.DataFrame(columns=cols)
 
-    # for _, p in df_pos.iterrows():
-    #     simbolo = clean_symbol(p["simbolo"])
-    #     if simbolo in ex:
-    #         continue
     df["cantidad"] = df["cantidad"].map(_to_float).fillna(0.0)
     df["ppc"] = df.get("costo_unitario", np.nan).map(_to_float).fillna(0.0)
-
-        # mercado = str(p["mercado"]).lower()
-        # cantidad = _to_float(p["cantidad"]) or 0.0
-        # ppc = _to_float(p.get("costo_unitario")) or 0.0  # precio prom. compra por unidad
 
     # ----- Cotizaciones -------------------------------------------------
     uniq = df[["mercado", "simbolo"]].drop_duplicates().reset_index(drop=True)
@@ -286,10 +272,8 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         last, chg_pct = None, None
         q = None
         try:
-            # q = get_quote_fn(mercado, simbolo)
             q = get_quote_fn(row["mercado"], row["simbolo"])
         except Exception as e:
-            # logger.debug("get_quote_fn lanzó excepción para %s:%s -> %s", mercado, simbolo, e)
             logger.debug(
                 "get_quote_fn lanzó excepción para %s:%s -> %s",
                 row["mercado"],
@@ -307,47 +291,6 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         else:
             last = _to_float(q)
 
-        # # Tipo y escala
-        # tipo = classify_symbol(simbolo)
-        # scale = scale_for(simbolo, tipo)
-
-        # # Valoraciones (acumulado)
-        # costo = cantidad * ppc * scale
-        # valor = (cantidad * last * scale) if last is not None else np.nan
-        # pl = (valor - costo) if not np.isnan(valor) else np.nan
-        # pl_pct = (pl / costo * 100.0) if costo else np.nan
-
-        # # ----- P/L diaria -----
-        # # Si 'valor' es el valor ACTUAL y 'chg_pct' es el % vs cierre previo,
-        # # el P/L diario en $ es: V_actual - V_previo = V_actual * (p/100) / (1 + p/100)
-        # if (chg_pct is not None) and (valor == valor):  # no-NaN
-        #     denom = 1.0 + (float(chg_pct) / 100.0)
-        #     if denom != 0:
-        #         pl_d = float(valor) * (float(chg_pct) / 100.0) / denom
-        #         pld_pct = float(chg_pct)
-        #     else:
-        #         pl_d = np.nan
-        #         pld_pct = np.nan
-        # else:
-        #     pl_d = np.nan
-        #     pld_pct = np.nan
-
-        # rows.append(
-        #     {
-        #         "simbolo": simbolo,
-        #         "mercado": mercado.upper(),
-        #         "tipo": tipo,
-        #         "cantidad": cantidad,
-        #         "ppc": ppc,
-        #         "ultimo": last,
-        #         "valor_actual": valor,
-        #         "costo": costo,
-        #         "pl": pl,
-        #         "pl_%": pl_pct,
-        #         "pl_d": pl_d,
-        #         "pld_%": pld_pct,
-        #     }
-        # )
         return pd.Series({"last": last, "chg_pct": chg_pct})
 
     quotes_df = uniq.apply(_fetch, axis=1)

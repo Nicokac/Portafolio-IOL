@@ -56,6 +56,8 @@ def map_to_us_ticker(simbolo: str) -> Optional[str]:
     Si no está en el mapa y parece un ticker US (3-5 letras), devuelve el mismo.
     """
     s = clean_symbol(simbolo)
+    if s.startswith("^"):
+        return s
     cedear_map = CONFIG.get("cedear_to_us", {}) or {}
     if s in cedear_map:
         return clean_symbol(cedear_map[s])
