@@ -133,7 +133,17 @@ def plot_dist_por_tipo(df: pd.DataFrame):
 # Gráficos avanzados
 # =================
 
-def plot_bubble_pl_vs_costo(df: pd.DataFrame, x_axis: str, y_axis: str):
+# def plot_bubble_pl_vs_costo(df: pd.DataFrame, x_axis: str, y_axis: str):
+def plot_bubble_pl_vs_costo(
+    df: pd.DataFrame,
+    x_axis: str,
+    y_axis: str,
+    *,
+    color_seq: list[str] | None = None,
+    log_x: bool = False,
+    log_y: bool = False,
+):
+    """Bubble chart flexible in axes, palette and scale."""
     if df is None or df.empty:
         return None
     needed = {"simbolo", "tipo", "valor_actual", x_axis, y_axis}
@@ -149,23 +159,53 @@ def plot_bubble_pl_vs_costo(df: pd.DataFrame, x_axis: str, y_axis: str):
     d["valor_ok"] = pd.to_numeric(d["valor_actual"], errors="coerce").clip(lower=0.0).fillna(0.0)
 
     fig = px.scatter(
-        d, x=x_axis, y=y_axis, size="valor_ok", color="tipo",
-        hover_name="simbolo", size_max=52,
-        color_discrete_map=_color_discrete_map(d),
-        hover_data={"costo": ":,.0f" if "costo" in d else True,
-                    "pl": ":,.0f" if "pl" in d else True,
-                    "valor_ok": ":,.0f"},
+        # d, x=x_axis, y=y_axis, size="valor_ok", color="tipo",
+        # hover_name="simbolo", size_max=52,
+        # color_discrete_map=_color_discrete_map(d),
+        # hover_data={"costo": ":,.0f" if "costo" in d else True,
+        #             "pl": ":,.0f" if "pl" in d else True,
+        #             "valor_ok": ":,.0f"},
+        d,
+        x=x_axis,
+        y=y_axis,
+        size="valor_ok",
+        color="tipo",
+        hover_name="simbolo",
+        size_max=52,
+        color_discrete_map=None if color_seq else _color_discrete_map(d),
+        color_discrete_sequence=color_seq,
+        hover_data={
+            "costo": ":,.0f" if "costo" in d else True,
+            "pl": ":,.0f" if "pl" in d else True,
+            "valor_ok": ":,.0f",
+        },
     )
+    # pal = get_active_palette()
     pal = get_active_palette()    
     if SHOW_AXIS_TITLES:
-        fig.update_xaxes(title=x_axis.replace("_", " ").capitalize(), tickformat=",")
-        fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=pal.grid)
+        # fig.update_xaxes(title=x_axis.replace("_", " ").capitalize(), tickformat=",")
+        # fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=pal.grid)
+        fig.update_xaxes(
+            title=x_axis.replace("_", " ").capitalize(),
+            tickformat=",",
+            type="log" if log_x else "linear",
+        )
+        fig.update_yaxes(
+            title=y_axis.replace("_", " ").capitalize(),
+            tickformat=",",
+            zeroline=True,
+            zerolinecolor=pal.grid,
+            type="log" if log_y else "linear",
+        )
     else:
-        fig.update_xaxes(title=None, tickformat=",")
-        fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
+        # fig.update_xaxes(title=None, tickformat=",")
+        # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
+        fig.update_xaxes(tickformat=",", type="log" if log_x else "linear")
+        fig.update_yaxes(tickformat=",", zeroline=True, zerolinecolor=pal.grid, type="log" if log_y else "linear")
     return _apply_layout(fig)
 
-def plot_heat_pl_pct(df: pd.DataFrame):
+#def plot_heat_pl_pct(df: pd.DataFrame):
+def plot_heat_pl_pct(df: pd.DataFrame, color_scale: str = "RdBu"):
     if df is None or df.empty or "pl_%" not in df.columns or "simbolo" not in df.columns:
         return None
     d = df.dropna(subset=["pl_%"]).copy()
@@ -177,8 +217,14 @@ def plot_heat_pl_pct(df: pd.DataFrame):
         vmax = 1.0
     d = d.sort_values("pl_%", ascending=False)
     fig = px.bar(
-        d, x="simbolo", y="pl_%", color="pl_%",
-        color_continuous_scale="RdBu", range_color=[-vmax, vmax],
+        # d, x="simbolo", y="pl_%", color="pl_%",
+        # color_continuous_scale="RdBu", range_color=[-vmax, vmax],
+        d,
+        x="simbolo",
+        y="pl_%",
+        color="pl_%",
+        color_continuous_scale=color_scale,
+        range_color=[-vmax, vmax],
         hover_data={"pl_%": ":.2f"},
         category_orders={"simbolo": d["simbolo"].astype(str).tolist()},
     )
@@ -394,22 +440,15 @@ def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow:
         return None
 
     fig = make_subplots(
-        # rows=3, cols=1,
         rows=6,
         cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
-        # row_heights=[0.55, 0.20, 0.25],
         row_heights=[0.35, 0.15, 0.15, 0.15, 0.10, 0.10],
     )
 
     # 1) Precio + Indicadores
     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["Close"], name="Close", mode="lines"), row=1, col=1)
-    # if "SMA_FAST" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
-    # if "SMA_SLOW" in df_ind: fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_SLOW"], name=f"SMA {sma_slow}", mode="lines"), row=1, col=1)
-    # if "EMA" in df_ind:      fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA 21", mode="lines"), row=1, col=1)
-    # if "BB_U" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")), row=1, col=1)
-    # if "BB_L" in df_ind:     fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")), row=1, col=1)
     if "SMA_FAST" in df_ind:
         fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
     if "SMA_SLOW" in df_ind:
@@ -440,9 +479,6 @@ def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow:
         # fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=2, col=1)
         fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=3, col=1)
         pal = get_active_palette()
-    #     fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=2, col=1)
-    #     fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=2, col=1)
-    #     fig.update_yaxes(title_text="RSI (14)", range=[0, 100], row=2, col=1)
 
     # # 3) Volumen (si existe)
         fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=3, col=1)
@@ -463,8 +499,6 @@ def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow:
 
     # 6) Volumen
     if "Volume" in df_ind:
-        # fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=3, col=1)
-        # fig.update_yaxes(title_text="Volumen", row=3, col=1)
         fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=6, col=1)
         fig.update_yaxes(title_text="Volumen", row=6, col=1)
         

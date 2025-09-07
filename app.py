@@ -32,6 +32,7 @@ from ui.charts import (
     plot_correlation_heatmap,
     plot_technical_analysis_chart,
 )
+import plotly.express as px
 from ui.export import download_chart
 
 # Infra: IOL + FX + cache quotes
@@ -106,7 +107,6 @@ def get_fx_provider() -> FXProviderAdapter:
 
 @st.cache_data(ttl=settings.cache_ttl_fx)
 def fetch_fx_rates():
-    # return get_fx_provider().get_rates()
     try:
         return get_fx_provider().get_rates()
     except Exception as e:
@@ -241,7 +241,6 @@ def main():
 
             chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
             map_keys = df_view.apply(lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1)
-            # df_view["chg_%"] = map_keys.map(quotes_cache)
 
             df_view["chg_%"] = map_keys.map(chg_map)
             df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
@@ -312,22 +311,68 @@ def main():
             else:
                 c1, c2 = st.columns(2)
                 with c1:
-                    x_axis = st.selectbox("Eje X", options=axis_options, index=axis_options.index("costo") if "costo" in axis_options else 0)
+                    # x_axis = st.selectbox("Eje X", options=axis_options, index=axis_options.index("costo") if "costo" in axis_options else 0)
+                    x_axis = st.selectbox(
+                        "Eje X",
+                        options=axis_options,
+                        index=axis_options.index("costo") if "costo" in axis_options else 0,
+                        key="bubble_x",
+                    )
+                    x_log = st.checkbox("Escala log X", key="bubble_x_log")
                 with c2:
-                    y_axis = st.selectbox("Eje Y", options=axis_options, index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1))
+                #     y_axis = st.selectbox("Eje Y", options=axis_options, index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1))
 
-                fig = plot_bubble_pl_vs_costo(df_view, x_axis=x_axis, y_axis=y_axis)
+                # fig = plot_bubble_pl_vs_costo(df_view, x_axis=x_axis, y_axis=y_axis)
+                    y_axis = st.selectbox(
+                        "Eje Y",
+                        options=axis_options,
+                        index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1),
+                        key="bubble_y",
+                    )
+                    y_log = st.checkbox("Escala log Y", key="bubble_y_log")
+                palette_opt = st.selectbox(
+                    "Paleta",
+                    ["Tema", "Plotly", "D3", "G10"],
+                    key="bubble_palette",
+                )
+                palette_map = {
+                    "Plotly": px.colors.qualitative.Plotly,
+                    "D3": px.colors.qualitative.D3,
+                    "G10": px.colors.qualitative.G10,
+                }
+                color_seq = palette_map.get(palette_opt) if palette_opt != "Tema" else None
+                fig = plot_bubble_pl_vs_costo(
+                    df_view,
+                    x_axis=x_axis,
+                    y_axis=y_axis,
+                    color_seq=color_seq,
+                    log_x=x_log,
+                    log_y=y_log,
+                )
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="bubble_pl_vs_costo")
+                    st.plotly_chart(fig, use_container_width=True, key="bubble_chart")
                     download_chart(fig, "bubble_pl_vs_costo.png")
+                    with st.expander("Descripción"):
+                        st.caption(
+                            "Cada burbuja representa un símbolo; el tamaño refleja el valor actual. Cambia ejes, escalas y paleta para explorar distintos ángulos."
+                        )
                 else:
                     st.info("No hay datos suficientes para el gráfico bubble.")
 
                 st.subheader("Heatmap de rendimiento (%) por símbolo")
-                fig = plot_heat_pl_pct(df_view)
+                heat_scale = st.selectbox(
+                    "Escala de color",
+                    ["RdBu", "Viridis", "Plasma", "Cividis", "Turbo"],
+                    key="heat_scale",
+                )
+                fig = plot_heat_pl_pct(df_view, color_scale=heat_scale)
                 if fig is not None:
-                    st.plotly_chart(fig, use_container_width=True, key="heatmap_rendimiento")
+                    st.plotly_chart(fig, use_container_width=True, key="heatmap_chart")
                     download_chart(fig, "heat_pl_pct.png")
+                    with st.expander("Descripción"):
+                        st.caption(
+                            "El color indica la variación porcentual; prueba diferentes escalas para resaltar ganancias o pérdidas."
+                        )
                 else:
                     st.info("No hay datos suficientes para el heatmap.")
 
