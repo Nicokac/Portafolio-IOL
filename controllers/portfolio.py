@@ -1,35 +1,14 @@
-# app.py
-# Orquestación Streamlit + módulos
-
-from __future__ import annotations
-import os, time, hashlib
+import time
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import streamlit as st
-import time
-from datetime import datetime
-import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from shared.config import settings
 from domain.models import Controls
-import streamlit as st
-
-# UI
 from shared.config import settings
-from ui.header import render_header
 from ui.tables import render_totals, render_table
-from ui.fx_panels import render_spreads, render_fx_history
 from ui.sidebar_controls import render_sidebar
-from ui.fundamentals import (
-    render_fundamental_data,
-    render_fundamental_ranking,
-    render_sector_comparison,
-)
-from ui.ui_settings import init_ui, render_ui_controls
-from ui.actions import render_action_menu
-from ui.login import render_login_page
-from ui.footer import render_footer
+from ui.ui_settings import render_ui_controls
 from ui.charts import (
     plot_pl_topn,
     plot_donut_tipo,
@@ -40,18 +19,14 @@ from ui.charts import (
     plot_correlation_heatmap,
     plot_technical_analysis_chart,
 )
-import plotly.express as px
+from ui.fundamentals import (
+    render_fundamental_data,
+    render_fundamental_ranking,
+    render_sector_comparison,
+)
 from ui.export import PLOTLY_CONFIG
-from ui.ui_settings import init_ui
-
-# Infra: IOL + FX + cache quotes
-from infrastructure.iol.client import build_iol_client
-from infrastructure.iol.ports import IIOLProvider
-from infrastructure.fx.provider import FXProviderAdapter
-
-# App facades
 from application.portfolio_service import PortfolioService
-from application.ta_service import TAService  # <- también la clase
+from application.ta_service import TAService
 from application.risk_service import (
     compute_returns,
     annualized_volatility,
@@ -61,153 +36,16 @@ from application.risk_service import (
     monte_carlo_simulation,
     apply_stress,
 )
+from services.cache import fetch_portfolio, fetch_quotes_bulk
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
 
-# from services.cache import build_iol_client, get_fx_rates_cached
-# from controllers.fx import render_fx_section
-# from controllers.portfolio import render_portfolio_section
-
-# Configuración de UI centralizada (tema y layout)
-init_ui()
-
-# Precarga credenciales desde settings en session_state, salvo que se fuerce el login
-if not st.session_state.get("force_login"):
-    if settings.IOL_USERNAME:
-        st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
-    if settings.IOL_PASSWORD:
-        st.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
-
-# === Cache de alto nivel ===
-@st.cache_resource
-def get_client_cached(cache_key: str, user: str, password: str) -> IIOLProvider:
-    _ = cache_key
-    return build_iol_client(user, password)
-
-@st.cache_data(ttl=settings.cache_ttl_portfolio)
-def fetch_portfolio(_cli: IIOLProvider):
-    start = time.time()
-    data = _cli.get_portfolio()
-    logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
-    return data
-
-@st.cache_data(ttl=settings.cache_ttl_quotes)
-def fetch_quotes_bulk(_cli: IIOLProvider, items):
-    get_bulk = getattr(_cli, "get_quotes_bulk", None)
-    try:
-        if callable(get_bulk):
-            return get_bulk(items)
-    except Exception as e:
-
-        logger.warning("get_quotes_bulk falló: %s", e)
-    out = {}
-    max_workers = getattr(settings, "max_quote_workers", 12)
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
-        futs = {
-            ex.submit(_cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
-            for m, s in items
-        }
-        for fut in as_completed(futs):
-            key = futs[fut]
-            try:
-                out[key] = fut.result()
-            except Exception as e:
-                logger.warning("get_quote failed for %s:%s -> %s", key[0], key[1], e)
-                out[key] = {"last": None, "chg_pct": None}
-    return out
-
-@st.cache_resource
-def get_fx_provider() -> FXProviderAdapter:
-    return FXProviderAdapter()
-
-@st.cache_data(ttl=settings.cache_ttl_fx)
-def fetch_fx_rates():
-    try:
-        return get_fx_provider().get_rates()
-    except Exception as e:
-        logger.warning("FX provider failed: %s", e)
-        return {}
-
-def get_fx_rates_cached():
-    """Retrieve FX rates once per TTL and store them in session state."""
-    now = time.time()
-    ttl = getattr(settings, "cache_ttl_fx", 0)
-    last = st.session_state.get("fx_rates_ts", 0)
-    if "fx_rates" not in st.session_state or now - last > ttl:
-        st.session_state["fx_rates"] = fetch_fx_rates()
-        st.session_state["fx_rates_ts"] = now
-    return st.session_state.get("fx_rates", {})
-
-def _build_client() -> IIOLProvider:
-    """Build an IOL client using credentials from session state or settings."""
-    # user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    # password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    if st.session_state.get("force_login"):
-        user = st.session_state.get("IOL_USERNAME")
-        password = st.session_state.get("IOL_PASSWORD")
-    else:
-        user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-        password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    salt = str(st.session_state.get("client_salt", ""))
-    cache_key = hashlib.sha256(f"{user}:{password}:{salt}".encode()).hexdigest()
-    return get_client_cached(cache_key, user, password)
-
-def main():
-    # # --- CREDENCIALES ---
-    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    if not user or not password:
-        render_login_page()
-        st.stop()
-
-    fx_rates = get_fx_rates_cached()
-
-    # ===== HEADER =====
-    if not fx_rates:
-        st.warning("No se pudieron obtener las cotizaciones del dólar.")
-    render_header(rates=fx_rates)
-    _, hcol2 = st.columns([4, 1])
-    with hcol2:
-        now = datetime.now()
-        st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
-        render_action_menu()
-
-    # ===== LAYOUT DOS COLUMNAS =====
-    main_col, side_col = st.columns([4, 1])
-
-    with side_col:
-        rates = fx_rates or {}
-        #render_fx_panel(rates)
-        if not rates:
-            st.warning("No se pudieron obtener las cotizaciones del dólar.")
-        render_spreads(rates)
-
-        c_ts = rates.get("_ts")
-        if c_ts:
-            rec = {"ts": c_ts, "ccl": rates.get("ccl"), "mep": rates.get("mep"),
-                   "blue": rates.get("blue"), "oficial": rates.get("oficial")}
-            st.session_state.setdefault("fx_history", [])
-            if not st.session_state["fx_history"] or st.session_state["fx_history"][-1].get("ts") != c_ts:
-                st.session_state["fx_history"].append(rec)
-                maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                st.session_state["fx_history"] = st.session_state["fx_history"][-maxlen:]
-            fx_hist_df = pd.DataFrame(st.session_state["fx_history"])
-            if not fx_hist_df.empty:
-                fx_hist_df["ts_dt"] = pd.to_datetime(fx_hist_df["ts"], unit="s")
-                render_fx_history(fx_hist_df)
-
-    # === LÓGICA PRINCIPAL Y TABS (DENTRO DE main_col) ===
-    with main_col:
+def render_portfolio_section(container, cli, fx_rates):
+    """Render the main portfolio section and return refresh interval."""
+    with container:
         psvc = PortfolioService()
         tasvc = TAService()
 
         # --- DATA PORTAFOLIO ---
-        cli = _build_client()
         with st.spinner("Cargando y actualizando portafolio... ⏳"):
             try:
                 payload = fetch_portfolio(cli)
@@ -230,25 +68,24 @@ def main():
             st.stop()
 
         all_symbols = sorted(df_pos["simbolo"].astype(str).str.upper().unique())
-        available_types = sorted({ psvc.classify_asset_cached(s) for s in all_symbols if psvc.classify_asset_cached(s) })
+        available_types = sorted({psvc.classify_asset_cached(s) for s in all_symbols if psvc.classify_asset_cached(s)})
 
         controls: Controls = render_sidebar(all_symbols, available_types)
         render_ui_controls()
 
-        refresh_secs  = controls.refresh_secs
-        hide_cash     = controls.hide_cash
-        order_by      = controls.order_by
-        desc          = controls.desc
+        refresh_secs = controls.refresh_secs
+        hide_cash = controls.hide_cash
+        order_by = controls.order_by
+        desc = controls.desc
         selected_syms = controls.selected_syms
-        top_n         = controls.top_n
-        show_usd      = controls.show_usd
+        top_n = controls.top_n
+        show_usd = controls.show_usd
 
         if hide_cash:
             df_pos = df_pos[~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])].copy()
         if selected_syms:
             df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
 
-        # st.session_state.pop("last_price_errors", None)
         pairs = list(
             df_pos[["mercado", "simbolo"]]
             .drop_duplicates()
@@ -258,15 +95,12 @@ def main():
         quotes_map = fetch_quotes_bulk(cli, pairs)
 
         df_view = psvc.calc_rows(
-            # lambda mercado, simbolo=None: fetch_last_price(cli, mercado, simbolo or mercado),
             lambda mercado, simbolo=None: quotes_map.get(
                 (str(mercado).lower(), str((simbolo or mercado)).upper()), {}
             ),
             df_pos,
             exclude_syms=[],
         )
-    #render_fx_section(side_col, fx_rates)
-
         if not df_view.empty:
             df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
 
@@ -276,10 +110,14 @@ def main():
 
             symbol_q = (controls.symbol_query or "").strip()
             if symbol_q:
-                df_view = df_view[df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)].copy()
+                df_view = df_view[
+                    df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)
+                ].copy()
 
             chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
-            map_keys = df_view.apply(lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1)
+            map_keys = df_view.apply(
+                lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1
+            )
 
             df_view["chg_%"] = map_keys.map(chg_map)
             df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
@@ -289,15 +127,23 @@ def main():
             for (mkt, sym), chg in chg_map.items():
                 if isinstance(chg, (int, float)):
                     st.session_state["quotes_hist"].setdefault(sym, [])
-                    if (not st.session_state["quotes_hist"][sym]) or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts):
+                    if (
+                        not st.session_state["quotes_hist"][sym]
+                        or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts)
+                    ):
                         st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
                         maxlen = getattr(settings, "quotes_hist_maxlen", 500)
                         st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
 
         ccl_rate = fx_rates.get("ccl")
 
-        # === TABS ===
-        tabs = st.tabs(["📂 Portafolio", "📊 Análisis avanzado", "🎲 Análisis de Riesgo", "📑 Análisis fundamental", "🔎 Análisis de activos"])
+        tabs = st.tabs([
+            "📂 Portafolio",
+            "📊 Análisis avanzado",
+            "🎲 Análisis de Riesgo",
+            "📑 Análisis fundamental",
+            "🔎 Análisis de activos",
+        ])
 
         # Pestaña 1
         with tabs[0]:
@@ -356,7 +202,6 @@ def main():
                     )
                 else:
                     st.info("Aún no hay datos de P/L diario.")
-
         # Pestaña 2
         with tabs[1]:
             st.subheader("Bubble Chart Interactivo")
@@ -366,7 +211,6 @@ def main():
             else:
                 c1, c2 = st.columns(2)
                 with c1:
-                    # x_axis = st.selectbox("Eje X", options=axis_options, index=axis_options.index("costo") if "costo" in axis_options else 0)
                     x_axis = st.selectbox(
                         "Eje X",
                         options=axis_options,
@@ -375,13 +219,10 @@ def main():
                     )
                     x_log = st.checkbox("Escala log X", key="bubble_x_log")
                 with c2:
-                #     y_axis = st.selectbox("Eje Y", options=axis_options, index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1))
-
-                # fig = plot_bubble_pl_vs_costo(df_view, x_axis=x_axis, y_axis=y_axis)
                     y_axis = st.selectbox(
                         "Eje Y",
                         options=axis_options,
-                        index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options)-1),
+                        index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options) - 1),
                         key="bubble_y",
                     )
                     y_log = st.checkbox("Escala log Y", key="bubble_y_log")
@@ -442,20 +283,26 @@ def main():
         # Pestaña 3
         with tabs[2]:
             st.subheader("Análisis de Correlación del Portafolio")
-            corr_period = st.selectbox("Calcular correlación sobre el último período:", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
+            corr_period = st.selectbox(
+                "Calcular correlación sobre el último período:",
+                ["3mo", "6mo", "1y", "2y", "5y"],
+                index=2,
+            )
             portfolio_symbols = df_view["simbolo"].tolist()
             if len(portfolio_symbols) >= 2:
                 with st.spinner(f"Calculando correlación ({corr_period})…"):
                     hist_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period=corr_period)
                 fig = plot_correlation_heatmap(hist_df)
                 if fig:
-                    st.caption("""
+                    st.caption(
+                        """
                         Un heatmap de correlación muestra cómo se mueven los activos entre sí.
                         **Azul (cercano a 1)**: Se mueven juntos.
                         **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
                         **Blanco (cercano a 0)**: No tienen relación.
                         Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
-                    """)
+                        """
+                    )
                     st.plotly_chart(
                         fig,
                         use_container_width=True,
@@ -467,7 +314,9 @@ def main():
                         f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación."
                     )
             else:
-                st.info("Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación.")
+                st.info(
+                    "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
+                )
 
             st.subheader("Análisis de Riesgo")
             if portfolio_symbols:
@@ -529,43 +378,32 @@ def main():
                                 config=PLOTLY_CONFIG,
                             )
                             st.caption(
-                                "El VaR al 5% indica que en el 95% de los días la pérdida no superará este umbral."
+                                "La línea roja indica el VaR al 5%, representando la pérdida máxima esperada con 95% de confianza."
                             )
 
-                        st.subheader("Pesos óptimos (Markowitz)")
-                        if opt_w.empty:
-                            st.info("No se pudieron calcular pesos óptimos.")
-                        else:
-                            st.dataframe(pd.DataFrame({"peso": opt_w}))
+                        with st.expander("Optimización de portafolio (Markowitz)"):
+                            opt_df = pd.DataFrame({"ticker": opt_w.index, "weight": opt_w.values})
+                            st.bar_chart(opt_df, x="ticker", y="weight")
 
-                        st.subheader("Simulación Monte Carlo")
-                        n_sims = st.number_input("N° simulaciones", min_value=100, value=1000, step=100)
-                        horizon = st.number_input("Horizonte (días)", min_value=1, value=30, step=1)
-                        sims = monte_carlo_simulation(returns_df, weights, n_sims=int(n_sims), horizon=int(horizon))
-                        if sims.size:
-                            hist, bins = np.histogram(sims, bins=20)
-                            st.bar_chart(pd.DataFrame({"freq": hist}, index=bins[:-1]))
-                        else:
-                            st.info("Sin datos para la simulación Monte Carlo.")
+                        with st.expander("Simulación Monte Carlo"):
+                            sims = st.number_input(
+                                "Nº de simulaciones", min_value=100, max_value=10000, value=1000, step=100
+                            )
+                            horizon = st.number_input(
+                                "Horizonte (días)", min_value=30, max_value=365, value=252, step=30
+                            )
+                            s1, s2 = st.columns(2)
+                            with s1:
+                                mu = st.number_input("Media diaria", value=float(port_ret.mean()))
+                            with s2:
+                                sigma = st.number_input("Volatilidad diaria", value=float(port_ret.std()))
+                            final_prices = monte_carlo_simulation(mu, sigma, horizon, sims, weights)
+                            st.line_chart(final_prices)
 
-                        st.subheader("Escenarios de stress")
-                        templates = {
-                            "Personalizado": None,
-                            "Caída moderada (-5%)": -0.05,
-                            "Crash severo (-20%)": -0.20,
-                            "Rally (+5%)": 0.05,
-                        }
-                        tmpl = st.selectbox("Plantilla preconfigurada", list(templates.keys()))
-                        shocks = {}
-                        # for sym in returns_df.columns:
-                        #     shocks[sym] = st.number_input(f"Shock {sym} (%)", value=0.0, step=1.0) / 100.0
-                        if templates[tmpl] is None:
-                            for sym in returns_df.columns:
-                                shocks[sym] = st.number_input(
-                                    f"Shock {sym} (%)", value=0.0, step=1.0
-                                ) / 100.0
-                        else:
-                            shocks = {sym: templates[tmpl] for sym in returns_df.columns}
+                        with st.expander("Aplicar shocks"):
+                            templates = {"Leve": 0.03, "Moderado": 0.07, "Fuerte": 0.12}
+                            tmpl = st.selectbox("Escenario", list(templates), index=0)
+                            shocks = {sym: -templates[tmpl] for sym in returns_df.columns}
                             st.caption(
                                 f"Aplicando un shock uniforme de {templates[tmpl]:.0%} a todos los activos."
                             )
@@ -574,7 +412,6 @@ def main():
                         st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
             else:
                 st.info("No hay símbolos en el portafolio para analizar.")
-
         # Pestaña 4
         with tabs[3]:
             st.subheader("Análisis fundamental del portafolio")
@@ -593,7 +430,12 @@ def main():
             if not all_symbols:
                 st.info("No hay símbolos en el portafolio para analizar.")
             else:
-                sym = st.selectbox("Seleccioná un símbolo (CEDEAR / ETF)", options=all_symbols, index=0, key="ta_symbol")
+                sym = st.selectbox(
+                    "Seleccioná un símbolo (CEDEAR / ETF)",
+                    options=all_symbols,
+                    index=0,
+                    key="ta_symbol",
+                )
                 if sym:
                     us_ticker = tasvc.map_to_us_ticker(sym)
                     if not us_ticker:
@@ -674,22 +516,4 @@ def main():
                                 st.line_chart(bt["equity"])
                                 st.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
 
-    cli = build_iol_client()
-    refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
-    render_footer()
-
-    # Auto-refresh
-    if "last_refresh" not in st.session_state:
-        st.session_state["last_refresh"] = time.time()
-    try:
-        do_refresh = (refresh_secs is not None) and (float(refresh_secs) > 0)
-    except Exception:
-        do_refresh = True
-    if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
-        st.session_state["last_refresh"] = time.time()
-        st.session_state["show_refresh_toast"] = True
-        st.rerun()
-
-
-if __name__ == "__main__":
-    main()
+        return refresh_secs
