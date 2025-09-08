@@ -1,5 +1,6 @@
 import streamlit as st
-from infrastructure.iol.legacy.iol_client import IOLAuth
+#from infrastructure.iol.legacy.iol_client import IOLAuth
+from infrastructure.iol.auth import IOLAuth
 from ui.header import render_header
 
 

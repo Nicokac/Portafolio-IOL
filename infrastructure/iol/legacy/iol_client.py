@@ -59,7 +59,8 @@ def _elapsed_ms(start_ts: float) -> int:
 # Autenticación
 # =========================
 
-class IOLAuth:
+#class IOLAuth:
+class _LegacyIOLAuth:
     """
     Manejo de tokens OAuth de IOL:
     - login() obtiene access_token y refresh_token
@@ -166,7 +167,8 @@ class IOLClient:
     def __init__(self, user: str, password: str):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
-        self.auth = IOLAuth(self.user, self.password)
+        #self.auth = IOLAuth(self.user, self.password)
+        self.auth = _LegacyIOLAuth(self.user, self.password)
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
