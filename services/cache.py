@@ -2,6 +2,7 @@ import hashlib
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import streamlit as st
 
@@ -15,9 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 @st.cache_resource
-def get_client_cached(cache_key: str, user: str, password: str) -> IIOLProvider:
+def get_client_cached(
+    cache_key: str, user: str, password: str, tokens_file: Path | str | None
+) -> IIOLProvider:
     _ = cache_key
-    return _build_iol_client(user, password)
+    return _build_iol_client(user, password, tokens_file=tokens_file)
 
 
 @st.cache_data(ttl=settings.cache_ttl_portfolio)
@@ -85,6 +88,9 @@ def build_iol_client() -> IIOLProvider:
         user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
         password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     salt = str(st.session_state.get("client_salt", ""))
-    cache_key = hashlib.sha256(f"{user}:{password}:{salt}".encode()).hexdigest()
-    return get_client_cached(cache_key, user, password)
+    tokens_file = settings.tokens_file
+    cache_key = hashlib.sha256(
+        f"{user}:{password}:{salt}:{tokens_file}".encode()
+    ).hexdigest()
+    return get_client_cached(cache_key, user, password, tokens_file)
 

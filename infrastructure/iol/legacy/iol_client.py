@@ -13,6 +13,8 @@ import requests
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
 
+from shared.config import settings
+
 TOKEN_URL = "https://api.invertironline.com/token"
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
@@ -68,12 +70,12 @@ class _LegacyIOLAuth:
     - persiste en JSON (ruta configurable)
     """
 
-    def __init__(self, user: str, password: str, tokens_file: Path = Path(".cache/tokens_iol.json")):
+    def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
-        self.tokens_file = tokens_file
+        self.tokens_file = Path(tokens_file or settings.tokens_file)
         # asegurar carpeta
         try:
             self.tokens_file.parent.mkdir(parents=True, exist_ok=True)
@@ -164,11 +166,11 @@ class IOLClient:
     - Datos de mercado vía iolConn (sesión persistente y reautenticación)
     """
 
-    def __init__(self, user: str, password: str):
+    def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
         #self.auth = IOLAuth(self.user, self.password)
-        self.auth = _LegacyIOLAuth(self.user, self.password)
+        self.auth = _LegacyIOLAuth(self.user, self.password, tokens_file=tokens_file)
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
