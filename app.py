@@ -159,6 +159,10 @@ def _build_client() -> IIOLProvider:
 
 def main():
     # # --- CREDENCIALES ---
+    if st.session_state.get("force_login"):
+        render_login_page()
+        st.stop()
+
     user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
     password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     if not user or not password:
