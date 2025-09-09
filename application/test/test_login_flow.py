@@ -43,3 +43,44 @@ def test_logout_forces_login_page(monkeypatch):
         mock_login.assert_called_once()
 
     st.session_state.clear()
+
+
+def test_build_iol_client_failure_sets_login_error(monkeypatch):
+    from services import cache
+
+    st.session_state.clear()
+    st.session_state["IOL_USERNAME"] = "user"
+    st.session_state["IOL_PASSWORD"] = "pass"
+
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("bad creds")
+
+    monkeypatch.setattr(cache, "get_client_cached", boom)
+
+    cache.build_iol_client()
+
+    assert st.session_state.get("force_login") is True
+    assert st.session_state.get("login_error") == "bad creds"
+    assert st.session_state.get("IOL_PASSWORD") == ""
+
+
+def test_render_login_page_shows_error(monkeypatch):
+    st.session_state.clear()
+    st.session_state["login_error"] = "fail"
+
+    monkeypatch.setattr("ui.login.render_header", lambda: None)
+    monkeypatch.setattr(st, "form", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(st, "text_input", lambda *a, **k: None)
+    monkeypatch.setattr(st, "form_submit_button", lambda *a, **k: False)
+    monkeypatch.setattr(st, "caption", lambda *a, **k: None)
+
+    captured = {}
+    monkeypatch.setattr(st, "error", lambda msg: captured.setdefault("msg", msg))
+
+    from ui.login import render_login_page
+
+    render_login_page()
+
+    assert captured.get("msg") == "fail"

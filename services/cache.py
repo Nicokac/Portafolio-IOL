@@ -92,5 +92,13 @@ def build_iol_client() -> IIOLProvider:
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()
     ).hexdigest()
-    return get_client_cached(cache_key, user, password, tokens_file)
+    try:
+        return get_client_cached(cache_key, user, password, tokens_file)
+    except Exception as e:
+        logger.exception("build_iol_client failed: %s", e)
+        st.session_state["login_error"] = str(e)
+        st.session_state["force_login"] = True
+        st.session_state["IOL_PASSWORD"] = ""
+        st.rerun()
+        return None
 
