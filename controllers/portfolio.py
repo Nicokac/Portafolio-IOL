@@ -39,111 +39,146 @@ from application.risk_service import (
 from services.cache import fetch_portfolio, fetch_quotes_bulk
 
 
+def _load_portfolio_data(cli, psvc):
+    """Fetch and normalize portfolio positions."""
+    with st.spinner("Cargando y actualizando portafolio... ⏳"):
+        try:
+            payload = fetch_portfolio(cli)
+        except Exception as e:  # pragma: no cover - streamlit error path
+            st.error(f"Error al consultar portafolio: {e}")
+            st.stop()
+
+    if isinstance(payload, dict) and payload.get("_cached"):
+        st.warning("No se pudo contactar a IOL; mostrando datos del portafolio en caché.")
+
+    if isinstance(payload, dict) and "message" in payload:
+        st.info(f"ℹ️ Mensaje de IOL: \"{payload['message']}\"")
+        st.stop()
+
+    df_pos = psvc.normalize_positions(payload)
+    if df_pos.empty:
+        st.warning("No se encontraron posiciones o no pudimos mapear la respuesta.")
+        if isinstance(payload, dict) and "activos" in payload:
+            st.dataframe(pd.DataFrame(payload["activos"]).head(20))
+        st.stop()
+
+    all_symbols = sorted(df_pos["simbolo"].astype(str).str.upper().unique())
+    available_types = sorted(
+        {
+            psvc.classify_asset_cached(s)
+            for s in all_symbols
+            if psvc.classify_asset_cached(s)
+        }
+    )
+    return df_pos, all_symbols, available_types
+
+
+def _apply_filters(df_pos, controls, cli, psvc):
+    """Apply user filters and enrich positions with quotes."""
+    if controls.hide_cash:
+        df_pos = df_pos[~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])].copy()
+    if controls.selected_syms:
+        df_pos = df_pos[df_pos["simbolo"].isin(controls.selected_syms)].copy()
+
+    pairs = list(
+        df_pos[["mercado", "simbolo"]]
+        .drop_duplicates()
+        .astype({"mercado": str, "simbolo": str})
+        .itertuples(index=False, name=None)
+    )
+    quotes_map = fetch_quotes_bulk(cli, pairs)
+
+    df_view = psvc.calc_rows(
+        lambda mercado, simbolo=None: quotes_map.get(
+            (str(mercado).lower(), str((simbolo or mercado)).upper()), {}
+        ),
+        df_pos,
+        exclude_syms=[],
+    )
+    if df_view.empty:
+        return df_view
+
+    df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
+
+    if controls.selected_types:
+        df_view = df_view[df_view["tipo"].isin(controls.selected_types)].copy()
+
+    symbol_q = (controls.symbol_query or "").strip()
+    if symbol_q:
+        df_view = df_view[
+            df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)
+        ].copy()
+
+    chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
+    map_keys = df_view.apply(
+        lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1
+    )
+
+    df_view["chg_%"] = map_keys.map(chg_map)
+    df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
+
+    st.session_state.setdefault("quotes_hist", {})
+    now_ts = int(time.time())
+    for (mkt, sym), chg in chg_map.items():
+        if isinstance(chg, (int, float)):
+            st.session_state["quotes_hist"].setdefault(sym, [])
+            if (
+                not st.session_state["quotes_hist"][sym]
+                or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts)
+            ):
+                st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
+                maxlen = getattr(settings, "quotes_hist_maxlen", 500)
+                st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
+
+    return df_view
+
+
+def _generate_basic_charts(df_view, top_n):
+    """Generate basic portfolio charts."""
+    return {
+        "pl_topn": plot_pl_topn(df_view, n=top_n),
+        "donut_tipo": plot_donut_tipo(df_view),
+        "dist_tipo": plot_dist_por_tipo(df_view),
+        "pl_diario": plot_pl_daily_topn(df_view, n=top_n),
+    }
+
+
+def _compute_risk_metrics(returns_df, bench_ret, weights):
+    """Compute core risk metrics for the portfolio."""
+    port_ret = returns_df.mul(weights, axis=1).sum(axis=1)
+    vol = annualized_volatility(port_ret)
+    b = beta(port_ret, bench_ret)
+    var_95 = historical_var(port_ret)
+    opt_w = markowitz_optimize(returns_df)
+    return vol, b, var_95, opt_w, port_ret
+
+
 def render_portfolio_section(container, cli, fx_rates):
     """Render the main portfolio section and return refresh interval."""
     with container:
         psvc = PortfolioService()
         tasvc = TAService()
 
-        # --- DATA PORTAFOLIO ---
-        with st.spinner("Cargando y actualizando portafolio... ⏳"):
-            try:
-                payload = fetch_portfolio(cli)
-            except Exception as e:
-                st.error(f"Error al consultar portafolio: {e}")
-                st.stop()
-
-        if isinstance(payload, dict) and payload.get("_cached"):
-            st.warning("No se pudo contactar a IOL; mostrando datos del portafolio en caché.")
-
-        if isinstance(payload, dict) and "message" in payload:
-            st.info(f"ℹ️ Mensaje de IOL: \"{payload['message']}\"")
-            st.stop()
-
-        df_pos = psvc.normalize_positions(payload)
-        if df_pos.empty:
-            st.warning("No se encontraron posiciones o no pudimos mapear la respuesta.")
-            if isinstance(payload, dict) and "activos" in payload:
-                st.dataframe(pd.DataFrame(payload["activos"]).head(20))
-            st.stop()
-
-        all_symbols = sorted(df_pos["simbolo"].astype(str).str.upper().unique())
-        available_types = sorted({psvc.classify_asset_cached(s) for s in all_symbols if psvc.classify_asset_cached(s)})
+        df_pos, all_symbols, available_types = _load_portfolio_data(cli, psvc)
 
         controls: Controls = render_sidebar(all_symbols, available_types)
         render_ui_controls()
 
         refresh_secs = controls.refresh_secs
-        hide_cash = controls.hide_cash
-        order_by = controls.order_by
-        desc = controls.desc
-        selected_syms = controls.selected_syms
-        top_n = controls.top_n
-        show_usd = controls.show_usd
 
-        if hide_cash:
-            df_pos = df_pos[~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])].copy()
-        if selected_syms:
-            df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
-
-        pairs = list(
-            df_pos[["mercado", "simbolo"]]
-            .drop_duplicates()
-            .astype({"mercado": str, "simbolo": str})
-            .itertuples(index=False, name=None)
-        )
-        quotes_map = fetch_quotes_bulk(cli, pairs)
-
-        df_view = psvc.calc_rows(
-            lambda mercado, simbolo=None: quotes_map.get(
-                (str(mercado).lower(), str((simbolo or mercado)).upper()), {}
-            ),
-            df_pos,
-            exclude_syms=[],
-        )
-        if not df_view.empty:
-            df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
-
-            sel_types = controls.selected_types or []
-            if sel_types:
-                df_view = df_view[df_view["tipo"].isin(sel_types)].copy()
-
-            symbol_q = (controls.symbol_query or "").strip()
-            if symbol_q:
-                df_view = df_view[
-                    df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)
-                ].copy()
-
-            chg_map = {k: v.get("chg_pct") for k, v in quotes_map.items()}
-            map_keys = df_view.apply(
-                lambda row: (str(row["mercado"]).lower(), str(row["simbolo"]).upper()), axis=1
-            )
-
-            df_view["chg_%"] = map_keys.map(chg_map)
-            df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
-
-            st.session_state.setdefault("quotes_hist", {})
-            now_ts = int(time.time())
-            for (mkt, sym), chg in chg_map.items():
-                if isinstance(chg, (int, float)):
-                    st.session_state["quotes_hist"].setdefault(sym, [])
-                    if (
-                        not st.session_state["quotes_hist"][sym]
-                        or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts)
-                    ):
-                        st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
-                        maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                        st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
+        df_view = _apply_filters(df_pos, controls, cli, psvc)
 
         ccl_rate = fx_rates.get("ccl")
 
-        tabs = st.tabs([
-            "📂 Portafolio",
-            "📊 Análisis avanzado",
-            "🎲 Análisis de Riesgo",
-            "📑 Análisis fundamental",
-            "🔎 Análisis de activos",
-        ])
+        tabs = st.tabs(
+            [
+                "📂 Portafolio",
+                "📊 Análisis avanzado",
+                "🎲 Análisis de Riesgo",
+                "📑 Análisis fundamental",
+                "🔎 Análisis de activos",
+            ]
+        )
 
         # Pestaña 1
         with tabs[0]:
@@ -151,12 +186,19 @@ def render_portfolio_section(container, cli, fx_rates):
                 st.info("No hay datos del portafolio para mostrar.")
             else:
                 render_totals(df_view, ccl_rate=ccl_rate)
-                render_table(df_view, order_by, desc, ccl_rate=ccl_rate, show_usd=show_usd)
+                render_table(
+                    df_view,
+                    controls.order_by,
+                    controls.desc,
+                    ccl_rate=ccl_rate,
+                    show_usd=controls.show_usd,
+                )
 
+                charts = _generate_basic_charts(df_view, controls.top_n)
                 colA, colB = st.columns(2)
                 with colA:
                     st.subheader("P/L por símbolo (Top N)")
-                    fig = plot_pl_topn(df_view, n=top_n)
+                    fig = charts["pl_topn"]
                     if fig is not None:
                         st.plotly_chart(
                             fig,
@@ -168,7 +210,7 @@ def render_portfolio_section(container, cli, fx_rates):
                         st.info("Sin datos para graficar P/L Top N.")
                 with colB:
                     st.subheader("Composición por tipo (Donut)")
-                    fig = plot_donut_tipo(df_view)
+                    fig = charts["donut_tipo"]
                     if fig is not None:
                         st.plotly_chart(
                             fig,
@@ -180,7 +222,7 @@ def render_portfolio_section(container, cli, fx_rates):
                         st.info("No hay datos para el donut por tipo.")
 
                 st.subheader("Distribución por tipo (Valorizado)")
-                fig = plot_dist_por_tipo(df_view)
+                fig = charts["dist_tipo"]
                 if fig is not None:
                     st.plotly_chart(
                         fig,
@@ -192,7 +234,7 @@ def render_portfolio_section(container, cli, fx_rates):
                     st.info("No hay datos para la distribución por tipo.")
 
                 st.subheader("P/L diario por símbolo (Top N)")
-                fig = plot_pl_daily_topn(df_view, n=top_n)
+                fig = charts["pl_diario"]
                 if fig is not None:
                     st.plotly_chart(
                         fig,
@@ -202,10 +244,15 @@ def render_portfolio_section(container, cli, fx_rates):
                     )
                 else:
                     st.info("Aún no hay datos de P/L diario.")
-        # Pestaña 2
+
+        # Pestaña 2 (se mantiene lógica original)
         with tabs[1]:
             st.subheader("Bubble Chart Interactivo")
-            axis_options = [c for c in ["costo", "pl", "pl_%", "valor_actual", "pl_d"] if c in df_view.columns]
+            axis_options = [
+                c
+                for c in ["costo", "pl", "pl_%", "valor_actual", "pl_d"]
+                if c in df_view.columns
+            ]
             if not axis_options:
                 st.info("No hay columnas disponibles para el gráfico bubble.")
             else:
@@ -222,7 +269,9 @@ def render_portfolio_section(container, cli, fx_rates):
                     y_axis = st.selectbox(
                         "Eje Y",
                         options=axis_options,
-                        index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options) - 1),
+                        index=axis_options.index("pl")
+                        if "pl" in axis_options
+                        else min(1, len(axis_options) - 1),
                         key="bubble_y",
                     )
                     y_log = st.checkbox("Escala log Y", key="bubble_y_log")
@@ -291,7 +340,9 @@ def render_portfolio_section(container, cli, fx_rates):
             portfolio_symbols = df_view["simbolo"].tolist()
             if len(portfolio_symbols) >= 2:
                 with st.spinner(f"Calculando correlación ({corr_period})…"):
-                    hist_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period=corr_period)
+                    hist_df = tasvc.portfolio_history(
+                        simbolos=portfolio_symbols, period=corr_period
+                    )
                 fig = plot_correlation_heatmap(hist_df)
                 if fig:
                     st.caption(
@@ -321,10 +372,14 @@ def render_portfolio_section(container, cli, fx_rates):
             st.subheader("Análisis de Riesgo")
             if portfolio_symbols:
                 with st.spinner("Descargando históricos…"):
-                    prices_df = tasvc.portfolio_history(simbolos=portfolio_symbols, period="1y")
+                    prices_df = tasvc.portfolio_history(
+                        simbolos=portfolio_symbols, period="1y"
+                    )
                     bench_df = tasvc.portfolio_history(simbolos=["^GSPC"], period="1y")
                 if prices_df.empty or bench_df.empty:
-                    st.info("No se pudieron obtener datos históricos para calcular métricas de riesgo.")
+                    st.info(
+                        "No se pudieron obtener datos históricos para calcular métricas de riesgo."
+                    )
                 else:
                     returns_df = compute_returns(prices_df)
                     bench_ret = compute_returns(bench_df).squeeze()
@@ -335,24 +390,36 @@ def render_portfolio_section(container, cli, fx_rates):
                     )
                     weights = weights / weights.sum() if not weights.empty else weights
                     if weights.empty or returns_df.empty:
-                        st.info("No hay suficientes datos para calcular métricas de riesgo.")
+                        st.info(
+                            "No hay suficientes datos para calcular métricas de riesgo."
+                        )
                     else:
-                        port_ret = returns_df.mul(weights, axis=1).sum(axis=1)
-                        vol = annualized_volatility(port_ret)
-                        b = beta(port_ret, bench_ret)
-                        var_95 = historical_var(port_ret)
-                        opt_w = markowitz_optimize(returns_df)
+                        vol, b, var_95, opt_w, port_ret = _compute_risk_metrics(
+                            returns_df, bench_ret, weights
+                        )
 
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("Volatilidad anualizada", f"{vol:.2%}" if vol == vol else "N/A")
-                        c2.metric("Beta vs S&P 500", f"{b:.2f}" if b == b else "N/A")
-                        c3.metric("VaR 5%", f"{var_95:.2%}" if var_95 == var_95 else "N/A")
+                        c1.metric(
+                            "Volatilidad anualizada",
+                            f"{vol:.2%}" if vol == vol else "N/A",
+                        )
+                        c2.metric(
+                            "Beta vs S&P 500",
+                            f"{b:.2f}" if b == b else "N/A",
+                        )
+                        c3.metric(
+                            "VaR 5%",
+                            f"{var_95:.2%}" if var_95 == var_95 else "N/A",
+                        )
 
                         with st.expander("Volatilidad - evolución"):
                             rolling_vol = port_ret.rolling(30).std() * np.sqrt(252)
                             fig_vol = px.line(
                                 rolling_vol,
-                                labels={"index": "Fecha", "value": "Volatilidad anualizada"},
+                                labels={
+                                    "index": "Fecha",
+                                    "value": "Volatilidad anualizada",
+                                },
                             )
                             st.plotly_chart(
                                 fig_vol,
@@ -381,16 +448,28 @@ def render_portfolio_section(container, cli, fx_rates):
                                 "La línea roja indica el VaR al 5%, representando la pérdida máxima esperada con 95% de confianza."
                             )
 
-                        with st.expander("Optimización de portafolio (Markowitz)"):
-                            opt_df = pd.DataFrame({"ticker": opt_w.index, "weight": opt_w.values})
+                        with st.expander(
+                            "Optimización de portafolio (Markowitz)"
+                        ):
+                            opt_df = pd.DataFrame(
+                                {"ticker": opt_w.index, "weight": opt_w.values}
+                            )
                             st.bar_chart(opt_df, x="ticker", y="weight")
 
                         with st.expander("Simulación Monte Carlo"):
                             sims = st.number_input(
-                                "Nº de simulaciones", min_value=100, max_value=10000, value=1000, step=100
+                                "Nº de simulaciones",
+                                min_value=100,
+                                max_value=10000,
+                                value=1000,
+                                step=100,
                             )
                             horizon = st.number_input(
-                                "Horizonte (días)", min_value=30, max_value=365, value=252, step=30
+                                "Horizonte (días)",
+                                min_value=30,
+                                max_value=365,
+                                value=252,
+                                step=30,
                             )
                             final_prices = monte_carlo_simulation(
                                 returns_df, weights, n_sims=sims, horizon=horizon
@@ -400,15 +479,20 @@ def render_portfolio_section(container, cli, fx_rates):
                         with st.expander("Aplicar shocks"):
                             templates = {"Leve": 0.03, "Moderado": 0.07, "Fuerte": 0.12}
                             tmpl = st.selectbox("Escenario", list(templates), index=0)
-                            shocks = {sym: -templates[tmpl] for sym in returns_df.columns}
+                            shocks = {
+                                sym: -templates[tmpl] for sym in returns_df.columns
+                            }
                             st.caption(
                                 f"Aplicando un shock uniforme de {templates[tmpl]:.0%} a todos los activos."
                             )
                         base_prices = pd.Series(1.0, index=weights.index)
                         stressed_val = apply_stress(base_prices, weights, shocks)
-                        st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
+                        st.write(
+                            f"Retorno con shocks: {stressed_val - 1:.2%}"
+                        )
             else:
                 st.info("No hay símbolos en el portafolio para analizar.")
+
         # Pestaña 4
         with tabs[3]:
             st.subheader("Análisis fundamental del portafolio")
@@ -443,27 +527,61 @@ def render_portfolio_section(container, cli, fx_rates):
 
                         cols = st.columns([1, 1, 1, 1])
                         with cols[0]:
-                            period = st.selectbox("Período", ["3mo", "6mo", "1y", "2y"], index=1)
+                            period = st.selectbox(
+                                "Período", ["3mo", "6mo", "1y", "2y"], index=1
+                            )
                         with cols[1]:
-                            interval = st.selectbox("Intervalo", ["1d", "1h", "30m"], index=0)
+                            interval = st.selectbox(
+                                "Intervalo", ["1d", "1h", "30m"], index=0
+                            )
                         with cols[2]:
-                            sma_fast = st.number_input("SMA corta", min_value=5, max_value=100, value=20, step=1)
+                            sma_fast = st.number_input(
+                                "SMA corta",
+                                min_value=5,
+                                max_value=100,
+                                value=20,
+                                step=1,
+                            )
                         with cols[3]:
-                            sma_slow = st.number_input("SMA larga", min_value=10, max_value=250, value=50, step=5)
+                            sma_slow = st.number_input(
+                                "SMA larga",
+                                min_value=10,
+                                max_value=250,
+                                value=50,
+                                step=5,
+                            )
 
                         with st.expander("Parámetros adicionales"):
                             c1, c2, c3 = st.columns(3)
-                            macd_fast = c1.number_input("MACD rápida", min_value=5, max_value=50, value=12, step=1)
-                            macd_slow = c2.number_input("MACD lenta", min_value=10, max_value=200, value=26, step=1)
-                            macd_signal = c3.number_input("MACD señal", min_value=5, max_value=50, value=9, step=1)
+                            macd_fast = c1.number_input(
+                                "MACD rápida", min_value=5, max_value=50, value=12, step=1
+                            )
+                            macd_slow = c2.number_input(
+                                "MACD lenta", min_value=10, max_value=200, value=26, step=1
+                            )
+                            macd_signal = c3.number_input(
+                                "MACD señal", min_value=5, max_value=50, value=9, step=1
+                            )
                             c4, c5, c6 = st.columns(3)
-                            atr_win = c4.number_input("ATR ventana", min_value=5, max_value=200, value=14, step=1)
-                            stoch_win = c5.number_input("Estocástico ventana", min_value=5, max_value=200, value=14, step=1)
-                            stoch_smooth = c6.number_input("Estocástico suavizado", min_value=1, max_value=50, value=3, step=1)
+                            atr_win = c4.number_input(
+                                "ATR ventana", min_value=5, max_value=200, value=14, step=1
+                            )
+                            stoch_win = c5.number_input(
+                                "Estocástico ventana", min_value=5, max_value=200, value=14, step=1
+                            )
+                            stoch_smooth = c6.number_input(
+                                "Estocástico suavizado", min_value=1, max_value=50, value=3, step=1
+                            )
                             c7, c8, c9 = st.columns(3)
-                            ichi_conv = c7.number_input("Ichimoku conv.", min_value=1, max_value=50, value=9, step=1)
-                            ichi_base = c8.number_input("Ichimoku base", min_value=2, max_value=100, value=26, step=1)
-                            ichi_span = c9.number_input("Ichimoku span B", min_value=2, max_value=200, value=52, step=1)
+                            ichi_conv = c7.number_input(
+                                "Ichimoku conv.", min_value=1, max_value=50, value=9, step=1
+                            )
+                            ichi_base = c8.number_input(
+                                "Ichimoku base", min_value=2, max_value=100, value=26, step=1
+                            )
+                            ichi_span = c9.number_input(
+                                "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
+                            )
 
                         df_ind = tasvc.indicators_for(
                             sym,
@@ -482,9 +600,13 @@ def render_portfolio_section(container, cli, fx_rates):
                             ichi_span=ichi_span,
                         )
                         if df_ind.empty:
-                            st.info("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
+                            st.info(
+                                "No se pudo descargar histórico para ese símbolo/periodo/intervalo."
+                            )
                         else:
-                            fig = plot_technical_analysis_chart(df_ind, sma_fast, sma_slow)
+                            fig = plot_technical_analysis_chart(
+                                df_ind, sma_fast, sma_slow
+                            )
                             st.plotly_chart(
                                 fig,
                                 use_container_width=True,
@@ -505,12 +627,16 @@ def render_portfolio_section(container, cli, fx_rates):
                                 st.caption("Sin alertas técnicas en la última vela.")
 
                             st.subheader("Backtesting")
-                            strat = st.selectbox("Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0)
+                            strat = st.selectbox(
+                                "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
+                            )
                             bt = tasvc.backtest(df_ind, strategy=strat)
                             if bt.empty:
                                 st.info("Sin datos suficientes para el backtesting.")
                             else:
                                 st.line_chart(bt["equity"])
-                                st.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
+                                st.metric(
+                                    "Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}"
+                                )
 
         return refresh_secs
