@@ -24,16 +24,16 @@ def get_client_cached(
 
 
 @st.cache_data(ttl=settings.cache_ttl_portfolio)
-def fetch_portfolio(cli: IIOLProvider):
+def fetch_portfolio(_cli: IIOLProvider):
     start = time.time()
-    data = cli.get_portfolio()
+    data = _cli.get_portfolio()
     logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
     return data
 
 
 @st.cache_data(ttl=settings.cache_ttl_quotes)
-def fetch_quotes_bulk(cli: IIOLProvider, items):
-    get_bulk = getattr(cli, "get_quotes_bulk", None)
+def fetch_quotes_bulk(_cli: IIOLProvider, items):
+    get_bulk = getattr(_cli, "get_quotes_bulk", None)
     try:
         if callable(get_bulk):
             return get_bulk(items)
@@ -43,7 +43,7 @@ def fetch_quotes_bulk(cli: IIOLProvider, items):
     max_workers = getattr(settings, "max_quote_workers", 12)
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
         futs = {
-            ex.submit(cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
+            ex.submit(_cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
             for m, s in items
         }
         for fut in as_completed(futs):
