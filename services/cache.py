@@ -63,11 +63,16 @@ def get_fx_provider() -> FXProviderAdapter:
 
 @st.cache_data(ttl=settings.cache_ttl_fx)
 def fetch_fx_rates():
+    data: dict = {}
+    error: str | None = None
     try:
-        return get_fx_provider().get_rates()
+        data, error = get_fx_provider().get_rates()
     except Exception as e:
-        logger.warning("FX provider failed: %s", e)
-        return {}
+        error = f"FX provider failed: {e}"
+        logger.warning(error)
+    if error:
+        st.warning(error)
+    return data
 
 
 def get_fx_rates_cached():
