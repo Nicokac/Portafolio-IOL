@@ -392,12 +392,9 @@ def render_portfolio_section(container, cli, fx_rates):
                             horizon = st.number_input(
                                 "Horizonte (días)", min_value=30, max_value=365, value=252, step=30
                             )
-                            s1, s2 = st.columns(2)
-                            with s1:
-                                mu = st.number_input("Media diaria", value=float(port_ret.mean()))
-                            with s2:
-                                sigma = st.number_input("Volatilidad diaria", value=float(port_ret.std()))
-                            final_prices = monte_carlo_simulation(mu, sigma, horizon, sims, weights)
+                            final_prices = monte_carlo_simulation(
+                                returns_df, weights, n_sims=sims, horizon=horizon
+                            )
                             st.line_chart(final_prices)
 
                         with st.expander("Aplicar shocks"):

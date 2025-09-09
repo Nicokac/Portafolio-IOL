@@ -25,8 +25,6 @@ def render_fx_summary_in_header(rates: dict):
         "💵 Oficial": _as_float_or_none(rates.get("oficial")),
         "📈 MEP": _as_float_or_none(rates.get("mep")),
         "🏦 CCL": _as_float_or_none(rates.get("ccl")),
-        "🪙 Cripto": _as_float_or_none(rates.get("cripto")),
-        "💳 Tarjeta": _as_float_or_none(rates.get("tarjeta")),
         "🧧 Blue": _as_float_or_none(rates.get("blue")),
     }
 
