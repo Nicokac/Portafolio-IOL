@@ -1,8 +1,6 @@
-import hashlib
-import logging
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging, time, hashlib
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
 
