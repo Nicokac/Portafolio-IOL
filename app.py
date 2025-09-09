@@ -15,7 +15,7 @@ from ui.header import render_header
 from ui.actions import render_action_menu
 from ui.login import render_login_page
 from ui.footer import render_footer
-from controllers.fx import render_fx_section
+#from controllers.fx import render_fx_section
 from controllers.portfolio import render_portfolio_section
 from services.cache import get_fx_rates_cached, build_iol_client
 
@@ -59,9 +59,10 @@ def main():
         st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
         render_action_menu()
 
-    main_col, side_col = st.columns([4, 1])
+    # main_col, side_col = st.columns([4, 1])
 
-    render_fx_section(side_col, fx_rates)
+    # render_fx_section(side_col, fx_rates)
+    main_col = st.container()
 
     cli = build_iol_client()
     refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
