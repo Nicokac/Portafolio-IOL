@@ -4,7 +4,8 @@ import time
 import logging
 import json
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple, List
+import traceback
 
 from infrastructure.http.session import build_session
 from shared.config import settings
@@ -13,6 +14,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 CACHE_FILE = Path(".cache/fx_rates.json")
+FALLBACK_FILE = Path("infrastructure/fx/fallback_rates.json")
 CACHE_TTL  = 45  # segundos
 
 
@@ -97,48 +99,78 @@ class FXProviderAdapter:
         except Exception:
             pass
 
+    def _load_fallback(self) -> Optional[dict]:
+        """Carga un archivo local como último recurso."""
+        try:
+            if FALLBACK_FILE.exists():
+                data = json.loads(FALLBACK_FILE.read_text(encoding="utf-8"))
+                return _normalize_rates(data)
+        except Exception:
+            pass
+        return None
+
     # ---------------
     # Fetch + normalize
     # ---------------
-    def get_rates(self) -> Dict[str, float]:
-        # 1) Cache
-        cached = self._load_cache()
-        if cached:
-            return cached
-
-        # 2) Fuentes (mantén/ajusta las que venías usando)
-        urls = {
-            "blue":     "https://api.bluelytics.com.ar/v2/latest",
-            "oficial":  "https://dolarapi.com/v1/dolares/oficial",
-            "mep":      "https://dolarapi.com/v1/dolares/bolsa",
-            "ccl":      "https://dolarapi.com/v1/dolares/contadoconliqui",
-        }
-
-        raw: Dict[str, float] = {}
-        # blue (bluelytics)
+    def get_rates(self) -> Tuple[Dict[str, float], Optional[str]]:
+        errors: List[str] = []
         try:
-            r = self.session.get(urls["blue"])
-            if r.ok:
-                j = r.json()
-                # bluelytics tiene "blue": {"value_avg": ...}
-                raw["blue"] = float(j["blue"]["value_avg"])
-        except requests.RequestException as e:
-            logger.warning("No se pudo obtener blue: %s", e)
+            # 1) Cache
+            cached = self._load_cache()
+            if cached:
+                return cached, None
 
-        # oficial / mep / ccl (dolarapi)
-        for k in ("oficial", "mep", "ccl"):
+            # 2) Fuentes
+            urls = {
+                "blue":     "https://api.bluelytics.com.ar/v2/latest",
+                "oficial":  "https://dolarapi.com/v1/dolares/oficial",
+                "mep":      "https://dolarapi.com/v1/dolares/bolsa",
+                "ccl":      "https://dolarapi.com/v1/dolares/contadoconliqui",
+            }
+
+            raw: Dict[str, float] = {}
+            # blue (bluelytics)
             try:
-                r = self.session.get(urls[k])
+                r = self.session.get(urls["blue"])
                 if r.ok:
                     j = r.json()
-                    # dolarapi usa 'venta'
-                    raw[k] = float(j["venta"])
+                    # bluelytics tiene "blue": {"value_avg": ...}
+                    raw["blue"] = float(j["blue"]["value_avg"])
             except requests.RequestException as e:
-                logger.warning("No se pudo obtener %s: %s", k, e)
+                msg = f"No se pudo obtener blue: {e}"
+                logger.warning(msg)
+                errors.append(msg)
 
-        raw["_ts"] = int(time.time())
+            # oficial / mep / ccl (dolarapi)
+            for k in ("oficial", "mep", "ccl"):
+                try:
+                    r = self.session.get(urls[k])
+                    if r.ok:
+                        j = r.json()
+                        # dolarapi usa 'venta'
+                        raw[k] = float(j["venta"])
+                except requests.RequestException as e:
+                    msg = f"No se pudo obtener {k}: {e}"
+                    logger.warning(msg)
+                    errors.append(msg)
 
-        # 3) Normalización y cache
-        normalized = _normalize_rates(raw)
-        self._save_cache(normalized)
-        return normalized
+            raw["_ts"] = int(time.time())
+
+            # 3) Normalización y cache
+            normalized = _normalize_rates(raw)
+            if len(normalized) <= 1:  # Sólo _ts o vacío
+                fb = self._load_fallback()
+                if fb:
+                    normalized = fb
+                    errors.append("Usando datos locales de FX")
+
+            self._save_cache(normalized)
+            return normalized, "; ".join(errors) if errors else None
+        except Exception as e:
+            msg = f"FXProviderAdapter failed: {e}"
+            logger.exception(msg)
+            cached = self._load_cache() or self._load_fallback() or {}
+            if cached:
+                errors.append(msg)
+                return cached, "; ".join(errors)
+            return {}, msg + "\n" + traceback.format_exc()
