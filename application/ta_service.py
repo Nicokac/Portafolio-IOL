@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 from typing import Optional, List
-from .portfolio_service import get_config, clean_symbol, map_to_us_ticker
+from .portfolio_service import clean_symbol, map_to_us_ticker
 
 import numpy as np
 import pandas as pd
@@ -24,11 +24,7 @@ except ImportError:  # Si la librería no está disponible, usamos stubs
     logging.warning("La librería ta no está instalada. Indicadores técnicos deshabilitados.")
     RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = AverageTrueRange = None
 
-# === Import refactorizado: get_config / clean_symbol (ya no existe load_config)
-from .portfolio_service import get_config, clean_symbol, map_to_us_ticker
-
 logger = logging.getLogger(__name__)
-CONFIG = get_config()
 
 
 # -----------------------
@@ -49,22 +45,6 @@ def _to_float(x) -> Optional[float]:
         return float(s)
     except Exception:
         return None
-
-
-def map_to_us_ticker(simbolo: str) -> Optional[str]:
-    """
-    Mapea un CEDEAR a su ticker US usando config['cedear_to_us'].
-    Si no está en el mapa y parece un ticker US (3-5 letras), devuelve el mismo.
-    """
-    s = clean_symbol(simbolo)
-    if s.startswith("^"):
-        return s
-    cedear_map = CONFIG.get("cedear_to_us", {}) or {}
-    if s in cedear_map:
-        return clean_symbol(cedear_map[s])
-    if s.isalpha() and 3 <= len(s) <= 5:
-        return s
-    return None
 
 
 def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
