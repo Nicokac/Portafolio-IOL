@@ -5,10 +5,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
 
-from infrastructure.iol.client import build_iol_client
+from infrastructure.iol.client import build_iol_client as _build_iol_client
 from infrastructure.iol.ports import IIOLProvider
 from infrastructure.fx.provider import FXProviderAdapter
 from shared.config import settings
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 @st.cache_resource
 def get_client_cached(cache_key: str, user: str, password: str) -> IIOLProvider:
     _ = cache_key
-    return build_iol_client(user, password)
+    return _build_iol_client(user, password)
 
 
 @st.cache_data(ttl=settings.cache_ttl_portfolio)
@@ -77,8 +78,6 @@ def get_fx_rates_cached():
 
 
 def build_iol_client() -> IIOLProvider:
-    # user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    # password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     if st.session_state.get("force_login"):
         user = st.session_state.get("IOL_USERNAME")
         password = st.session_state.get("IOL_PASSWORD")
@@ -87,5 +86,5 @@ def build_iol_client() -> IIOLProvider:
         password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     salt = str(st.session_state.get("client_salt", ""))
     cache_key = hashlib.sha256(f"{user}:{password}:{salt}".encode()).hexdigest()
-    # return get_client_cached(cache_key, user, password)
     return get_client_cached(cache_key, user, password)
+
