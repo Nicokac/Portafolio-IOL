@@ -25,8 +25,8 @@ def _load_cfg() -> Dict[str, Any]:
         try:
             if p.exists():
                 return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("No se pudo cargar configuración %s: %s", p, e)
     return {}
 
 class Settings:
@@ -76,8 +76,6 @@ def get_config() -> dict:
                 cfg["scale_overrides"] = {}
             if not isinstance(cfg.get("classification_patterns", {}), dict):
                 cfg["classification_patterns"] = {}
-            if not isinstance(cfg.get("scale_overrides", {}), dict):
-                cfg["scale_overrides"] = {}
             return cfg
     except FileNotFoundError:
         logger.warning("No se encontró archivo de configuración: %s", path)
