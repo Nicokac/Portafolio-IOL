@@ -79,8 +79,8 @@ class _LegacyIOLAuth:
         # asegurar carpeta
         try:
             self.tokens_file.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("No se pudo crear directorio de tokens: %s", e)
         self._lock = threading.RLock()
         self.tokens: Dict[str, Any] = self._load_tokens() or {}
 
