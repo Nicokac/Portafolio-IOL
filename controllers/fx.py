@@ -1,5 +1,5 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 
 from shared.config import settings
 from ui.fx_panels import render_spreads, render_fx_history
