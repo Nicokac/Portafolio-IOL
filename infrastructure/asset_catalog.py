@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from functools import lru_cache
 from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "assets_catalog.json")
 
@@ -23,6 +26,6 @@ def get_asset_catalog(path: str | None = None) -> Dict[str, str]:
             data = json.load(fh)
             if isinstance(data, dict):
                 return {str(k).upper(): str(v) for k, v in data.items()}
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("No se pudo leer %s: %s", path, e)
     return {}
