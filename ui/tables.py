@@ -7,8 +7,6 @@ from shared.utils import (
     _as_float_or_none,
     _is_none_nan_inf,
     format_money,
-    format_number,
-    format_price,
 )
 from .palette import get_active_palette
 from .export import download_csv
@@ -104,21 +102,21 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         row = {
             "Símbolo": sym,
             "Tipo": tipo,
-            "Cantidad": format_number(r["cantidad"]),
-            "Último precio": format_price(r["ultimo"], currency=cur),
-            "Valorizado": format_money(r["valor_actual"], currency=cur),
-            "Costo": format_money(r["costo"], currency=cur),
+            "cantidad_num": _as_float_or_none(r["cantidad"]),
+            "ultimo_num": _as_float_or_none(r["ultimo"]),
+            "valor_actual_num": _as_float_or_none(r["valor_actual"]),
+            "costo_num": _as_float_or_none(r["costo"]),
         }
 
         pl_val = r.get("pl")
         pl_pct_val = r.get("pl_%")
-        row["P/L Acum Valor"] = format_money(pl_val, currency=cur) if not _is_none_nan_inf(pl_val) else "—"
-        row["P/L Acum %"] = f"{float(pl_pct_val):.2f}%" if not _is_none_nan_inf(pl_pct_val) else "—"
+        row["pl_num"] = _as_float_or_none(pl_val)
+        row["pl_pct_num"] = _as_float_or_none(pl_pct_val)
 
         pl_d_val = r.get("pl_d")
         chg_pct = r.get("chg_%")
-        row["P/L diario Valor"] = format_money(pl_d_val, currency=cur) if not _is_none_nan_inf(pl_d_val) else "—"
-        row["P/L diario %"] = f"{float(chg_pct):.2f}%" if not _is_none_nan_inf(chg_pct) else "—"
+        row["pl_d_num"] = _as_float_or_none(pl_d_val)
+        row["chg_pct_num"] = _as_float_or_none(chg_pct)
         chg_list.append(_as_float_or_none(chg_pct))
 
         hist = quotes_hist.get(sym.upper(), [])
@@ -131,9 +129,15 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
-            row["Val. (USD CCL)"] = format_money((float(r["valor_actual"]) / rate) if not _is_none_nan_inf(r["valor_actual"]) else None, "USD")
-            row["Costo (USD CCL)"] = format_money((float(r["costo"]) / rate) if not _is_none_nan_inf(r["costo"]) else None, "USD")
-            row["P/L (USD CCL)"] = format_money((float(r["pl"]) / rate) if not _is_none_nan_inf(r["pl"]) else None, "USD")
+            row["val_usd_num"] = (
+                float(r["valor_actual"]) / rate if not _is_none_nan_inf(r["valor_actual"]) else None
+            )
+            row["costo_usd_num"] = (
+                float(r["costo"]) / rate if not _is_none_nan_inf(r["costo"]) else None
+            )
+            row["pl_usd_num"] = (
+                float(r["pl"]) / rate if not _is_none_nan_inf(r["pl"]) else None
+            )
 
         fmt_rows.append(row)
 
@@ -142,13 +146,13 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     def _color_pl(col: pd.Series):
         styles = []
         for v in col:
-            s = str(v or "").strip()
-            if s.startswith("-"):
-                styles.append(f"color: {palette.negative}; font-weight: 600;")
-            elif s not in {"—", ""}:
-                styles.append(f"color: {palette.positive}; font-weight: 600;")
-            else:
+            val = _as_float_or_none(v)
+            if val is None or not np.isfinite(val):
                 styles.append("")
+            elif val < 0:
+                styles.append(f"color: {palette.negative}; font-weight: 600;")
+            else:
+                styles.append(f"color: {palette.positive}; font-weight: 600;")
         return styles
 
     if all_spark_vals:
@@ -157,6 +161,20 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         y_min, y_max = -span, span
     else:
         y_min, y_max = -10.0, 10.0
+
+    rename_map = {
+        "cantidad_num": "Cantidad",
+        "ultimo_num": "Último precio",
+        "valor_actual_num": "Valorizado",
+        "costo_num": "Costo",
+        "pl_num": "P/L Acum Valor",
+        "pl_pct_num": "P/L Acum %",
+        "pl_d_num": "P/L diario Valor",
+        "chg_pct_num": "P/L diario %",
+        "val_usd_num": "Val. (USD CCL)",
+        "costo_usd_num": "Costo (USD CCL)",
+        "pl_usd_num": "P/L (USD CCL)",
+    }
 
     column_help = {
         "Símbolo": "Ticker del activo",
@@ -174,10 +192,32 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         "P/L (USD CCL)": "Ganancia/Pérdida en USD usando CCL",
     }
 
+    column_format = {
+        "Cantidad": "%d",
+        "Último precio": "$%.2f",
+        "Valorizado": "$%.2f",
+        "Costo": "$%.2f",
+        "P/L Acum Valor": "$%.2f",
+        "P/L Acum %": "%.2f%%",
+        "P/L diario Valor": "$%.2f",
+        "P/L diario %": "%.2f%%",
+        "Val. (USD CCL)": "$%.2f",
+        "Costo (USD CCL)": "$%.2f",
+        "P/L (USD CCL)": "$%.2f",
+    }
+
     column_config: dict[str, st.column_config.Column] = {}
-    for col, help_txt in column_help.items():
+    for col in ["Símbolo", "Tipo"]:
         if col in df_tbl.columns:
-            column_config[col] = st.column_config.Column(label=col, help=help_txt)
+            column_config[col] = st.column_config.Column(label=col, help=column_help[col])
+
+    for col, label in rename_map.items():
+        if col in df_tbl.columns:
+            column_config[col] = st.column_config.NumberColumn(
+                label=label,
+                help=column_help[label],
+                format=column_format.get(label, "%.2f"),
+            )
 
     column_config["Intradía %"] = st.column_config.LineChartColumn(
         label="Intradía %",
@@ -188,7 +228,8 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     )
 
     st.subheader("Detalle por símbolo")
-    download_csv(df_tbl, "portafolio.csv")
+    df_export = df_tbl.rename(columns=rename_map)
+    download_csv(df_export, "portafolio.csv")
 
     page_size = st.number_input("Filas por página", min_value=5, max_value=100, value=20, step=5)
     total_pages = max(1, math.ceil(len(df_tbl) / page_size))
@@ -199,10 +240,14 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     df_page = df_tbl.iloc[start:end]
 
     st.dataframe(
-        df_page.style
-            .apply(_color_pl, subset=["P/L Acum Valor", "P/L diario Valor", "P/L Acum %", "P/L diario %"]),
+        df_page.style.apply(
+            _color_pl,
+            subset=["pl_num", "pl_d_num", "pl_pct_num", "chg_pct_num"],
+        ),
         use_container_width=True,
         hide_index=True,
         height=420,
         column_config=column_config,
     )
+
+    df_tbl.drop(columns=rename_map.keys(), inplace=True, errors="ignore")
