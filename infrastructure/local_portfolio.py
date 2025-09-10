@@ -1,7 +1,9 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
+logger = logging.getLogger(__name__)
 
 class LocalPortfolioRepository:
     """
@@ -21,7 +23,8 @@ class LocalPortfolioRepository:
         """
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as e:
+            logger.warning("No se pudo leer %s: %s", self.path, e)
             return {"activos": []}
 
     def save(self, data: Dict[str, Any]) -> None:
