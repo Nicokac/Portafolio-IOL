@@ -25,6 +25,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+logger = logging.getLogger(__name__)
 
 # Configuración de UI centralizada (tema y layout)
 init_ui()
@@ -72,7 +73,8 @@ def main():
         st.session_state["last_refresh"] = time.time()
     try:
         do_refresh = (refresh_secs is not None) and (float(refresh_secs) > 0)
-    except Exception:
+    except Exception as e:
+        logger.warning("refresh_secs inválido: %s", e)
         do_refresh = True
     if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
         st.session_state["last_refresh"] = time.time()
