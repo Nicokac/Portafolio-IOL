@@ -28,8 +28,8 @@ class IOLAuth:
         path = Path(self.tokens_file or settings.tokens_file)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("No se pudo crear directorio de tokens: %s", e)
         object.__setattr__(self, "tokens_file", path)
 
     @property
