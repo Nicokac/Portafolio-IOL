@@ -1,7 +1,10 @@
 from __future__ import annotations
 import time
+import logging
 from threading import Lock
 from typing import Dict, Tuple, Any
+
+logger = logging.getLogger(__name__)
 
 # Caché thread-safe con TTL para cotizaciones
 _QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
@@ -25,7 +28,8 @@ def get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
     try:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = {"last": q.get("last"), "chg_pct": q.get("chg_pct")}
-    except Exception:
+    except Exception as e:
+        logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
         data = {"last": None, "chg_pct": None}
 
     # Guardar en cache
