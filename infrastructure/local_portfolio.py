@@ -56,3 +56,4 @@ class LocalPortfolioRepository:
             it for it in data.get("activos", []) if str(it.get("simbolo", "")).upper() != target
         ]
         self.save(data)
+
