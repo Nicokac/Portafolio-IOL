@@ -479,8 +479,5 @@ class TAService:
     def portfolio_history(self, *, simbolos: list[str], period: str = "1y"):
         return get_portfolio_history(simbolos=simbolos, period=period)
 
-    def map_to_us_ticker(self, sym: str) -> str | None:
-        return map_to_us_ticker(sym)
-    
     def portfolio_fundamentals(self, simbolos: List[str]) -> pd.DataFrame:
         return portfolio_fundamentals(simbolos)
