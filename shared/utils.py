@@ -67,3 +67,4 @@ def _to_float(x) -> float | None:
         return float(s)
     except Exception:
         return None
+

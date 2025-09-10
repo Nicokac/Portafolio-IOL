@@ -14,3 +14,4 @@ class Controls:
     selected_syms: List[str] = field(default_factory=list)
     selected_types: List[str] = field(default_factory=list)
     symbol_query: str = ""
+
