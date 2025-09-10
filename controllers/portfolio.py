@@ -25,7 +25,7 @@ from ui.fundamentals import (
     render_sector_comparison,
 )
 from ui.export import PLOTLY_CONFIG
-from application.portfolio_service import PortfolioService
+from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.risk_service import (
     compute_returns,
@@ -518,7 +518,7 @@ def render_portfolio_section(container, cli, fx_rates):
                     key="ta_symbol",
                 )
                 if sym:
-                    us_ticker = tasvc.map_to_us_ticker(sym)
+                    us_ticker = map_to_us_ticker(sym)
                     if not us_ticker:
                         st.info("No se encontró ticker US para este activo.")
                     else:
