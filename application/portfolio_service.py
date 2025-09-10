@@ -103,8 +103,8 @@ def scale_for(sym: str, tipo: str) -> float:
             f = float(scale_overrides[s])
             if f > 0:
                 return f
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("scale_overrides inválido para %s: %s", s, e)
 
     tipo_norm = (tipo or "").lower()
     if any(x in tipo_norm for x in ("bono", "letra")):
