@@ -13,8 +13,9 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-CACHE_FILE = Path(".cache/fx_rates.json")
-FALLBACK_FILE = Path("infrastructure/fx/fallback_rates.json")
+BASE_DIR = Path(__file__).resolve().parent
+CACHE_FILE = BASE_DIR / ".cache" / "fx_rates.json"
+FALLBACK_FILE = BASE_DIR / "fallback_rates.json"
 CACHE_TTL  = 45  # segundos
 
 
@@ -86,8 +87,8 @@ class FXProviderAdapter:
                 if time.time() - float(data.get("_ts", 0)) < CACHE_TTL:
                     # por si el cache viejo no estaba normalizado
                     return _normalize_rates(data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to load cache: {e}")
         return None
 
     def _save_cache(self, data: dict) -> None:
@@ -96,8 +97,8 @@ class FXProviderAdapter:
             tmp = CACHE_FILE.with_suffix(CACHE_FILE.suffix + ".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(CACHE_FILE)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to save cache: {e}")
 
     def _load_fallback(self) -> Optional[dict]:
         """Carga un archivo local como último recurso."""
@@ -105,8 +106,8 @@ class FXProviderAdapter:
             if FALLBACK_FILE.exists():
                 data = json.loads(FALLBACK_FILE.read_text(encoding="utf-8"))
                 return _normalize_rates(data)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to load fallback: {e}")
         return None
 
     # ---------------
