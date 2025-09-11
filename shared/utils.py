@@ -6,14 +6,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def _as_float_or_none(x) -> float | None:
+
+def _as_float_or_none(x, log: bool = True) -> float | None:
     try:
         f = float(x)
         if not np.isfinite(f):
             return None
         return f
     except (TypeError, ValueError):
-        logger.exception("No se pudo convertir a float: %s", x)
+        if log:
+            logger.debug("No se pudo convertir a float: %s", x)
         return None
 
 def _is_none_nan_inf(x) -> bool:
@@ -50,7 +52,7 @@ def format_percent(value: float | None) -> str:
         return "—"
     return f"{v:.2f} %"
 
-def _to_float(x) -> float | None:
+def _to_float(x, log: bool = True) -> float | None:
     if x is None:
         return None
     if isinstance(x, (int, float)):
@@ -64,6 +66,7 @@ def _to_float(x) -> float | None:
     try:
         return float(s)
     except ValueError:
-        logger.exception("Valor inválido para conversión a float: %s", s)
+        if log:
+            logger.warning("Valor inválido para conversión a float: %s", s)
         return None
 
