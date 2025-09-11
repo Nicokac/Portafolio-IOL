@@ -49,7 +49,8 @@ def _to_float(x) -> Optional[float]:
         s = s.replace(",", ".")
     try:
         return float(s)
-    except Exception:
+    except Exception as e:
+        logger.warning("No se pudo convertir a float: %s", e)
         return None
 
 
@@ -297,7 +298,7 @@ class IOLClient:
             self._ensure_market_auth()
             data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
         except Exception as e:
-            logger.debug("get_last_price error %s:%s -> %s", mercado, simbolo, e)
+            logger.warning("get_last_price error %s:%s -> %s", mercado, simbolo, e)
             return None
 
         return self._parse_price_fields(data) if isinstance(data, dict) else None
@@ -317,7 +318,7 @@ class IOLClient:
             self._ensure_market_auth()
             data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
         except Exception as e:
-            logger.debug("get_quote error %s:%s -> %s", mercado, simbolo, e)
+            logger.warning("get_quote error %s:%s -> %s", mercado, simbolo, e)
             return {"last": None, "chg_pct": None}
 
         if not isinstance(data, dict):
@@ -354,6 +355,6 @@ class IOLClient:
                 try:
                     out[key] = fut.result()
                 except Exception as e:
-                    logger.debug("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
+                    logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
                     out[key] = {"last": None, "chg_pct": None}
         return out

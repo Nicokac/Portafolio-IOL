@@ -24,14 +24,15 @@ class IOLClientAdapter(IIOLProvider):
                     encoding="utf-8",
                 )
             except Exception as e:
-                logger.debug("No se pudo guardar cache portafolio: %s", e)
+                logger.warning("No se pudo guardar cache portafolio: %s", e)
             return data
         except Exception as e:
             logger.warning("get_portfolio falló: %s", e)
             try:
                 data = json.loads(PORTFOLIO_CACHE.read_text(encoding="utf-8"))
                 return data
-            except Exception:
+            except Exception as e:
+                logger.error("No se pudo leer cache portafolio: %s", e)
                 return {"activos": []}
 
     def get_last_price(self, mercado: str, simbolo: str):
