@@ -22,11 +22,6 @@ from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
 logger = logging.getLogger(__name__)
 
 # Configuración de UI centralizada (tema y layout)

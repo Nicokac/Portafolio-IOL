@@ -58,7 +58,47 @@ class Settings:
         self.fx_ahorro_multiplier: float = float(os.getenv("FX_AHORRO_MULTIPLIER", cfg.get("FX_AHORRO_MULTIPLIER", 1.30)))
         self.fx_tarjeta_multiplier: float = float(os.getenv("FX_TARJETA_MULTIPLIER", cfg.get("FX_TARJETA_MULTIPLIER", 1.35)))
 
+        # --- Logging ---
+        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
+
 settings = Settings()
+
+
+class JsonFormatter(logging.Formatter):
+    """Formato JSON simple para registros de log."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_record = {
+            "time": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+        }
+        user = os.getenv("LOG_USER")
+        if user:
+            log_record["user"] = user
+        return json.dumps(log_record)
+
+
+def configure_logging() -> None:
+    """Configura el logging global según variables de entorno."""
+
+    level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
+    if os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes"):
+        handler = logging.StreamHandler()
+        handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
+        root = logging.getLogger()
+        root.setLevel(level)
+        root.handlers = [handler]
+    else:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+
+configure_logging()
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
