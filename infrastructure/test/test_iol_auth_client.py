@@ -16,6 +16,7 @@ def test_iol_auth_login_and_clear_tokens(tmp_path):
         tokens = auth.login()
         assert tokens["access_token"] == "abc"
         assert json.loads(tokens_path.read_text()) == {"access_token": "abc"}
+        assert (tokens_path.stat().st_mode & 0o777) == 0o600
         auth.clear_tokens()
         assert not tokens_path.exists()
 

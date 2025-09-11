@@ -42,6 +42,7 @@ class IOLAuth:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.tokens_file)
+            os.chmod(self.tokens_file, 0o600)
         except (OSError, TypeError) as e:
             logger.exception("No se pudo guardar el archivo de tokens: %s", e)
 
