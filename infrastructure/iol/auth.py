@@ -30,6 +30,7 @@ class IOLAuth:
     user: str
     password: str
     tokens_file: Path | str | None = None
+    allow_plain_tokens: bool = False
 
     def __post_init__(self):
         # Usa la ruta de settings por defecto si no se pasa una explícita
@@ -39,6 +40,12 @@ class IOLAuth:
         except OSError as e:
             logger.exception("No se pudo crear directorio de tokens: %s", e)
         object.__setattr__(self, "tokens_file", path)
+        if FERNET is None:
+            msg = "IOL_TOKENS_KEY no está configurada; los tokens se guardarían sin cifrar."
+            if self.allow_plain_tokens:
+                logger.warning(msg)
+            else:
+                raise RuntimeError(msg)
 
     @property
     def tokens_path(self) -> str:
