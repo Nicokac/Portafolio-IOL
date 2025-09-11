@@ -12,7 +12,7 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     mock_cli = MagicMock()
     mock_st = MagicMock()
     mock_st.session_state = {}
-    mock_st.tabs.return_value = [contextlib.nullcontext() for _ in range(5)]
+    mock_st.radio.return_value = 0
 
     empty_df = pd.DataFrame(columns=['simbolo'])
 
