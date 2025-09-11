@@ -4,6 +4,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from controllers import portfolio as pm
+import controllers.portfolio.load_data as load_mod
+import controllers.portfolio.filters as filters_mod
+import controllers.portfolio.charts as charts_mod
+import controllers.portfolio.risk as risk_mod
+import controllers.portfolio.fundamentals as fund_mod
 from domain.models import Controls
 
 
@@ -17,13 +22,13 @@ class DummyCtx:
 
 def test_load_portfolio_data(monkeypatch):
     payload = {"activos": [{"simbolo": "AL30", "mercado": "BCBA"}]}
-    monkeypatch.setattr(pm, "fetch_portfolio", lambda cli: payload)
-    monkeypatch.setattr(pm.st, "spinner", lambda msg: DummyCtx())
-    monkeypatch.setattr(pm.st, "warning", lambda *a, **k: None)
-    monkeypatch.setattr(pm.st, "info", lambda *a, **k: None)
-    monkeypatch.setattr(pm.st, "error", lambda *a, **k: None)
-    monkeypatch.setattr(pm.st, "dataframe", lambda *a, **k: None)
-    monkeypatch.setattr(pm.st, "stop", lambda: None)
+    monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: payload)
+    monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
+    monkeypatch.setattr(load_mod.st, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "error", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "dataframe", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "stop", lambda: None)
 
     class DummyPSvc:
         def normalize_positions(self, payload):
@@ -32,7 +37,7 @@ def test_load_portfolio_data(monkeypatch):
         def classify_asset_cached(self, sym):
             return {"AL30": "Bono"}.get(sym)
 
-    df_pos, syms, types = pm._load_portfolio_data(None, DummyPSvc())
+    df_pos, syms, types = pm.load_portfolio_data(None, DummyPSvc())
     assert list(df_pos["simbolo"]) == ["AL30"]
     assert syms == ["AL30"]
     assert types == ["Bono"]
@@ -57,9 +62,9 @@ def test_apply_filters(monkeypatch):
         ("bcba", "AL30"): {"chg_pct": 1.0},
         ("nasdaq", "GOOG"): {"chg_pct": 2.0},
     }
-    monkeypatch.setattr(pm, "fetch_quotes_bulk", lambda cli, pairs: quotes)
-    monkeypatch.setattr(pm.time, "time", lambda: 1)
-    pm.st.session_state = {}
+    monkeypatch.setattr(filters_mod, "fetch_quotes_bulk", lambda cli, pairs: quotes)
+    monkeypatch.setattr(filters_mod.time, "time", lambda: 1)
+    filters_mod.st.session_state = {}
 
     class DummyPSvc:
         def calc_rows(self, quote_fn, df, exclude_syms=None):
@@ -70,7 +75,7 @@ def test_apply_filters(monkeypatch):
         def classify_asset_cached(self, sym):
             return {"AL30": "Bono", "GOOG": "Accion"}.get(sym)
 
-    df_view = pm._apply_filters(df_pos, controls, None, DummyPSvc())
+    df_view = pm.apply_filters(df_pos, controls, None, DummyPSvc())
     assert list(df_view["simbolo"]) == ["AL30"]
     assert "chg_%" in df_view.columns
 
@@ -84,12 +89,12 @@ def test_generate_basic_charts(monkeypatch):
         "pl_d": [5],
         "tipo": ["Bono"],
     })
-    monkeypatch.setattr(pm, "plot_pl_topn", lambda df, n: "topn")
-    monkeypatch.setattr(pm, "plot_donut_tipo", lambda df: "donut")
-    monkeypatch.setattr(pm, "plot_dist_por_tipo", lambda df: "dist")
-    monkeypatch.setattr(pm, "plot_pl_daily_topn", lambda df, n: "daily")
+    monkeypatch.setattr(charts_mod, "plot_pl_topn", lambda df, n: "topn")
+    monkeypatch.setattr(charts_mod, "plot_donut_tipo", lambda df: "donut")
+    monkeypatch.setattr(charts_mod, "plot_dist_por_tipo", lambda df: "dist")
+    monkeypatch.setattr(charts_mod, "plot_pl_daily_topn", lambda df, n: "daily")
 
-    charts = pm._generate_basic_charts(df, top_n=5)
+    charts = pm.generate_basic_charts(df, top_n=5)
     assert charts == {
         "pl_topn": "topn",
         "donut_tipo": "donut",
@@ -103,7 +108,7 @@ def test_compute_risk_metrics():
     bench_ret = pd.Series([0.05, 0.01, 0.03])
     weights = pd.Series({"A": 0.5, "B": 0.5})
 
-    vol, b, var_95, opt_w, port_ret = pm._compute_risk_metrics(
+    vol, b, var_95, opt_w, port_ret = pm.compute_risk_metrics(
         returns_df, bench_ret, weights
     )
     assert len(port_ret) == len(returns_df)
@@ -113,29 +118,29 @@ def test_compute_risk_metrics():
 
 def test_render_basic_section_handles_empty(monkeypatch):
     mock_info = MagicMock()
-    monkeypatch.setattr(pm.st, "info", mock_info)
-    pm._render_basic_section(pd.DataFrame(), Controls(), None)
+    monkeypatch.setattr(charts_mod.st, "info", mock_info)
+    pm.render_basic_section(pd.DataFrame(), Controls(), None)
     mock_info.assert_called_once_with("No hay datos del portafolio para mostrar.")
 
 
 def test_render_advanced_analysis_no_columns(monkeypatch):
     df = pd.DataFrame()
-    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
     mock_info = MagicMock()
-    monkeypatch.setattr(pm.st, "info", mock_info)
-    pm._render_advanced_analysis(df)
+    monkeypatch.setattr(charts_mod.st, "info", mock_info)
+    pm.render_advanced_analysis(df)
     mock_info.assert_called_once_with("No hay columnas disponibles para el gráfico bubble.")
 
 
 def test_render_risk_analysis_insufficient_symbols(monkeypatch):
     df = pd.DataFrame({"simbolo": ["AL30"]})
-    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
-    monkeypatch.setattr(pm.st, "selectbox", lambda *a, **k: "1y")
+    monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "selectbox", lambda *a, **k: "1y")
     mock_info = MagicMock()
-    monkeypatch.setattr(pm.st, "info", mock_info)
-    monkeypatch.setattr(pm.st, "spinner", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(risk_mod.st, "info", mock_info)
+    monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
     tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
-    pm._render_risk_analysis(df, tasvc)
+    pm.render_risk_analysis(df, tasvc)
     mock_info.assert_any_call(
         "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
     )
@@ -143,9 +148,9 @@ def test_render_risk_analysis_insufficient_symbols(monkeypatch):
 
 def test_render_fundamental_analysis_no_symbols(monkeypatch):
     df = pd.DataFrame(columns=["simbolo"])
-    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(fund_mod.st, "subheader", lambda *a, **k: None)
     mock_info = MagicMock()
-    monkeypatch.setattr(pm.st, "info", mock_info)
+    monkeypatch.setattr(fund_mod.st, "info", mock_info)
     tasvc = SimpleNamespace()
-    pm._render_fundamental_analysis(df, tasvc)
+    pm.render_fundamental_analysis(df, tasvc)
     mock_info.assert_called_once_with("No hay símbolos en el portafolio para analizar.")
