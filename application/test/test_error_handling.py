@@ -1,5 +1,5 @@
-import pandas as pd
 import requests
+import pytest
 
 from application.ta_service import fetch_with_indicators
 from services import cache
@@ -12,9 +12,8 @@ def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
         raise RuntimeError("fail")
 
     monkeypatch.setattr("application.ta_service.yf.download", boom)
-    df = fetch_with_indicators("AAPL")
-    assert isinstance(df, pd.DataFrame)
-    assert df.empty
+    with pytest.raises(RuntimeError):
+        fetch_with_indicators("AAPL")
 
 
 def test_fetch_fx_rates_handles_network_error(monkeypatch):

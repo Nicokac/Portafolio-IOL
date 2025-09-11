@@ -5,9 +5,9 @@ from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.utils import _to_float
 
+from functools import lru_cache
 import numpy as np
 import pandas as pd
-import streamlit as st
 from requests.exceptions import HTTPError
 
 # yfinance para históricos
@@ -79,7 +79,7 @@ def _bollinger_pandas(close: pd.Series, window: int = 20, std: float = 2.0):
 # -----------------------
 
 
-@st.cache_data
+@lru_cache(maxsize=128)
 def fetch_with_indicators(
     simbolo: str,
     period: str = "6mo",
@@ -108,13 +108,12 @@ def fetch_with_indicators(
     'STOCH_K','STOCH_D','ICHI_CONV','ICHI_BASE','ICHI_A','ICHI_B']
     """
     if yf is None or RSIIndicator is None:
-        st.warning("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
-        return pd.DataFrame()
+        raise RuntimeError("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
 
     ticker = map_to_us_ticker(simbolo)
     if not ticker:
         logger.info("No se pudo mapear %s a ticker US utilizable.", simbolo)
-        return pd.DataFrame()
+        raise ValueError(f"Símbolo no válido: {simbolo}")
 
     try:
         hist = yf.download(
@@ -128,9 +127,9 @@ def fetch_with_indicators(
         )
     except Exception as e:
         logger.error("yfinance error (%s): %s", ticker, e)
-        return pd.DataFrame()
+        raise RuntimeError(f"Error al descargar datos de yfinance para {ticker}") from e
     if hist is None or hist.empty:
-        return pd.DataFrame()
+        raise ValueError(f"No hay datos históricos para {ticker}")
 
     df = _flatten_ohlcv(hist.copy())
 
@@ -142,7 +141,7 @@ def fetch_with_indicators(
             if col == "Close" and close_like:
                 df["Close"] = df[close_like[0]]
             else:
-                return pd.DataFrame()
+                raise ValueError(f"Datos históricos incompletos para {ticker}")
 
     # Series 1D float
     close = pd.to_numeric(pd.Series(df["Close"]).squeeze(), errors="coerce")
@@ -225,6 +224,10 @@ def fetch_with_indicators(
     return df
 
 
+# allow external code/tests to reset cache
+fetch_with_indicators.clear = fetch_with_indicators.cache_clear  # type: ignore[attr-defined]
+
+
 def simple_alerts(df: pd.DataFrame) -> List[str]:
     """
     Alertas simples:
@@ -302,14 +305,13 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     return res.dropna()
 
 
-@st.cache_data
+@lru_cache(maxsize=128)
 def get_fundamental_data(ticker: str) -> dict:
     """
     Obtiene datos fundamentales clave con yfinance. Filtra dividend yields implausibles (>20%).
     """
     if yf is None:
-        st.warning("La librería 'yfinance' no está disponible.")
-        return {}
+        raise RuntimeError("La librería 'yfinance' no está disponible.")
 
     if ticker.startswith("^"):
         return {}
@@ -355,14 +357,16 @@ def get_fundamental_data(ticker: str) -> dict:
         return {"error": f"No se pudo contactar a la API para {ticker}."}
 
 
-@st.cache_data
-def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
+get_fundamental_data.clear = get_fundamental_data.cache_clear  # type: ignore[attr-defined]
+
+
+@lru_cache(maxsize=128)
+def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
     """Devuelve un DataFrame con métricas fundamentales y ESG para cada símbolo."""
     if yf is None:
-        st.warning("La librería 'yfinance' no está disponible.")
-        return pd.DataFrame()
+        raise RuntimeError("La librería 'yfinance' no está disponible.")
 
-    rows = []
+    rows: list[dict] = []
     for sym in simbolos:
         ticker = map_to_us_ticker(sym)
         if not ticker or ticker.startswith("^"):
@@ -399,27 +403,31 @@ def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-@st.cache_data
-def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFrame:
+def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
+    return _portfolio_fundamentals_cached(tuple(simbolos))
+
+
+portfolio_fundamentals.clear = _portfolio_fundamentals_cached.cache_clear  # type: ignore[attr-defined]
+
+
+@lru_cache(maxsize=128)
+def _get_portfolio_history_cached(simbolos: tuple[str, ...], period: str = "1y") -> pd.DataFrame:
     """
     Descarga el historial (Adj Close si está, sino Close) para los símbolos indicados.
     - Mapea CEDEAR → US ticker para yfinance.
     - Renombra las columnas al **símbolo original** para que los gráficos muestren tus tickers.
     """
     if yf is None:
-        st.warning("La librería 'yfinance' no está disponible.")
-        return pd.DataFrame()
+        raise RuntimeError("La librería 'yfinance' no está disponible.")
 
     if not simbolos:
         return pd.DataFrame()
 
-    # Mapeo símbolo original -> US ticker (ignoramos los que no podemos mapear)
     pairs = [(s, map_to_us_ticker(s)) for s in simbolos]
     pairs = [(clean_symbol(s), t) for (s, t) in pairs if t]
     if not pairs:
         return pd.DataFrame()
 
-    # yfinance soporta múltiples tickers a la vez; deduplicamos US tickers si fueran repetidos
     us_unique = sorted(set(t for _, t in pairs))
     try:
         hist = yf.download(
@@ -433,12 +441,11 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
         )
     except Exception as e:
         logger.error("yfinance error (portfolio history): %s", e)
-        return pd.DataFrame()
+        raise RuntimeError("Error al descargar historial de portafolio") from e
 
     if hist is None or hist.empty:
-        return pd.DataFrame()
+        raise ValueError("No se obtuvo historial para los símbolos proporcionados")
 
-    # Seleccionamos Adj Close si existe; si no, Close
     df = None
     try:
         df = hist.xs("Adj Close", level=1, axis=1)
@@ -446,13 +453,11 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
         try:
             df = hist.xs("Close", level=1, axis=1)
         except Exception:
-            return pd.DataFrame()
+            raise ValueError("No se pudieron extraer precios de cierre")
 
     if df is None or df.empty:
-        return pd.DataFrame()
+        raise ValueError("No se obtuvieron precios válidos")
 
-    # Renombramos columnas al símbolo original (cuando sea posible)
-    # Si varios símbolos originales mapean al mismo US ticker, prevalece el primero.
     us_to_orig = {}
     for orig, us_tk in pairs:
         us_to_orig.setdefault(us_tk, orig)
@@ -460,6 +465,13 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
     df = df.rename(columns={us: us_to_orig.get(us, us) for us in df.columns})
     df = df.sort_index().ffill().dropna(how="all")
     return df
+
+
+def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFrame:
+    return _get_portfolio_history_cached(tuple(simbolos), period)
+
+
+get_portfolio_history.clear = _get_portfolio_history_cached.cache_clear  # type: ignore[attr-defined]
 
 
 # --- Agregar al final de application/ta_service.py ---
