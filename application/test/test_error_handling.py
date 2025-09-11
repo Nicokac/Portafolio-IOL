@@ -1,7 +1,8 @@
 import pandas as pd
-
+import requests
 
 from application.ta_service import fetch_with_indicators
+from services import cache
 
 
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
@@ -16,20 +17,13 @@ def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
     assert df.empty
 
 
-# def test_fetch_fx_rates_handles_failure(monkeypatch):
-#     import app
-from services import cache
-
-    # app.fetch_fx_rates.clear()
-def test_fetch_fx_rates_handles_failure(monkeypatch):
+def test_fetch_fx_rates_handles_network_error(monkeypatch):
     cache.fetch_fx_rates.clear()
 
     class FailProv:
         def get_rates(self):
-            raise RuntimeError("boom")
+            raise requests.RequestException("boom")
 
-    # monkeypatch.setattr(app, "get_fx_provider", lambda: FailProv())
-    # assert app.fetch_fx_rates() == {}
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
     data, error = cache.fetch_fx_rates()
     assert data == {}
