@@ -31,4 +31,6 @@ def test_fetch_fx_rates_handles_failure(monkeypatch):
     # monkeypatch.setattr(app, "get_fx_provider", lambda: FailProv())
     # assert app.fetch_fx_rates() == {}
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
-    assert cache.fetch_fx_rates() == {}
+    data, error = cache.fetch_fx_rates()
+    assert data == {}
+    assert error is not None

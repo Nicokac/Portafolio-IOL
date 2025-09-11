@@ -73,9 +73,7 @@ def fetch_fx_rates():
     except Exception as e:
         error = f"FX provider failed: {e}"
         logger.warning(error)
-    if error:
-        st.warning(error)
-    return data
+    return data, error
 
 
 def get_fx_rates_cached():
@@ -83,9 +81,14 @@ def get_fx_rates_cached():
     ttl = getattr(settings, "cache_ttl_fx", 0)
     last = st.session_state.get("fx_rates_ts", 0)
     if "fx_rates" not in st.session_state or now - last > ttl:
-        st.session_state["fx_rates"] = fetch_fx_rates()
+        data, error = fetch_fx_rates()
+        st.session_state["fx_rates"] = data
+        st.session_state["fx_rates_error"] = error
         st.session_state["fx_rates_ts"] = now
-    return st.session_state.get("fx_rates", {})
+    return (
+        st.session_state.get("fx_rates", {}),
+        st.session_state.get("fx_rates_error"),
+    )
 
 
 def build_iol_client() -> IIOLProvider:

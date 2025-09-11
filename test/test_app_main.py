@@ -33,7 +33,7 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
 
     login_mock = MagicMock()
     monkeypatch.setattr(app, "render_login_page", login_mock)
-    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value={}))
+    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value=({}, None)))
 
     with pytest.raises(RuntimeError):
         app.main()
@@ -51,7 +51,7 @@ def test_refresh_secs_triggers_rerun(monkeypatch):
 
     app = importlib.import_module("app")
 
-    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value={}))
+    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value=({}, None)))
     monkeypatch.setattr(app, "render_header", MagicMock())
     monkeypatch.setattr(app, "render_action_menu", MagicMock())
     monkeypatch.setattr(app, "render_footer", MagicMock())

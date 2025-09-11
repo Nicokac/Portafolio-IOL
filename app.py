@@ -49,10 +49,9 @@ def main():
         render_login_page()
         st.stop()
 
-    fx_rates = get_fx_rates_cached()
-
-    if not fx_rates:
-        st.warning("No se pudieron obtener las cotizaciones del dólar.")
+    fx_rates, fx_error = get_fx_rates_cached()
+    if fx_error:
+        st.warning(fx_error)
     render_header(rates=fx_rates)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
