@@ -39,6 +39,9 @@ def render_action_menu() -> None:
             try:
                 IOLAuth(user or "", password or "").clear_tokens()
             except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("Error al limpiar tokens: %s", e)
                 err = str(e)
         st.session_state.clear()
         st.session_state["force_login"] = True
