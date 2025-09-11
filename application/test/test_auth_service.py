@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch
 
 from application import auth_service
+from application.auth_service import AuthenticationError
 
 
 def test_login_success():
@@ -16,7 +17,7 @@ def test_login_success():
 def test_login_invalid_raises():
     with patch("application.auth_service.IOLAuth") as mock_auth:
         mock_auth.return_value.login.return_value = {}
-        with pytest.raises(RuntimeError):
+        with pytest.raises(AuthenticationError):
             auth_service.login("u", "p")
 
 

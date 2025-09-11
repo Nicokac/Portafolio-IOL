@@ -5,15 +5,19 @@ from __future__ import annotations
 from infrastructure.iol.auth import IOLAuth
 
 
+class AuthenticationError(Exception):
+    """Se lanza cuando la autenticación contra IOL falla."""
+
+
 def login(user: str, password: str):
     """Autentica al usuario contra IOL.
 
     Devuelve el diccionario de tokens si el login es exitoso.
-    Lanza ``RuntimeError`` si no se obtuvo un ``access_token`` válido.
+    Lanza ``AuthenticationError`` si no se obtuvo un ``access_token`` válido.
     """
     tokens = IOLAuth(user, password).login()
     if not tokens.get("access_token"):
-        raise RuntimeError("Credenciales inválidas")
+        raise AuthenticationError("Credenciales inválidas")
     return tokens
 
 
