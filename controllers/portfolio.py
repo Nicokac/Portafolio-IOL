@@ -499,31 +499,35 @@ def render_portfolio_section(container, cli, fx_rates):
 
         ccl_rate = fx_rates.get("ccl")
 
+        tab_labels = [
+            "📂 Portafolio",
+            "📊 Análisis avanzado",
+            "🎲 Análisis de Riesgo",
+            "📑 Análisis fundamental",
+            "🔎 Análisis de activos",
+        ]
+
         if "portfolio_tab" not in st.session_state:
             st.session_state["portfolio_tab"] = 0
 
-        tabs = st.tabs(
-            [
-                "📂 Portafolio",
-                "📊 Análisis avanzado",
-                "🎲 Análisis de Riesgo",
-                "📑 Análisis fundamental",
-                "🔎 Análisis de activos",
-            ],
-            key="portfolio_tab",
+        tab_idx = st.radio(
+            "Secciones",
+            options=range(len(tab_labels)),
+            format_func=lambda i: tab_labels[i],
+            index=st.session_state["portfolio_tab"],
+            horizontal=True,
         )
+        st.session_state["portfolio_tab"] = tab_idx
 
-        with tabs[0]:
+        if tab_idx == 0:
             _render_basic_section(df_view, controls, ccl_rate)
-        with tabs[1]:
+        elif tab_idx == 1:
             _render_advanced_analysis(df_view)
-        with tabs[2]:
+        elif tab_idx == 2:
             _render_risk_analysis(df_view, tasvc)
-        with tabs[3]:
+        elif tab_idx == 3:
             _render_fundamental_analysis(df_view, tasvc)
-
-        # Pestaña 5
-        with tabs[4]:
+        else:
             st.subheader("Indicadores técnicos por activo")
             if not all_symbols:
                 st.info("No hay símbolos en el portafolio para analizar.")
