@@ -499,6 +499,9 @@ def render_portfolio_section(container, cli, fx_rates):
 
         ccl_rate = fx_rates.get("ccl")
 
+        if "portfolio_tab" not in st.session_state:
+            st.session_state["portfolio_tab"] = 0
+
         tabs = st.tabs(
             [
                 "📂 Portafolio",
@@ -506,7 +509,8 @@ def render_portfolio_section(container, cli, fx_rates):
                 "🎲 Análisis de Riesgo",
                 "📑 Análisis fundamental",
                 "🔎 Análisis de activos",
-            ]
+            ],
+            key="portfolio_tab",
         )
 
         with tabs[0]:
