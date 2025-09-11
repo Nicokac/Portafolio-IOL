@@ -12,6 +12,7 @@ from functools import lru_cache
 from shared.utils import _to_float
 from shared.config import get_config
 from infrastructure.asset_catalog import get_asset_catalog
+import requests
 
 import numpy as np
 import pandas as pd
@@ -103,8 +104,8 @@ def scale_for(sym: str, tipo: str) -> float:
             f = float(scale_overrides[s])
             if f > 0:
                 return f
-        except Exception as e:
-            logger.warning("scale_overrides inválido para %s: %s", s, e)
+        except (TypeError, ValueError) as e:
+            logger.exception("scale_overrides inválido para %s: %s", s, e)
 
     tipo_norm = (tipo or "").lower()
     if any(x in tipo_norm for x in ("bono", "letra")):
@@ -273,8 +274,8 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         q = None
         try:
             q = get_quote_fn(row["mercado"], row["simbolo"])
-        except Exception as e:
-            logger.debug(
+        except requests.RequestException as e:
+            logger.exception(
                 "get_quote_fn lanzó excepción para %s:%s -> %s",
                 row["mercado"],
                 row["simbolo"],
@@ -332,7 +333,8 @@ def _classify_sym_cache(sym: str) -> str:
     """Cachea la clasificación por símbolo usando la función existente classify_asset."""
     try:
         return classify_asset({"simbolo": str(sym).upper(), "titulo": {}}) or ""
-    except Exception:
+    except (ValueError, TypeError) as e:
+        logger.exception("No se pudo clasificar símbolo %s: %s", sym, e)
         return ""
 
 class PortfolioService:

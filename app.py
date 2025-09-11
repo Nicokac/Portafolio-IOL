@@ -76,8 +76,8 @@ def main():
         st.session_state["last_refresh"] = time.time()
     try:
         do_refresh = (refresh_secs is not None) and (float(refresh_secs) > 0)
-    except Exception as e:
-        logger.warning("refresh_secs inválido: %s", e)
+    except (TypeError, ValueError) as e:
+        logger.exception("refresh_secs inválido: %s", e)
         do_refresh = True
     if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
         st.session_state["last_refresh"] = time.time()

@@ -4,6 +4,9 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def df_to_csv_bytes(df: pd.DataFrame) -> bytes:
@@ -22,5 +25,6 @@ def fig_to_png_bytes(fig: go.Figure) -> bytes:
     try:
         scope = _get_kaleido_scope()
         return pio.to_image(fig, format="png", scope=scope)
-    except Exception as e:  # pragma: no cover - depende de librerías externas
+    except (ValueError, RuntimeError, TypeError) as e:  # pragma: no cover - depende de librerías externas
+        logger.exception("kaleido no disponible")
         raise ValueError("kaleido no disponible") from e

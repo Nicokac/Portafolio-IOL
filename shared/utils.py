@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import numpy as np
 from functools import lru_cache
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _as_float_or_none(x) -> float | None:
     try:
@@ -10,7 +13,8 @@ def _as_float_or_none(x) -> float | None:
         if not np.isfinite(f):
             return None
         return f
-    except Exception:
+    except (TypeError, ValueError):
+        logger.exception("No se pudo convertir a float: %s", x)
         return None
 
 def _is_none_nan_inf(x) -> bool:
@@ -65,6 +69,7 @@ def _to_float(x) -> float | None:
         s = s.replace(",", ".")
     try:
         return float(s)
-    except Exception:
+    except ValueError:
+        logger.exception("Valor inválido para conversión a float: %s", s)
         return None
 

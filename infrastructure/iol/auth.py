@@ -28,8 +28,8 @@ class IOLAuth:
         path = Path(self.tokens_file or settings.tokens_file)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning("No se pudo crear directorio de tokens: %s", e)
+        except OSError as e:
+            logger.exception("No se pudo crear directorio de tokens: %s", e)
         object.__setattr__(self, "tokens_file", path)
 
     @property
@@ -42,8 +42,8 @@ class IOLAuth:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
             tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             tmp.replace(self.tokens_file)
-        except Exception as e:
-            logger.error("No se pudo guardar el archivo de tokens: %s", e)
+        except (OSError, TypeError) as e:
+            logger.exception("No se pudo guardar el archivo de tokens: %s", e)
 
     def login(self) -> Dict[str, Any]:
         """Realiza el login contra la API de IOL y guarda los tokens."""
@@ -71,5 +71,5 @@ class IOLAuth:
             logger.info("Tokens eliminados: %s", self.tokens_file)
         except FileNotFoundError:
             logger.info("Tokens ya no existían: %s", self.tokens_file)
-        except Exception as e:
-            logger.warning("No se pudo eliminar tokens en %s: %s", self.tokens_file, e)
+        except OSError as e:
+            logger.exception("No se pudo eliminar tokens en %s: %s", self.tokens_file, e)

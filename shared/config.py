@@ -25,8 +25,8 @@ def _load_cfg() -> Dict[str, Any]:
         try:
             if p.exists():
                 return json.loads(p.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.warning("No se pudo cargar configuración %s: %s", p, e)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.exception("No se pudo cargar configuración %s: %s", p, e)
     return {}
 
 class Settings:
@@ -80,6 +80,6 @@ def get_config() -> dict:
     except FileNotFoundError:
         logger.warning("No se encontró archivo de configuración: %s", path)
         return {}
-    except Exception as e:
-        logger.error("Error cargando configuración %s: %s", path, e)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.exception("Error cargando configuración %s: %s", path, e)
         return {}
