@@ -58,10 +58,23 @@ streamlit run app.py
 docker build -t portafolio-iol .
 ```
 
-2. Ejecutar el contenedor:
+2. Ejecutar el contenedor (requiere un archivo `.env` con las variables descritas en la sección anterior):
 
 ```bash
 docker run --env-file .env -p 8501:8501 portafolio-iol
+```
+
+Para conservar los tokens generados por la aplicación, se puede montar un volumen:
+
+```bash
+mkdir -p tokens
+docker run --env-file .env -p 8501:8501 -v $(pwd)/tokens:/app/tokens portafolio-iol
+```
+
+Al usar un volumen, define en `.env` la ruta del archivo:
+
+```env
+IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 ```
 
 ### Streamlit Cloud
