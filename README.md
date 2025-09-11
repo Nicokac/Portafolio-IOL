@@ -85,7 +85,13 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 
 ## Pruebas
 
-Ejecutar la suite de pruebas automatizadas:
+Ejecutar la suite completa de pruebas:
+
+```bash
+pytest
+```
+
+Para ejecutar solo un subconjunto por carpeta, indica la ruta deseada:
 
 ```bash
 pytest application/test
