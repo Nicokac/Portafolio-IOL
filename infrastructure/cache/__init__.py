@@ -41,7 +41,6 @@ class Cache:
         def decorator(func: Callable) -> Callable:
             cache: Dict[Tuple[Any, ...], Any] = {}
             timestamps: Dict[Tuple[Any, ...], float] = {}
-
             def make_hashable(obj: Any) -> Any:
                 """Recursively convert unhashable containers to hashable ones."""
                 if isinstance(obj, dict):
