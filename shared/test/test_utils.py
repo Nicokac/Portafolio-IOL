@@ -29,3 +29,11 @@ def test_to_float_invalid_returns_none():
 
 def test_format_money_negative_usd():
     assert utils.format_money(-1234.5, 'USD') == '-US$ 1.234,50'
+
+
+def test_to_float_invalid_no_log():
+    assert utils._to_float('abc', log=False) is None
+
+
+def test_as_float_or_none_invalid_no_log():
+    assert utils._as_float_or_none('abc', log=False) is None
