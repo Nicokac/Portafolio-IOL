@@ -23,7 +23,7 @@ class LocalPortfolioRepository:
         """
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.warning("No se pudo leer %s: %s", self.path, e)
             return {"activos": []}
 

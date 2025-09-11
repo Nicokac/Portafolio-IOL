@@ -1,11 +1,13 @@
 import json
 
+import json
+import requests
 from infrastructure.iol import client as iol_client
 
 
 class _FailClient:
     def get_portfolio(self):
-        raise RuntimeError("boom")
+        raise requests.RequestException("boom")
 
 
 class _OkClient:
