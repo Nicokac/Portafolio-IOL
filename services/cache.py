@@ -4,8 +4,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
 
-from infrastructure.iol.client import build_iol_client as _build_iol_client
-from infrastructure.iol.ports import IIOLProvider
+from infrastructure.iol.client import (
+    IIOLProvider,
+    build_iol_client as _build_iol_client,
+)
 from infrastructure.fx.provider import FXProviderAdapter
 from shared.config import settings
 
