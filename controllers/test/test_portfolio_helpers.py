@@ -1,7 +1,7 @@
 import pandas as pd
-from types import SimpleNamespace
-import pandas as pd
 import pytest
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from controllers import portfolio as pm
 from domain.models import Controls
@@ -109,3 +109,43 @@ def test_compute_risk_metrics():
     assert len(port_ret) == len(returns_df)
     assert vol >= 0
     assert opt_w.sum() == pytest.approx(1, rel=1e-5)
+
+
+def test_render_basic_section_handles_empty(monkeypatch):
+    mock_info = MagicMock()
+    monkeypatch.setattr(pm.st, "info", mock_info)
+    pm._render_basic_section(pd.DataFrame(), Controls(), None)
+    mock_info.assert_called_once_with("No hay datos del portafolio para mostrar.")
+
+
+def test_render_advanced_analysis_no_columns(monkeypatch):
+    df = pd.DataFrame()
+    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
+    mock_info = MagicMock()
+    monkeypatch.setattr(pm.st, "info", mock_info)
+    pm._render_advanced_analysis(df)
+    mock_info.assert_called_once_with("No hay columnas disponibles para el gráfico bubble.")
+
+
+def test_render_risk_analysis_insufficient_symbols(monkeypatch):
+    df = pd.DataFrame({"simbolo": ["AL30"]})
+    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(pm.st, "selectbox", lambda *a, **k: "1y")
+    mock_info = MagicMock()
+    monkeypatch.setattr(pm.st, "info", mock_info)
+    monkeypatch.setattr(pm.st, "spinner", lambda *a, **k: DummyCtx())
+    tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
+    pm._render_risk_analysis(df, tasvc)
+    mock_info.assert_any_call(
+        "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
+    )
+
+
+def test_render_fundamental_analysis_no_symbols(monkeypatch):
+    df = pd.DataFrame(columns=["simbolo"])
+    monkeypatch.setattr(pm.st, "subheader", lambda *a, **k: None)
+    mock_info = MagicMock()
+    monkeypatch.setattr(pm.st, "info", mock_info)
+    tasvc = SimpleNamespace()
+    pm._render_fundamental_analysis(df, tasvc)
+    mock_info.assert_called_once_with("No hay símbolos en el portafolio para analizar.")
