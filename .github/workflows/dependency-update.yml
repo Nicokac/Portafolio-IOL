@@ -1,0 +1,25 @@
+name: dependency-update
+
+on:
+  schedule:
+    - cron: '0 0 1 * *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Upgrade dependencies and run tests
+        run: bash scripts/update_dependencies.sh
+      - name: Create pull request if dependencies update
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "chore: update dependencies"
+          title: "chore: update dependencies"
+          body: "Automated dependency update"
+          branch: deps/update
+          delete-branch: true

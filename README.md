@@ -78,6 +78,16 @@ Ejecutar la suite de pruebas automatizadas:
 pytest application/test
 ```
 
+## Actualización de dependencias
+
+Las versiones de las dependencias están fijadas en `requirements.txt`. Para actualizarlas de forma segura:
+
+```bash
+bash scripts/update_dependencies.sh
+```
+
+El script actualiza los paquetes a sus últimas versiones, ejecuta las pruebas y, si todo pasa, escribe las nuevas versiones en `requirements.txt`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
+
 ## Mantenimiento de tokens
 
 El token de autenticación se guarda en `tokens_iol.json` (cifrado si se configuró `IOL_TOKENS_KEY`). Este archivo no debe versionarse y debe mantenerse con permisos restringidos (por ejemplo `chmod 600`). Para renovar los tokens:

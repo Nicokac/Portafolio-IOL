@@ -1,13 +1,13 @@
-streamlit>=1.32
-pandas>=2.0
-numpy>=1.25
-requests>=2.31
-python-dotenv>=1.0
-iolConn>=0.4.2
-plotly>=5.18
-kaleido>=0.2.1
+streamlit==1.49.1
+pandas==2.3.2
+numpy==2.3.3
+requests==2.31.0
+python-dotenv==1.1.1
+iolConn==0.4.2
+plotly==6.3.0
+kaleido==1.1.0
 # Utilidades varias
-cryptography>=41.0
+cryptography==41.0.3
 # Dependencias obligatorias para datos e indicadores técnicos
-yfinance>=0.2.31
-ta>=0.10
+yfinance==0.2.65
+ta==0.11.0
