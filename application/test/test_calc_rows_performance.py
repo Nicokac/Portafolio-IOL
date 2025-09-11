@@ -8,11 +8,11 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from application.portfolio_service import (
     calc_rows,
-    _to_float,
     clean_symbol,
     classify_symbol,
     scale_for,
 )
+from shared.utils import _to_float
 
 
 # Copia de la implementación original basada en bucles para comparar rendimientos
