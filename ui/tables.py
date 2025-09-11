@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 import math
 import numpy as np
 import pandas as pd
@@ -72,7 +73,8 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
     try:
         df_sorted = df_view.sort_values(order_by, ascending=not desc).copy()
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).warning("Ordenamiento falló: %s", e)
         df_sorted = df_view.copy()
 
     search = st.text_input("Buscar", "").strip().lower()
