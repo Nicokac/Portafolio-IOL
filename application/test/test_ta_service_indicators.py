@@ -1,5 +1,7 @@
 import pandas as pd
 
+import pytest
+
 from application.ta_service import TAService, fetch_with_indicators
 
 
@@ -27,5 +29,5 @@ def test_indicators_for_invalid_symbol(monkeypatch):
     fetch_with_indicators.clear()
     monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: None)
     svc = TAService()
-    df = svc.indicators_for("INVALID")
-    assert df.empty
+    with pytest.raises(ValueError):
+        svc.indicators_for("INVALID")
