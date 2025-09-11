@@ -1,8 +1,21 @@
 import requests
 import pytest
+import sys
+import types
+
+# Stub cryptography to avoid heavy dependency during tests
+crypto_mod = types.ModuleType("cryptography")
+fernet_mod = types.ModuleType("fernet")
+setattr(fernet_mod, "Fernet", object)
+setattr(fernet_mod, "InvalidToken", Exception)
+crypto_mod.fernet = fernet_mod
+sys.modules.setdefault("cryptography", crypto_mod)
+sys.modules.setdefault("cryptography.fernet", fernet_mod)
 
 from application.ta_service import fetch_with_indicators
 from services import cache
+from controllers import auth
+from unittest.mock import MagicMock
 
 
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
@@ -27,3 +40,40 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
     data, error = cache.fetch_fx_rates()
     assert data == {}
     assert error is not None
+
+
+def test_build_iol_client_handles_network_error(monkeypatch):
+    mock_st = MagicMock()
+    mock_st.session_state = {}
+    monkeypatch.setattr(cache, "st", mock_st)
+
+    class DummySettings:
+        IOL_USERNAME = "u"
+        IOL_PASSWORD = "p"
+        tokens_file = "tok.json"
+
+    monkeypatch.setattr(cache, "settings", DummySettings())
+
+    def fail_build(*args, **kwargs):
+        raise requests.RequestException("net down")
+
+    monkeypatch.setattr(cache, "_build_iol_client", fail_build)
+
+    cli, err = cache.build_iol_client()
+    assert cli is None
+    assert "net down" in err
+
+
+def test_auth_controller_handles_network_error(monkeypatch):
+    mock_st = MagicMock()
+    mock_st.session_state = {}
+    monkeypatch.setattr(auth, "st", mock_st)
+
+    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "net fail"))
+
+    cli = auth.build_iol_client()
+    assert cli is None
+    assert mock_st.session_state["login_error"] == "net fail"
+    assert mock_st.session_state["force_login"] is True
+    assert mock_st.session_state["IOL_PASSWORD"] == ""
+    mock_st.rerun.assert_called_once()
