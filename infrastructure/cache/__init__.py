@@ -41,10 +41,19 @@ class Cache:
         def decorator(func: Callable) -> Callable:
             cache: Dict[Tuple[Any, ...], Any] = {}
             timestamps: Dict[Tuple[Any, ...], float] = {}
+            def make_hashable(obj: Any) -> Any:
+                """Recursively convert unhashable containers to hashable ones."""
+                if isinstance(obj, dict):
+                    return tuple(
+                        (k, make_hashable(v)) for k, v in sorted(obj.items())
+                    )
+                if isinstance(obj, (list, tuple, set)):
+                    return tuple(make_hashable(x) for x in obj)
+                return obj
 
             @wraps(func)
             def wrapper(*args, **kwargs):
-                key = (args, tuple(sorted(kwargs.items())))
+                key = (make_hashable(args), make_hashable(sorted(kwargs.items())))
                 now = time.time()
                 if key in cache and (ttl is None or now - timestamps[key] < ttl):
                     return cache[key]
