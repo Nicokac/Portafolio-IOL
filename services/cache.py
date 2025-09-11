@@ -92,7 +92,7 @@ def get_fx_rates_cached():
     )
 
 
-def build_iol_client() -> IIOLProvider:
+def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
     if st.session_state.get("force_login"):
         user = st.session_state.get("IOL_USERNAME")
         password = st.session_state.get("IOL_PASSWORD")
@@ -106,15 +106,9 @@ def build_iol_client() -> IIOLProvider:
     ).hexdigest()
     try:
         cli = get_client_cached(cache_key, user, password, tokens_file)
-        st.session_state["authenticated"] = True
-        st.session_state.pop("IOL_PASSWORD", None)
-        return cli
+        return cli, None
     except (requests.RequestException, RuntimeError, ValueError) as e:
         logger.exception("build_iol_client failed: %s", e)
-        st.session_state["login_error"] = str(e)
-        st.session_state["force_login"] = True
-        st.session_state["IOL_PASSWORD"] = ""
-        st.rerun()
-        return None
+        return None, str(e)
 
 

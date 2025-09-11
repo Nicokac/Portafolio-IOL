@@ -17,7 +17,8 @@ from ui.login import render_login_page
 from ui.footer import render_footer
 #from controllers.fx import render_fx_section
 from controllers.portfolio import render_portfolio_section
-from services.cache import get_fx_rates_cached, build_iol_client
+from services.cache import get_fx_rates_cached
+from controllers.auth import build_iol_client
 
 
 logging.basicConfig(
@@ -67,8 +68,6 @@ def main():
     main_col = st.container()
 
     cli = build_iol_client()
-    # Una vez autenticado, eliminamos la contraseña de la sesión
-    st.session_state.pop("IOL_PASSWORD", None)
     refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
     render_footer()
 
