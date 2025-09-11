@@ -22,7 +22,10 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
          patch('controllers.portfolio._load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.render_sidebar', return_value=Controls(refresh_secs=55)), \
          patch('controllers.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio._apply_filters', return_value=empty_df):
+         patch('controllers.portfolio._apply_filters', return_value=empty_df), \
+         patch('controllers.portfolio._render_advanced_analysis'), \
+         patch('controllers.portfolio._render_risk_analysis'), \
+         patch('controllers.portfolio._render_fundamental_analysis'):
         refresh = render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     assert refresh == 55
