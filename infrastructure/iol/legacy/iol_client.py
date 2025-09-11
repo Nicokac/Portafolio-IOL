@@ -261,12 +261,16 @@ class IOLClient:
         return None
 
     @staticmethod
-    def _parse_chg_pct_fields(d: Dict[str, Any]) -> Optional[float]:
+    def _parse_chg_pct_fields(d: Dict[str, Any], last: Optional[float] = None) -> Optional[float]:
         """
         Extrae variación porcentual en % (no fracción), tolerando strings con coma/porcentual.
+        Si no se encuentra expresada explícitamente, intenta calcularla a partir de
+        "ultimo" y "cierreAnterior" (o aliases similares).
         """
         if not isinstance(d, dict):
             return None
+
+        # Campos que pueden traer el porcentaje explícito
         for k in ("variacion", "variacionPorcentual", "cambioPorcentual", "changePercent"):
             v = d.get(k)
             if isinstance(v, (int, float)):
@@ -276,7 +280,29 @@ class IOLClient:
                 f = _to_float(v)
                 if f is not None:
                     return f
-        return None
+
+        # Intento de cálculo a partir de cierre anterior / puntos variación
+        prev_close: Optional[float] = None
+        for k in ("cierreAnterior", "previousClose"):
+            v = d.get(k)
+            prev_close = _to_float(v)
+            if prev_close is not None:
+                break
+
+        if prev_close is None:
+            return None
+
+        delta: Optional[float] = _to_float(d.get("puntosVariacion"))
+        if delta is not None:
+            return delta / prev_close * 100 if prev_close else None
+
+        if last is None:
+            last = IOLClient._parse_price_fields(d)
+
+        if last is None:
+            return None
+
+        return (last - prev_close) / prev_close * 100
 
     def get_last_price(self, mercado: str, simbolo: str) -> Optional[float]:
         """
@@ -318,10 +344,11 @@ class IOLClient:
         if not isinstance(data, dict):
             return {"last": None, "chg_pct": None}
 
-        return {
-            "last": self._parse_price_fields(data),
-            "chg_pct": self._parse_chg_pct_fields(data),
-        }
+        last = self._parse_price_fields(data)
+        chg_pct = self._parse_chg_pct_fields(data, last)
+        if chg_pct is None:
+            logger.warning("chg_pct indeterminado para %s:%s", mercado, simbolo)
+        return {"last": last, "chg_pct": chg_pct}
 
     # -------- Opcional: cotizaciones en batch --------
     def get_quotes_bulk(
