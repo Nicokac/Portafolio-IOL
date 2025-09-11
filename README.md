@@ -32,7 +32,14 @@ IOL_TOKENS_KEY=""
 CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
+LOG_LEVEL="INFO"
+# Formato JSON opcional para logs
+LOG_JSON=0
+# Usuario opcional incluido en los logs
+LOG_USER="usuario"
 ```
+
+`LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Si se establece `LOG_JSON=1`, los registros se emitirán en formato JSON e incluirán el nombre del módulo y el valor de `LOG_USER` si está definido.
 
 Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` está definido, el archivo se cifra mediante [Fernet](https://cryptography.io/en/latest/fernet/) con esa clave. Puedes generar una clave con:
 
