@@ -1,8 +1,7 @@
 # shared\utils.py
 from __future__ import annotations
-import json
+
 import numpy as np
-from functools import lru_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,11 +49,6 @@ def format_percent(value: float | None) -> str:
     if v is None:
         return "—"
     return f"{v:.2f} %"
-
-@lru_cache()
-def get_config() -> dict:
-    with open("config.json", encoding="utf-8") as f:
-        return json.load(f)
 
 def _to_float(x) -> float | None:
     if x is None:
