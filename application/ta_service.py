@@ -22,8 +22,12 @@ try:  # pragma: no cover
     from ta.trend import MACD, IchimokuIndicator
     from ta.volatility import AverageTrueRange
 except ImportError:  # Si la librería no está disponible, usamos stubs
-    logging.warning("La librería ta no está instalada. Indicadores técnicos deshabilitados.")
-    RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = AverageTrueRange = None
+    logging.warning(
+        "La librería ta no está instalada. Indicadores técnicos deshabilitados."
+    )
+    RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = (
+        AverageTrueRange
+    ) = None
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,7 @@ logger = logging.getLogger(__name__)
 # -----------------------
 # Utilidades internas
 # -----------------------
+
 
 def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -42,12 +47,21 @@ def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
         if len(df.columns.levels[-1]) == 1:
             df.columns = df.columns.droplevel(-1)
         else:
-            df.columns = ["_".join([str(c) for c in col if c != ""]) for col in df.columns]
-    df = df.rename(columns={
-        "open": "Open", "high": "High", "low": "Low", "close": "Close",
-        "volume": "Volume", "adj close": "Adj Close", "adj_close": "Adj Close",
-        "Adj Close": "Adj Close"
-    })
+            df.columns = [
+                "_".join([str(c) for c in col if c != ""]) for col in df.columns
+            ]
+    df = df.rename(
+        columns={
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close",
+            "volume": "Volume",
+            "adj close": "Adj Close",
+            "adj_close": "Adj Close",
+            "Adj Close": "Adj Close",
+        }
+    )
     return df
 
 
@@ -63,6 +77,7 @@ def _bollinger_pandas(close: pd.Series, window: int = 20, std: float = 2.0):
 # -----------------------
 # Fetch + indicadores
 # -----------------------
+
 
 @st.cache_data
 def fetch_with_indicators(
@@ -135,7 +150,7 @@ def fetch_with_indicators(
     # Indicadores
     df["SMA_FAST"] = close.rolling(int(sma_fast)).mean()
     df["SMA_SLOW"] = close.rolling(int(sma_slow)).mean()
-    df["EMA"]      = close.ewm(span=int(ema_win), adjust=False).mean()
+    df["EMA"] = close.ewm(span=int(ema_win), adjust=False).mean()
 
     bb_l, bb_m, bb_u = _bollinger_pandas(close, window=int(bb_win), std=float(bb_std))
     df["BB_L"], df["BB_M"], df["BB_U"] = bb_l, bb_m, bb_u
@@ -147,24 +162,41 @@ def fetch_with_indicators(
 
     # MACD
     try:
-        macd = MACD(close=close, window_slow=int(macd_slow), window_fast=int(macd_fast), window_sign=int(macd_signal))
+        macd = MACD(
+            close=close,
+            window_slow=int(macd_slow),
+            window_fast=int(macd_fast),
+            window_sign=int(macd_signal),
+        )
         df["MACD"] = macd.macd()
         df["MACD_SIGNAL"] = macd.macd_signal()
         df["MACD_HIST"] = macd.macd_diff()
     except Exception:
-        df["MACD"] = df["MACD_SIGNAL"] = df["MACD_HIST"] = pd.Series(index=df.index, dtype="float64")
+        df["MACD"] = df["MACD_SIGNAL"] = df["MACD_HIST"] = pd.Series(
+            index=df.index, dtype="float64"
+        )
 
     # ATR
     try:
-        atr = AverageTrueRange(high=pd.Series(df["High"]), low=pd.Series(df["Low"]), close=close, window=int(atr_win))
+        atr = AverageTrueRange(
+            high=pd.Series(df["High"]),
+            low=pd.Series(df["Low"]),
+            close=close,
+            window=int(atr_win),
+        )
         df["ATR"] = atr.average_true_range()
     except Exception:
         df["ATR"] = pd.Series(index=df.index, dtype="float64")
 
     # Estocástico
     try:
-        stoch = StochasticOscillator(high=pd.Series(df["High"]), low=pd.Series(df["Low"]), close=close,
-                                      window=int(stoch_win), smooth_window=int(stoch_smooth))
+        stoch = StochasticOscillator(
+            high=pd.Series(df["High"]),
+            low=pd.Series(df["Low"]),
+            close=close,
+            window=int(stoch_win),
+            smooth_window=int(stoch_smooth),
+        )
         df["STOCH_K"] = stoch.stoch()
         df["STOCH_D"] = stoch.stoch_signal()
     except Exception:
@@ -172,14 +204,21 @@ def fetch_with_indicators(
 
     # Ichimoku
     try:
-        ichi = IchimokuIndicator(high=pd.Series(df["High"]), low=pd.Series(df["Low"]),
-                                 window1=int(ichi_conv), window2=int(ichi_base), window3=int(ichi_span))
+        ichi = IchimokuIndicator(
+            high=pd.Series(df["High"]),
+            low=pd.Series(df["Low"]),
+            window1=int(ichi_conv),
+            window2=int(ichi_base),
+            window3=int(ichi_span),
+        )
         df["ICHI_CONV"] = ichi.ichimoku_conversion_line()
         df["ICHI_BASE"] = ichi.ichimoku_base_line()
         df["ICHI_A"] = ichi.ichimoku_a()
         df["ICHI_B"] = ichi.ichimoku_b()
     except Exception:
-        df["ICHI_CONV"] = df["ICHI_BASE"] = df["ICHI_A"] = df["ICHI_B"] = pd.Series(index=df.index, dtype="float64")
+        df["ICHI_CONV"] = df["ICHI_BASE"] = df["ICHI_A"] = df["ICHI_B"] = pd.Series(
+            index=df.index, dtype="float64"
+        )
 
     # Limpieza de NaNs iniciales por ventanas
     df = df.dropna().copy()
@@ -214,9 +253,13 @@ def simple_alerts(df: pd.DataFrame) -> List[str]:
         fast_prev, slow_prev = _to_float(prev["SMA_FAST"]), _to_float(prev["SMA_SLOW"])
         if None not in (fast_now, slow_now, fast_prev, slow_prev):
             if fast_prev <= slow_prev and fast_now > slow_now:
-                alerts.append("⚡ Cruce alcista: SMA corta cruzó por encima de la SMA larga.")
+                alerts.append(
+                    "⚡ Cruce alcista: SMA corta cruzó por encima de la SMA larga."
+                )
             elif fast_prev >= slow_prev and fast_now < slow_now:
-                alerts.append("⚠️ Cruce bajista: SMA corta cruzó por debajo de la SMA larga.")
+                alerts.append(
+                    "⚠️ Cruce bajista: SMA corta cruzó por debajo de la SMA larga."
+                )
 
     # Bandas de Bollinger
     close_val = _to_float(last.get("Close"))
@@ -230,6 +273,7 @@ def simple_alerts(df: pd.DataFrame) -> List[str]:
 
     return alerts
 
+
 def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     """Ejecuta un backtest simple según la estrategia indicada."""
     if df is None or df.empty or "Close" not in df:
@@ -241,7 +285,9 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
         sig = np.where(df["SMA_FAST"] > df["SMA_SLOW"], 1, -1)
     elif strat == "macd" and {"MACD", "MACD_SIGNAL"}.issubset(df.columns):
         sig = np.where(df["MACD"] > df["MACD_SIGNAL"], 1, -1)
-    elif strat in {"estocastico", "stochastic"} and {"STOCH_K", "STOCH_D"}.issubset(df.columns):
+    elif strat in {"estocastico", "stochastic"} and {"STOCH_K", "STOCH_D"}.issubset(
+        df.columns
+    ):
         sig = np.where(df["STOCH_K"] > df["STOCH_D"], 1, -1)
     elif strat == "ichimoku" and {"ICHI_CONV", "ICHI_BASE"}.issubset(df.columns):
         sig = np.where(df["ICHI_CONV"] > df["ICHI_BASE"], 1, -1)
@@ -255,6 +301,7 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     res["equity"] = (1 + res["strategy_ret"]).cumprod()
     return res.dropna()
 
+
 @st.cache_data
 def get_fundamental_data(ticker: str) -> dict:
     """
@@ -263,7 +310,7 @@ def get_fundamental_data(ticker: str) -> dict:
     if yf is None:
         st.warning("La librería 'yfinance' no está disponible.")
         return {}
-    
+
     if ticker.startswith("^"):
         return {}
 
@@ -307,6 +354,7 @@ def get_fundamental_data(ticker: str) -> dict:
         logging.error(f"Error al obtener datos fundamentales para {ticker}: {e}")
         return {"error": f"No se pudo contactar a la API para {ticker}."}
 
+
 @st.cache_data
 def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
     """Devuelve un DataFrame con métricas fundamentales y ESG para cada símbolo."""
@@ -349,6 +397,7 @@ def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
         except Exception as e:
             logger.warning("fundamental error %s: %s", sym, e)
     return pd.DataFrame(rows)
+
 
 @st.cache_data
 def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFrame:
@@ -412,7 +461,9 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
     df = df.sort_index().ffill().dropna(how="all")
     return df
 
+
 # --- Agregar al final de application/ta_service.py ---
+
 
 class TAService:
     """Fachada de análisis técnico que envuelve las funciones existentes."""
@@ -435,6 +486,7 @@ class TAService:
         ichi_base: int = 26,
         ichi_span: int = 52,
     ):
+        """Generate indicator DataFrame for a given symbol."""
         return fetch_with_indicators(
             sym,
             period=period,
@@ -453,16 +505,21 @@ class TAService:
         )
 
     def alerts_for(self, df_ind):
+        """Return simple technical alerts for latest row."""
         return simple_alerts(df_ind)
 
     def backtest(self, df_ind, *, strategy: str = "sma"):
+        """Run a lightweight backtest for the given strategy."""
         return run_backtest(df_ind, strategy=strategy)
 
     def fundamentals(self, us_ticker: str) -> dict:
+        """Fetch basic fundamental data for a US ticker."""
         return get_fundamental_data(us_ticker) or {}
 
     def portfolio_history(self, *, simbolos: list[str], period: str = "1y"):
+        """Retrieve historical prices for a list of symbols."""
         return get_portfolio_history(simbolos=simbolos, period=period)
 
     def portfolio_fundamentals(self, simbolos: List[str]) -> pd.DataFrame:
+        """Fetch fundamental metrics for a list of symbols."""
         return portfolio_fundamentals(simbolos)
