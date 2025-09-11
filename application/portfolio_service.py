@@ -313,7 +313,9 @@ def calc_rows(
 
     # ----- Clasificación y escala --------------------------------------
     df["tipo"] = df["simbolo"].map(classify_symbol)
-    df["scale"] = df.apply(lambda r: scale_for(r["simbolo"], r["tipo"]), axis=1)
+    uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo"]]
+    scale_map = {s: scale_for(s, t) for s, t in uniq.itertuples(index=False)}
+    df["scale"] = df["simbolo"].map(scale_map)
 
     # ----- Valoraciones -------------------------------------------------
     df["ultimo"] = df["last"]
