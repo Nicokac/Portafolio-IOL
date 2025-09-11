@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 init_ui()
 
 # Precarga credenciales desde settings en session_state, salvo que se fuerce el login
-if not st.session_state.get("force_login"):
+# o ya esté autenticado. Evitamos persistir la contraseña innecesariamente.
+if not st.session_state.get("force_login") and not st.session_state.get("authenticated"):
     if settings.IOL_USERNAME:
         st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
     if settings.IOL_PASSWORD:
@@ -45,9 +46,10 @@ def main():
 
     user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
     password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    if not user or not password:
-        render_login_page()
-        st.stop()
+    if not st.session_state.get("authenticated"):
+        if not user or not password:
+            render_login_page()
+            st.stop()
 
     fx_rates, fx_error = get_fx_rates_cached()
     if fx_error:
@@ -65,6 +67,8 @@ def main():
     main_col = st.container()
 
     cli = build_iol_client()
+    # Una vez autenticado, eliminamos la contraseña de la sesión
+    st.session_state.pop("IOL_PASSWORD", None)
     refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
     render_footer()
 

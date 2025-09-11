@@ -104,7 +104,10 @@ def build_iol_client() -> IIOLProvider:
         f"{user}:{password}:{salt}:{tokens_file}".encode()
     ).hexdigest()
     try:
-        return get_client_cached(cache_key, user, password, tokens_file)
+        cli = get_client_cached(cache_key, user, password, tokens_file)
+        st.session_state["authenticated"] = True
+        st.session_state.pop("IOL_PASSWORD", None)
+        return cli
     except Exception as e:
         logger.exception("build_iol_client failed: %s", e)
         st.session_state["login_error"] = str(e)

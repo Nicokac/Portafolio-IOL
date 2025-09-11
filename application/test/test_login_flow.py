@@ -17,7 +17,7 @@ class DummyCtx:
 def test_logout_forces_login_page(monkeypatch):
     st.session_state.clear()
     st.session_state["IOL_USERNAME"] = "user"
-    st.session_state["IOL_PASSWORD"] = "pass"
+    st.session_state["authenticated"] = True
     st.session_state["logout_pending"] = True
 
     monkeypatch.setattr(st, "popover", lambda *a, **k: DummyCtx())
@@ -64,6 +64,23 @@ def test_build_iol_client_failure_sets_login_error(monkeypatch):
     assert st.session_state.get("force_login") is True
     assert st.session_state.get("login_error") == "bad creds"
     assert st.session_state.get("IOL_PASSWORD") == ""
+
+
+def test_build_iol_client_success_clears_password(monkeypatch):
+    from services import cache
+
+    st.session_state.clear()
+    st.session_state["IOL_USERNAME"] = "user"
+    st.session_state["IOL_PASSWORD"] = "pass"
+
+    dummy_cli = object()
+    monkeypatch.setattr(cache, "get_client_cached", lambda *a, **k: dummy_cli)
+
+    cli = cache.build_iol_client()
+
+    assert cli is dummy_cli
+    assert st.session_state.get("authenticated") is True
+    assert "IOL_PASSWORD" not in st.session_state
 
 
 def test_render_login_page_shows_error(monkeypatch):
