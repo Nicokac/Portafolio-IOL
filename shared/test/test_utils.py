@@ -10,7 +10,7 @@ class _NumpyStub:
     def isfinite(x):
         try:
             x = float(x)
-        except Exception:
+        except (TypeError, ValueError):
             return False
         return not (x != x or x in (float('inf'), float('-inf')))
 

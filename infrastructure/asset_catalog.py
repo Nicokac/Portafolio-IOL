@@ -26,6 +26,6 @@ def get_asset_catalog(path: str | None = None) -> Dict[str, str]:
             data = json.load(fh)
             if isinstance(data, dict):
                 return {str(k).upper(): str(v) for k, v in data.items()}
-    except Exception as e:
-        logger.warning("No se pudo leer %s: %s", path, e)
+    except (OSError, json.JSONDecodeError) as e:
+        logger.exception("No se pudo leer %s: %s", path, e)
     return {}

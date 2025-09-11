@@ -3,6 +3,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
+import requests
 
 from infrastructure.iol.client import (
     IIOLProvider,
@@ -39,8 +40,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     try:
         if callable(get_bulk):
             return get_bulk(items)
-    except Exception as e:
-        logger.warning("get_quotes_bulk falló: %s", e)
+    except requests.RequestException as e:
+        logger.exception("get_quotes_bulk falló: %s", e)
     out = {}
     max_workers = getattr(settings, "max_quote_workers", 12)
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
@@ -53,8 +54,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             key = futs[fut]
             try:
                 out[key] = fut.result()
-            except Exception as e:
-                logger.warning("get_quote failed for %s:%s -> %s", key[0], key[1], e)
+            except requests.RequestException as e:
+                logger.exception("get_quote failed for %s:%s -> %s", key[0], key[1], e)
                 out[key] = {"last": None, "chg_pct": None}
     return out
 
@@ -70,9 +71,9 @@ def fetch_fx_rates():
     error: str | None = None
     try:
         data, error = get_fx_provider().get_rates()
-    except Exception as e:
+    except (requests.RequestException, RuntimeError) as e:
         error = f"FX provider failed: {e}"
-        logger.warning(error)
+        logger.exception(error)
     return data, error
 
 
@@ -108,7 +109,7 @@ def build_iol_client() -> IIOLProvider:
         st.session_state["authenticated"] = True
         st.session_state.pop("IOL_PASSWORD", None)
         return cli
-    except Exception as e:
+    except (requests.RequestException, RuntimeError, ValueError) as e:
         logger.exception("build_iol_client failed: %s", e)
         st.session_state["login_error"] = str(e)
         st.session_state["force_login"] = True
