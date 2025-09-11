@@ -15,6 +15,13 @@ def render_header(rates=None):
         render_fx_summary_in_header(rates)
 
 def render_fx_summary_in_header(rates: dict):
+    """Render a summary of foreign exchange rates in the header.
+
+    Parameters
+    ----------
+    rates : dict
+        Diccionario con las cotizaciones a mostrar.
+    """
     if not rates:
         return
 
@@ -34,9 +41,26 @@ def render_fx_summary_in_header(rates: dict):
 
     for col, (label, value) in zip(cols, valores.items()):
         with col:
-            st.markdown(f"""
-                <div style="background-color:{pal.highlight_bg}; color:{pal.highlight_text}; padding:0.6em 1em; border-radius:0.5em;">
+            style = (
+                f"background-color:{pal.highlight_bg}; "
+                f"color:{pal.highlight_text}; "
+                "padding:0.6em 1em; "
+                "border-radius:0.5em;"
+            )
+            value_str = (
+                f"$ {value:,.2f}"
+                .replace(",", "_")
+                .replace(".", ",")
+                .replace("_", ".")
+                if value
+                else "–"
+            )
+            st.markdown(
+                f"""
+                <div style="{style}">
                     <strong>{label}</strong><br>
-                    <span style="font-size:1.2em;">{f"$ {value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".") if value else '–'}</span>
+                    <span style="font-size:1.2em;">{value_str}</span>
                 </div>
-            """, unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True,
+            )
