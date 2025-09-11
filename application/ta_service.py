@@ -1,6 +1,7 @@
 # application\ta_service.py
 from __future__ import annotations
 import logging
+from pathlib import Path
 from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.utils import _to_float
@@ -8,7 +9,7 @@ from shared.utils import _to_float
 from functools import lru_cache
 import numpy as np
 import pandas as pd
-from requests.exceptions import HTTPError
+from requests.exceptions import HTTPError, Timeout
 
 # yfinance para históricos
 try:
@@ -106,6 +107,11 @@ def fetch_with_indicators(
     ['Open','High','Low','Close','Volume','SMA_FAST','SMA_SLOW','EMA',
     'BB_L','BB_M','BB_U','RSI','MACD','MACD_SIGNAL','MACD_HIST','ATR',
     'STOCH_K','STOCH_D','ICHI_CONV','ICHI_BASE','ICHI_A','ICHI_B']
+
+    En caso de que `yfinance` produzca un `HTTPError` o un `Timeout`,
+    se intenta cargar un archivo de respaldo en
+    ``infrastructure/cache/ta_fallback.csv``. Si no existe, se
+    devuelve un `DataFrame` vacío como placeholder.
     """
     if yf is None or RSIIndicator is None:
         raise RuntimeError("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
@@ -125,11 +131,36 @@ def fetch_with_indicators(
             group_by="column",  # ayuda a evitar multiindex por ticker
             threads=False,
         )
+    except (HTTPError, Timeout) as e:
+        logger.warning(
+            "yfinance error (%s): %s. Usando fallback local.", ticker, e
+        )
+        fallback = (
+            Path(__file__).resolve().parent.parent
+            / "infrastructure"
+            / "cache"
+            / "ta_fallback.csv"
+        )
+        if fallback.exists():
+            try:
+                hist = pd.read_csv(fallback, index_col=0, parse_dates=True)
+            except Exception as err:
+                logger.error("No se pudo leer el fallback %s: %s", fallback, err)
+                return pd.DataFrame()
+        else:
+            logger.error("No se encontró el archivo de fallback en %s", fallback)
+            return pd.DataFrame()
     except Exception as e:
         logger.error("yfinance error (%s): %s", ticker, e)
-        raise RuntimeError(f"Error al descargar datos de yfinance para {ticker}") from e
+        raise RuntimeError(
+            f"Error al descargar datos de yfinance para {ticker}"
+        ) from e
     if hist is None or hist.empty:
-        raise ValueError(f"No hay datos históricos para {ticker}")
+        logger.warning(
+            "No hay datos históricos para %s, devolviendo placeholder vacío.",
+            ticker,
+        )
+        return pd.DataFrame()
 
     df = _flatten_ohlcv(hist.copy())
 

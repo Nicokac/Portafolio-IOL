@@ -28,6 +28,7 @@ tokens_iol.json
 # --- Datos locales (ajusta según uses)
 data/
 *.csv
+!infrastructure/cache/ta_fallback.csv
 *.parquet
 *.xlsx
 

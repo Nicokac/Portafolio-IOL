@@ -78,6 +78,26 @@ Ejecutar la suite de pruebas automatizadas:
 pytest application/test
 ```
 
+## Fallback de análisis técnico
+
+Si ocurre un `HTTPError` o un `Timeout` al descargar datos con `yfinance`,
+la función `fetch_with_indicators` recurre al archivo local
+`infrastructure/cache/ta_fallback.csv`. Este archivo contiene datos
+de respaldo con formato OHLCV utilizados para generar los indicadores.
+
+Para actualizarlo con información reciente, ejecuta el servicio cuando
+tengas conexión y guarda el resultado en la misma ruta:
+
+```bash
+python - <<'PY'
+from application.ta_service import fetch_with_indicators
+import pandas as pd
+df = fetch_with_indicators('AAPL')  # o el símbolo deseado
+df.to_csv('infrastructure/cache/ta_fallback.csv')
+PY
+```
+
+
 ## Actualización de dependencias
 
 Las versiones de las dependencias están fijadas en `requirements.txt`. Para actualizarlas de forma segura:
