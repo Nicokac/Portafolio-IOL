@@ -1,10 +1,13 @@
 import time
+import logging
 import pandas as pd
 import streamlit as st
 
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
 from infrastructure.cache import cache
+
+logger = logging.getLogger(__name__)
 
 
 def apply_filters(df_pos, controls, cli, psvc):
@@ -21,6 +24,16 @@ def apply_filters(df_pos, controls, cli, psvc):
         .itertuples(index=False, name=None)
     )
     quotes_map = fetch_quotes_bulk(cli, pairs)
+    chg_cnt = sum(
+        1
+        for v in quotes_map.values()
+        if isinstance(v, dict) and v.get("chg_pct") is not None
+    )
+    logger.info(
+        "apply_filters solicitó %d pares; %d con chg_pct",
+        len(pairs),
+        chg_cnt,
+    )
 
     df_view = psvc.calc_rows(
         lambda mercado, simbolo=None: quotes_map.get(

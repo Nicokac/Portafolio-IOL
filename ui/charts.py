@@ -1,11 +1,14 @@
 # ui/charts.py
 from __future__ import annotations
+import logging
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from .palette import get_active_palette
+
+logger = logging.getLogger(__name__)
 
 # =========================
 # Tema / colores unificados
@@ -243,7 +246,7 @@ def plot_heat_pl_pct(df: pd.DataFrame, color_scale: str = "RdBu"):
 # ==============================
 
 def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
-    cols = [c for c in ("simbolo","pl_d","chg_%","tipo") if c in df.columns]
+    cols = [c for c in ("simbolo", "pl_d", "chg_%", "pld_%", "tipo") if c in df.columns]
     d = df[cols].copy() if cols else pd.DataFrame()
 
     if d.empty or "pl_d" not in d.columns:
@@ -252,9 +255,16 @@ def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
     d["pl_d"] = pd.to_numeric(d["pl_d"], errors="coerce")
     if "chg_%" in d.columns:
         d["chg_%"] = pd.to_numeric(d["chg_%"], errors="coerce")
+    if "pld_%" in d.columns:
+        d["pld_%"] = pd.to_numeric(d["pld_%"], errors="coerce")
+    if "chg_%" not in d.columns and "pld_%" in d.columns:
+        d["chg_%"] = d["pld_%"]
+    elif "pld_%" in d.columns:
+        d["chg_%"] = d["chg_%"].fillna(d["pld_%"])
 
     d = d.dropna(subset=["pl_d"]).sort_values("pl_d", ascending=False).head(n)
     if d.empty:
+        logger.warning("plot_pl_daily_topn: sin datos tras dropna")
         return None
 
     sym_map = _symbol_color_map(d["simbolo"].astype(str).tolist())
