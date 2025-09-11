@@ -7,14 +7,17 @@ import json
 import time
 import logging
 import threading
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+from cryptography.fernet import InvalidToken
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
 
 from shared.config import settings
 from shared.utils import _to_float
+from infrastructure.iol.auth import FERNET
 
 TOKEN_URL = "https://api.invertironline.com/token"
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
@@ -66,8 +69,14 @@ class _LegacyIOLAuth:
     def _load_tokens(self) -> Dict[str, Any]:
         if self.tokens_file.exists():
             try:
-                return json.loads(self.tokens_file.read_text(encoding="utf-8"))
-            except Exception as e:
+                raw = self.tokens_file.read_bytes()
+                if FERNET:
+                    raw = FERNET.decrypt(raw)
+                return json.loads(raw.decode("utf-8"))
+            except (InvalidToken, json.JSONDecodeError) as e:
+                logger.warning("No se pudieron leer tokens: %s", e)
+                return {}
+            except OSError as e:
                 logger.warning("No se pudieron leer tokens: %s", e)
                 return {}
         return {}
@@ -75,8 +84,15 @@ class _LegacyIOLAuth:
     def _save_tokens(self, data: Dict[str, Any]) -> None:
         try:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+            if FERNET:
+                content = FERNET.encrypt(content)
+            tmp.write_bytes(content)
             tmp.replace(self.tokens_file)
+            try:
+                os.chmod(self.tokens_file, 0o600)
+            except OSError:
+                pass
         except Exception as e:
             logger.error("No se pudo guardar el archivo de tokens: %s", e)
 

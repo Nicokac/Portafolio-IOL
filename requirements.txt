@@ -6,6 +6,8 @@ python-dotenv>=1.0
 iolConn>=0.4.2
 plotly>=5.18
 kaleido>=0.2.1
+# Utilidades varias
+cryptography>=41.0
 # Dependencias obligatorias para datos e indicadores técnicos
 yfinance>=0.2.31
 ta>=0.10
