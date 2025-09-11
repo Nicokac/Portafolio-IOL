@@ -45,6 +45,7 @@ def test_iol_client_get_portfolio_uses_cache_on_failure(tmp_path):
         assert data1 == {"activos": [1]}
         assert json.loads(cache_file.read_text()) == {"activos": [1]}
 
-        mock_legacy.get_portfolio.side_effect = Exception("boom")
+        import requests
+        mock_legacy.get_portfolio.side_effect = requests.RequestException("boom")
         data2 = cli.get_portfolio()
         assert data2 == {"activos": [1]}

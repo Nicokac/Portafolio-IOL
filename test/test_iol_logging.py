@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+import requests
 
 from infrastructure.iol import client as client_module
 from infrastructure.iol.legacy import iol_client as legacy_module
@@ -11,7 +12,7 @@ class DummyLegacyClient:
         pass
 
     def get_portfolio(self):
-        raise Exception("network error")
+        raise requests.RequestException("network error")
 
 
 def test_adapter_get_portfolio_logs(monkeypatch, tmp_path, caplog):

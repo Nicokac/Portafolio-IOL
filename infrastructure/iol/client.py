@@ -27,7 +27,7 @@ class IOLClientAdapter(IIOLProvider):
             except OSError as e:
                 logger.warning("No se pudo guardar cache portafolio: %s", e, exc_info=True)
             return data
-        except Exception as e:
+        except requests.RequestException as e:
             logger.warning("get_portfolio falló: %s", e, exc_info=True)
             try:
                 data = json.loads(PORTFOLIO_CACHE.read_text(encoding="utf-8"))
