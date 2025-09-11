@@ -8,6 +8,7 @@ from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
+from infrastructure.cache import cache
 
 from .load_data import load_portfolio_data
 from .filters import apply_filters
@@ -41,17 +42,17 @@ def render_portfolio_section(container, cli, fx_rates):
             "🔎 Análisis de activos",
         ]
 
-        if "portfolio_tab" not in st.session_state:
-            st.session_state["portfolio_tab"] = 0
+        if "portfolio_tab" not in cache.session_state:
+            cache.session_state["portfolio_tab"] = 0
 
         tab_idx = st.radio(
             "Secciones",
             options=range(len(tab_labels)),
             format_func=lambda i: tab_labels[i],
-            index=st.session_state["portfolio_tab"],
+            index=cache.session_state["portfolio_tab"],
             horizontal=True,
         )
-        st.session_state["portfolio_tab"] = tab_idx
+        cache.session_state["portfolio_tab"] = tab_idx
 
         if tab_idx == 0:
             render_basic_section(df_view, controls, ccl_rate)
