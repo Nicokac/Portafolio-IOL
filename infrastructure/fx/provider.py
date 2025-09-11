@@ -9,6 +9,7 @@ import traceback
 
 from infrastructure.http.session import build_session
 from shared.config import settings
+from shared.utils import _to_float
 import requests
 
 logger = logging.getLogger(__name__)
@@ -22,12 +23,6 @@ CACHE_TTL  = 45  # segundos
 # -------------------------
 # Helpers de normalización
 # -------------------------
-def _to_float(x):
-    try:
-        s = str(x).replace("%", "").replace(",", ".").strip()
-        return float(s)
-    except Exception:
-        return None
 
 def _mul(x, m):
     if x is None:

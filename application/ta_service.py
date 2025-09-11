@@ -1,8 +1,9 @@
 # application\ta_service.py
 from __future__ import annotations
 import logging
-from typing import Optional, List
+from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
+from shared.utils import _to_float
 
 import numpy as np
 import pandas as pd
@@ -30,22 +31,6 @@ logger = logging.getLogger(__name__)
 # -----------------------
 # Utilidades internas
 # -----------------------
-
-def _to_float(x) -> Optional[float]:
-    if x is None:
-        return None
-    if isinstance(x, (int, float)):
-        return float(x)
-    s = str(x).strip().replace(" ", "")
-    if "," in s and s.count(",") == 1 and s.rfind(",") > s.rfind("."):
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except Exception:
-        return None
-
 
 def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     """

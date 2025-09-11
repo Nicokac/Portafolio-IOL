@@ -5,6 +5,7 @@ import time
 import logging
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from shared.utils import _to_float
 
 # =========================
 # Config
@@ -19,27 +20,6 @@ __all__ = ["get_fx_rates"]
 # =========================
 # Utilidades
 # =========================
-
-def _to_float(x) -> Optional[float]:
-    """
-    Conversión robusta a float:
-    - Acepta números, strings con coma decimal y/o puntos de miles.
-    - Devuelve None si no puede convertir.
-    """
-    if x is None:
-        return None
-    if isinstance(x, (int, float)):
-        return float(x)
-    s = str(x).strip().replace(" ", "")
-    # Caso "1.234,56" -> "1234.56"
-    if "," in s and s.count(",") == 1 and s.rfind(",") > s.rfind("."):
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except Exception:
-        return None
 
 def _mid(compra: Any, venta: Any) -> Optional[float]:
     """

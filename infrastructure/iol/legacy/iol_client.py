@@ -14,6 +14,7 @@ from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
 
 from shared.config import settings
+from shared.utils import _to_float
 
 TOKEN_URL = "https://api.invertironline.com/token"
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
@@ -29,29 +30,6 @@ logger = logging.getLogger(__name__)
 # =========================
 # Utilidades
 # =========================
-
-def _to_float(x) -> Optional[float]:
-    """
-    Parseo robusto:
-    - Acepta int/float directos
-    - Acepta strings con coma decimal y/o puntos de miles ("1.234,56" -> 1234.56)
-    - Devuelve None si no puede
-    """
-    if x is None:
-        return None
-    if isinstance(x, (int, float)):
-        return float(x)
-    s = str(x).strip().replace(" ", "")
-    # "1.234,56" -> "1234.56"
-    if "," in s and s.count(",") == 1 and s.rfind(",") > s.rfind("."):
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        s = s.replace(",", ".")
-    try:
-        return float(s)
-    except Exception as e:
-        logger.warning("No se pudo convertir a float: %s", e)
-        return None
 
 
 def _elapsed_ms(start_ts: float) -> int:
