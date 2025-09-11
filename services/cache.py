@@ -2,7 +2,7 @@ import logging, time, hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import streamlit as st
+from infrastructure.cache import cache
 import requests
 
 from infrastructure.iol.client import (
@@ -16,7 +16,7 @@ from shared.config import settings
 logger = logging.getLogger(__name__)
 
 
-@st.cache_resource
+@cache.cache_resource
 def get_client_cached(
     cache_key: str, user: str, password: str, tokens_file: Path | str | None
 ) -> IIOLProvider:
@@ -24,7 +24,7 @@ def get_client_cached(
     return _build_iol_client(user, password, tokens_file=tokens_file)
 
 
-@st.cache_data(ttl=settings.cache_ttl_portfolio)
+@cache.cache_data(ttl=settings.cache_ttl_portfolio)
 def fetch_portfolio(_cli: IIOLProvider):
     start = time.time()
     data = _cli.get_portfolio()
@@ -32,7 +32,7 @@ def fetch_portfolio(_cli: IIOLProvider):
     return data
 
 
-@st.cache_data(ttl=settings.cache_ttl_quotes)
+@cache.cache_data(ttl=settings.cache_ttl_quotes)
 # def fetch_quotes_bulk(cli: IIOLProvider, items):
 #     get_bulk = getattr(cli, "get_quotes_bulk", None)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
@@ -60,12 +60,12 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     return out
 
 
-@st.cache_resource
+@cache.cache_resource
 def get_fx_provider() -> FXProviderAdapter:
     return FXProviderAdapter()
 
 
-@st.cache_data(ttl=settings.cache_ttl_fx)
+@cache.cache_data(ttl=settings.cache_ttl_fx)
 def fetch_fx_rates():
     data: dict = {}
     error: str | None = None
@@ -80,26 +80,26 @@ def fetch_fx_rates():
 def get_fx_rates_cached():
     now = time.time()
     ttl = getattr(settings, "cache_ttl_fx", 0)
-    last = st.session_state.get("fx_rates_ts", 0)
-    if "fx_rates" not in st.session_state or now - last > ttl:
+    last = cache.session_state.get("fx_rates_ts", 0)
+    if "fx_rates" not in cache.session_state or now - last > ttl:
         data, error = fetch_fx_rates()
-        st.session_state["fx_rates"] = data
-        st.session_state["fx_rates_error"] = error
-        st.session_state["fx_rates_ts"] = now
+        cache.session_state["fx_rates"] = data
+        cache.session_state["fx_rates_error"] = error
+        cache.session_state["fx_rates_ts"] = now
     return (
-        st.session_state.get("fx_rates", {}),
-        st.session_state.get("fx_rates_error"),
+        cache.session_state.get("fx_rates", {}),
+        cache.session_state.get("fx_rates_error"),
     )
 
 
 def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
-    if st.session_state.get("force_login"):
-        user = st.session_state.get("IOL_USERNAME")
-        password = st.session_state.get("IOL_PASSWORD")
+    if cache.session_state.get("force_login"):
+        user = cache.session_state.get("IOL_USERNAME")
+        password = cache.session_state.get("IOL_PASSWORD")
     else:
-        user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-        password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    salt = str(st.session_state.get("client_salt", ""))
+        user = cache.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+        password = cache.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    salt = str(cache.session_state.get("client_salt", ""))
     tokens_file = settings.tokens_file
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()

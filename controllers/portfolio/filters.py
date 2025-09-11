@@ -4,6 +4,7 @@ import streamlit as st
 
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
+from infrastructure.cache import cache
 
 
 def apply_filters(df_pos, controls, cli, psvc):
@@ -50,17 +51,17 @@ def apply_filters(df_pos, controls, cli, psvc):
     df_view["chg_%"] = map_keys.map(chg_map)
     df_view["chg_%"] = pd.to_numeric(df_view["chg_%"], errors="coerce")
 
-    st.session_state.setdefault("quotes_hist", {})
+    cache.session_state.setdefault("quotes_hist", {})
     now_ts = int(time.time())
     for (mkt, sym), chg in chg_map.items():
         if isinstance(chg, (int, float)):
-            st.session_state["quotes_hist"].setdefault(sym, [])
+            cache.session_state["quotes_hist"].setdefault(sym, [])
             if (
-                not st.session_state["quotes_hist"][sym]
-                or (st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts)
+                not cache.session_state["quotes_hist"][sym]
+                or (cache.session_state["quotes_hist"][sym][-1].get("ts") != now_ts)
             ):
-                st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
+                cache.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
                 maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
+                cache.session_state["quotes_hist"][sym] = cache.session_state["quotes_hist"][sym][-maxlen:]
 
     return df_view

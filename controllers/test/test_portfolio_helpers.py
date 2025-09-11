@@ -64,7 +64,7 @@ def test_apply_filters(monkeypatch):
     }
     monkeypatch.setattr(filters_mod, "fetch_quotes_bulk", lambda cli, pairs: quotes)
     monkeypatch.setattr(filters_mod.time, "time", lambda: 1)
-    filters_mod.st.session_state = {}
+    filters_mod.cache = SimpleNamespace(session_state={})
 
     class DummyPSvc:
         def calc_rows(self, quote_fn, df, exclude_syms=None):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import streamlit as st
 from domain.models import Controls
+from infrastructure.cache import cache
 
 def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Controls:
     st.sidebar.header("🎛️ Controles")
@@ -11,15 +12,15 @@ def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Contro
     available_types = list(available_types or [])
 
     defaults = {
-        "refresh_secs": st.session_state.get("refresh_secs", 30),
-        "hide_cash":    st.session_state.get("hide_cash", True),
-        "show_usd":     st.session_state.get("show_usd", False),
-        "order_by":     st.session_state.get("order_by", "valor_actual"),
-        "desc":         st.session_state.get("desc", True),
-        "top_n":        st.session_state.get("top_n", 20),
-        "selected_syms": st.session_state.get("selected_syms", all_symbols),
-        "selected_types": st.session_state.get("selected_types", available_types),
-        "symbol_query": st.session_state.get("symbol_query", ""),
+        "refresh_secs": cache.session_state.get("refresh_secs", 30),
+        "hide_cash":    cache.session_state.get("hide_cash", True),
+        "show_usd":     cache.session_state.get("show_usd", False),
+        "order_by":     cache.session_state.get("order_by", "valor_actual"),
+        "desc":         cache.session_state.get("desc", True),
+        "top_n":        cache.session_state.get("top_n", 20),
+        "selected_syms": cache.session_state.get("selected_syms", all_symbols),
+        "selected_types": cache.session_state.get("selected_types", available_types),
+        "symbol_query": cache.session_state.get("symbol_query", ""),
     }
 
     order_options = ["valor_actual", "pl", "pl_%", "pl_d", "chg_%", "costo", "ultimo", "cantidad", "simbolo"]
@@ -76,15 +77,15 @@ def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Contro
 
     if reset_btn:
         for k in asdict(controls).keys():
-            st.session_state.pop(k, None)
-        st.session_state["controls_snapshot"] = None
+            cache.session_state.pop(k, None)
+        cache.session_state["controls_snapshot"] = None
         st.rerun()
 
     if apply_btn:
-        st.session_state.update(asdict(controls))
-        st.session_state["controls_snapshot"] = asdict(controls)
+        cache.session_state.update(asdict(controls))
+        cache.session_state["controls_snapshot"] = asdict(controls)
 
-    snap = st.session_state.get("controls_snapshot")
+    snap = cache.session_state.get("controls_snapshot")
     if snap:
         return Controls(**snap)
     return controls

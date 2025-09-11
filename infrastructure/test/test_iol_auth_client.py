@@ -14,6 +14,8 @@ def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
 
     key = Fernet.generate_key()
     monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())
+    from shared import config
+    config.settings.tokens_key = key.decode()
 
     with patch("requests.post", return_value=mock_resp):
         import importlib

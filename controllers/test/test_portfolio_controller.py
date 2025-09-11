@@ -1,4 +1,5 @@
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -11,12 +12,13 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     container = contextlib.nullcontext()
     mock_cli = MagicMock()
     mock_st = MagicMock()
-    mock_st.session_state = {}
+    mock_cache = SimpleNamespace(session_state={})
     mock_st.radio.return_value = 0
 
     empty_df = pd.DataFrame(columns=['simbolo'])
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
+         patch('controllers.portfolio.portfolio.cache', mock_cache), \
          patch('controllers.portfolio.charts.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
          patch('controllers.portfolio.portfolio.TAService'), \
