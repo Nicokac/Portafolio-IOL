@@ -9,6 +9,7 @@ import time
 from typing import Dict, Any
 
 import requests
+from cryptography.fernet import Fernet
 
 from shared.config import settings
 
@@ -16,6 +17,13 @@ logger = logging.getLogger(__name__)
 
 TOKEN_URL = "https://api.invertironline.com/token"
 REQ_TIMEOUT = 30
+
+FERNET: Fernet | None = None
+if settings.tokens_key:
+    try:
+        FERNET = Fernet(settings.tokens_key.encode())
+    except Exception as e:
+        logger.warning("Clave de cifrado inválida: %s", e)
 
 @dataclass
 class IOLAuth:
@@ -40,7 +48,10 @@ class IOLAuth:
         """Persist token information to disk atomically."""
         try:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+            if FERNET:
+                content = FERNET.encrypt(content)
+            tmp.write_bytes(content)
             tmp.replace(self.tokens_file)
             os.chmod(self.tokens_file, 0o600)
         except (OSError, TypeError) as e:

@@ -26,13 +26,21 @@ IOL_PASSWORD="secreto"
 USER_AGENT="Portafolio-IOL/1.0"
 # Ruta opcional del archivo de tokens
 IOL_TOKENS_FILE="tokens_iol.json"
+# Clave opcional para cifrar el archivo de tokens (Fernet)
+IOL_TOKENS_KEY=""
 # Otros ajustes opcionales
 CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
 ```
 
-Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Este archivo es sensible: **manténlo fuera del control de versiones** (ya está incluido en `.gitignore`) y con permisos restringidos, por ejemplo `chmod 600`. Si el token expira o se desea forzar una nueva autenticación, borra dicho archivo.
+Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` está definido, el archivo se cifra mediante [Fernet](https://cryptography.io/en/latest/fernet/) con esa clave. Puedes generar una clave con:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Este archivo es sensible: **manténlo fuera del control de versiones** (ya está incluido en `.gitignore`) y con permisos restringidos, por ejemplo `chmod 600`. Si el token expira o se desea forzar una nueva autenticación, borra dicho archivo.
 
 ## Ejecución local
 
@@ -72,7 +80,7 @@ pytest application/test
 
 ## Mantenimiento de tokens
 
-El token de autenticación se guarda en `tokens_iol.json`. Este archivo no debe versionarse y debe mantenerse con permisos restringidos (por ejemplo `chmod 600`). Para renovar los tokens:
+El token de autenticación se guarda en `tokens_iol.json` (cifrado si se configuró `IOL_TOKENS_KEY`). Este archivo no debe versionarse y debe mantenerse con permisos restringidos (por ejemplo `chmod 600`). Para renovar los tokens:
 
 1. Eliminar el archivo `tokens_iol.json` o el indicado por `IOL_TOKENS_FILE`.
 2. Volver a ejecutar la aplicación para que se generen nuevamente.
