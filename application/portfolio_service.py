@@ -19,14 +19,17 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
 # ---------- Helpers y configuración ----------
 def clean_symbol(s: str) -> str:
     """Normaliza el símbolo: mayúsculas, sin espacios raros, sólo chars permitidos."""
     s = str(s or "").upper().strip()
-    s = s.replace("\u00A0", "").replace("\u200B", "")
+    s = s.replace("\u00a0", "").replace("\u200b", "")
     return re.sub(r"[^A-Z0-9._^-]", "", s)
 
+
 def map_to_us_ticker(simbolo: str) -> Optional[str]:
+    """Map a local symbol to its corresponding US ticker, if available."""
     s = clean_symbol(simbolo)
     cfg = get_config()
     cedear_map = cfg.get("cedear_to_us", {}) or {}
@@ -40,7 +43,9 @@ def map_to_us_ticker(simbolo: str) -> Optional[str]:
 
     return None
 
+
 # ---------- Clasificación y escala ----------
+
 
 def classify_symbol(sym: str) -> str:
     """
@@ -81,7 +86,7 @@ def classify_symbol(sym: str) -> str:
                     return tipo
             except re.error:
                 continue
-            
+
     if s in acciones_ar:
         return "Acción"
     if s.isalpha() and 3 <= len(s) <= 5:
@@ -142,6 +147,7 @@ def classify_asset(it: dict) -> str:
 
 # ---------- Normalización de payload ----------
 
+
 def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
     """
     Devuelve columnas: simbolo, mercado, cantidad, costo_unitario
@@ -180,12 +186,13 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
             or "bcba"
         )
         cantidad = (
-            it.get("cantidad") if isinstance(it, dict) else None
-        ) or (it.get("cant") if isinstance(it, dict) else None) \
-          or (it.get("cantidadDisponible") if isinstance(it, dict) else None) \
-          or (it.get("cantidadNominal") if isinstance(it, dict) else None) \
-          or (it.get("tenencia") if isinstance(it, dict) else None) \
-          or 0
+            (it.get("cantidad") if isinstance(it, dict) else None)
+            or (it.get("cant") if isinstance(it, dict) else None)
+            or (it.get("cantidadDisponible") if isinstance(it, dict) else None)
+            or (it.get("cantidadNominal") if isinstance(it, dict) else None)
+            or (it.get("tenencia") if isinstance(it, dict) else None)
+            or 0
+        )
 
         costo_unit = (
             (it.get("costoUnitario") if isinstance(it, dict) else None)
@@ -219,12 +226,17 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                 }
             )
 
-    return pd.DataFrame(items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"])
+    return pd.DataFrame(
+        items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"]
+    )
 
 
 # ---------- Cálculo de métricas ----------
 
-def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
+
+def calc_rows(
+    get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]
+) -> pd.DataFrame:
     """Calcula métricas de valuación y P/L para cada posición.
 
     La lógica original iteraba fila por fila; aquí se vectoriza el cálculo:
@@ -268,7 +280,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     # ----- Cotizaciones -------------------------------------------------
     uniq = df[["mercado", "simbolo"]].drop_duplicates().reset_index(drop=True)
 
-        # ----- cotización (acepta float o dict) -----
+    # ----- cotización (acepta float o dict) -----
     def _fetch(row: pd.Series) -> pd.Series:
         last, chg_pct = None, None
         q = None
@@ -320,13 +332,15 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     )
     df["pld_%"] = df["chg_pct"]
 
-        # return pd.DataFrame(rows)
+    # return pd.DataFrame(rows)
     # Orden final --------------------------------------------------------
     df["mercado"] = df["mercado"].str.upper()
     return df[cols]
 
+
 # --- Agregar al final de application/portfolio_service.py ---
 from functools import lru_cache
+
 
 @lru_cache(maxsize=1024)
 def _classify_sym_cache(sym: str) -> str:
@@ -337,22 +351,28 @@ def _classify_sym_cache(sym: str) -> str:
         logger.exception("No se pudo clasificar símbolo %s: %s", sym, e)
         return ""
 
+
 class PortfolioService:
     """Fachada del portafolio que envuelve tus funciones ya existentes."""
+
     def normalize_positions(self, payload: dict | list) -> pd.DataFrame:
+        """Normalize raw IOL payload into a DataFrame of positions."""
         return normalize_positions(payload)
 
     def calc_rows(self, price_fn, df_pos, exclude_syms=None):
+        """Calculate valuation and P/L metrics for each position."""
         return calc_rows(price_fn, df_pos, exclude_syms or [])
 
     def classify_asset_cached(self, sym: str) -> str:
+        """Classify an asset symbol using a cached helper."""
         return _classify_sym_cache(sym)
 
     # Accesos directos por si los necesitas
     def classify_asset(self, row):
+        """Classify asset row without caching."""
         return classify_asset(row)
 
     def clean_symbol(self, sym: str) -> str:
         # return clean_symbol(sym)
+        """Normalize a symbol string."""
         return clean_symbol(sym)
-
