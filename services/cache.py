@@ -37,9 +37,25 @@ def fetch_portfolio(_cli: IIOLProvider):
 #     get_bulk = getattr(cli, "get_quotes_bulk", None)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
+    def _post_process(key, quote):
+        logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
+        if isinstance(quote, dict) and quote.get("chg_pct") is None:
+            try:
+                u = float(quote.get("ultimo"))
+                c = float(quote.get("cierreAnterior"))
+                if c:
+                    quote["chg_pct"] = (u - c) / c * 100.0
+            except (TypeError, ValueError):
+                pass
+        return quote
+
     try:
         if callable(get_bulk):
-            return get_bulk(items)
+            data = get_bulk(items)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    data[k] = _post_process(k, v)
+            return data
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
     out = {}
@@ -53,10 +69,11 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         for fut in as_completed(futs):
             key = futs[fut]
             try:
-                out[key] = fut.result()
+                quote = fut.result()
             except requests.RequestException as e:
                 logger.exception("get_quote failed for %s:%s -> %s", key[0], key[1], e)
-                out[key] = {"last": None, "chg_pct": None}
+                quote = {"last": None, "chg_pct": None}
+            out[key] = _post_process(key, quote)
     return out
 
 

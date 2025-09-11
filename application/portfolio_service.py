@@ -282,7 +282,7 @@ def calc_rows(
 
     # ----- cotización (acepta float o dict) -----
     def _fetch(row: pd.Series) -> pd.Series:
-        last, chg_pct = None, None
+        last, chg_pct, prev_close = None, None, None
         q = None
         try:
             q = get_quote_fn(row["mercado"], row["simbolo"])
@@ -301,10 +301,11 @@ def calc_rows(
                     if last is not None:
                         break
             chg_pct = _to_float(q.get("chg_pct"))
+            prev_close = _to_float(q.get("cierreAnterior"))
         else:
             last = _to_float(q)
 
-        return pd.Series({"last": last, "chg_pct": chg_pct})
+        return pd.Series({"last": last, "chg_pct": chg_pct, "prev_close": prev_close})
 
     quotes_df = uniq.apply(_fetch, axis=1)
     quotes_df = pd.concat([uniq, quotes_df], axis=1)
@@ -325,14 +326,22 @@ def calc_rows(
     df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
 
     # ----- P/L diario ---------------------------------------------------
-    pct = df["chg_pct"].astype(float) / 100.0
+    chg_series = pd.to_numeric(df["chg_pct"], errors="coerce")
+    pct = chg_series / 100.0
+    mask = (
+        chg_series.isna()
+        & df["ultimo"].notna()
+        & df["prev_close"].notna()
+        & (df["prev_close"] != 0)
+    )
+    pct = pct.where(~mask, (df["ultimo"] - df["prev_close"]) / df["prev_close"])
     denom = 1.0 + pct
     df["pl_d"] = np.where(
-        df["valor_actual"].notna() & df["chg_pct"].notna() & (denom != 0),
+        df["valor_actual"].notna() & pct.notna() & (denom != 0),
         df["valor_actual"] * pct / denom,
         np.nan,
     )
-    df["pld_%"] = df["chg_pct"]
+    df["pld_%"] = pct * 100.0
 
     # return pd.DataFrame(rows)
     # Orden final --------------------------------------------------------
