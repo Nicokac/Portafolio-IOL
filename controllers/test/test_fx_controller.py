@@ -1,4 +1,5 @@
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -9,8 +10,9 @@ from controllers.fx import render_fx_section
 def test_render_fx_section_warns_when_no_rates():
     container = contextlib.nullcontext()
     mock_st = MagicMock()
-    mock_st.session_state = {}
+    mock_cache = SimpleNamespace(session_state={})
     with patch('controllers.fx.st', mock_st), \
+         patch('controllers.fx.cache', mock_cache), \
          patch('controllers.fx.render_spreads') as mock_spreads, \
          patch('controllers.fx.render_fx_history') as mock_hist:
         render_fx_section(container, rates=None)
@@ -23,15 +25,16 @@ def test_render_fx_section_warns_when_no_rates():
 def test_render_fx_section_updates_history_and_renders():
     container = contextlib.nullcontext()
     mock_st = MagicMock()
-    mock_st.session_state = {}
+    mock_cache = SimpleNamespace(session_state={})
     timestamp = 123456
     rates = {'_ts': timestamp, 'ccl': 1, 'mep': 2, 'blue': 3, 'oficial': 4}
     with patch('controllers.fx.st', mock_st), \
+         patch('controllers.fx.cache', mock_cache), \
          patch('controllers.fx.render_spreads') as mock_spreads, \
          patch('controllers.fx.render_fx_history') as mock_hist:
         render_fx_section(container, rates)
 
     mock_spreads.assert_called_once_with(rates)
     assert mock_st.warning.call_count == 0
-    assert mock_st.session_state['fx_history'][0]['ts'] == timestamp
+    assert mock_cache.session_state['fx_history'][0]['ts'] == timestamp
     mock_hist.assert_called_once()

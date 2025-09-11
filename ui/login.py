@@ -1,6 +1,8 @@
 import streamlit as st
+import streamlit as st
 from application import auth_service
 from ui.header import render_header
+from infrastructure.cache import cache
 
 
 def render_footer() -> None:
@@ -12,7 +14,7 @@ def render_login_page() -> None:
     """Display the login form with header and footer."""
     render_header()
 
-    err = st.session_state.pop("login_error", "")
+    err = cache.session_state.pop("login_error", "")
     if err:
         st.error(err)
 
@@ -23,14 +25,14 @@ def render_login_page() -> None:
         render_footer()
 
     if submitted:
-        user = st.session_state.get("IOL_USERNAME", "")
-        password = st.session_state.get("IOL_PASSWORD", "")
+        user = cache.session_state.get("IOL_USERNAME", "")
+        password = cache.session_state.get("IOL_PASSWORD", "")
         try:
             auth_service.login(user, password)
-            st.session_state.pop("force_login", None)
-            st.session_state.pop("login_error", None)
+            cache.session_state.pop("force_login", None)
+            cache.session_state.pop("login_error", None)
             st.rerun()
         except Exception as e:
-            st.session_state["login_error"] = str(e)
-            st.session_state["IOL_PASSWORD"] = ""
+            cache.session_state["login_error"] = str(e)
+            cache.session_state["IOL_PASSWORD"] = ""
             st.rerun()

@@ -1,7 +1,13 @@
 import requests
 import pytest
 import sys
+import sys
 import types
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+import requests
 
 # Stub cryptography to avoid heavy dependency during tests
 crypto_mod = types.ModuleType("cryptography")
@@ -15,7 +21,6 @@ sys.modules.setdefault("cryptography.fernet", fernet_mod)
 from application.ta_service import fetch_with_indicators
 from services import cache
 from controllers import auth
-from unittest.mock import MagicMock
 
 
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
@@ -43,9 +48,8 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
 
 def test_build_iol_client_handles_network_error(monkeypatch):
-    mock_st = MagicMock()
-    mock_st.session_state = {}
-    monkeypatch.setattr(cache, "st", mock_st)
+    mock_cache = SimpleNamespace(session_state={})
+    monkeypatch.setattr(cache, "cache", mock_cache)
 
     class DummySettings:
         IOL_USERNAME = "u"
@@ -66,14 +70,15 @@ def test_build_iol_client_handles_network_error(monkeypatch):
 
 def test_auth_controller_handles_network_error(monkeypatch):
     mock_st = MagicMock()
-    mock_st.session_state = {}
+    mock_cache = SimpleNamespace(session_state={})
     monkeypatch.setattr(auth, "st", mock_st)
+    monkeypatch.setattr(auth, "cache", mock_cache)
 
     monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "net fail"))
 
     cli = auth.build_iol_client()
     assert cli is None
-    assert mock_st.session_state["login_error"] == "net fail"
-    assert mock_st.session_state["force_login"] is True
-    assert mock_st.session_state["IOL_PASSWORD"] == ""
+    assert mock_cache.session_state["login_error"] == "net fail"
+    assert mock_cache.session_state["force_login"] is True
+    assert mock_cache.session_state["IOL_PASSWORD"] == ""
     mock_st.rerun.assert_called_once()
