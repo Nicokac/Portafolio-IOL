@@ -1,6 +1,5 @@
 import streamlit as st
-#from infrastructure.iol.legacy.iol_client import IOLAuth
-from infrastructure.iol.auth import IOLAuth
+from application import auth_service
 from ui.header import render_header
 
 
@@ -27,9 +26,7 @@ def render_login_page() -> None:
         user = st.session_state.get("IOL_USERNAME", "")
         password = st.session_state.get("IOL_PASSWORD", "")
         try:
-            tokens = IOLAuth(user, password).login()
-            if not tokens.get("access_token"):
-                raise RuntimeError("Credenciales inválidas")
+            auth_service.login(user, password)
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
             st.rerun()
