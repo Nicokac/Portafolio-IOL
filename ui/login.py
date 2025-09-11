@@ -1,8 +1,12 @@
-import streamlit as st
+import logging
 import streamlit as st
 from application import auth_service
+from application.auth_service import AuthenticationError
 from ui.header import render_header
 from infrastructure.cache import cache
+
+
+logger = logging.getLogger(__name__)
 
 
 def render_footer() -> None:
@@ -32,7 +36,13 @@ def render_login_page() -> None:
             cache.session_state.pop("force_login", None)
             cache.session_state.pop("login_error", None)
             st.rerun()
-        except Exception as e:
-            cache.session_state["login_error"] = str(e)
+        except AuthenticationError:
+            logger.exception("Fallo de autenticación")
+            cache.session_state["login_error"] = "Usuario o contraseña inválidos"
+            cache.session_state["IOL_PASSWORD"] = ""
+            st.rerun()
+        except Exception:
+            logger.exception("Error inesperado durante el login")
+            cache.session_state["login_error"] = "Error inesperado, contacte soporte"
             cache.session_state["IOL_PASSWORD"] = ""
             st.rerun()
