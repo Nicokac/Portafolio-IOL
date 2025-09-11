@@ -6,7 +6,7 @@ import importlib
 from unittest.mock import MagicMock
 
 import pytest
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 def _make_streamlit():

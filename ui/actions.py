@@ -3,7 +3,7 @@ import time
 import streamlit as st
 from infrastructure.iol.auth import IOLAuth
 from shared.config import settings
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 def render_action_menu() -> None:

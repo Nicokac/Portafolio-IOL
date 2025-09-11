@@ -8,7 +8,7 @@ from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
-from infrastructure.cache import cache
+from shared.cache import cache
 
 from .load_data import load_portfolio_data
 from .filters import apply_filters

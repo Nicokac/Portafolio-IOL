@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 
 import streamlit as st
-from infrastructure.cache import cache
+from shared.cache import cache
 
 from shared.config import settings
 from ui.ui_settings import init_ui

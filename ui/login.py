@@ -3,7 +3,7 @@ import streamlit as st
 from application import auth_service
 from application.auth_service import AuthenticationError
 from ui.header import render_header
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 logger = logging.getLogger(__name__)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import streamlit as st
 from domain.models import Controls
-from infrastructure.cache import cache
+from shared.cache import cache
 
 def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Controls:
     st.sidebar.header("🎛️ Controles")

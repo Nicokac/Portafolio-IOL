@@ -11,7 +11,7 @@ from shared.utils import (
 )
 from .palette import get_active_palette
 from .export import download_csv
-from infrastructure.cache import cache
+from shared.cache import cache
 
 def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
     total_val  = float(np.nansum(df_view.get("valor_actual", pd.Series(dtype=float)).values))

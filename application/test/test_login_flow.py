@@ -1,7 +1,7 @@
 import streamlit as st
 from ui.actions import render_action_menu
 from unittest.mock import patch
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 class DummyCtx:

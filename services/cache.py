@@ -2,7 +2,7 @@ import logging, time, hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from infrastructure.cache import cache
+from shared.cache import cache
 import requests
 
 from infrastructure.iol.client import (
