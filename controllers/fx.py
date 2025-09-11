@@ -3,7 +3,7 @@ import pandas as pd
 
 from shared.config import settings
 from ui.fx_panels import render_spreads, render_fx_history
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 def render_fx_section(container, rates):

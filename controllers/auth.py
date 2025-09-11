@@ -2,7 +2,7 @@ import streamlit as st
 
 from infrastructure.iol.client import IIOLProvider
 from services.cache import build_iol_client as _build_iol_client
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 def build_iol_client() -> IIOLProvider | None:

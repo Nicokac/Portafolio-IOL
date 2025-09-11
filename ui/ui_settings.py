@@ -5,7 +5,7 @@ import streamlit as st
 import time
 from infrastructure.iol.auth import IOLAuth
 from .palette import get_palette
-from infrastructure.cache import cache
+from shared.cache import cache
 
 @dataclass
 class UISettings:

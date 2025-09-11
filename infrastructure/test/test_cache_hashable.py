@@ -1,4 +1,4 @@
-from infrastructure.cache import cache
+from shared.cache import cache
 
 
 def test_cache_data_handles_list_arguments():

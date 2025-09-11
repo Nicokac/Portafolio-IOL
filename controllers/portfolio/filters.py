@@ -5,7 +5,7 @@ import streamlit as st
 
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
-from infrastructure.cache import cache
+from shared.cache import cache
 
 logger = logging.getLogger(__name__)
 
