@@ -44,39 +44,50 @@ def test_logout_forces_login_page(monkeypatch):
 
     st.session_state.clear()
 
-
-def test_build_iol_client_failure_sets_login_error(monkeypatch):
+def test_service_build_iol_client_returns_error(monkeypatch):
     from services import cache
 
     st.session_state.clear()
     st.session_state["IOL_USERNAME"] = "user"
     st.session_state["IOL_PASSWORD"] = "pass"
-
-    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
 
     def boom(*args, **kwargs):
         raise RuntimeError("bad creds")
 
     monkeypatch.setattr(cache, "get_client_cached", boom)
 
-    cache.build_iol_client()
+    cli, error = cache.build_iol_client()
+
+    assert cli is None
+    assert error == "bad creds"
+
+
+def test_controller_build_iol_client_handles_error(monkeypatch):
+    from controllers import auth
+
+    st.session_state.clear()
+    st.session_state["IOL_PASSWORD"] = "pass"
+
+    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "bad creds"))
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
+
+    auth.build_iol_client()
 
     assert st.session_state.get("force_login") is True
     assert st.session_state.get("login_error") == "bad creds"
     assert st.session_state.get("IOL_PASSWORD") == ""
 
 
-def test_build_iol_client_success_clears_password(monkeypatch):
-    from services import cache
+def test_controller_build_iol_client_success_clears_password(monkeypatch):
+    from controllers import auth
 
     st.session_state.clear()
-    st.session_state["IOL_USERNAME"] = "user"
     st.session_state["IOL_PASSWORD"] = "pass"
 
     dummy_cli = object()
-    monkeypatch.setattr(cache, "get_client_cached", lambda *a, **k: dummy_cli)
+    monkeypatch.setattr(auth, "_build_iol_client", lambda: (dummy_cli, None))
 
-    cli = cache.build_iol_client()
+    cli = auth.build_iol_client()
 
     assert cli is dummy_cli
     assert st.session_state.get("authenticated") is True
