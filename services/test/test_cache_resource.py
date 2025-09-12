@@ -15,17 +15,17 @@ def test_get_client_cached_is_session_isolated(monkeypatch):
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
 
     st.session_state["session_id"] = "A"
-    first = svc_cache.get_client_cached("k", "u", "p", None)
-    again = svc_cache.get_client_cached("k", "u", "p", None)
+    first = svc_cache.get_client_cached("k", "u", "", None)
+    again = svc_cache.get_client_cached("k", "u", "", None)
     assert first is again
 
     st.session_state["session_id"] = "B"
-    other = svc_cache.get_client_cached("k", "u", "p", None)
+    other = svc_cache.get_client_cached("k", "u", "", None)
     assert other is not first
 
     st.session_state["session_id"] = "A"
     svc_cache.get_client_cached.clear("k")
-    rebuilt = svc_cache.get_client_cached("k", "u", "p", None)
+    rebuilt = svc_cache.get_client_cached("k", "u", "", None)
     assert rebuilt is not first
 
     assert len(created) == 3
@@ -33,7 +33,7 @@ def test_get_client_cached_is_session_isolated(monkeypatch):
 
 def test_build_iol_client_is_session_isolated(monkeypatch):
     monkeypatch.setattr(st, "session_state", {})
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    st.session_state.update({"IOL_USERNAME": "u"})
 
     created = []
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Protocol, Tuple, Any
 import re
 import hashlib
+from uuid import uuid4
 
 import streamlit as st
 
@@ -99,8 +100,10 @@ def get_auth_provider() -> AuthenticationProvider:
 
 def login(user: str, password: str) -> dict:
     """Wrapper para el login utilizando el proveedor registrado."""
-
-    return _provider.login(user, password)
+    tokens = _provider.login(user, password)
+    if "client_salt" not in st.session_state:
+        st.session_state["client_salt"] = uuid4().hex
+    return tokens
 
 
 def logout(user: str, password: str = "") -> None:

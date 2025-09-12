@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Dict, Tuple, Any
 import re
+from uuid import uuid4
 
 from shared.cache import cache
 import requests
@@ -146,7 +147,8 @@ def get_fx_rates_cached():
 
 def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     user = st.session_state.get("IOL_USERNAME")
-    password = st.session_state.get("IOL_PASSWORD")
+    if "client_salt" not in st.session_state:
+        st.session_state["client_salt"] = uuid4().hex
     salt = str(st.session_state.get("client_salt", ""))
     tokens_file = cache.get("tokens_file")
     if not tokens_file:
@@ -155,11 +157,11 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
         tokens_file = Path("tokens") / f"{sanitized}-{user_hash}.json"
         cache.set("tokens_file", str(tokens_file))
     cache_key = hashlib.sha256(
-        f"{user}:{password}:{salt}:{tokens_file}".encode()
+        f"{user}:{tokens_file}:{salt}".encode()
     ).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
-        cli = get_client_cached(cache_key, user, password, tokens_file)
+        cli = get_client_cached(cache_key, user, "", tokens_file)
         return cli, None
     except (requests.RequestException, RuntimeError, ValueError) as e:
         logger.exception("build_iol_client failed: %s", e)
