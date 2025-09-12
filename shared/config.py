@@ -65,7 +65,7 @@ class Settings:
         self.fx_tarjeta_multiplier: float = float(os.getenv("FX_TARJETA_MULTIPLIER", cfg.get("FX_TARJETA_MULTIPLIER", 1.35)))
 
         # --- Logging ---
-        self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
+        self.LOG_FORMAT: str = os.getenv("LOG_FORMAT", cfg.get("LOG_FORMAT", "console")).lower()
 
 settings = Settings()
 
@@ -111,7 +111,11 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
     level_value = getattr(logging, level_name, logging.INFO)
 
     if json_format is None:
-        json_format = os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes")
+        fmt = os.getenv("LOG_FORMAT", settings.LOG_FORMAT).lower()
+        if fmt:
+            json_format = fmt == "json"
+        else:
+            json_format = os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes")
 
     if json_format:
         handler = logging.StreamHandler()

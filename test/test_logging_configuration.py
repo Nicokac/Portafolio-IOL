@@ -17,7 +17,7 @@ def _reset_logging():
 
 def test_configure_logging_env(monkeypatch):
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
-    monkeypatch.setenv("LOG_JSON", "1")
+    monkeypatch.setenv("LOG_FORMAT", "json")
     config = _load_config()
     _reset_logging()
 
@@ -30,7 +30,7 @@ def test_configure_logging_env(monkeypatch):
 
 def test_configure_logging_args_override(monkeypatch):
     monkeypatch.delenv("LOG_LEVEL", raising=False)
-    monkeypatch.delenv("LOG_JSON", raising=False)
+    monkeypatch.delenv("LOG_FORMAT", raising=False)
     config = _load_config()
     _reset_logging()
 

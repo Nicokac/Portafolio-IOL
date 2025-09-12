@@ -99,31 +99,57 @@ class IOLAuth:
             try:
                 r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
             except (requests.ConnectionError, requests.Timeout) as e:
-                logger.warning("Login IOL falló: %s", e)
+                logger.warning(
+                    "Login IOL falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError("Fallo de red") from e
             except requests.RequestException as e:
-                logger.warning("Login IOL falló: %s", e)
+                logger.warning(
+                    "Login IOL falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError(str(e)) from e
 
             if r.status_code in (400, 401):
-                logger.warning("Credenciales inválidas en login IOL: %s", r.text)
+                logger.warning(
+                    "Credenciales inválidas en login IOL: %s",
+                    r.text,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise InvalidCredentialsError("Credenciales inválidas")
             try:
                 r.raise_for_status()
                 self.tokens = r.json() or {}
             except requests.RequestException as e:
-                logger.warning("Login IOL falló: %s", e)
+                logger.warning(
+                    "Login IOL falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError("Fallo de red") from e
 
             self._save_tokens(self.tokens)
-            logger.info("IOL login ok en %d ms", int((time.time() - start) * 1000))
+            logger.info(
+                "IOL login ok",
+                extra={
+                    "tokens_file": self.tokens_path,
+                    "result": "ok",
+                    "elapsed_ms": int((time.time() - start) * 1000),
+                },
+            )
             return self.tokens
 
     def refresh(self) -> Dict[str, Any]:
         """Renueva el access_token utilizando el refresh_token."""
         with self._lock:
             if not self.tokens.get("refresh_token"):
-                logger.info("Sin refresh_token; ejecutando login()")
+                logger.info(
+                    "Sin refresh_token; ejecutando login()",
+                    extra={"tokens_file": self.tokens_path},
+                )
                 return self.login()
             payload = {"refresh_token": self.tokens["refresh_token"], "grant_type": "refresh_token"}
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -131,24 +157,47 @@ class IOLAuth:
             try:
                 r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
             except (requests.ConnectionError, requests.Timeout) as e:
-                logger.warning("Refresh falló: %s", e)
+                logger.warning(
+                    "Refresh falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError("Fallo de red") from e
             except requests.RequestException as e:
-                logger.warning("Refresh falló: %s", e)
+                logger.warning(
+                    "Refresh falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError(str(e)) from e
 
             if r.status_code in (400, 401):
-                logger.warning("Credenciales inválidas en refresh IOL: %s", r.text)
+                logger.warning(
+                    "Credenciales inválidas en refresh IOL: %s",
+                    r.text,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise InvalidCredentialsError("Credenciales inválidas")
             try:
                 r.raise_for_status()
                 self.tokens = r.json() or {}
             except requests.RequestException as e:
-                logger.warning("Refresh falló: %s", e)
+                logger.warning(
+                    "Refresh falló: %s",
+                    e,
+                    extra={"tokens_file": self.tokens_path, "result": "error"},
+                )
                 raise NetworkError("Fallo de red") from e
 
             self._save_tokens(self.tokens)
-            logger.info("IOL refresh ok en %d ms", int((time.time() - start) * 1000))
+            logger.info(
+                "IOL refresh ok",
+                extra={
+                    "tokens_file": self.tokens_path,
+                    "result": "ok",
+                    "elapsed_ms": int((time.time() - start) * 1000),
+                },
+            )
             return self.tokens
 
     def clear_tokens(self) -> None:
