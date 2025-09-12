@@ -39,13 +39,13 @@ CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
 LOG_LEVEL="INFO"
-# Formato de logs: "json" o "console"
-LOG_FORMAT="console"
+# Formato de los logs: "plain" o "json"
+LOG_FORMAT="plain"
 # Usuario opcional incluido en los logs
 LOG_USER="usuario"
 ```
 
-`LOG_LEVEL` controla la verbosidad de los mensajes. Valores admitidos: `DEBUG`, `INFO`, `WARNING`, `ERROR` y `CRITICAL`. Si se establece `LOG_FORMAT=json`, los registros se emitirán en formato JSON e incluirán el nombre del módulo y el valor de `LOG_USER` si está definido.
+`LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, lo que permite usar salidas más ricas en desarrollo y más estructuradas en producción. El valor de `LOG_USER` se incluye en los registros si está definido.
 
 Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`. Puedes generar una clave con:
 
@@ -60,13 +60,6 @@ Este archivo es sensible: **manténlo fuera del control de versiones** (ya está
 ```bash
 streamlit run app.py
 ```
-
-### Identificador de sesión
-
-Al comenzar una nueva interacción, la aplicación genera un ID aleatorio y lo
-guarda en `st.session_state["session_id"]`. Este identificador debe
-mantenerse sin cambios durante toda la sesión de un usuario para garantizar el
-aislamiento de los recursos cacheados.
 
 ## Despliegue
 
@@ -157,11 +150,13 @@ bash scripts/update_dependencies.sh
 
 El script actualiza los paquetes a sus últimas versiones, ejecuta las pruebas y, si todo pasa, escribe las nuevas versiones en `requirements.txt`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
 
-## Mantenimiento de tokens
+## Políticas de sesión y manejo de tokens
 
-El token de autenticación se guarda en `tokens_iol.json` (cifrado si se configuró `IOL_TOKENS_KEY`). Este archivo no debe versionarse y debe mantenerse con permisos restringidos (por ejemplo `chmod 600`). Para renovar los tokens:
+Cada sesión de usuario genera un identificador aleatorio almacenado en `st.session_state["session_id"]`, que debe mantenerse constante para aislar los recursos cacheados.
 
-1. Eliminar el archivo `tokens_iol.json` o el indicado por `IOL_TOKENS_FILE`.
+Los tokens de autenticación se guardan en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`) y deben almacenarse cifrados mediante `IOL_TOKENS_KEY`. Este archivo no debe versionarse y conviene mantenerlo con permisos restringidos (por ejemplo `chmod 600`). Para renovar los tokens:
+
+1. Eliminar el archivo de tokens.
 2. Volver a ejecutar la aplicación para que se generen nuevamente.
 
 ## Licencia
