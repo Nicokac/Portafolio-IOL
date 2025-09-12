@@ -1,11 +1,11 @@
 import logging, time, hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
+from typing import Dict, Tuple, Any
 
 from shared.cache import cache
 import requests
-
-from infrastructure.cache import quote_cache
 
 from infrastructure.iol.client import (
     IIOLProvider,
@@ -16,6 +16,43 @@ from shared.config import settings
 
 
 logger = logging.getLogger(__name__)
+
+
+# In-memory quote cache
+_QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
+_QUOTE_LOCK = Lock()
+
+
+def _normalize_quote(raw: dict) -> dict:
+    """Extract and compute basic quote information."""
+    data = {"last": raw.get("last"), "chg_pct": raw.get("chg_pct")}
+    if data.get("chg_pct") is None:
+        try:
+            u = float(raw.get("ultimo"))
+            c = float(raw.get("cierreAnterior"))
+            if c:
+                data["chg_pct"] = (u - c) / c * 100.0
+        except (TypeError, ValueError):
+            pass
+    return data
+
+
+def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
+    key = (str(mercado).lower(), str(simbolo).upper())
+    now = time.time()
+    with _QUOTE_LOCK:
+        rec = _QUOTE_CACHE.get(key)
+        if rec and now - rec["ts"] < ttl:
+            return rec["data"]
+    try:
+        q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
+        data = _normalize_quote(q)
+    except Exception as e:
+        logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
+        data = {"last": None, "chg_pct": None}
+    with _QUOTE_LOCK:
+        _QUOTE_CACHE[key] = {"ts": now, "data": data}
+    return data
 
 
 @cache.cache_resource
@@ -43,7 +80,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             data = get_bulk(items)
             if isinstance(data, dict):
                 for k, v in data.items():
-                    data[k] = quote_cache.normalize_quote(v)
+                    data[k] = _normalize_quote(v)
                     logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
             return data
     except requests.RequestException as e:
@@ -54,7 +91,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     max_workers = getattr(settings, "max_quote_workers", 12)
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
         futs = {
-            ex.submit(quote_cache.get_quote_cached, _cli, m, s, ttl): (
+            ex.submit(_get_quote_cached, _cli, m, s, ttl): (
                 str(m).lower(),
                 str(s).upper(),
             )
