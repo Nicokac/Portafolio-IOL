@@ -9,7 +9,6 @@ from datetime import datetime
 import logging
 
 import streamlit as st
-from shared.cache import cache
 
 from shared.config import configure_logging, settings
 from ui.ui_settings import init_ui
@@ -30,11 +29,11 @@ init_ui()
 
 # Precarga credenciales desde settings en session_state, salvo que se fuerce el login
 # o ya esté autenticado. Evitamos persistir la contraseña innecesariamente.
-if not cache.session_state.get("force_login") and not cache.session_state.get("authenticated"):
+if not st.session_state.get("force_login") and not st.session_state.get("authenticated"):
     if settings.IOL_USERNAME:
-        cache.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
+        st.session_state.setdefault("IOL_USERNAME", settings.IOL_USERNAME)
     if settings.IOL_PASSWORD:
-        cache.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
+        st.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     """Parse command-line arguments relevant for logging."""
@@ -49,13 +48,13 @@ def main(argv: list[str] | None = None):
     args = _parse_args(argv or [])
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
 
-    if cache.session_state.get("force_login"):
+    if st.session_state.get("force_login"):
         render_login_page()
         st.stop()
 
-    user = cache.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    password = cache.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    if not cache.session_state.get("authenticated"):
+    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    if not st.session_state.get("authenticated"):
         if not user or not password:
             render_login_page()
             st.stop()
@@ -79,16 +78,16 @@ def main(argv: list[str] | None = None):
     refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
     render_footer()
 
-    if "last_refresh" not in cache.session_state:
-        cache.session_state["last_refresh"] = time.time()
+    if "last_refresh" not in st.session_state:
+        st.session_state["last_refresh"] = time.time()
     try:
         do_refresh = (refresh_secs is not None) and (float(refresh_secs) > 0)
     except (TypeError, ValueError) as e:
         logger.exception("refresh_secs inválido: %s", e)
         do_refresh = True
-    if do_refresh and (time.time() - cache.session_state["last_refresh"] >= float(refresh_secs)):
-        cache.session_state["last_refresh"] = time.time()
-        cache.session_state["show_refresh_toast"] = True
+    if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
+        st.session_state["last_refresh"] = time.time()
+        st.session_state["show_refresh_toast"] = True
         st.rerun()
 
 

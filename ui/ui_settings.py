@@ -2,10 +2,7 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import streamlit as st
-import time
-from infrastructure.iol.auth import IOLAuth
 from .palette import get_palette
-from shared.cache import cache
 
 @dataclass
 class UISettings:
@@ -17,8 +14,8 @@ class UISettings:
 def get_settings() -> UISettings:
     """Return current UI settings from session state or defaults."""
     return UISettings(
-        layout=cache.session_state.get("ui_layout", "wide"),
-        theme=cache.session_state.get("ui_theme", "light"),
+        layout=st.session_state.get("ui_layout", "wide"),
+        theme=st.session_state.get("ui_theme", "light"),
     )
 
 
@@ -71,7 +68,7 @@ def render_ui_controls() -> UISettings:
             index=0 if current.theme == "light" else 1,
         )
     if layout != current.layout or theme != current.theme:
-        cache.session_state["ui_layout"] = layout
-        cache.session_state["ui_theme"] = theme
+        st.session_state["ui_layout"] = layout
+        st.session_state["ui_theme"] = theme
         st.rerun()
     return get_settings()
