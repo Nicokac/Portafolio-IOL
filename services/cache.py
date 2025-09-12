@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from shared.cache import cache
 import requests
 
+from infrastructure.cache import quote_cache
+
 from infrastructure.iol.client import (
     IIOLProvider,
     build_iol_client as _build_iol_client,
@@ -33,47 +35,42 @@ def fetch_portfolio(_cli: IIOLProvider):
 
 
 @cache.cache_data(ttl=settings.cache_ttl_quotes)
-# def fetch_quotes_bulk(cli: IIOLProvider, items):
-#     get_bulk = getattr(cli, "get_quotes_bulk", None)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
-    def _post_process(key, quote):
-        logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
-        if isinstance(quote, dict) and quote.get("chg_pct") is None:
-            try:
-                u = float(quote.get("ultimo"))
-                c = float(quote.get("cierreAnterior"))
-                if c:
-                    quote["chg_pct"] = (u - c) / c * 100.0
-            except (TypeError, ValueError):
-                pass
-        return quote
 
     try:
         if callable(get_bulk):
             data = get_bulk(items)
             if isinstance(data, dict):
                 for k, v in data.items():
-                    data[k] = _post_process(k, v)
+                    data[k] = quote_cache.normalize_quote(v)
+                    logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
             return data
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
+
     out = {}
+    ttl = settings.cache_ttl_quotes
     max_workers = getattr(settings, "max_quote_workers", 12)
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
         futs = {
-            # ex.submit(cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
-            ex.submit(_cli.get_quote, mercado=m, simbolo=s): (str(m).lower(), str(s).upper())
+            ex.submit(quote_cache.get_quote_cached, _cli, m, s, ttl): (
+                str(m).lower(),
+                str(s).upper(),
+            )
             for m, s in items
         }
         for fut in as_completed(futs):
             key = futs[fut]
             try:
                 quote = fut.result()
-            except requests.RequestException as e:
-                logger.exception("get_quote failed for %s:%s -> %s", key[0], key[1], e)
+            except Exception as e:
+                logger.exception(
+                    "get_quote failed for %s:%s -> %s", key[0], key[1], e
+                )
                 quote = {"last": None, "chg_pct": None}
-            out[key] = _post_process(key, quote)
+            logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
+            out[key] = quote
     return out
 
 
