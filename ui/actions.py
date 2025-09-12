@@ -3,6 +3,7 @@ import time
 import streamlit as st
 from infrastructure.iol.auth import IOLAuth
 from shared.config import settings
+from shared.cache import cache
 
 
 def render_action_menu() -> None:
@@ -37,7 +38,8 @@ def render_action_menu() -> None:
         err = ""
         with st.spinner("Cerrando sesión..."):
             try:
-                IOLAuth(user or "", password or "").clear_tokens()
+                tokens_file = cache.get("tokens_file")
+                IOLAuth(user or "", password or "", tokens_file=tokens_file).clear_tokens()
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)

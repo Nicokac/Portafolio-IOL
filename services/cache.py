@@ -152,7 +152,10 @@ def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
         user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
         password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
     salt = str(st.session_state.get("client_salt", ""))
-    tokens_file = settings.tokens_file
+    tokens_file = cache.get("tokens_file")
+    if not tokens_file:
+        tokens_file = Path("tokens") / f"{user}.json"
+        cache.set("tokens_file", str(tokens_file))
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()
     ).hexdigest()
