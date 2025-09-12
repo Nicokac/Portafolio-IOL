@@ -48,8 +48,8 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
 
 def test_build_iol_client_handles_network_error(monkeypatch):
-    mock_cache = SimpleNamespace(session_state={})
-    monkeypatch.setattr(cache, "cache", mock_cache)
+    mock_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(cache, "st", mock_st)
 
     class DummySettings:
         IOL_USERNAME = "u"
@@ -69,16 +69,14 @@ def test_build_iol_client_handles_network_error(monkeypatch):
 
 
 def test_auth_controller_handles_network_error(monkeypatch):
-    mock_st = MagicMock()
-    mock_cache = SimpleNamespace(session_state={})
+    mock_st = SimpleNamespace(session_state={}, rerun=MagicMock())
     monkeypatch.setattr(auth, "st", mock_st)
-    monkeypatch.setattr(auth, "cache", mock_cache)
 
     monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "net fail"))
 
     cli = auth.build_iol_client()
     assert cli is None
-    assert mock_cache.session_state["login_error"] == "net fail"
-    assert mock_cache.session_state["force_login"] is True
-    assert mock_cache.session_state["IOL_PASSWORD"] == ""
+    assert mock_st.session_state["login_error"] == "net fail"
+    assert mock_st.session_state["force_login"] is True
+    assert mock_st.session_state["IOL_PASSWORD"] == ""
     mock_st.rerun.assert_called_once()

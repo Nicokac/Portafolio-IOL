@@ -3,12 +3,15 @@ from functools import wraps
 from threading import Lock
 from typing import Any, Callable, Dict, Tuple
 
+import streamlit as st
+
 
 class Cache:
     """Simple in-memory cache and session state handler with thread safety."""
 
     def __init__(self) -> None:
-        self.session_state: Dict[str, Any] = {}
+        """Session state is delegated to Streamlit's native session."""
+        pass
 
     def cache_resource(self, func: Callable) -> Callable:
         """Cache a resource, instantiating it only once."""
@@ -82,18 +85,21 @@ class Cache:
 
         return decorator
 
-    # Helper methods for session_state access
+    # Helper methods for session_state access delegating to Streamlit
     def get(self, key: str, default: Any = None) -> Any:
-        return self.session_state.get(key, default)
+        return st.session_state.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
-        self.session_state[key] = value
+        st.session_state[key] = value
 
     def pop(self, key: str, default: Any = None) -> Any:
-        return self.session_state.pop(key, default)
+        return st.session_state.pop(key, default)
 
     def update(self, other: Dict[str, Any]) -> None:
-        self.session_state.update(other)
+        st.session_state.update(other)
+
+    def clear(self) -> None:
+        st.session_state.clear()
 
 
 # Global cache instance used across the application

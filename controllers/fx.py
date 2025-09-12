@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
+import streamlit as st
 
 from shared.config import settings
 from ui.fx_panels import render_spreads, render_fx_history
-from shared.cache import cache
 
 
 def render_fx_section(container, rates):
@@ -22,12 +22,12 @@ def render_fx_section(container, rates):
                 "blue": rates.get("blue"),
                 "oficial": rates.get("oficial"),
             }
-            cache.session_state.setdefault("fx_history", [])
-            if not cache.session_state["fx_history"] or cache.session_state["fx_history"][-1].get("ts") != c_ts:
-                cache.session_state["fx_history"].append(rec)
+            st.session_state.setdefault("fx_history", [])
+            if not st.session_state["fx_history"] or st.session_state["fx_history"][-1].get("ts") != c_ts:
+                st.session_state["fx_history"].append(rec)
                 maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                cache.session_state["fx_history"] = cache.session_state["fx_history"][-maxlen:]
-            fx_hist_df = pd.DataFrame(cache.session_state["fx_history"])
+                st.session_state["fx_history"] = st.session_state["fx_history"][-maxlen:]
+            fx_hist_df = pd.DataFrame(st.session_state["fx_history"])
             if not fx_hist_df.empty:
                 fx_hist_df["ts_dt"] = pd.to_datetime(fx_hist_df["ts"], unit="s")
                 render_fx_history(fx_hist_df)

@@ -6,6 +6,7 @@ from typing import Dict, Tuple, Any
 
 from shared.cache import cache
 import requests
+import streamlit as st
 
 from infrastructure.iol.client import (
     IIOLProvider,
@@ -131,26 +132,26 @@ def fetch_fx_rates():
 def get_fx_rates_cached():
     now = time.time()
     ttl = getattr(settings, "cache_ttl_fx", 0)
-    last = cache.session_state.get("fx_rates_ts", 0)
-    if "fx_rates" not in cache.session_state or now - last > ttl:
+    last = st.session_state.get("fx_rates_ts", 0)
+    if "fx_rates" not in st.session_state or now - last > ttl:
         data, error = fetch_fx_rates()
-        cache.session_state["fx_rates"] = data
-        cache.session_state["fx_rates_error"] = error
-        cache.session_state["fx_rates_ts"] = now
+        st.session_state["fx_rates"] = data
+        st.session_state["fx_rates_error"] = error
+        st.session_state["fx_rates_ts"] = now
     return (
-        cache.session_state.get("fx_rates", {}),
-        cache.session_state.get("fx_rates_error"),
+        st.session_state.get("fx_rates", {}),
+        st.session_state.get("fx_rates_error"),
     )
 
 
 def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
-    if cache.session_state.get("force_login"):
-        user = cache.session_state.get("IOL_USERNAME")
-        password = cache.session_state.get("IOL_PASSWORD")
+    if st.session_state.get("force_login"):
+        user = st.session_state.get("IOL_USERNAME")
+        password = st.session_state.get("IOL_PASSWORD")
     else:
-        user = cache.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-        password = cache.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
-    salt = str(cache.session_state.get("client_salt", ""))
+        user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+        password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    salt = str(st.session_state.get("client_salt", ""))
     tokens_file = settings.tokens_file
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()

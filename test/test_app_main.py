@@ -6,7 +6,6 @@ import importlib
 from unittest.mock import MagicMock
 
 import pytest
-from shared.cache import cache
 
 
 def _make_streamlit():
@@ -27,7 +26,7 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
     sys.modules.pop("app", None)
     st = _make_streamlit()
     sys.modules["streamlit"] = st
-    cache.session_state.clear()
+    st.session_state.clear()
 
     from shared import config
     monkeypatch.setattr(config.settings, "IOL_USERNAME", None)
@@ -49,8 +48,8 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
 def test_refresh_secs_triggers_rerun(monkeypatch):
     sys.modules.pop("app", None)
     st = _make_streamlit()
-    cache.session_state.clear()
-    cache.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p", "last_refresh": 0})
+    st.session_state.clear()
+    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p", "last_refresh": 0})
     st.stop = MagicMock()  # no exception
     sys.modules["streamlit"] = st
 
@@ -63,8 +62,8 @@ def test_refresh_secs_triggers_rerun(monkeypatch):
     monkeypatch.setattr(app, "build_iol_client", MagicMock())
     monkeypatch.setattr(app, "render_portfolio_section", MagicMock(return_value="1"))
 
-    before = cache.session_state["last_refresh"]
+    before = st.session_state["last_refresh"]
     app.main()
     assert st.rerun.called
-    assert cache.session_state["last_refresh"] >= before
+    assert st.session_state["last_refresh"] >= before
 
