@@ -9,12 +9,15 @@ from application import auth_service
 from application.auth_service import AuthenticationError
 
 
-def test_login_success():
+def test_login_success(monkeypatch):
+    monkeypatch.setattr(st, "session_state", {})
     with patch("application.auth_service.IOLAuth") as mock_auth:
         mock_auth.return_value.login.return_value = {"access_token": "tok"}
         user = "user"
         tokens = auth_service.login(user, "pass")
         assert tokens["access_token"] == "tok"
+        assert "client_salt" in st.session_state
+        assert len(st.session_state["client_salt"]) == 32
         user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
         expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
@@ -26,12 +29,14 @@ def test_login_success():
         mock_auth.return_value.login.assert_called_once()
 
 
-def test_login_invalid_raises():
+def test_login_invalid_raises(monkeypatch):
+    monkeypatch.setattr(st, "session_state", {})
     with patch("application.auth_service.IOLAuth") as mock_auth:
         mock_auth.return_value.login.return_value = {}
         user = "u"
         with pytest.raises(AuthenticationError):
             auth_service.login(user, "p")
+        assert "client_salt" not in st.session_state
         user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
         expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
