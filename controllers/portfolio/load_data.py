@@ -9,14 +9,17 @@ logger = logging.getLogger(__name__)
 
 def load_portfolio_data(cli, psvc):
     """Fetch and normalize portfolio positions."""
+    tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
     payload = None
     with st.spinner("Cargando y actualizando portafolio... ⏳"):
         try:
             payload = fetch_portfolio(cli)
-        except Exception as e:  # pragma: no cover - streamlit error path
-            logger.error("Error al consultar portafolio", exc_info=True)
-            st.error("No se pudo cargar el portafolio, intente más tarde")
-            st.stop()
+        except Exception:  # pragma: no cover - streamlit error path
+            logger.error(
+                "Error al consultar portafolio",
+                exc_info=True,
+                extra={"tokens_file": tokens_path},
+            )
 
     auth_error = False
     if isinstance(payload, dict):
@@ -42,6 +45,10 @@ def load_portfolio_data(cli, psvc):
 
     df_pos = psvc.normalize_positions(payload)
     if df_pos.empty:
+        logger.info(
+            "Portafolio vacío pero API respondió correctamente",
+            extra={"tokens_file": tokens_path},
+        )
         st.warning(
             "No se encontraron posiciones o no pudimos mapear la respuesta."
         )
@@ -58,3 +65,4 @@ def load_portfolio_data(cli, psvc):
         }
     )
     return df_pos, all_symbols, available_types
+

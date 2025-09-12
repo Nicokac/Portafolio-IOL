@@ -92,6 +92,7 @@ def get_client_cached(
 @cache.cache_data(ttl=settings.cache_ttl_portfolio)
 def fetch_portfolio(_cli: IIOLProvider):
     start = time.time()
+    tokens_path = getattr(getattr(_cli, "auth", None), "tokens_path", None)
     try:
         data = _cli.get_portfolio()
     except InvalidCredentialsError:
@@ -100,9 +101,24 @@ def fetch_portfolio(_cli: IIOLProvider):
         except Exception:
             pass
         st.session_state["force_login"] = True
+        logger.info(
+            "fetch_portfolio using cache due to invalid credentials",
+            extra={"tokens_file": tokens_path},
+        )
         st.rerun()
         return {"_cached": True}
-    logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
+    except requests.RequestException as e:
+        logger.info(
+            "fetch_portfolio using cache due to network error: %s",
+            e,
+            extra={"tokens_file": tokens_path},
+        )
+        return {"_cached": True}
+    logger.info(
+        "fetch_portfolio done in %.0fms",
+        (time.time() - start) * 1000,
+        extra={"tokens_file": tokens_path},
+    )
     return data
 
 
