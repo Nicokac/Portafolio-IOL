@@ -3,6 +3,7 @@ from __future__ import annotations
 """Servicios de autenticación para la aplicación."""
 
 from pathlib import Path
+from typing import Protocol, Tuple, Any
 
 import streamlit as st
 
@@ -11,27 +12,70 @@ from shared.cache import cache
 
 
 class AuthenticationError(Exception):
-    """Se lanza cuando la autenticación contra IOL falla."""
+    """Se lanza cuando la autenticación falla."""
 
 
-def login(user: str, password: str):
-    """Autentica al usuario contra IOL.
+class AuthenticationProvider(Protocol):
+    """Define las operaciones básicas de autenticación."""
 
-    Devuelve el diccionario de tokens si el login es exitoso.
-    Lanza ``AuthenticationError`` si no se obtuvo un ``access_token`` válido.
-    """
-    tokens_path = Path("tokens") / f"{user}.json"
-    cache.set("tokens_file", str(tokens_path))
-    tokens = IOLAuth(user, password, tokens_file=tokens_path).login()
-    if not tokens.get("access_token"):
-        raise AuthenticationError("Credenciales inválidas")
-    return tokens
+    def login(self, user: str, password: str) -> dict:
+        """Realiza el proceso de login y devuelve tokens."""
+
+    def logout(self, user: str, password: str = "") -> None:
+        """Limpia cualquier recurso asociado a la autenticación."""
+
+    def build_client(self) -> Tuple[Any | None, Exception | None]:
+        """Construye el cliente de datos asociado al proveedor."""
+
+
+class IOLAuthenticationProvider(AuthenticationProvider):
+    """Proveedor de autenticación basado en IOL."""
+
+    def login(self, user: str, password: str) -> dict:
+        tokens_path = Path("tokens") / f"{user}.json"
+        cache.set("tokens_file", str(tokens_path))
+        tokens = IOLAuth(user, password, tokens_file=tokens_path).login()
+        if not tokens.get("access_token"):
+            raise AuthenticationError("Credenciales inválidas")
+        return tokens
+
+    def logout(self, user: str, password: str = "") -> None:
+        tokens_path = Path("tokens") / f"{user}.json"
+        try:
+            IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
+        finally:
+            st.session_state.clear()
+
+    def build_client(self) -> Tuple[Any | None, Exception | None]:
+        from services.cache import build_iol_client
+
+        return build_iol_client()
+
+
+_provider: AuthenticationProvider = IOLAuthenticationProvider()
+
+
+def register_auth_provider(provider: AuthenticationProvider) -> None:
+    """Registra un proveedor de autenticación alternativo."""
+
+    global _provider
+    _provider = provider
+
+
+def get_auth_provider() -> AuthenticationProvider:
+    """Obtiene el proveedor de autenticación actualmente registrado."""
+
+    return _provider
+
+
+def login(user: str, password: str) -> dict:
+    """Wrapper para el login utilizando el proveedor registrado."""
+
+    return _provider.login(user, password)
 
 
 def logout(user: str, password: str = "") -> None:
-    """Elimina los tokens de autenticación para forzar un nuevo login."""
-    tokens_path = Path("tokens") / f"{user}.json"
-    try:
-        IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
-    finally:
-        st.session_state.clear()
+    """Wrapper para el logout utilizando el proveedor registrado."""
+
+    _provider.logout(user, password)
+

@@ -2,14 +2,15 @@ import logging
 import streamlit as st
 
 from infrastructure.iol.client import IIOLProvider
-from services.cache import build_iol_client as _build_iol_client
+from application.auth_service import get_auth_provider
 
 
 logger = logging.getLogger(__name__)
 
 
 def build_iol_client() -> IIOLProvider | None:
-    cli, error = _build_iol_client()
+    provider = get_auth_provider()
+    cli, error = provider.build_client()
     if error:
         logger.exception("build_iol_client failed", exc_info=error)
         st.session_state["login_error"] = "Error de conexión"

@@ -72,7 +72,11 @@ def test_auth_controller_handles_network_error(monkeypatch):
     mock_st = SimpleNamespace(session_state={}, rerun=MagicMock())
     monkeypatch.setattr(auth, "st", mock_st)
 
-    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, RuntimeError("net fail")))
+    class DummyProvider:
+        def build_client(self):
+            return None, RuntimeError("net fail")
+
+    monkeypatch.setattr(auth, "get_auth_provider", lambda: DummyProvider())
 
     cli = auth.build_iol_client()
     assert cli is None
