@@ -36,9 +36,9 @@ def render_login_page() -> None:
             cache.session_state.pop("force_login", None)
             cache.session_state.pop("login_error", None)
             st.rerun()
-        except AuthenticationError as e:
+        except AuthenticationError:
             logger.warning("Fallo de autenticación")
-            logger.debug("Error de autenticación para el usuario %s: %s", user, e)
+            logger.debug("Error de autenticación")
             cache.session_state["login_error"] = "Usuario o contraseña inválidos"
             cache.session_state["IOL_PASSWORD"] = ""
             st.rerun()
