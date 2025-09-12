@@ -65,18 +65,18 @@ def test_build_iol_client_handles_network_error(monkeypatch):
 
     cli, err = cache.build_iol_client()
     assert cli is None
-    assert "net down" in err
+    assert "net down" in str(err)
 
 
 def test_auth_controller_handles_network_error(monkeypatch):
     mock_st = SimpleNamespace(session_state={}, rerun=MagicMock())
     monkeypatch.setattr(auth, "st", mock_st)
 
-    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "net fail"))
+    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, RuntimeError("net fail")))
 
     cli = auth.build_iol_client()
     assert cli is None
-    assert mock_st.session_state["login_error"] == "net fail"
+    assert mock_st.session_state["login_error"] == "Error de conexión"
     assert mock_st.session_state["force_login"] is True
     assert mock_st.session_state["IOL_PASSWORD"] == ""
     mock_st.rerun.assert_called_once()

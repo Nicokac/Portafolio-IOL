@@ -144,7 +144,7 @@ def get_fx_rates_cached():
     )
 
 
-def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
+def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     if st.session_state.get("force_login"):
         user = st.session_state.get("IOL_USERNAME")
         password = st.session_state.get("IOL_PASSWORD")
@@ -164,6 +164,6 @@ def build_iol_client() -> tuple[IIOLProvider | None, str | None]:
         return cli, None
     except (requests.RequestException, RuntimeError, ValueError) as e:
         logger.exception("build_iol_client failed: %s", e)
-        return None, str(e)
+        return None, e
 
 
