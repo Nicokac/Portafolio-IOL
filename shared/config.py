@@ -6,6 +6,7 @@ from typing import Any, Dict
 from dotenv import load_dotenv
 from functools import lru_cache
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,20 @@ class Settings:
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
 
 settings = Settings()
+
+
+def ensure_tokens_key() -> None:
+    """Verifica que exista una clave para cifrar tokens.
+
+    Si falta ``IOL_TOKENS_KEY`` y no se habilitó ``IOL_ALLOW_PLAIN_TOKENS``,
+    se registra un error y se aborta la ejecución con ``sys.exit(1)``.
+    """
+
+    if not settings.tokens_key and not settings.allow_plain_tokens:
+        logger.error(
+            "IOL_TOKENS_KEY no está configurada y IOL_ALLOW_PLAIN_TOKENS no está habilitado."
+        )
+        sys.exit(1)
 
 
 class JsonFormatter(logging.Formatter):
