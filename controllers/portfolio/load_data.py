@@ -18,7 +18,20 @@ def load_portfolio_data(cli, psvc):
             st.error("No se pudo cargar el portafolio, intente más tarde")
             st.stop()
 
-    if isinstance(payload, dict) and payload.get("_cached"):
+    auth_error = False
+    if isinstance(payload, dict):
+        msg = str(payload.get("message", ""))
+        auth_error = (
+            payload.get("status") in (401, 403)
+            or payload.get("code") in (401, 403)
+            or "unauthorized" in msg.lower()
+            or "no autorizado" in msg.lower()
+        )
+
+    if st.session_state.get("force_login") or auth_error:
+        st.warning("Sesión expirada, por favor vuelva a iniciar sesión")
+        st.rerun()
+    elif isinstance(payload, dict) and payload.get("_cached"):
         st.warning(
             "No se pudo contactar a IOL; mostrando datos del portafolio en caché."
         )
