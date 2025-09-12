@@ -15,6 +15,17 @@ class IOLClientAdapter(IIOLProvider):
     def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
         self._cli = _LegacyIOLClient(user, password, tokens_file=tokens_file)
 
+        safe_user = (user or "").strip()
+        if safe_user:
+            safe_user = f"{safe_user[:3]}***"
+        auth = getattr(self._cli, "auth", None)
+        tokens_path = str(getattr(auth, "tokens_file", tokens_file))
+        has_refresh = bool(getattr(auth, "refresh", None))
+        logger.info(
+            "IOLClientAdapter init",
+            extra={"user": safe_user, "tokens_file": tokens_path, "has_refresh": has_refresh},
+        )
+
     def get_portfolio(self) -> dict:
         try:
             data = self._cli.get_portfolio() or {}

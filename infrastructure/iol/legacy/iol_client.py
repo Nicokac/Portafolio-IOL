@@ -122,11 +122,18 @@ class IOLClient:
             self.iol_market = Iol(self.user, self.password)
             try:
                 # algunas versiones requieren gestionar() para renovar bearer interno
+                logger.debug("Autenticando mercado con bearer")
                 self.iol_market.gestionar()
+                logger.info("Autenticación mercado con bearer ok")
             except NoAuthException:
-                # recrea sesión y reintenta una vez
+                logger.info("Bearer inválido; autenticando con contraseña")
                 self.iol_market = Iol(self.user, self.password)
-                self.iol_market.gestionar()
+                try:
+                    self.iol_market.gestionar()
+                    logger.info("Autenticación mercado con contraseña ok")
+                except NoAuthException as e:
+                    logger.error("Autenticación mercado con contraseña falló", exc_info=True)
+                    raise e
             self._market_ready = True
 
     @staticmethod
