@@ -79,6 +79,8 @@ docker build -t portafolio-iol .
 docker run --env-file .env -p 8501:8501 portafolio-iol
 ```
 
+La imagen define un `HEALTHCHECK` que consulta `http://localhost:8501/_stcore/health` para comprobar la disponibilidad del servicio durante el despliegue.
+
 Para conservar los tokens generados por la aplicación, se puede montar un volumen:
 
 ```bash
