@@ -26,6 +26,9 @@ def test_login_and_logout_sanitize_token_path(monkeypatch):
         def set(self, key, value):
             captured[key] = value
 
+        def pop(self, key, default=None):
+            captured.pop(key, None)
+
     monkeypatch.setattr(auth, 'cache', DummyCache())
 
     user = "us$er*#name"
