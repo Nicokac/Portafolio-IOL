@@ -61,6 +61,13 @@ Este archivo es sensible: **manténlo fuera del control de versiones** (ya está
 streamlit run app.py
 ```
 
+### Identificador de sesión
+
+Al comenzar una nueva interacción, la aplicación genera un ID aleatorio y lo
+guarda en `st.session_state["session_id"]`. Este identificador debe
+mantenerse sin cambios durante toda la sesión de un usuario para garantizar el
+aislamiento de los recursos cacheados.
+
 ## Despliegue
 
 En entornos de producción es obligatorio definir la variable `IOL_TOKENS_KEY` para que el archivo de tokens se almacene cifrado. Si falta, la inicialización fallará salvo que se active `IOL_ALLOW_PLAIN_TOKENS`, lo cual no es recomendable.
