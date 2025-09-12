@@ -38,14 +38,15 @@ IOL_ALLOW_PLAIN_TOKENS=0
 CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
+# Nivel de los logs ("DEBUG", "INFO", etc.; predeterminado: INFO)
 LOG_LEVEL="INFO"
-# Formato de los logs: "plain" o "json"
+# Formato de los logs: "plain" o "json" (predeterminado: plain)
 LOG_FORMAT="plain"
 # Usuario opcional incluido en los logs
 LOG_USER="usuario"
 ```
 
-`LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, lo que permite usar salidas más ricas en desarrollo y más estructuradas en producción. El valor de `LOG_USER` se incluye en los registros si está definido.
+`LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Evita usar `DEBUG` u otros niveles muy verbosos en producción, ya que pueden revelar información sensible y generar un volumen excesivo de datos. `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, útil cuando se integran sistemas de logging centralizado o se requiere auditoría. Si `LOG_LEVEL` o `LOG_FORMAT` no están definidos, la aplicación utiliza `INFO` y `plain` como valores por defecto. El valor de `LOG_USER` se incluye en los registros si está definido.
 
 Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`. Puedes generar una clave con:
 
