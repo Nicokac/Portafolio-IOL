@@ -14,6 +14,7 @@ from infrastructure.iol.client import (
     IIOLProvider,
     build_iol_client as _build_iol_client,
 )
+from infrastructure.iol.auth import InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
 from shared.config import settings
 
@@ -50,6 +51,9 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
     try:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = _normalize_quote(q)
+    except InvalidCredentialsError:
+        st.session_state["force_login"] = True
+        data = {"last": None, "chg_pct": None}
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
         data = {"last": None, "chg_pct": None}
@@ -68,7 +72,11 @@ def get_client_cached(
 @cache.cache_data(ttl=settings.cache_ttl_portfolio)
 def fetch_portfolio(_cli: IIOLProvider):
     start = time.time()
-    data = _cli.get_portfolio()
+    try:
+        data = _cli.get_portfolio()
+    except InvalidCredentialsError:
+        st.session_state["force_login"] = True
+        return {"_cached": True}
     logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
     return data
 
@@ -85,6 +93,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     data[k] = _normalize_quote(v)
                     logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
             return data
+    except InvalidCredentialsError:
+        st.session_state["force_login"] = True
+        return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
 
