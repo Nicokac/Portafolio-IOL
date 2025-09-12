@@ -151,7 +151,8 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     tokens_file = cache.get("tokens_file")
     if not tokens_file:
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user or "")
-        tokens_file = Path("tokens") / f"{sanitized}.json"
+        user_hash = hashlib.sha256((user or "").encode()).hexdigest()[:8]
+        tokens_file = Path("tokens") / f"{sanitized}-{user_hash}.json"
         cache.set("tokens_file", str(tokens_file))
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()
