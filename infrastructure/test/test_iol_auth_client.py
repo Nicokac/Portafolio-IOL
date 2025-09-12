@@ -17,7 +17,7 @@ def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
     from shared import config
     config.settings.tokens_key = key.decode()
 
-    with patch("requests.post", return_value=mock_resp):
+    with patch("requests.Session.post", return_value=mock_resp):
         import importlib
         import infrastructure.iol.auth as auth_module
         importlib.reload(auth_module)

@@ -1,5 +1,4 @@
 # ui/ui_settings.py
-from __future__ import annotations
 from dataclasses import dataclass
 import streamlit as st
 from .palette import get_palette
