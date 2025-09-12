@@ -69,7 +69,11 @@ def test_controller_build_iol_client_handles_error(monkeypatch):
     monkeypatch.setattr(st, "session_state", {})
     st.session_state["IOL_PASSWORD"] = "pass"
 
-    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, RuntimeError("bad creds")))
+    class DummyProvider:
+        def build_client(self):
+            return None, RuntimeError("bad creds")
+
+    monkeypatch.setattr(auth, "get_auth_provider", lambda: DummyProvider())
     monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
 
     auth.build_iol_client()
@@ -86,7 +90,12 @@ def test_controller_build_iol_client_success_clears_password(monkeypatch):
     st.session_state["IOL_PASSWORD"] = "pass"
 
     dummy_cli = object()
-    monkeypatch.setattr(auth, "_build_iol_client", lambda: (dummy_cli, None))
+
+    class DummyProvider:
+        def build_client(self):
+            return dummy_cli, None
+
+    monkeypatch.setattr(auth, "get_auth_provider", lambda: DummyProvider())
 
     cli = auth.build_iol_client()
 

@@ -1,9 +1,6 @@
 import logging
 import streamlit as st
-import logging
-import streamlit as st
-from application import auth_service
-from application.auth_service import AuthenticationError
+from application.auth_service import AuthenticationError, get_auth_provider
 from ui.header import render_header
 
 
@@ -32,8 +29,9 @@ def render_login_page() -> None:
     if submitted:
         user = st.session_state.get("IOL_USERNAME", "")
         password = st.session_state.get("IOL_PASSWORD", "")
+        provider = get_auth_provider()
         try:
-            auth_service.login(user, password)
+            provider.login(user, password)
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
             st.rerun()
