@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import patch
 from pathlib import Path
+import hashlib
 
 import streamlit as st
 
@@ -11,12 +12,15 @@ from application.auth_service import AuthenticationError
 def test_login_success():
     with patch("application.auth_service.IOLAuth") as mock_auth:
         mock_auth.return_value.login.return_value = {"access_token": "tok"}
-        tokens = auth_service.login("user", "pass")
+        user = "user"
+        tokens = auth_service.login(user, "pass")
         assert tokens["access_token"] == "tok"
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
-            "user",
+            user,
             "pass",
-            tokens_file=Path("tokens") / "user.json",
+            tokens_file=expected,
             allow_plain_tokens=False,
         )
         mock_auth.return_value.login.assert_called_once()
@@ -25,12 +29,15 @@ def test_login_success():
 def test_login_invalid_raises():
     with patch("application.auth_service.IOLAuth") as mock_auth:
         mock_auth.return_value.login.return_value = {}
+        user = "u"
         with pytest.raises(AuthenticationError):
-            auth_service.login("u", "p")
+            auth_service.login(user, "p")
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
-            "u",
+            user,
             "p",
-            tokens_file=Path("tokens") / "u.json",
+            tokens_file=expected,
             allow_plain_tokens=False,
         )
 
@@ -50,9 +57,15 @@ def test_logout_clears_only_auth_keys(monkeypatch):
         },
     )
     with patch("application.auth_service.IOLAuth") as mock_auth:
-        auth_service.logout("user")
+        user = "user"
+        auth_service.logout(user)
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
-            "user", "", tokens_file=Path("tokens") / "user.json"
+            user,
+            "",
+            tokens_file=expected,
+            allow_plain_tokens=False,
         )
         mock_auth.return_value.clear_tokens.assert_called_once()
     assert st.session_state == {"session_id": "A", "x": 1}
