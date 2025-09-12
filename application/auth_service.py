@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import streamlit as st
+
 from infrastructure.iol.auth import IOLAuth
 from shared.cache import cache
 
@@ -29,5 +31,7 @@ def login(user: str, password: str):
 def logout(user: str, password: str = "") -> None:
     """Elimina los tokens de autenticación para forzar un nuevo login."""
     tokens_path = Path("tokens") / f"{user}.json"
-    IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
-    cache.pop("tokens_file", None)
+    try:
+        IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
+    finally:
+        st.session_state.clear()

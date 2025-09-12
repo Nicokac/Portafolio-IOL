@@ -1,9 +1,8 @@
 from __future__ import annotations
 import time
 import streamlit as st
-from infrastructure.iol.auth import IOLAuth
+from application import auth_service
 from shared.config import settings
-from shared.cache import cache
 
 
 def render_action_menu() -> None:
@@ -38,14 +37,12 @@ def render_action_menu() -> None:
         err = ""
         with st.spinner("Cerrando sesión..."):
             try:
-                tokens_file = cache.get("tokens_file")
-                IOLAuth(user or "", password or "", tokens_file=tokens_file).clear_tokens()
+                auth_service.logout(user or "", password or "")
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
                 logger.warning("Error al limpiar tokens: %s", e)
                 err = str(e)
-        st.session_state.clear()
         st.session_state["force_login"] = True
         if err:
             st.session_state["logout_error"] = err

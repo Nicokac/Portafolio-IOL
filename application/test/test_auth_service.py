@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import patch
 from pathlib import Path
 
+import streamlit as st
+
 from application import auth_service
 from application.auth_service import AuthenticationError
 
@@ -23,8 +25,10 @@ def test_login_invalid_raises():
         mock_auth.assert_called_once_with("u", "p", tokens_file=Path("tokens") / "u.json")
 
 
-def test_logout_calls_clear_tokens():
+def test_logout_calls_clear_tokens(monkeypatch):
+    monkeypatch.setattr(st, "session_state", {"x": 1})
     with patch("application.auth_service.IOLAuth") as mock_auth:
         auth_service.logout("user")
         mock_auth.assert_called_once_with("user", "", tokens_file=Path("tokens") / "user.json")
         mock_auth.return_value.clear_tokens.assert_called_once()
+    assert st.session_state == {}
