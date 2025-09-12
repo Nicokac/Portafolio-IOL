@@ -30,10 +30,10 @@ def test_logout_forces_login_page(monkeypatch):
     monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
 
-    with patch("ui.actions.IOLAuth") as mock_auth:
-        mock_auth.return_value.clear_tokens.return_value = None
+    with patch("ui.actions.auth_service.logout") as mock_logout:
+        mock_logout.side_effect = lambda *a, **k: st.session_state.clear()
         render_action_menu()
-        mock_auth.assert_called_once_with("user", "", tokens_file=None)
+        mock_logout.assert_called_once_with("user", "")
 
     assert st.session_state.get("force_login") is True
 
