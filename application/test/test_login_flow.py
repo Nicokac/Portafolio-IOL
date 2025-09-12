@@ -33,6 +33,7 @@ def test_logout_forces_login_page(monkeypatch):
     with patch("ui.actions.IOLAuth") as mock_auth:
         mock_auth.return_value.clear_tokens.return_value = None
         render_action_menu()
+        mock_auth.assert_called_once_with("user", "", tokens_file=None)
 
     assert st.session_state.get("force_login") is True
 

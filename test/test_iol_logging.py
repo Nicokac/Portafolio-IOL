@@ -2,6 +2,10 @@ import logging
 
 import pytest
 import requests
+import logging
+import json
+from cryptography.fernet import Fernet
+import importlib
 
 from infrastructure.iol import client as client_module
 from infrastructure.iol.legacy import iol_client as legacy_module
@@ -42,6 +46,13 @@ def fake_ensure_market_auth(self):
 
 
 def test_legacy_get_last_price_logs(monkeypatch, tmp_path, caplog):
+    key = Fernet.generate_key()
+    monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())
+    from shared import config
+    config.settings.tokens_key = key.decode()
+    import infrastructure.iol.auth as auth_module
+    importlib.reload(auth_module)
+    importlib.reload(legacy_module)
     monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", fake_ensure_market_auth, raising=False)
     client = legacy_module.IOLClient("u", "p", tokens_file=tmp_path / "tokens.json")
 

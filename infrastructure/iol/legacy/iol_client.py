@@ -63,6 +63,8 @@ class _LegacyIOLAuth:
             self.tokens_file.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             logger.warning("No se pudo crear directorio de tokens: %s", e)
+        if FERNET is None:
+            raise RuntimeError("IOL_TOKENS_KEY no está configurada")
         self._lock = threading.RLock()
         self.tokens: Dict[str, Any] = self._load_tokens() or {}
 
