@@ -1,6 +1,16 @@
 test/
+*/test/
+**/test/
+**/tests/
+
+# Python cache and temporary files
 *.pyc
 __pycache__/
 *.log
 *.tmp
 *.swp
+
+# Caches
+.cache/
+**/.cache/
+.pytest_cache/
