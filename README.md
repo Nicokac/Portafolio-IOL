@@ -10,10 +10,16 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 ## Instalación
 
 1. Clonar el repositorio y crear un entorno virtual (opcional).
-2. Instalar dependencias:
+2. Instalar dependencias de producción:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Para un entorno de desarrollo con herramientas de linting y pruebas:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
 ## Configuración del entorno
@@ -94,7 +100,7 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 
 ## Pruebas
 
-Ejecutar la suite completa de pruebas:
+Con las dependencias de desarrollo instaladas, ejecutar la suite completa de pruebas:
 
 ```bash
 pytest
@@ -104,6 +110,12 @@ Para ejecutar solo un subconjunto por carpeta, indica la ruta deseada:
 
 ```bash
 pytest application/test
+```
+
+Para verificar el estilo del código:
+
+```bash
+flake8
 ```
 
 ## Fallback de análisis técnico
