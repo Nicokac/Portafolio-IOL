@@ -145,12 +145,8 @@ def get_fx_rates_cached():
 
 
 def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
-    if st.session_state.get("force_login"):
-        user = st.session_state.get("IOL_USERNAME")
-        password = st.session_state.get("IOL_PASSWORD")
-    else:
-        user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-        password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    user = st.session_state.get("IOL_USERNAME")
+    password = st.session_state.get("IOL_PASSWORD")
     salt = str(st.session_state.get("client_salt", ""))
     tokens_file = cache.get("tokens_file")
     if not tokens_file:

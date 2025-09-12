@@ -48,15 +48,8 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
 
 def test_build_iol_client_handles_network_error(monkeypatch):
-    mock_st = SimpleNamespace(session_state={})
+    mock_st = SimpleNamespace(session_state={"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
     monkeypatch.setattr(cache, "st", mock_st)
-
-    class DummySettings:
-        IOL_USERNAME = "u"
-        IOL_PASSWORD = "p"
-        tokens_file = "tok.json"
-
-    monkeypatch.setattr(cache, "settings", DummySettings())
 
     def fail_build(*args, **kwargs):
         raise requests.RequestException("net down")
