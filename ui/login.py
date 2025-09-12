@@ -62,7 +62,7 @@ def render_login_page() -> None:
             st.session_state["IOL_PASSWORD"] = ""
             st.rerun()
         except RuntimeError as e:
-            logger.exception("Falta clave de tokens: %s", e)
+            logger.exception("Error durante el login: %s", e)
             st.session_state["login_error"] = str(e)
             st.session_state["IOL_PASSWORD"] = ""
             st.rerun()
