@@ -14,7 +14,7 @@ from iolConn.common.exceptions import NoAuthException  # <- importante
 
 from shared.config import settings
 from shared.utils import _to_float
-from infrastructure.iol.auth import IOLAuth
+from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
 REQ_TIMEOUT = 30
@@ -78,10 +78,15 @@ class IOLClient:
                 r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
                 if r.status_code == 401:
                     # Token expirado o inválido -> refresh y reintento 1 vez
-                    self.auth.refresh()
+                    try:
+                        self.auth.refresh()
+                    except InvalidCredentialsError:
+                        raise
                     headers = kwargs.pop("headers", {})
                     headers.update(self.auth.auth_header())
                     r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
+                    if r.status_code == 401:
+                        raise InvalidCredentialsError("Credenciales inválidas")
                 r.raise_for_status()
                 return r
             except requests.HTTPError as e:
