@@ -17,7 +17,8 @@ venv/
 Thumbs.db
 
 # --- Streamlit / caches locales
-.streamlit/
+ .streamlit/*
+!.streamlit/config.toml
 .cache/
 
 # --- Config y secretos (¡no subir!)

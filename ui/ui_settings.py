@@ -7,14 +7,14 @@ from .palette import get_palette
 class UISettings:
     """Simple container for UI configuration."""
     layout: str = "wide"  # "wide" or "centered"
-    theme: str = "light"  # "light" or "dark"
+    theme: str = "dark"  # "light" or "dark"
 
 
 def get_settings() -> UISettings:
     """Return current UI settings from session state or defaults."""
     return UISettings(
         layout=st.session_state.get("ui_layout", "wide"),
-        theme=st.session_state.get("ui_theme", "light"),
+        theme=st.session_state.get("ui_theme", "dark"),
     )
 
 
