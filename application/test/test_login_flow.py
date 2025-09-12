@@ -188,3 +188,122 @@ def test_render_login_page_handles_tokens_key_missing(monkeypatch):
 
     assert st.session_state.get("login_error") == "no key"
     assert st.session_state.get("IOL_PASSWORD") == ""
+
+def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_path):
+    from ui import login
+    from controllers import auth as ctrl_auth
+    from application import auth_service
+    from shared.cache import cache as app_cache
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+    monkeypatch.setattr(login.settings, "tokens_key", "k")
+
+    tokens_path = tmp_path / "tok.json"
+    dummy_cli = object()
+
+    class DummyAuth:
+        def login(self, u, p):
+            tokens_path.write_text("{}")
+            app_cache.set("tokens_file", str(tokens_path))
+            return {"access_token": "tok"}
+
+        def logout(self, u, p=""):
+            pass
+
+        def build_client(self):
+            return dummy_cli, None
+
+    provider = DummyAuth()
+    monkeypatch.setattr(auth_service, "_provider", provider)
+
+    login.render_login_page()
+
+    assert tokens_path.exists()
+
+    cli = ctrl_auth.build_iol_client()
+
+    assert cli is dummy_cli
+    assert "IOL_PASSWORD" not in st.session_state
+
+
+def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
+    from ui import login
+    from application import auth_service
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+    monkeypatch.setattr(login.settings, "tokens_key", "k")
+
+    tokens_path = tmp_path / "tok.json"
+
+    class DummyAuth:
+        def login(self, u, p):
+            raise login.InvalidCredentialsError()
+
+        def logout(self, u, p=""):
+            pass
+
+        def build_client(self):
+            return object(), None
+
+    provider = DummyAuth()
+    monkeypatch.setattr(auth_service, "_provider", provider)
+
+    login.render_login_page()
+
+    assert not tokens_path.exists()
+    assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
+    assert st.session_state.get("IOL_PASSWORD") == ""
+
+
+def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
+    from ui import login
+    from controllers import auth as ctrl_auth
+    from application import auth_service
+    from services import cache as svc_cache
+    from shared.cache import cache as app_cache
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+    monkeypatch.setattr(login.settings, "tokens_key", "k")
+
+    tokens_path = tmp_path / "tok.json"
+    dummy_cli = object()
+    calls: list[str] = []
+
+    def fake_get_client_cached(cache_key, user, password, tokens_file):
+        calls.append(password)
+        return dummy_cli
+
+    monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
+
+    login_calls = []
+
+    class DummyAuth:
+        def login(self, u, p):
+            login_calls.append((u, p))
+            tokens_path.write_text("{}")
+            app_cache.set("tokens_file", str(tokens_path))
+            return {"access_token": "tok"}
+
+        def logout(self, u, p=""):
+            pass
+
+        def build_client(self):
+            return svc_cache.build_iol_client()
+
+    provider = DummyAuth()
+    monkeypatch.setattr(auth_service, "_provider", provider)
+
+    login.render_login_page()
+    cli1 = ctrl_auth.build_iol_client()
+    assert cli1 is dummy_cli
+
+    st.session_state["IOL_PASSWORD"] = ""
+    cli2 = ctrl_auth.build_iol_client()
+    assert cli2 is dummy_cli
+
+    assert calls == ["", ""]
+    assert len(login_calls) == 1
+    assert tokens_path.exists()
