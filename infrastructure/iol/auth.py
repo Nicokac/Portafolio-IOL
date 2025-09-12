@@ -77,7 +77,7 @@ class IOLAuth:
             tmp.replace(self.tokens_file)
             os.chmod(self.tokens_file, 0o600)
         except (OSError, TypeError) as e:
-            logger.exception("No se pudo guardar el archivo de tokens: %s", e)
+            raise RuntimeError(f"No se pudo guardar el archivo de tokens: {e}") from e
 
     def _load_tokens(self) -> Dict[str, Any]:
         """Carga tokens desde disco si existen y valida su antigüedad."""
