@@ -3,23 +3,18 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, Any, Optional, Iterable, Tuple
-import json
 import time
 import logging
 import threading
-import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
-from cryptography.fernet import InvalidToken
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
 
 from shared.config import settings
 from shared.utils import _to_float
-from infrastructure.iol.auth import FERNET
-
-TOKEN_URL = "https://api.invertironline.com/token"
+from infrastructure.iol.auth import IOLAuth
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
 REQ_TIMEOUT = 30
@@ -40,120 +35,6 @@ def _elapsed_ms(start_ts: float) -> int:
 
 
 # =========================
-# Autenticación
-# =========================
-
-#class IOLAuth:
-class _LegacyIOLAuth:
-    """
-    Manejo de tokens OAuth de IOL:
-    - login() obtiene access_token y refresh_token
-    - refresh() renueva; si falla, re-login
-    - persiste en JSON (ruta configurable)
-    """
-
-    def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
-        self.user = (user or "").strip()
-        self.password = (password or "").strip()
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
-        self.tokens_file = Path(tokens_file or settings.tokens_file)
-        # asegurar carpeta
-        try:
-            self.tokens_file.parent.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning("No se pudo crear directorio de tokens: %s", e)
-        if FERNET is None:
-            raise RuntimeError("IOL_TOKENS_KEY no está configurada")
-        self._lock = threading.RLock()
-        self.tokens: Dict[str, Any] = self._load_tokens() or {}
-
-    def _load_tokens(self) -> Dict[str, Any]:
-        if self.tokens_file.exists():
-            try:
-                raw = self.tokens_file.read_bytes()
-                if FERNET:
-                    raw = FERNET.decrypt(raw)
-                return json.loads(raw.decode("utf-8"))
-            except (InvalidToken, json.JSONDecodeError) as e:
-                logger.warning("No se pudieron leer tokens: %s", e)
-                return {}
-            except OSError as e:
-                logger.warning("No se pudieron leer tokens: %s", e)
-                return {}
-        return {}
-
-    def _save_tokens(self, data: Dict[str, Any]) -> None:
-        try:
-            tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
-            content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
-            if FERNET:
-                content = FERNET.encrypt(content)
-            tmp.write_bytes(content)
-            tmp.replace(self.tokens_file)
-            try:
-                os.chmod(self.tokens_file, 0o600)
-            except OSError:
-                pass
-        except Exception as e:
-            logger.error("No se pudo guardar el archivo de tokens: %s", e)
-
-    def login(self) -> Dict[str, Any]:
-        with self._lock:
-            start = time.time()
-            payload = {"username": self.user, "password": self.password, "grant_type": "password"}
-            headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            try:
-                r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
-                r.raise_for_status()
-            except requests.RequestException as e:
-                logger.warning("Login IOL falló: %s", e)
-                return {}
-            self.tokens = r.json() or {}
-            self._save_tokens(self.tokens)
-            logger.info("IOL login ok en %d ms", _elapsed_ms(start))
-            return self.tokens
-
-    def refresh(self) -> Dict[str, Any]:
-        with self._lock:
-            start = time.time()
-            if not self.tokens.get("refresh_token"):
-                logger.info("Sin refresh_token; ejecutando login()")
-                return self.login()
-            payload = {"refresh_token": self.tokens["refresh_token"], "grant_type": "refresh_token"}
-            headers = {"Content-Type": "application/x-www-form-urlencoded"}
-            try:
-                r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
-                r.raise_for_status()
-            except requests.RequestException as e:
-                # si el refresh falla, re-login completo
-                logger.warning("Refresh falló; intentando login(): %s", e)
-                return self.login()
-            self.tokens = r.json() or {}
-            self._save_tokens(self.tokens)
-            logger.info("IOL refresh ok en %d ms", _elapsed_ms(start))
-            return self.tokens
-
-    def clear_tokens(self):
-        with self._lock:
-            self.tokens = {}
-            try:
-                if self.tokens_file.exists():
-                    self.tokens_file.unlink()
-            except Exception as e:
-                logger.error("No se pudo eliminar el archivo de tokens: %s", e)
-
-    def auth_header(self) -> Dict[str, str]:
-        # Nota: no chequeamos expiración aquí; _request se ocupa ante 401
-        if not self.tokens.get("access_token"):
-            self.login()
-        token = self.tokens.get("access_token")
-        if not token:
-            return {}
-        return {"Authorization": f"Bearer {token}"}
-
-
-# =========================
 # Cliente de API
 # =========================
 
@@ -166,8 +47,7 @@ class IOLClient:
     def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
-        #self.auth = IOLAuth(self.user, self.password)
-        self.auth = _LegacyIOLAuth(self.user, self.password, tokens_file=tokens_file)
+        self.auth = IOLAuth(self.user, self.password, tokens_file=tokens_file)
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
