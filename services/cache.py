@@ -27,6 +27,18 @@ _QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 
 
+def _trigger_logout() -> None:
+    """Clear session and tokens triggering a fresh login."""
+    user = st.session_state.get("IOL_USERNAME", "")
+    try:
+        from application import auth_service
+
+        auth_service.logout(user)
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("auto logout failed: %s", e)
+    st.session_state["force_login"] = True
+
+
 def _normalize_quote(raw: dict) -> dict:
     """Extract and compute basic quote information."""
     data = {"last": raw.get("last"), "chg_pct": raw.get("chg_pct")}
@@ -52,7 +64,7 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = _normalize_quote(q)
     except InvalidCredentialsError:
-        st.session_state["force_login"] = True
+        _trigger_logout()
         data = {"last": None, "chg_pct": None}
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
@@ -74,8 +86,9 @@ def get_client_cached(
     )
     try:
         auth.refresh()
-    except InvalidCredentialsError:
-        st.session_state["force_login"] = True
+    except InvalidCredentialsError as e:
+        auth.clear_tokens()
+        raise e
     return _build_iol_client(user, password, tokens_file=tokens_file, auth=auth)
 
 
@@ -85,7 +98,7 @@ def fetch_portfolio(_cli: IIOLProvider):
     try:
         data = _cli.get_portfolio()
     except InvalidCredentialsError:
-        st.session_state["force_login"] = True
+        _trigger_logout()
         return {"_cached": True}
     logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
     return data
@@ -104,7 +117,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
             return data
     except InvalidCredentialsError:
-        st.session_state["force_login"] = True
+        _trigger_logout()
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
@@ -184,6 +197,9 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     try:
         cli = get_client_cached(cache_key, user, "", tokens_file)
         return cli, None
+    except InvalidCredentialsError as e:
+        _trigger_logout()
+        return None, e
     except (requests.RequestException, RuntimeError, ValueError) as e:
         logger.exception("build_iol_client failed: %s", e)
         return None, e

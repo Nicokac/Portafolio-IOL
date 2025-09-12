@@ -48,6 +48,7 @@ def test_repeated_401_forces_login(monkeypatch):
     monkeypatch.setattr(cli.session, "request", lambda *a, **k: Resp())
 
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state={}))
+    monkeypatch.setattr("application.auth_service.logout", lambda *a, **k: None)
     svc_cache.fetch_portfolio.clear()
     payload = svc_cache.fetch_portfolio(cli)
 

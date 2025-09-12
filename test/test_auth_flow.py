@@ -79,6 +79,8 @@ def test_rerun_without_password_reuses_refresh_token(monkeypatch):
     _reset_dummy()
     monkeypatch.setattr(st, "session_state", {})
     svc_cache.get_client_cached.clear()
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+    monkeypatch.setattr("application.auth_service.logout", lambda *a, **k: None)
 
     path = Path("tokens") / "u.json"
     st.session_state.update(
@@ -86,7 +88,7 @@ def test_rerun_without_password_reuses_refresh_token(monkeypatch):
     )
     DummyAuth.FILES[path] = {"access_token": "old", "refresh_token": "r"}
 
-    def dummy_build(user, password, tokens_file=None):
+    def dummy_build(user, password, tokens_file=None, auth=None):
         return DummyClient(user, password, tokens_file)
 
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
@@ -103,6 +105,8 @@ def test_expired_bearer_triggers_refresh(monkeypatch):
     _reset_dummy()
     monkeypatch.setattr(st, "session_state", {})
     svc_cache.get_client_cached.clear()
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+    monkeypatch.setattr("application.auth_service.logout", lambda *a, **k: None)
 
     path = Path("tokens") / "u.json"
     st.session_state.update(
@@ -110,8 +114,11 @@ def test_expired_bearer_triggers_refresh(monkeypatch):
     )
     DummyAuth.FILES[path] = {"access_token": "expired", "refresh_token": "r"}
 
-    def dummy_build(user, password, tokens_file=None):
-        return DummyClient(user, password, tokens_file)
+    def dummy_build(user, password, tokens_file=None, auth=None):
+        client = DummyClient(user, password, tokens_file)
+        if auth is not None:
+            client.auth = auth
+        return client
 
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
 
