@@ -114,6 +114,9 @@ def test_render_login_page_shows_error(monkeypatch):
     monkeypatch.setattr(st, "form_submit_button", lambda *a, **k: False)
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
 
+    from shared import config
+    config.settings.tokens_key = "k"
+
     captured = {}
     monkeypatch.setattr(st, "error", lambda msg: captured.setdefault("msg", msg))
 

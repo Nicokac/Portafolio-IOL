@@ -11,6 +11,7 @@ import streamlit as st
 
 from infrastructure.iol.auth import IOLAuth
 from shared.cache import cache
+from shared.config import settings
 
 
 class AuthenticationError(Exception):
@@ -37,7 +38,12 @@ class IOLAuthenticationProvider(AuthenticationProvider):
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
         tokens_path = Path("tokens") / f"{sanitized}.json"
         cache.set("tokens_file", str(tokens_path))
-        tokens = IOLAuth(user, password, tokens_file=tokens_path).login()
+        tokens = IOLAuth(
+            user,
+            password,
+            tokens_file=tokens_path,
+            allow_plain_tokens=settings.allow_plain_tokens,
+        ).login()
         if not tokens.get("access_token"):
             raise AuthenticationError("Credenciales inválidas")
         return tokens
@@ -46,7 +52,12 @@ class IOLAuthenticationProvider(AuthenticationProvider):
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
         tokens_path = Path("tokens") / f"{sanitized}.json"
         try:
-            IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
+            IOLAuth(
+                user,
+                password,
+                tokens_file=tokens_path,
+                allow_plain_tokens=settings.allow_plain_tokens,
+            ).clear_tokens()
         finally:
             from services.cache import get_client_cached
 

@@ -47,7 +47,12 @@ class IOLClient:
     def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
-        self.auth = IOLAuth(self.user, self.password, tokens_file=tokens_file)
+        self.auth = IOLAuth(
+            self.user,
+            self.password,
+            tokens_file=tokens_file,
+            allow_plain_tokens=settings.allow_plain_tokens,
+        )
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
