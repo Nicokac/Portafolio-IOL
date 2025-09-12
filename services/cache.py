@@ -156,6 +156,7 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()
     ).hexdigest()
+    st.session_state["cache_key"] = cache_key
     try:
         cli = get_client_cached(cache_key, user, password, tokens_file)
         return cli, None
