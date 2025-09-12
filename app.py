@@ -7,6 +7,7 @@ import argparse
 import time
 from datetime import datetime
 import logging
+from uuid import uuid4
 
 import streamlit as st
 
@@ -38,6 +39,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None):
+    if "session_id" not in st.session_state:
+        st.session_state["session_id"] = uuid4().hex
     args = _parse_args(argv or [])
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
 
