@@ -6,14 +6,26 @@ from pathlib import Path
 import requests
 
 from .ports import IIOLProvider
+from .auth import IOLAuth
 from .legacy.iol_client import IOLClient as _LegacyIOLClient  # <- ahora desde legacy
 
 logger = logging.getLogger(__name__)
 PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
 
 class IOLClientAdapter(IIOLProvider):
-    def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
-        self._cli = _LegacyIOLClient(user, password, tokens_file=tokens_file)
+    def __init__(
+        self,
+        user: str,
+        password: str,
+        tokens_file: Path | str | None = None,
+        auth: IOLAuth | None = None,
+    ):
+        self._cli = _LegacyIOLClient(
+            user,
+            password,
+            tokens_file=tokens_file,
+            auth=auth,
+        )
 
     def get_portfolio(self) -> dict:
         try:
@@ -42,5 +54,10 @@ class IOLClientAdapter(IIOLProvider):
     def get_quote(self, mercado: str, simbolo: str):
         return self._cli.get_quote(mercado=mercado, simbolo=simbolo)
 
-def build_iol_client(user: str, password: str, tokens_file: Path | str | None = None) -> IOLClientAdapter:
-    return IOLClientAdapter(user, password, tokens_file=tokens_file)
+def build_iol_client(
+    user: str,
+    password: str,
+    tokens_file: Path | str | None = None,
+    auth: IOLAuth | None = None,
+) -> IOLClientAdapter:
+    return IOLClientAdapter(user, password, tokens_file=tokens_file, auth=auth)

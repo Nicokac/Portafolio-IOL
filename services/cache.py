@@ -14,7 +14,7 @@ from infrastructure.iol.client import (
     IIOLProvider,
     build_iol_client as _build_iol_client,
 )
-from infrastructure.iol.auth import InvalidCredentialsError
+from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
 from shared.config import settings
 
@@ -66,7 +66,17 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
 def get_client_cached(
     cache_key: str, user: str, password: str, tokens_file: Path | str | None
 ) -> IIOLProvider:
-    return _build_iol_client(user, password, tokens_file=tokens_file)
+    auth = IOLAuth(
+        user,
+        "",
+        tokens_file=tokens_file,
+        allow_plain_tokens=settings.allow_plain_tokens,
+    )
+    try:
+        auth.refresh()
+    except InvalidCredentialsError:
+        st.session_state["force_login"] = True
+    return _build_iol_client(user, password, tokens_file=tokens_file, auth=auth)
 
 
 @cache.cache_data(ttl=settings.cache_ttl_portfolio)

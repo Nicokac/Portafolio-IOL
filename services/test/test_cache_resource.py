@@ -7,7 +7,16 @@ def test_get_client_cached_is_session_isolated(monkeypatch):
 
     created = []
 
-    def dummy_build(user, password, tokens_file=None):
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            self.tokens = {"access_token": "x", "refresh_token": "r"}
+
+        def refresh(self):
+            return self.tokens
+
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+
+    def dummy_build(user, password, tokens_file=None, auth=None):
         obj = object()
         created.append(obj)
         return obj
@@ -37,7 +46,16 @@ def test_build_iol_client_is_session_isolated(monkeypatch):
 
     created = []
 
-    def dummy_build(user, password, tokens_file=None):
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            self.tokens = {"access_token": "x", "refresh_token": "r"}
+
+        def refresh(self):
+            return self.tokens
+
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+
+    def dummy_build(user, password, tokens_file=None, auth=None):
         obj = object()
         created.append(obj)
         return obj
