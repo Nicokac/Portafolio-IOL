@@ -1,7 +1,10 @@
+import logging
 import pandas as pd
 import streamlit as st
 
 from services.cache import fetch_portfolio
+
+logger = logging.getLogger(__name__)
 
 
 def load_portfolio_data(cli, psvc):
@@ -11,7 +14,8 @@ def load_portfolio_data(cli, psvc):
         try:
             payload = fetch_portfolio(cli)
         except Exception as e:  # pragma: no cover - streamlit error path
-            st.error(f"Error al consultar portafolio: {e}")
+            logger.error("Error al consultar portafolio", exc_info=True)
+            st.error("No se pudo cargar el portafolio, intente más tarde")
             st.stop()
 
     if isinstance(payload, dict) and payload.get("_cached"):
