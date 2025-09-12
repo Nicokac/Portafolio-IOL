@@ -11,7 +11,7 @@ def test_login_and_logout_sanitize_token_path(monkeypatch):
     captured = {}
 
     class DummyAuth:
-        def __init__(self, user, password, tokens_file):
+        def __init__(self, user, password, tokens_file, allow_plain_tokens=False):
             captured.setdefault('paths', []).append(tokens_file)
 
         def login(self):

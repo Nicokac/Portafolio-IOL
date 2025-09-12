@@ -53,6 +53,11 @@ class Settings:
         self.tokens_file: str = os.getenv("IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json")))
         # Clave opcional para cifrar/descifrar el archivo de tokens (Fernet)
         self.tokens_key: str | None = os.getenv("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
+        # Permite (opcionalmente) guardar tokens sin cifrar si falta tokens_key
+        self.allow_plain_tokens: bool = (
+            os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
+            in ("1", "true", "yes")
+        )
 
         # --- Derivados de dólar (Ahorro/Tarjeta a partir del oficial) ---
         self.fx_ahorro_multiplier: float = float(os.getenv("FX_AHORRO_MULTIPLIER", cfg.get("FX_AHORRO_MULTIPLIER", 1.30)))

@@ -32,6 +32,8 @@ USER_AGENT="Portafolio-IOL/1.0"
 IOL_TOKENS_FILE="tokens_iol.json"
 # Clave para cifrar el archivo de tokens (Fernet). Debe definirse en producción
 IOL_TOKENS_KEY="..."
+# Permite guardar tokens sin cifrar (NO recomendado)
+IOL_ALLOW_PLAIN_TOKENS=0
 # Otros ajustes opcionales
 CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
@@ -45,7 +47,7 @@ LOG_USER="usuario"
 
 `LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Si se establece `LOG_JSON=1`, los registros se emitirán en formato JSON e incluirán el nombre del módulo y el valor de `LOG_USER` si está definido.
 
-Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada, la aplicación fallará para evitar guardar el archivo en texto plano. Puedes generar una clave con:
+Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada, la aplicación se detendrá para evitar guardar el archivo en texto plano. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`. Puedes generar una clave con:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -61,7 +63,7 @@ streamlit run app.py
 
 ## Despliegue
 
-En entornos de producción es obligatorio definir la variable `IOL_TOKENS_KEY` para que el archivo de tokens se almacene cifrado. Si falta, la inicialización fallará.
+En entornos de producción es obligatorio definir la variable `IOL_TOKENS_KEY` para que el archivo de tokens se almacene cifrado. Si falta, la inicialización fallará salvo que se active `IOL_ALLOW_PLAIN_TOKENS`, lo cual no es recomendable.
 
 ### Docker
 

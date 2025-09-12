@@ -13,7 +13,12 @@ def test_login_success():
         mock_auth.return_value.login.return_value = {"access_token": "tok"}
         tokens = auth_service.login("user", "pass")
         assert tokens["access_token"] == "tok"
-        mock_auth.assert_called_once_with("user", "pass", tokens_file=Path("tokens") / "user.json")
+        mock_auth.assert_called_once_with(
+            "user",
+            "pass",
+            tokens_file=Path("tokens") / "user.json",
+            allow_plain_tokens=False,
+        )
         mock_auth.return_value.login.assert_called_once()
 
 
@@ -22,13 +27,23 @@ def test_login_invalid_raises():
         mock_auth.return_value.login.return_value = {}
         with pytest.raises(AuthenticationError):
             auth_service.login("u", "p")
-        mock_auth.assert_called_once_with("u", "p", tokens_file=Path("tokens") / "u.json")
+        mock_auth.assert_called_once_with(
+            "u",
+            "p",
+            tokens_file=Path("tokens") / "u.json",
+            allow_plain_tokens=False,
+        )
 
 
 def test_logout_calls_clear_tokens(monkeypatch):
     monkeypatch.setattr(st, "session_state", {"x": 1})
     with patch("application.auth_service.IOLAuth") as mock_auth:
         auth_service.logout("user")
-        mock_auth.assert_called_once_with("user", "", tokens_file=Path("tokens") / "user.json")
+        mock_auth.assert_called_once_with(
+            "user",
+            "",
+            tokens_file=Path("tokens") / "user.json",
+            allow_plain_tokens=False,
+        )
         mock_auth.return_value.clear_tokens.assert_called_once()
     assert st.session_state == {}
