@@ -86,15 +86,19 @@ def test_rerun_without_password_reuses_refresh_token(monkeypatch):
     )
     DummyAuth.FILES[path] = {"access_token": "old", "refresh_token": "r"}
 
-    def dummy_build(user, password, tokens_file=None):
-        return DummyClient(user, password, tokens_file)
+    def dummy_build(user, password, tokens_file=None, auth=None):
+        cli = DummyClient(user, password, tokens_file)
+        if auth is not None:
+            cli.auth = auth
+        return cli
 
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
 
     cli, err = svc_cache.build_iol_client()
     assert err is None
     assert cli.auth.tokens["refresh_token"] == "r"
-    assert cli.auth.calls == []
+    assert cli.auth.calls == ["refresh"]
 
 
 def test_expired_bearer_triggers_refresh(monkeypatch):
@@ -110,13 +114,18 @@ def test_expired_bearer_triggers_refresh(monkeypatch):
     )
     DummyAuth.FILES[path] = {"access_token": "expired", "refresh_token": "r"}
 
-    def dummy_build(user, password, tokens_file=None):
-        return DummyClient(user, password, tokens_file)
+    def dummy_build(user, password, tokens_file=None, auth=None):
+        cli = DummyClient(user, password, tokens_file)
+        if auth is not None:
+            cli.auth = auth
+        return cli
 
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
 
     cli, err = svc_cache.build_iol_client()
     assert err is None
+    assert cli.auth.calls == ["refresh"]
     cli.get_portfolio()
     assert cli.auth.calls == ["refresh"]
     assert cli.auth.tokens["access_token"] == "a1"

@@ -52,7 +52,12 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = _normalize_quote(q)
     except InvalidCredentialsError:
+        try:
+            cli._cli.auth.clear_tokens()
+        except Exception:
+            pass
         st.session_state["force_login"] = True
+        st.rerun()
         data = {"last": None, "chg_pct": None}
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
@@ -75,7 +80,12 @@ def get_client_cached(
     try:
         auth.refresh()
     except InvalidCredentialsError:
+        try:
+            auth.clear_tokens()
+        except Exception:
+            pass
         st.session_state["force_login"] = True
+        raise
     return _build_iol_client(user, password, tokens_file=tokens_file, auth=auth)
 
 
@@ -85,7 +95,12 @@ def fetch_portfolio(_cli: IIOLProvider):
     try:
         data = _cli.get_portfolio()
     except InvalidCredentialsError:
+        try:
+            _cli._cli.auth.clear_tokens()
+        except Exception:
+            pass
         st.session_state["force_login"] = True
+        st.rerun()
         return {"_cached": True}
     logger.info("fetch_portfolio done in %.0fms", (time.time() - start) * 1000)
     return data
@@ -104,7 +119,12 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
             return data
     except InvalidCredentialsError:
+        try:
+            _cli._cli.auth.clear_tokens()
+        except Exception:
+            pass
         st.session_state["force_login"] = True
+        st.rerun()
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)

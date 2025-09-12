@@ -1,4 +1,6 @@
+import pytest
 import streamlit as st
+from infrastructure.iol.auth import InvalidCredentialsError
 from services import cache as svc_cache
 
 
@@ -79,3 +81,28 @@ def test_build_iol_client_is_session_isolated(monkeypatch):
     assert cli_a2 is cli_a
 
     assert len(created) == 2
+
+
+def test_get_client_cached_invalid_credentials(monkeypatch):
+    monkeypatch.setattr(st, "session_state", {})
+    svc_cache.get_client_cached.clear()
+
+    cleared = {"called": False}
+
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            pass
+
+        def refresh(self):
+            raise InvalidCredentialsError()
+
+        def clear_tokens(self):
+            cleared["called"] = True
+
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+
+    with pytest.raises(InvalidCredentialsError):
+        svc_cache.get_client_cached("k", "u", "", None)
+
+    assert st.session_state["force_login"] is True
+    assert cleared["called"] is True
