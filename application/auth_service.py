@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, Tuple, Any
 import re
+import hashlib
 
 import streamlit as st
 
@@ -47,6 +48,13 @@ class IOLAuthenticationProvider(AuthenticationProvider):
         try:
             IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
         finally:
+            from services.cache import get_client_cached
+
+            salt = str(st.session_state.get("client_salt", ""))
+            cache_key = hashlib.sha256(
+                f"{user}:{password}:{salt}:{tokens_path}".encode()
+            ).hexdigest()
+            get_client_cached.clear(cache_key)
             st.session_state.clear()
 
     def build_client(self) -> Tuple[Any | None, Exception | None]:
