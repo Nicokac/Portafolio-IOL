@@ -24,6 +24,7 @@ Thumbs.db
 .env
 *.env
 tokens_iol.json
+tokens/
 
 # --- Datos locales (ajusta según uses)
 data/
