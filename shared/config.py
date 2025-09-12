@@ -104,19 +104,24 @@ class JsonFormatter(logging.Formatter):
 def configure_logging(level: str | None = None, json_format: bool | None = None) -> None:
     """Configura el logging global.
 
-    Los parámetros permiten sobrescribir el nivel y formato configurados
-    mediante variables de entorno.
+    Por defecto usa nivel ``INFO`` y formato ``"plain"``. Los valores
+    configurados se normalizan y, si son inválidos, se revierte a estos
+    predeterminados. Los parámetros permiten sobrescribir el nivel y el
+    formato configurados mediante variables de entorno.
     """
 
-    level_name = (level or settings.LOG_LEVEL).upper()
-    level_value = getattr(logging, level_name, logging.INFO)
+    level_name = (level or getattr(settings, "LOG_LEVEL", "INFO")).upper()
+    level_value = getattr(logging, level_name, None)
+    if not isinstance(level_value, int):
+        level_name = "INFO"
+        level_value = logging.INFO
 
     if json_format is None:
-        fmt = os.getenv("LOG_FORMAT", settings.LOG_FORMAT).lower()
-        if fmt:
-            json_format = fmt == "json"
-        else:
-            json_format = os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes")
+        fmt = os.getenv("LOG_FORMAT", getattr(settings, "LOG_FORMAT", "plain"))
+        fmt = str(fmt).lower()
+        if fmt not in {"json", "plain"}:
+            fmt = "plain"
+        json_format = fmt == "json"
 
     if json_format:
         handler = logging.StreamHandler()
