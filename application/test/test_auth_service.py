@@ -25,10 +25,42 @@ def test_login_invalid_raises():
         mock_auth.assert_called_once_with("u", "p", tokens_file=Path("tokens") / "u.json")
 
 
-def test_logout_calls_clear_tokens(monkeypatch):
-    monkeypatch.setattr(st, "session_state", {"x": 1})
+def test_logout_clears_only_auth_keys(monkeypatch):
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {
+            "session_id": "A",
+            "IOL_USERNAME": "user",
+            "IOL_PASSWORD": "pass",
+            "authenticated": True,
+            "client_salt": "s",
+            "tokens_file": "foo",
+            "x": 1,
+        },
+    )
     with patch("application.auth_service.IOLAuth") as mock_auth:
         auth_service.logout("user")
-        mock_auth.assert_called_once_with("user", "", tokens_file=Path("tokens") / "user.json")
+        mock_auth.assert_called_once_with(
+            "user", "", tokens_file=Path("tokens") / "user.json"
+        )
         mock_auth.return_value.clear_tokens.assert_called_once()
-    assert st.session_state == {}
+    assert st.session_state == {"session_id": "A", "x": 1}
+
+
+def test_logout_is_session_isolated(monkeypatch):
+    other = {"data": 42}
+    monkeypatch.setattr(
+        st,
+        "session_state",
+        {
+            "session_id": "A",
+            "IOL_USERNAME": "user",
+            "authenticated": True,
+            "other": other,
+        },
+    )
+    with patch("application.auth_service.IOLAuth"):
+        auth_service.logout("user")
+    assert st.session_state.get("other") is other
+    assert "IOL_USERNAME" not in st.session_state

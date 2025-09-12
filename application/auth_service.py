@@ -55,7 +55,14 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 f"{user}:{password}:{salt}:{tokens_path}".encode()
             ).hexdigest()
             get_client_cached.clear(cache_key)
-            st.session_state.clear()
+            for key in (
+                "authenticated",
+                "IOL_USERNAME",
+                "IOL_PASSWORD",
+                "client_salt",
+            ):
+                st.session_state.pop(key, None)
+            cache.pop("tokens_file", None)
 
     def build_client(self) -> Tuple[Any | None, Exception | None]:
         from services.cache import build_iol_client
