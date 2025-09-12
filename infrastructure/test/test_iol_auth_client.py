@@ -11,6 +11,7 @@ def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
     mock_resp = MagicMock()
     mock_resp.raise_for_status.return_value = None
     mock_resp.json.return_value = {"access_token": "abc"}
+    mock_resp.status_code = 200
 
     key = Fernet.generate_key()
     monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())

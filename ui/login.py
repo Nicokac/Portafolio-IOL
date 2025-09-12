@@ -1,6 +1,10 @@
 import logging
 import streamlit as st
-from application.auth_service import AuthenticationError, get_auth_provider
+from application.auth_service import (
+    get_auth_provider,
+    InvalidCredentialsError,
+    NetworkError,
+)
 from ui.header import render_header
 from shared.config import settings
 
@@ -47,10 +51,19 @@ def render_login_page() -> None:
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
             st.rerun()
-        except AuthenticationError:
+        except InvalidCredentialsError:
             logger.warning("Fallo de autenticación")
-            logger.debug("Error de autenticación")
             st.session_state["login_error"] = "Usuario o contraseña inválidos"
+            st.session_state["IOL_PASSWORD"] = ""
+            st.rerun()
+        except NetworkError:
+            logger.warning("Error de conexión durante el login")
+            st.session_state["login_error"] = "Error de conexión"
+            st.session_state["IOL_PASSWORD"] = ""
+            st.rerun()
+        except RuntimeError as e:
+            logger.exception("Falta clave de tokens: %s", e)
+            st.session_state["login_error"] = str(e)
             st.session_state["IOL_PASSWORD"] = ""
             st.rerun()
         except Exception:

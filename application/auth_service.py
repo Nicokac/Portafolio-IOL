@@ -9,7 +9,7 @@ import hashlib
 
 import streamlit as st
 
-from infrastructure.iol.auth import IOLAuth
+from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError, NetworkError
 from shared.cache import cache
 from shared.config import settings
 
