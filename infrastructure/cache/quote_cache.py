@@ -13,6 +13,25 @@ _QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 QUOTE_CACHE_DIR = Path(".cache/quotes")
 
+
+def normalize_quote(raw: dict) -> dict:
+    """Extract and compute basic quote information.
+
+    Returns a dict with ``last`` and ``chg_pct`` keys.  If ``chg_pct`` is not
+    provided it is calculated from ``ultimo`` and ``cierreAnterior`` when
+    available.  Any conversion errors are silently ignored.
+    """
+    data = {"last": raw.get("last"), "chg_pct": raw.get("chg_pct")}
+    if data.get("chg_pct") is None:
+        try:
+            u = float(raw.get("ultimo"))
+            c = float(raw.get("cierreAnterior"))
+            if c:
+                data["chg_pct"] = (u - c) / c * 100.0
+        except (TypeError, ValueError):
+            pass
+    return data
+
 def get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
     """
     Devuelve {'last': float|None, 'chg_pct': float|None} con cache TTL (segundos).
@@ -42,7 +61,7 @@ def get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
     # Llamada real fuera del lock
     try:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
-        data = {"last": q.get("last"), "chg_pct": q.get("chg_pct")}
+        data = normalize_quote(q)
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
         data = {"last": None, "chg_pct": None}
