@@ -1,6 +1,5 @@
 import importlib
 import sys
-import importlib
 import types
 from unittest.mock import MagicMock
 
@@ -47,6 +46,7 @@ def test_refresh_secs_triggers_rerun(monkeypatch):
     sys.modules.pop("app", None)
     sys.modules.pop("shared.config", None)
     st = _make_streamlit()
+    st.cache_resource = MagicMock()
     st.session_state.clear()
     st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p", "last_refresh": 0})
     st.stop = MagicMock()  # no exception
@@ -66,3 +66,51 @@ def test_refresh_secs_triggers_rerun(monkeypatch):
     assert st.rerun.called
     assert st.session_state["last_refresh"] >= before
 
+def test_missing_tokens_file_forces_login(monkeypatch, tmp_path):
+    monkeypatch.setenv("IOL_ALLOW_PLAIN_TOKENS", "1")
+    sys.modules.pop("app", None)
+    sys.modules.pop("shared.config", None)
+    st = _make_streamlit()
+    st.cache_resource = MagicMock()
+    st.session_state.clear()
+    st.session_state.update({"IOL_USERNAME": "u", "authenticated": True})
+    sys.modules["streamlit"] = st
+    export_stub = types.ModuleType("shared.export")
+    export_stub.df_to_csv_bytes = lambda df: b""
+    export_stub.fig_to_png_bytes = lambda fig: b""
+    sys.modules["shared.export"] = export_stub
+
+    token_file = tmp_path / "tokens" / "u-1234.json"
+    token_file.parent.mkdir(parents=True, exist_ok=True)
+    token_file.write_text("{}", encoding="utf-8")
+    token_file.unlink()
+
+    app = importlib.import_module("app")
+
+    login_mock = MagicMock()
+    monkeypatch.setattr(app, "render_login_page", login_mock)
+    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value=({}, None)))
+    monkeypatch.setattr(app, "render_header", MagicMock())
+    monkeypatch.setattr(app, "render_action_menu", MagicMock())
+    monkeypatch.setattr(app, "render_footer", MagicMock())
+    monkeypatch.setattr(app, "render_portfolio_section", MagicMock(return_value=None))
+
+    def dummy_build():
+        if not token_file.exists():
+            st.session_state["force_login"] = True
+            st.rerun()
+        return None
+
+    monkeypatch.setattr(app, "build_iol_client", dummy_build)
+
+    st.rerun.side_effect = RuntimeError("rerun")
+
+    with pytest.raises(RuntimeError):
+        app.main()
+
+    st.rerun.assert_called_once()
+
+    with pytest.raises(RuntimeError):
+        app.main()
+
+    login_mock.assert_called_once()

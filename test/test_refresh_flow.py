@@ -1,6 +1,7 @@
 import requests
 import streamlit as st
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 
 def test_refresh_flow_uses_refresh_token(monkeypatch):
@@ -66,3 +67,72 @@ def test_rerun_preserves_session(monkeypatch):
     assert called.get("ok") is True
     assert st.session_state["tokens"] == {"a": 1}
     assert st.session_state["session_id"] == "sid"
+
+def test_invalid_refresh_token_forces_login(monkeypatch):
+    from controllers import auth
+    from infrastructure.iol.auth import InvalidCredentialsError
+    mock_st = SimpleNamespace(session_state={"tokens": {"x": 1}}, rerun=MagicMock())
+    monkeypatch.setattr(auth, "st", mock_st)
+
+    class DummyProvider:
+        def build_client(self):
+            mock_st.session_state.pop("tokens", None)
+            return None, InvalidCredentialsError("bad refresh")
+
+    monkeypatch.setattr(auth, "get_auth_provider", lambda: DummyProvider())
+    auth.build_iol_client()
+
+    assert mock_st.session_state.get("force_login") is True
+    assert "tokens" not in mock_st.session_state
+    assert mock_st.rerun.called
+
+
+def test_login_refresh_valid_then_invalid(monkeypatch):
+    from services import cache as svc_cache
+
+    class DummyAuth:
+        def __init__(self, user, password, tokens_file=None, allow_plain_tokens=False):
+            self.tokens = {"access_token": "a1", "refresh_token": "r"}
+            self.calls = []
+
+        def refresh(self):
+            self.calls.append("refresh")
+            self.tokens["access_token"] = "a2"
+
+        def clear_tokens(self):
+            self.tokens = {}
+
+    class DummyClient:
+        def __init__(self, user, password, tokens_file=None):
+            self.auth = DummyAuth(user, password, tokens_file)
+
+        def get_portfolio(self):
+            if self.auth.tokens.get("access_token") == "expired":
+                self.auth.refresh()
+            return {"ok": 1}
+
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+    monkeypatch.setattr(svc_cache, "_build_iol_client", lambda u, p, tokens_file=None, auth=None: DummyClient(u, p, tokens_file))
+    svc_cache.get_client_cached.clear()
+    monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state={}))
+    svc_cache.st.session_state.update({"IOL_USERNAME": "u", "client_salt": "s", "tokens_file": "t.json"})
+
+    cli, err = svc_cache.build_iol_client()
+    assert err is None
+
+    svc_cache.fetch_portfolio.clear()
+    cli.auth.tokens["access_token"] = "expired"
+    svc_cache.fetch_portfolio(cli)
+    assert cli.auth.calls == ["refresh"]
+
+    def bad_refresh():
+        cli.auth.clear_tokens()
+        raise svc_cache.InvalidCredentialsError("bad refresh")
+
+    cli.auth.refresh = bad_refresh
+    cli.auth.tokens["access_token"] = "expired"
+    svc_cache.fetch_portfolio.clear()
+    svc_cache.fetch_portfolio(cli)
+
+    assert svc_cache.st.session_state.get("force_login") is True
+    assert cli.auth.tokens == {}
