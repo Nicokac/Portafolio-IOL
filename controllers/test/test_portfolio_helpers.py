@@ -43,6 +43,43 @@ def test_load_portfolio_data(monkeypatch):
     assert types == ["Bono"]
 
 
+def test_load_portfolio_data_shows_generic_error(monkeypatch):
+    def boom(cli):
+        raise ValueError("detalle interno")
+
+    monkeypatch.setattr(load_mod, "fetch_portfolio", boom)
+    monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
+    monkeypatch.setattr(load_mod.st, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "dataframe", lambda *a, **k: None)
+
+    err_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "error", err_mock)
+
+    class StopCalled(Exception):
+        pass
+
+    def stop():
+        raise StopCalled()
+
+    monkeypatch.setattr(load_mod.st, "stop", stop)
+    logger_mock = MagicMock()
+    monkeypatch.setattr(load_mod, "logger", logger_mock)
+
+    class DummyPSvc:
+        def normalize_positions(self, payload):
+            return pd.DataFrame()
+
+    with pytest.raises(StopCalled):
+        pm.load_portfolio_data(None, DummyPSvc())
+
+    err_mock.assert_called_once()
+    msg = err_mock.call_args[0][0]
+    assert msg == "No se pudo cargar el portafolio, intente más tarde"
+    assert "detalle interno" not in msg
+    logger_mock.error.assert_called_once()
+
+
 def test_apply_filters(monkeypatch):
     df_pos = pd.DataFrame(
         [
