@@ -21,6 +21,7 @@ sys.modules.setdefault("cryptography.fernet", fernet_mod)
 from application.ta_service import fetch_with_indicators
 from services import cache
 from controllers import auth
+from infrastructure.iol.auth import InvalidCredentialsError
 
 
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
@@ -83,6 +84,24 @@ def test_auth_controller_handles_network_error(monkeypatch):
     cli = auth.build_iol_client()
     assert cli is None
     assert mock_st.session_state["login_error"] == "Error de conexión"
+    assert mock_st.session_state["force_login"] is True
+    assert mock_st.session_state["IOL_PASSWORD"] == ""
+    mock_st.rerun.assert_called_once()
+
+
+def test_auth_controller_handles_invalid_credentials(monkeypatch):
+    mock_st = SimpleNamespace(session_state={}, rerun=MagicMock())
+    monkeypatch.setattr(auth, "st", mock_st)
+
+    class DummyProvider:
+        def build_client(self):
+            return None, InvalidCredentialsError()
+
+    monkeypatch.setattr(auth, "get_auth_provider", lambda: DummyProvider())
+
+    cli = auth.build_iol_client()
+    assert cli is None
+    assert mock_st.session_state["login_error"] == "Credenciales inválidas"
     assert mock_st.session_state["force_login"] is True
     assert mock_st.session_state["IOL_PASSWORD"] == ""
     mock_st.rerun.assert_called_once()

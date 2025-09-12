@@ -20,6 +20,8 @@ def load_portfolio_data(cli, psvc):
                 exc_info=True,
                 extra={"tokens_file": tokens_path},
             )
+            st.error("No se pudo cargar el portafolio, intente más tarde")
+            st.stop()
 
     auth_error = False
     if isinstance(payload, dict):
