@@ -51,6 +51,15 @@ def test_build_iol_client_handles_network_error(monkeypatch):
     mock_st = SimpleNamespace(session_state={"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
     monkeypatch.setattr(cache, "st", mock_st)
 
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            self.tokens = {"access_token": "x", "refresh_token": "r"}
+
+        def refresh(self):
+            return self.tokens
+
+    monkeypatch.setattr(cache, "IOLAuth", DummyAuth)
+
     def fail_build(*args, **kwargs):
         raise requests.RequestException("net down")
 

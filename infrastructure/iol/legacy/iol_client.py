@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
+from datetime import datetime
+import streamlit as st
 
 from shared.config import settings
 from shared.utils import _to_float
@@ -44,15 +46,24 @@ class IOLClient:
     - Datos de mercado vía iolConn (sesión persistente y reautenticación)
     """
 
-    def __init__(self, user: str, password: str, tokens_file: Path | str | None = None):
+    def __init__(
+        self,
+        user: str,
+        password: str,
+        tokens_file: Path | str | None = None,
+        auth: IOLAuth | None = None,
+    ):
         self.user = (user or "").strip()
         self.password = (password or "").strip()
-        self.auth = IOLAuth(
-            self.user,
-            self.password,
-            tokens_file=tokens_file,
-            allow_plain_tokens=settings.allow_plain_tokens,
-        )
+        if auth is not None:
+            self.auth = auth
+        else:
+            self.auth = IOLAuth(
+                self.user,
+                self.password,
+                tokens_file=tokens_file,
+                allow_plain_tokens=settings.allow_plain_tokens,
+            )
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
@@ -119,14 +130,30 @@ class IOLClient:
         with self._market_lock:
             if self._market_ready and self.iol_market is not None:
                 return
-            self.iol_market = Iol(self.user, self.password)
+            if self.password:
+                self.iol_market = Iol(self.user, self.password)
+            else:
+                self.iol_market = Iol(self.user, self.password)
+                bearer = self.auth.tokens.get("access_token")
+                refresh = self.auth.tokens.get("refresh_token")
+                if bearer and refresh:
+                    self.iol_market.bearer = bearer
+                    self.iol_market.refresh_token = refresh
+                    self.iol_market.bearer_time = datetime.now()
+                else:
+                    st.session_state["force_login"] = True
+                    raise InvalidCredentialsError("Token inválido")
             try:
                 # algunas versiones requieren gestionar() para renovar bearer interno
                 self.iol_market.gestionar()
             except NoAuthException:
-                # recrea sesión y reintenta una vez
-                self.iol_market = Iol(self.user, self.password)
-                self.iol_market.gestionar()
+                if self.password:
+                    # recrea sesión y reintenta una vez
+                    self.iol_market = Iol(self.user, self.password)
+                    self.iol_market.gestionar()
+                else:
+                    st.session_state["force_login"] = True
+                    raise InvalidCredentialsError("Token inválido")
             self._market_ready = True
 
     @staticmethod

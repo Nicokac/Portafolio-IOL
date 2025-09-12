@@ -18,7 +18,16 @@ def test_theme_change_reuses_client(monkeypatch):
 
     created = []
 
-    def dummy_build(user, password, tokens_file=None):
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            self.tokens = {"access_token": "x", "refresh_token": "r"}
+
+        def refresh(self):
+            return self.tokens
+
+    monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
+
+    def dummy_build(user, password, tokens_file=None, auth=None):
         obj = object()
         created.append(obj)
         return obj
