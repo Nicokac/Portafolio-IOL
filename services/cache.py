@@ -84,7 +84,7 @@ def get_client_cached(
 ) -> IIOLProvider:
     auth = IOLAuth(
         user,
-        "",
+        password,
         tokens_file=tokens_file,
         allow_plain_tokens=settings.allow_plain_tokens,
     )
@@ -92,6 +92,12 @@ def get_client_cached(
         auth.refresh()
     except InvalidCredentialsError as e:
         auth.clear_tokens()
+        st.session_state["force_login"] = True
+        if password:
+            try:
+                auth.login()
+            except Exception:
+                pass
         raise e
     return _build_iol_client(user, password, tokens_file=tokens_file, auth=auth)
 
@@ -112,7 +118,8 @@ def fetch_portfolio(_cli: IIOLProvider):
             "fetch_portfolio using cache due to invalid credentials",
             extra={"tokens_file": tokens_path},
         )
-        st.rerun()
+        if hasattr(st, "rerun"):
+            st.rerun()
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
@@ -225,7 +232,9 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     ).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
-        cli = get_client_cached(cache_key, user, "", tokens_file)
+        cli = get_client_cached(
+            cache_key, user, st.session_state.get("IOL_PASSWORD", ""), tokens_file
+        )
         return cli, None
     except InvalidCredentialsError as e:
         _trigger_logout()
