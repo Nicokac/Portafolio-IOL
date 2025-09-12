@@ -14,25 +14,36 @@ class Cache:
         pass
 
     def cache_resource(self, func: Callable) -> Callable:
-        """Cache a resource, instantiating it only once."""
-        resource: Any = None
-        initialized = False
+        """Cache resources keyed by user session and function arguments."""
+
+        resources: Dict[Tuple[Callable, Any, Any], Any] = {}
         lock = Lock()
+
+        def _session_key() -> Any:
+            return st.session_state.get("session_id")
+
+        def _arg_key(args: tuple, kwargs: dict) -> Any:
+            if args:
+                return args[0]
+            return (args, tuple(sorted(kwargs.items())))
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            nonlocal resource, initialized
+            key = (func, _session_key(), _arg_key(args, kwargs))
             with lock:
-                if not initialized:
-                    resource = func(*args, **kwargs)
-                    initialized = True
-                return resource
+                if key not in resources:
+                    resources[key] = func(*args, **kwargs)
+                return resources[key]
 
-        def clear() -> None:
-            nonlocal resource, initialized
+        def clear(key: Any | None = None) -> None:
+            sid = _session_key()
             with lock:
-                resource = None
-                initialized = False
+                if key is None:
+                    to_del = [k for k in resources if k[0] is func and k[1] == sid]
+                    for k in to_del:
+                        resources.pop(k, None)
+                else:
+                    resources.pop((func, sid, key), None)
 
         wrapper.clear = clear
         return wrapper

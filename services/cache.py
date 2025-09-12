@@ -61,7 +61,6 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
 def get_client_cached(
     cache_key: str, user: str, password: str, tokens_file: Path | str | None
 ) -> IIOLProvider:
-    _ = cache_key
     return _build_iol_client(user, password, tokens_file=tokens_file)
 
 
