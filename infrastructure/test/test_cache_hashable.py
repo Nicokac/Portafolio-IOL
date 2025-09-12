@@ -1,4 +1,4 @@
-from infrastructure.cache import cache
+from shared.cache import cache
 import time
 from threading import Thread
 
