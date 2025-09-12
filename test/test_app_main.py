@@ -1,8 +1,7 @@
 import importlib
 import sys
-import sys
-import types
 import importlib
+import types
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,7 +22,9 @@ def _make_streamlit():
 
 
 def test_login_page_rendered_when_missing_credentials(monkeypatch):
+    monkeypatch.setenv("IOL_ALLOW_PLAIN_TOKENS", "1")
     sys.modules.pop("app", None)
+    sys.modules.pop("shared.config", None)
     st = _make_streamlit()
     sys.modules["streamlit"] = st
     st.session_state.clear()
@@ -42,7 +43,9 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
 
 
 def test_refresh_secs_triggers_rerun(monkeypatch):
+    monkeypatch.setenv("IOL_ALLOW_PLAIN_TOKENS", "1")
     sys.modules.pop("app", None)
+    sys.modules.pop("shared.config", None)
     st = _make_streamlit()
     st.session_state.clear()
     st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p", "last_refresh": 0})

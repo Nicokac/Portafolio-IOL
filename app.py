@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import streamlit as st
 
-from shared.config import configure_logging
+from shared.config import configure_logging, ensure_tokens_key
 from ui.ui_settings import init_ui
 from ui.header import render_header
 from ui.actions import render_action_menu
@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None):
         st.session_state["session_id"] = uuid4().hex
     args = _parse_args(argv or [])
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
+    ensure_tokens_key()
 
     if st.session_state.get("force_login"):
         render_login_page()
