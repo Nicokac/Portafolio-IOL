@@ -122,3 +122,66 @@ def test_render_login_page_shows_error(monkeypatch):
     render_login_page()
 
     assert captured.get("msg") == "fail"
+
+
+def _prepare_login_form(monkeypatch, submitted=True):
+    monkeypatch.setattr("ui.login.render_header", lambda: None)
+    monkeypatch.setattr(st, "form", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(st, "text_input", lambda *a, **k: None)
+    monkeypatch.setattr(st, "form_submit_button", lambda *a, **k: submitted)
+    monkeypatch.setattr(st, "caption", lambda *a, **k: None)
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
+
+
+def test_render_login_page_handles_invalid_credentials(monkeypatch):
+    from ui import login
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+
+    class DummyProvider:
+        def login(self, u, p):
+            raise login.InvalidCredentialsError()
+
+    monkeypatch.setattr(login, "get_auth_provider", lambda: DummyProvider())
+
+    login.render_login_page()
+
+    assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
+    assert st.session_state.get("IOL_PASSWORD") == ""
+
+
+def test_render_login_page_handles_network_error(monkeypatch):
+    from ui import login
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+
+    class DummyProvider:
+        def login(self, u, p):
+            raise login.NetworkError()
+
+    monkeypatch.setattr(login, "get_auth_provider", lambda: DummyProvider())
+
+    login.render_login_page()
+
+    assert st.session_state.get("login_error") == "Error de conexión"
+    assert st.session_state.get("IOL_PASSWORD") == ""
+
+
+def test_render_login_page_handles_tokens_key_missing(monkeypatch):
+    from ui import login
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    _prepare_login_form(monkeypatch)
+
+    class DummyProvider:
+        def login(self, u, p):
+            raise RuntimeError("no key")
+
+    monkeypatch.setattr(login, "get_auth_provider", lambda: DummyProvider())
+
+    login.render_login_page()
+
+    assert st.session_state.get("login_error") == "no key"
+    assert st.session_state.get("IOL_PASSWORD") == ""

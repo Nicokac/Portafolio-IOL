@@ -26,6 +26,14 @@ if settings.tokens_key:
     except Exception as e:
         logger.warning("Clave de cifrado inválida: %s", e)
 
+
+class InvalidCredentialsError(Exception):
+    """Se lanza cuando el usuario o contraseña son inválidos."""
+
+
+class NetworkError(Exception):
+    """Se lanza ante problemas de conectividad con la API."""
+
 @dataclass
 class IOLAuth:
     user: str
@@ -89,11 +97,23 @@ class IOLAuth:
             start = time.time()
             try:
                 r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                logger.warning("Login IOL falló: %s", e)
+                raise NetworkError("Fallo de red") from e
+            except requests.RequestException as e:
+                logger.warning("Login IOL falló: %s", e)
+                raise NetworkError(str(e)) from e
+
+            if r.status_code in (400, 401):
+                logger.warning("Credenciales inválidas en login IOL: %s", r.text)
+                raise InvalidCredentialsError("Credenciales inválidas")
+            try:
                 r.raise_for_status()
                 self.tokens = r.json() or {}
             except requests.RequestException as e:
                 logger.warning("Login IOL falló: %s", e)
-                return {}
+                raise NetworkError("Fallo de red") from e
+
             self._save_tokens(self.tokens)
             logger.info("IOL login ok en %d ms", int((time.time() - start) * 1000))
             return self.tokens
@@ -109,11 +129,23 @@ class IOLAuth:
             start = time.time()
             try:
                 r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                logger.warning("Refresh falló: %s", e)
+                raise NetworkError("Fallo de red") from e
+            except requests.RequestException as e:
+                logger.warning("Refresh falló: %s", e)
+                raise NetworkError(str(e)) from e
+
+            if r.status_code in (400, 401):
+                logger.warning("Credenciales inválidas en refresh IOL: %s", r.text)
+                raise InvalidCredentialsError("Credenciales inválidas")
+            try:
                 r.raise_for_status()
                 self.tokens = r.json() or {}
             except requests.RequestException as e:
-                logger.warning("Refresh falló; intentando login(): %s", e)
-                return self.login()
+                logger.warning("Refresh falló: %s", e)
+                raise NetworkError("Fallo de red") from e
+
             self._save_tokens(self.tokens)
             logger.info("IOL refresh ok en %d ms", int((time.time() - start) * 1000))
             return self.tokens
