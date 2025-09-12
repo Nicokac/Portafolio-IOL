@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Protocol, Tuple, Any
+import re
 
 import streamlit as st
 
@@ -32,7 +33,8 @@ class IOLAuthenticationProvider(AuthenticationProvider):
     """Proveedor de autenticación basado en IOL."""
 
     def login(self, user: str, password: str) -> dict:
-        tokens_path = Path("tokens") / f"{user}.json"
+        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
+        tokens_path = Path("tokens") / f"{sanitized}.json"
         cache.set("tokens_file", str(tokens_path))
         tokens = IOLAuth(user, password, tokens_file=tokens_path).login()
         if not tokens.get("access_token"):
@@ -40,7 +42,8 @@ class IOLAuthenticationProvider(AuthenticationProvider):
         return tokens
 
     def logout(self, user: str, password: str = "") -> None:
-        tokens_path = Path("tokens") / f"{user}.json"
+        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
+        tokens_path = Path("tokens") / f"{sanitized}.json"
         try:
             IOLAuth(user, password, tokens_file=tokens_path).clear_tokens()
         finally:

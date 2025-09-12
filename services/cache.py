@@ -3,6 +3,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Dict, Tuple, Any
+import re
 
 from shared.cache import cache
 import requests
@@ -150,7 +151,8 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     salt = str(st.session_state.get("client_salt", ""))
     tokens_file = cache.get("tokens_file")
     if not tokens_file:
-        tokens_file = Path("tokens") / f"{user}.json"
+        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user or "")
+        tokens_file = Path("tokens") / f"{sanitized}.json"
         cache.set("tokens_file", str(tokens_file))
     cache_key = hashlib.sha256(
         f"{user}:{password}:{salt}:{tokens_file}".encode()
