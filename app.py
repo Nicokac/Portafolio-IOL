@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import time
 from datetime import datetime
 import logging
@@ -10,7 +11,7 @@ import logging
 import streamlit as st
 from shared.cache import cache
 
-from shared.config import settings
+from shared.config import configure_logging, settings
 from ui.ui_settings import init_ui
 from ui.header import render_header
 from ui.actions import render_action_menu
@@ -35,8 +36,19 @@ if not cache.session_state.get("force_login") and not cache.session_state.get("a
     if settings.IOL_PASSWORD:
         cache.session_state.setdefault("IOL_PASSWORD", settings.IOL_PASSWORD)
 
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse command-line arguments relevant for logging."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--log-level", dest="log_level")
+    parser.add_argument("--log-format", dest="log_format", choices=["text", "json"])
+    args, _ = parser.parse_known_args(argv)
+    return args
 
-def main():
+
+def main(argv: list[str] | None = None):
+    args = _parse_args(argv or [])
+    configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
+
     if cache.session_state.get("force_login"):
         render_login_page()
         st.stop()
@@ -81,5 +93,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main(sys.argv[1:])
 

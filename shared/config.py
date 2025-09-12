@@ -80,25 +80,31 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(log_record)
 
 
-def configure_logging() -> None:
-    """Configura el logging global según variables de entorno."""
+def configure_logging(level: str | None = None, json_format: bool | None = None) -> None:
+    """Configura el logging global.
 
-    level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
-    if os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes"):
+    Los parámetros permiten sobrescribir el nivel y formato configurados
+    mediante variables de entorno.
+    """
+
+    level_name = (level or settings.LOG_LEVEL).upper()
+    level_value = getattr(logging, level_name, logging.INFO)
+
+    if json_format is None:
+        json_format = os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes")
+
+    if json_format:
         handler = logging.StreamHandler()
         handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
         root = logging.getLogger()
-        root.setLevel(level)
+        root.setLevel(level_value)
         root.handlers = [handler]
     else:
         logging.basicConfig(
-            level=level,
+            level=level_value,
             format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-
-
-configure_logging()
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:
