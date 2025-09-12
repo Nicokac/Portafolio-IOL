@@ -2,6 +2,7 @@
 
 FROM python:3.10-slim AS builder
 WORKDIR /app
+# Install only production dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
