@@ -59,6 +59,10 @@ class Settings:
             os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
             in ("1", "true", "yes")
         )
+        # TTL máximo para reutilizar tokens guardados (en días)
+        self.tokens_ttl_days: int = int(
+            os.getenv("IOL_TOKENS_TTL_DAYS", cfg.get("IOL_TOKENS_TTL_DAYS", 30))
+        )
 
         # --- Derivados de dólar (Ahorro/Tarjeta a partir del oficial) ---
         self.fx_ahorro_multiplier: float = float(os.getenv("FX_AHORRO_MULTIPLIER", cfg.get("FX_AHORRO_MULTIPLIER", 1.30)))

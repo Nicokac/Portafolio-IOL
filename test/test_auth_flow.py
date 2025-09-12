@@ -119,10 +119,10 @@ def test_expired_bearer_triggers_refresh(monkeypatch):
     DummyAuth.FILES[path] = {"access_token": "expired", "refresh_token": "r"}
 
     def dummy_build(user, password, tokens_file=None, auth=None):
-        client = DummyClient(user, password, tokens_file)
+        cli = DummyClient(user, password, tokens_file)
         if auth is not None:
-            client.auth = auth
-        return client
+            cli.auth = auth
+        return cli
 
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
     monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)

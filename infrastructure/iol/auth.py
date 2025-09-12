@@ -67,6 +67,7 @@ class IOLAuth:
 
     def _save_tokens(self, data: Dict[str, Any]) -> None:
         """Persist token information to disk atomically."""
+        data["timestamp"] = int(time.time())
         try:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
             content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -79,15 +80,26 @@ class IOLAuth:
             logger.exception("No se pudo guardar el archivo de tokens: %s", e)
 
     def _load_tokens(self) -> Dict[str, Any]:
-        """Carga tokens desde disco si existen."""
+        """Carga tokens desde disco si existen y valida su antigüedad."""
         if self.tokens_file.exists():
             try:
                 raw = self.tokens_file.read_bytes()
                 if FERNET:
                     raw = FERNET.decrypt(raw)
-                return json.loads(raw.decode("utf-8"))
+                data = json.loads(raw.decode("utf-8"))
             except (InvalidToken, json.JSONDecodeError, OSError) as e:
                 logger.warning("No se pudieron leer tokens: %s", e)
+            else:
+                ts = data.get("timestamp")
+                ttl_days = getattr(settings, "tokens_ttl_days", 30)
+                if ts is None or (ttl_days > 0 and time.time() - ts > ttl_days * 86400):
+                    logger.info(
+                        "Tokens vencidos; ejecutando login()",
+                        extra={"tokens_file": self.tokens_path},
+                    )
+                    self.clear_tokens()
+                    return self.login()
+                return data
         return {}
 
     def login(self) -> Dict[str, Any]:
