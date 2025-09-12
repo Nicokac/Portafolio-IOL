@@ -50,6 +50,7 @@ def render_login_page() -> None:
             provider.login(user, password)
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
+            st.session_state["IOL_PASSWORD"] = ""
             st.rerun()
         except InvalidCredentialsError:
             logger.warning("Fallo de autenticación")
