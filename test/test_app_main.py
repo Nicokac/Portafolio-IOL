@@ -28,10 +28,6 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
     sys.modules["streamlit"] = st
     st.session_state.clear()
 
-    from shared import config
-    monkeypatch.setattr(config.settings, "IOL_USERNAME", None)
-    monkeypatch.setattr(config.settings, "IOL_PASSWORD", None)
-
     app = importlib.import_module("app")
 
     login_mock = MagicMock()

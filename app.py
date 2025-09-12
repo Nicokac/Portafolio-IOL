@@ -10,7 +10,7 @@ import logging
 
 import streamlit as st
 
-from shared.config import configure_logging, settings
+from shared.config import configure_logging
 from ui.ui_settings import init_ui
 from ui.header import render_header
 from ui.actions import render_action_menu
@@ -45,8 +45,8 @@ def main(argv: list[str] | None = None):
         render_login_page()
         st.stop()
 
-    user = st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
-    password = st.session_state.get("IOL_PASSWORD") or settings.IOL_PASSWORD
+    user = st.session_state.get("IOL_USERNAME")
+    password = st.session_state.get("IOL_PASSWORD")
     if not st.session_state.get("authenticated"):
         if not user or not password:
             render_login_page()

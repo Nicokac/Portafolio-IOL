@@ -24,11 +24,9 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 ## Configuración del entorno
 
-Crear un archivo `.env` en la raíz del proyecto con las credenciales y ajustes necesarios:
+Crear un archivo `.env` en la raíz del proyecto con los ajustes necesarios (las credenciales se ingresan desde la interfaz de la aplicación):
 
 ```env
-IOL_USERNAME="usuario"
-IOL_PASSWORD="secreto"
 USER_AGENT="Portafolio-IOL/1.0"
 # Ruta opcional del archivo de tokens
 IOL_TOKENS_FILE="tokens_iol.json"
