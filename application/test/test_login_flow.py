@@ -60,7 +60,7 @@ def test_service_build_iol_client_returns_error(monkeypatch):
     cli, error = svc_cache.build_iol_client()
 
     assert cli is None
-    assert error == "bad creds"
+    assert str(error) == "bad creds"
 
 
 def test_controller_build_iol_client_handles_error(monkeypatch):
@@ -69,13 +69,13 @@ def test_controller_build_iol_client_handles_error(monkeypatch):
     monkeypatch.setattr(st, "session_state", {})
     st.session_state["IOL_PASSWORD"] = "pass"
 
-    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, "bad creds"))
+    monkeypatch.setattr(auth, "_build_iol_client", lambda: (None, RuntimeError("bad creds")))
     monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
 
     auth.build_iol_client()
 
     assert st.session_state.get("force_login") is True
-    assert st.session_state.get("login_error") == "bad creds"
+    assert st.session_state.get("login_error") == "Error de conexión"
     assert st.session_state.get("IOL_PASSWORD") == ""
 
 
