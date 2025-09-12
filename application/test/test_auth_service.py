@@ -52,7 +52,10 @@ def test_logout_clears_only_auth_keys(monkeypatch):
     with patch("application.auth_service.IOLAuth") as mock_auth:
         auth_service.logout("user")
         mock_auth.assert_called_once_with(
-            "user", "", tokens_file=Path("tokens") / "user.json"
+            "user",
+            "",
+            tokens_file=Path("tokens") / "user.json",
+            allow_plain_tokens=False,
         )
         mock_auth.return_value.clear_tokens.assert_called_once()
     assert st.session_state == {"session_id": "A", "x": 1}

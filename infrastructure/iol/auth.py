@@ -46,6 +46,7 @@ class IOLAuth:
         path = Path(self.tokens_file or settings.tokens_file)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.chmod(0o700)
         except OSError as e:
             logger.exception("No se pudo crear directorio de tokens: %s", e)
         object.__setattr__(self, "tokens_file", path)
