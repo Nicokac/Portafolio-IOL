@@ -119,7 +119,7 @@ def fetch_portfolio(_cli: IIOLProvider):
             extra={"tokens_file": tokens_path},
         )
         if hasattr(st, "rerun"):
-            st.rerun()
+            getattr(st, "rerun", lambda: None)()
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
