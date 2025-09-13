@@ -303,11 +303,82 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     login.render_login_page()
     cli1 = ctrl_auth.build_iol_client()
     assert cli1 is dummy_cli
+    assert "IOL_PASSWORD" not in st.session_state
 
-    st.session_state["IOL_PASSWORD"] = ""
     cli2 = ctrl_auth.build_iol_client()
     assert cli2 is dummy_cli
+    assert "IOL_PASSWORD" not in st.session_state
 
     assert calls == ["", ""]
     assert len(login_calls) == 1
     assert tokens_path.exists()
+
+
+def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
+    from ui import login
+    from controllers import auth as ctrl_auth
+    from application import auth_service
+    from services import cache as svc_cache
+    from shared.cache import cache as app_cache
+
+    # simulate initial login
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    _prepare_login_form(monkeypatch)
+    monkeypatch.setattr(login.settings, "tokens_key", "k")
+
+    tokens_path = tmp_path / "tok.json"
+    dummy_cli = object()
+    calls: list[str] = []
+
+    def fake_get_client_cached(cache_key, user, password, tokens_file):
+        calls.append(password)
+        return dummy_cli
+
+    monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
+
+    class DummyAuth:
+        def login(self, u, p):
+            tokens_path.write_text("{}")
+            app_cache.set("tokens_file", str(tokens_path))
+            return {"access_token": "tok"}
+
+        def logout(self, u, p=""):
+            for key in ("IOL_USERNAME", "IOL_PASSWORD", "authenticated", "client_salt"):
+                st.session_state.pop(key, None)
+            app_cache.pop("tokens_file", None)
+
+        def build_client(self):
+            return svc_cache.build_iol_client()
+
+    monkeypatch.setattr(auth_service, "_provider", DummyAuth())
+
+    # login removes password
+    login.render_login_page()
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+
+    # build client uses token without password
+    cli1 = ctrl_auth.build_iol_client()
+    assert cli1 is dummy_cli
+    assert calls == [""]
+    assert "IOL_PASSWORD" not in st.session_state
+
+    # logout clears all credentials
+    auth_service.logout("u")
+    assert "IOL_USERNAME" not in st.session_state
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "authenticated" not in st.session_state
+    assert app_cache.get("tokens_file") is None
+
+    # relogin should not leave password in memory
+    st.session_state["IOL_USERNAME"] = "u"
+    st.session_state["IOL_PASSWORD_WIDGET"] = "p2"
+    _prepare_login_form(monkeypatch)
+    login.render_login_page()
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+
+    cli2 = ctrl_auth.build_iol_client()
+    assert cli2 is dummy_cli
+    assert calls == ["", ""]
+    assert "IOL_PASSWORD" not in st.session_state
