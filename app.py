@@ -49,12 +49,9 @@ def main(argv: list[str] | None = None):
         render_login_page()
         st.stop()
 
-    user = st.session_state.get("IOL_USERNAME")
-    password = st.session_state.get("IOL_PASSWORD")
     if not st.session_state.get("authenticated"):
-        if not user or not password:
-            render_login_page()
-            st.stop()
+        render_login_page()
+        st.stop()
 
     fx_rates, fx_error = get_fx_rates_cached()
     if fx_error:

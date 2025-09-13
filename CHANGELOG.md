@@ -8,3 +8,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Security
 - Improved authentication flow and strengthened token handling.
+### Fixed
+- Successful login now marks the session as authenticated to access the main page.
