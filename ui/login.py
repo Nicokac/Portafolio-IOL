@@ -38,38 +38,43 @@ def render_login_page() -> None:
 
     with st.form("login_form"):
         st.text_input("Usuario", key="IOL_USERNAME")
-        st.text_input("Contraseña", type="password", key="IOL_PASSWORD_WIDGET")
+        password = st.text_input("Contraseña", type="password")
         submitted = st.form_submit_button("Iniciar sesión")
         render_footer()
 
     if submitted:
         user = st.session_state.get("IOL_USERNAME", "")
-        password = st.session_state.get("IOL_PASSWORD_WIDGET", "")
         provider = get_auth_provider()
+
+        def _clear_password_keys() -> None:
+            for key in list(st.session_state.keys()):
+                if "password" in key.lower():
+                    st.session_state.pop(key, None)
+
         try:
             provider.login(user, password)
             st.session_state["authenticated"] = True
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
-            st.session_state.pop("IOL_PASSWORD_WIDGET", None)
+            _clear_password_keys()
             st.rerun()
         except InvalidCredentialsError:
             logger.warning("Fallo de autenticación")
             st.session_state["login_error"] = "Usuario o contraseña inválidos"
-            st.session_state.pop("IOL_PASSWORD_WIDGET", None)
+            _clear_password_keys()
             st.rerun()
         except NetworkError:
             logger.warning("Error de conexión durante el login")
             st.session_state["login_error"] = "Error de conexión"
-            st.session_state.pop("IOL_PASSWORD_WIDGET", None)
+            _clear_password_keys()
             st.rerun()
         except RuntimeError as e:
             logger.exception("Error durante el login: %s", e)
             st.session_state["login_error"] = str(e)
-            st.session_state.pop("IOL_PASSWORD_WIDGET", None)
+            _clear_password_keys()
             st.rerun()
         except Exception:
             logger.exception("Error inesperado durante el login")
             st.session_state["login_error"] = "Error inesperado, contacte soporte"
-            st.session_state.pop("IOL_PASSWORD_WIDGET", None)
+            _clear_password_keys()
             st.rerun()

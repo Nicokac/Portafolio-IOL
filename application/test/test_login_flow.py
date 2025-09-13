@@ -139,7 +139,7 @@ def _prepare_login_form(monkeypatch, submitted=True):
 def test_render_login_page_handles_invalid_credentials(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -151,14 +151,13 @@ def test_render_login_page_handles_invalid_credentials(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
 
 def test_render_login_page_handles_network_error(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -170,14 +169,13 @@ def test_render_login_page_handles_network_error(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "Error de conexión"
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
 
 def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -189,8 +187,7 @@ def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "no key"
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
 def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_path):
     from ui import login
@@ -198,7 +195,7 @@ def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_
     from application import auth_service
     from shared.cache import cache as app_cache
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -227,14 +224,14 @@ def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_
     cli = ctrl_auth.build_iol_client()
 
     assert cli is dummy_cli
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
 
 def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
     from ui import login
     from application import auth_service
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -257,8 +254,7 @@ def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
 
     assert not tokens_path.exists()
     assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
 
 def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
@@ -268,7 +264,7 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     from services import cache as svc_cache
     from shared.cache import cache as app_cache
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -303,11 +299,11 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     login.render_login_page()
     cli1 = ctrl_auth.build_iol_client()
     assert cli1 is dummy_cli
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
     cli2 = ctrl_auth.build_iol_client()
     assert cli2 is dummy_cli
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
     assert calls == [str(tokens_path), str(tokens_path)]
     assert len(login_calls) == 1
@@ -322,7 +318,8 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
     from shared.cache import cache as app_cache
 
     # simulate initial login
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    # simulate initial login
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -354,32 +351,30 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
 
     # login removes password
     login.render_login_page()
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
     # build client uses token without password
     cli1 = ctrl_auth.build_iol_client()
     assert cli1 is dummy_cli
     assert calls == [str(tokens_path)]
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
     # logout clears all credentials
     monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     auth_service.logout("u")
     assert "IOL_USERNAME" not in st.session_state
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
     assert "authenticated" not in st.session_state
     assert app_cache.get("tokens_file") is None
 
     # relogin should not leave password in memory
     st.session_state["IOL_USERNAME"] = "u"
-    st.session_state["IOL_PASSWORD_WIDGET"] = "p2"
+    st.session_state["some_password"] = "p2"
     _prepare_login_form(monkeypatch)
     login.render_login_page()
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
 
     cli2 = ctrl_auth.build_iol_client()
     assert cli2 is dummy_cli
     assert calls == [str(tokens_path), str(tokens_path)]
-    assert "IOL_PASSWORD" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)

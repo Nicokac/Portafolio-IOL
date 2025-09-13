@@ -58,11 +58,12 @@ def test_login_logout_and_relogin(monkeypatch):
     login_mod = importlib.import_module("ui.login")
     monkeypatch.setattr(login_mod, "get_auth_provider", lambda: provider)
 
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.session_state.update({"IOL_USERNAME": "u", "some_password": "p"})
     st.rerun.side_effect = RuntimeError("rerun")
     with pytest.raises(RuntimeError):
         login_mod.render_login_page()
     st.session_state.pop("login_error", None)
+    assert not any("password" in k.lower() for k in st.session_state)
 
     st.rerun = MagicMock()
     sys.modules.pop("app", None)
@@ -89,10 +90,11 @@ def test_login_logout_and_relogin(monkeypatch):
     for key in ("session_id", "authenticated", "tokens"):
         assert key not in st.session_state
 
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.session_state.update({"IOL_USERNAME": "u", "some_password": "p"})
     st.rerun.side_effect = RuntimeError("rerun")
     with pytest.raises(RuntimeError):
         login_mod.render_login_page()
+    assert not any("password" in k.lower() for k in st.session_state)
 
     st.rerun = MagicMock()
     app.main()
