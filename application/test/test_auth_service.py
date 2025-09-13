@@ -18,7 +18,7 @@ def test_login_success(monkeypatch):
         assert tokens["access_token"] == "tok"
         assert "client_salt" in st.session_state
         assert len(st.session_state["client_salt"]) == 32
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
             user,
@@ -37,7 +37,7 @@ def test_login_invalid_raises(monkeypatch):
         with pytest.raises(AuthenticationError):
             auth_service.login(user, "p")
         assert "client_salt" not in st.session_state
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
             user,
@@ -64,7 +64,7 @@ def test_logout_clears_session_state(monkeypatch):
     with patch("application.auth_service.IOLAuth") as mock_auth:
         user = "user"
         auth_service.logout(user)
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         expected = Path("tokens") / f"{user}-{user_hash}.json"
         mock_auth.assert_called_once_with(
             "user",

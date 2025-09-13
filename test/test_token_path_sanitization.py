@@ -41,7 +41,7 @@ def test_login_and_logout_sanitize_token_path(monkeypatch):
     provider.logout(user, 'p')
 
     sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
-    user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+    user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
     expected = Path('tokens') / f"{sanitized}-{user_hash}.json"
     assert captured['paths'][0] == expected
     assert captured['paths'][1] == expected
@@ -71,6 +71,6 @@ def test_build_iol_client_sanitizes_token_path(monkeypatch):
     cli, err = cache_module.build_iol_client()
     assert err is None
     sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", 'ab?c')
-    user_hash = hashlib.sha256('ab?c'.encode()).hexdigest()[:8]
+    user_hash = hashlib.sha256('ab?c'.encode()).hexdigest()[:12]
     expected = Path('tokens') / f"{sanitized}-{user_hash}.json"
     assert captured['tokens_file'] == expected

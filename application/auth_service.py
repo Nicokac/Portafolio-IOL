@@ -38,7 +38,7 @@ class IOLAuthenticationProvider(AuthenticationProvider):
 
     def login(self, user: str, password: str) -> dict:
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_path = Path("tokens") / f"{sanitized}-{user_hash}.json"
         cache.set("tokens_file", str(tokens_path))
         tokens = IOLAuth(
@@ -53,7 +53,7 @@ class IOLAuthenticationProvider(AuthenticationProvider):
 
     def logout(self, user: str, password: str = "") -> None:
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:8]
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_path = Path("tokens") / f"{sanitized}-{user_hash}.json"
         try:
             IOLAuth(

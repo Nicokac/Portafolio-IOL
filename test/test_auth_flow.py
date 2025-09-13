@@ -68,7 +68,7 @@ def test_initial_login_generates_tokens(monkeypatch):
 
     tokens = auth_service.login("user", "pass")
     assert tokens["access_token"] == "a1"
-    user_hash = hashlib.sha256("user".encode()).hexdigest()[:8]
+    user_hash = hashlib.sha256("user".encode()).hexdigest()[:12]
     path = Path("tokens") / f"user-{user_hash}.json"
     assert DummyAuth.FILES[path] == tokens
 
@@ -144,7 +144,7 @@ def test_logout_clears_tokens_and_allows_clean_login(monkeypatch):
     monkeypatch.setattr(auth_service, "IOLAuth", DummyAuth)
 
     tokens1 = auth_service.login("user", "pass")
-    user_hash = hashlib.sha256("user".encode()).hexdigest()[:8]
+    user_hash = hashlib.sha256("user".encode()).hexdigest()[:12]
     path = Path("tokens") / f"user-{user_hash}.json"
     assert DummyAuth.FILES[path] == tokens1
 
