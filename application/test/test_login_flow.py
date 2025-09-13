@@ -139,7 +139,7 @@ def _prepare_login_form(monkeypatch, submitted=True):
 def test_render_login_page_handles_invalid_credentials(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -151,13 +151,14 @@ def test_render_login_page_handles_invalid_credentials(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
-    assert st.session_state.get("IOL_PASSWORD") == ""
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
 
 
 def test_render_login_page_handles_network_error(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -169,13 +170,14 @@ def test_render_login_page_handles_network_error(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "Error de conexión"
-    assert st.session_state.get("IOL_PASSWORD") == ""
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
 
 
 def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     from ui import login
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
 
     class DummyProvider:
@@ -187,7 +189,8 @@ def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "no key"
-    assert st.session_state.get("IOL_PASSWORD") == ""
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
 
 def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_path):
     from ui import login
@@ -195,7 +198,7 @@ def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_
     from application import auth_service
     from shared.cache import cache as app_cache
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -231,7 +234,7 @@ def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
     from ui import login
     from application import auth_service
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
@@ -254,7 +257,8 @@ def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
 
     assert not tokens_path.exists()
     assert st.session_state.get("login_error") == "Usuario o contraseña inválidos"
-    assert st.session_state.get("IOL_PASSWORD") == ""
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
 
 
 def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
@@ -264,7 +268,7 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     from services import cache as svc_cache
     from shared.cache import cache as app_cache
 
-    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
     _prepare_login_form(monkeypatch)
     monkeypatch.setattr(login.settings, "tokens_key", "k")
 
