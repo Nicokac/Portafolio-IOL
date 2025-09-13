@@ -34,9 +34,10 @@ def test_logout_forces_login_page(monkeypatch):
         def fake_logout(*a, **k):
             st.session_state.clear()
             st.session_state["force_login"] = True
+
         mock_logout.side_effect = fake_logout
         render_action_menu()
-        mock_logout.assert_called_once_with("user")
+        mock_logout.assert_called_once_with()
 
     assert st.session_state.get("force_login") is True
 
