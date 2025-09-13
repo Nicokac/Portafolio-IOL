@@ -26,17 +26,17 @@ def test_get_client_cached_is_session_isolated(monkeypatch):
     monkeypatch.setattr(svc_cache, "_build_iol_client", dummy_build)
 
     st.session_state["session_id"] = "A"
-    first = svc_cache.get_client_cached("k", "u", "", None)
-    again = svc_cache.get_client_cached("k", "u", "", None)
+    first = svc_cache.get_client_cached("k", "u", None)
+    again = svc_cache.get_client_cached("k", "u", None)
     assert first is again
 
     st.session_state["session_id"] = "B"
-    other = svc_cache.get_client_cached("k", "u", "", None)
+    other = svc_cache.get_client_cached("k", "u", None)
     assert other is not first
 
     st.session_state["session_id"] = "A"
     svc_cache.get_client_cached.clear("k")
-    rebuilt = svc_cache.get_client_cached("k", "u", "", None)
+    rebuilt = svc_cache.get_client_cached("k", "u", None)
     assert rebuilt is not first
 
     assert len(created) == 3
@@ -102,7 +102,7 @@ def test_get_client_cached_invalid_credentials(monkeypatch):
     monkeypatch.setattr(svc_cache, "IOLAuth", DummyAuth)
 
     with pytest.raises(InvalidCredentialsError):
-        svc_cache.get_client_cached("k", "u", "", None)
+        svc_cache.get_client_cached("k", "u", None)
 
     assert st.session_state["force_login"] is True
     assert cleared["called"] is True

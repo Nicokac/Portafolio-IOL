@@ -9,7 +9,6 @@ def test_theme_change_reuses_client(monkeypatch):
         {
             "session_id": "A",
             "IOL_USERNAME": "user",
-            "IOL_PASSWORD": "pass",
             "authenticated": True,
             "client_salt": "s",
             "ui_theme": "light",

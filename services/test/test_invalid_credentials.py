@@ -31,21 +31,18 @@ def test_get_client_cached_clears_tokens_and_raises(monkeypatch):
     svc_cache.get_client_cached.clear()
 
     with pytest.raises(InvalidCredentialsError):
-        svc_cache.get_client_cached("k", "u", "", None)
+        svc_cache.get_client_cached("k", "u", None)
 
     assert cleared["called"] is True
     assert built["called"] is False
 
 
 def test_build_iol_client_triggers_logout(monkeypatch):
-    state = {"IOL_USERNAME": "u", "IOL_PASSWORD": "p"}
+    state = {"IOL_USERNAME": "u"}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
     monkeypatch.setattr("shared.cache.st", SimpleNamespace(session_state=state))
 
-    captured = {"password": None}
-
-    def dummy_get_client_cached(cache_key, user, password, tokens_file):
-        captured["password"] = password
+    def dummy_get_client_cached(cache_key, user, tokens_file):
         raise InvalidCredentialsError()
 
     monkeypatch.setattr(svc_cache, "get_client_cached", dummy_get_client_cached)
@@ -64,18 +61,17 @@ def test_build_iol_client_triggers_logout(monkeypatch):
     assert isinstance(err, InvalidCredentialsError)
     assert logout_called["user"] == "u"
     assert state.get("force_login") is True
-    assert captured["password"] == "p"
 
 
 def test_get_client_cached_refresh_login_attempt(monkeypatch):
     state = {}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
     monkeypatch.setattr("shared.cache.st", SimpleNamespace(session_state=state))
-    called = {"login": False, "password": None}
+    called = {"login": False}
 
     class DummyAuth:
         def __init__(self, user, password, tokens_file=None, allow_plain_tokens=False):
-            called["password"] = password
+            pass
 
         def refresh(self):
             raise InvalidCredentialsError()
@@ -91,7 +87,6 @@ def test_get_client_cached_refresh_login_attempt(monkeypatch):
     svc_cache.get_client_cached.clear()
 
     with pytest.raises(InvalidCredentialsError):
-        svc_cache.get_client_cached("k", "u", "pw", None)
+        svc_cache.get_client_cached("k", "u", None)
 
-    assert called["login"] is True
-    assert called["password"] == "pw"
+    assert called["login"] is False

@@ -33,7 +33,7 @@ def test_logout_forces_login_page(monkeypatch):
     with patch("ui.actions.auth_service.logout") as mock_logout:
         mock_logout.side_effect = lambda *a, **k: st.session_state.clear()
         render_action_menu()
-        mock_logout.assert_called_once_with("user", "")
+        mock_logout.assert_called_once_with("user")
 
     assert st.session_state.get("force_login") is True
 
@@ -50,9 +50,8 @@ def test_service_build_iol_client_returns_error(monkeypatch):
 
     monkeypatch.setattr(st, "session_state", {})
     st.session_state["IOL_USERNAME"] = "user"
-    st.session_state["IOL_PASSWORD"] = "pass"
 
-    def boom(*args, **kwargs):
+    def boom(cache_key, user, tokens_file):
         raise RuntimeError("bad creds")
 
     monkeypatch.setattr(svc_cache, "get_client_cached", boom)
@@ -67,7 +66,6 @@ def test_controller_build_iol_client_handles_error(monkeypatch):
     from controllers import auth
 
     monkeypatch.setattr(st, "session_state", {})
-    st.session_state["IOL_PASSWORD"] = "pass"
 
     class DummyProvider:
         def build_client(self):
@@ -87,7 +85,6 @@ def test_controller_build_iol_client_success_clears_password(monkeypatch):
     from controllers import auth
 
     monkeypatch.setattr(st, "session_state", {})
-    st.session_state["IOL_PASSWORD"] = "pass"
 
     dummy_cli = object()
 
@@ -276,8 +273,8 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     dummy_cli = object()
     calls: list[str] = []
 
-    def fake_get_client_cached(cache_key, user, password, tokens_file):
-        calls.append(password)
+    def fake_get_client_cached(cache_key, user, tokens_file):
+        calls.append(tokens_file)
         return dummy_cli
 
     monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
@@ -309,7 +306,7 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
     assert cli2 is dummy_cli
     assert "IOL_PASSWORD" not in st.session_state
 
-    assert calls == ["", ""]
+    assert calls == [str(tokens_path), str(tokens_path)]
     assert len(login_calls) == 1
     assert tokens_path.exists()
 
@@ -330,8 +327,8 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
     dummy_cli = object()
     calls: list[str] = []
 
-    def fake_get_client_cached(cache_key, user, password, tokens_file):
-        calls.append(password)
+    def fake_get_client_cached(cache_key, user, tokens_file):
+        calls.append(tokens_file)
         return dummy_cli
 
     monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
@@ -360,7 +357,7 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
     # build client uses token without password
     cli1 = ctrl_auth.build_iol_client()
     assert cli1 is dummy_cli
-    assert calls == [""]
+    assert calls == [str(tokens_path)]
     assert "IOL_PASSWORD" not in st.session_state
 
     # logout clears all credentials
@@ -380,5 +377,5 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
 
     cli2 = ctrl_auth.build_iol_client()
     assert cli2 is dummy_cli
-    assert calls == ["", ""]
+    assert calls == [str(tokens_path), str(tokens_path)]
     assert "IOL_PASSWORD" not in st.session_state

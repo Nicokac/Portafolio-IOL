@@ -80,11 +80,11 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
 
 @cache.cache_resource
 def get_client_cached(
-    cache_key: str, user: str, password: str, tokens_file: Path | str | None
+    cache_key: str, user: str, tokens_file: Path | str | None
 ) -> IIOLProvider:
     auth = IOLAuth(
         user,
-        password,
+        "",
         tokens_file=tokens_file,
         allow_plain_tokens=settings.allow_plain_tokens,
     )
@@ -93,13 +93,8 @@ def get_client_cached(
     except InvalidCredentialsError as e:
         auth.clear_tokens()
         st.session_state["force_login"] = True
-        if password:
-            try:
-                auth.login()
-            except Exception:
-                pass
         raise e
-    return _build_iol_client(user, password, tokens_file=tokens_file, auth=auth)
+    return _build_iol_client(user, "", tokens_file=tokens_file, auth=auth)
 
 
 @cache.cache_data(ttl=settings.cache_ttl_portfolio)
@@ -232,9 +227,7 @@ def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
     ).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
-        cli = get_client_cached(
-            cache_key, user, st.session_state.get("IOL_PASSWORD", ""), tokens_file
-        )
+        cli = get_client_cached(cache_key, user, tokens_file)
         return cli, None
     except InvalidCredentialsError as e:
         _trigger_logout()

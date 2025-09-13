@@ -49,13 +49,13 @@ def test_build_iol_client_sanitizes_token_path(monkeypatch):
     from shared import cache as shared_cache
 
     st = SimpleNamespace(session_state={})
-    st.session_state.update({'IOL_USERNAME': 'ab?c', 'IOL_PASSWORD': 'p'})
+    st.session_state.update({'IOL_USERNAME': 'ab?c'})
     monkeypatch.setattr(cache_module, 'st', st)
     monkeypatch.setattr(shared_cache, 'st', st)
 
     captured = {}
 
-    def dummy_get_client_cached(cache_key, user, password, tokens_file):
+    def dummy_get_client_cached(cache_key, user, tokens_file):
         captured['tokens_file'] = tokens_file
         class DummyClient:
             pass

@@ -7,7 +7,6 @@ from application import auth_service
 def render_action_menu() -> None:
     """Render refresh and logout actions in a compact popover."""
     user = st.session_state.get("IOL_USERNAME")
-    password = st.session_state.get("IOL_PASSWORD")
 
     pop = st.popover("⚙️ Acciones")
     with pop:
@@ -30,7 +29,7 @@ def render_action_menu() -> None:
         err = ""
         with st.spinner("Cerrando sesión..."):
             try:
-                auth_service.logout(user or "", password or "")
+                auth_service.logout(user or "")
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
