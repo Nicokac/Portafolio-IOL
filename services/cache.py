@@ -209,6 +209,7 @@ def get_fx_rates_cached():
 def build_iol_client(
     user: str | None = None,
 ) -> tuple[IIOLProvider | None, Exception | None]:
+    user = user or st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
     if "client_salt" not in st.session_state:
         st.session_state["client_salt"] = uuid4().hex
     salt = str(st.session_state.get("client_salt", ""))

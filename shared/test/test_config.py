@@ -35,7 +35,8 @@ def test_get_config_sanitizes_types(monkeypatch, tmp_path):
     assert data["classification_patterns"] == {}
 
 def test_secrets_take_priority(monkeypatch):
-    monkeypatch.setattr(st, "secrets", {"IOL_USERNAME": "secret"})
+    st_stub = types.SimpleNamespace(secrets={"IOL_USERNAME": "secret"})
+    monkeypatch.setitem(sys.modules, "streamlit", st_stub)
     monkeypatch.setenv("IOL_USERNAME", "env")
     config = importlib.reload(importlib.import_module("shared.config"))
     assert config.settings.IOL_USERNAME == "secret"

@@ -14,6 +14,7 @@ def test_theme_change_reuses_client(monkeypatch):
             "ui_theme": "light",
         }
     )
+    monkeypatch.setattr(svc_cache, "st", st)
 
     created = []
 

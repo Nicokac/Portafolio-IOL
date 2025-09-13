@@ -52,7 +52,7 @@ class IOLAuthenticationProvider(AuthenticationProvider):
             raise AuthenticationError("Credenciales inválidas")
         return tokens
 
-    def logout(self, user: str | None = None, password: str = "") -> None:
+    def logout(self, user: str = "", password: str = "") -> None:
         user = user or getattr(self, "_user", "")
         tokens_file = cache.get("tokens_file")
         if user:
@@ -138,9 +138,10 @@ def login(user: str, password: str) -> dict:
     return tokens
 
 
-def logout(user: str | None = None, password: str = "") -> None:
+def logout(user: str = "", password: str = "") -> None:
     """Wrapper para el logout utilizando el proveedor registrado."""
 
+    user = user or st.session_state.get("IOL_USERNAME", "")
     try:
         _provider.logout(user, password)
     except Exception as e:  # pragma: no cover - defensive
