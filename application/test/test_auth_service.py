@@ -47,7 +47,7 @@ def test_login_invalid_raises(monkeypatch):
         )
 
 
-def test_logout_clears_only_auth_keys(monkeypatch):
+def test_logout_clears_session_state(monkeypatch):
     monkeypatch.setattr(
         st,
         "session_state",
@@ -72,21 +72,32 @@ def test_logout_clears_only_auth_keys(monkeypatch):
             allow_plain_tokens=False,
         )
         mock_auth.return_value.clear_tokens.assert_called_once()
-    assert st.session_state == {"session_id": "A", "x": 1}
+    assert st.session_state == {}
 
-def test_logout_is_session_isolated(monkeypatch):
-    other = {"data": 42}
-    monkeypatch.setattr(
-        st,
-        "session_state",
-        {
-            "session_id": "A",
-            "IOL_USERNAME": "user",
-            "authenticated": True,
-            "other": other,
-        },
-    )
+
+def test_logout_generates_new_session_id(monkeypatch):
+    from types import SimpleNamespace
+    import app
+
+    monkeypatch.setattr(st, "session_state", {"session_id": "old"})
     with patch("application.auth_service.IOLAuth"):
         auth_service.logout("user")
-    assert st.session_state.get("other") is other
-    assert "IOL_USERNAME" not in st.session_state
+    assert st.session_state == {}
+
+    monkeypatch.setattr(app, "render_login_page", lambda: None)
+    monkeypatch.setattr(app, "render_header", lambda *a, **k: None)
+    monkeypatch.setattr(app, "render_action_menu", lambda: None)
+    monkeypatch.setattr(app, "render_footer", lambda: None)
+    monkeypatch.setattr(app, "render_portfolio_section", lambda *a, **k: None)
+    monkeypatch.setattr(app, "get_fx_rates_cached", lambda: (None, None))
+    monkeypatch.setattr(app, "build_iol_client", lambda: object())
+    monkeypatch.setattr(app, "configure_logging", lambda level=None, json_format=None: None)
+    monkeypatch.setattr(app, "ensure_tokens_key", lambda: None)
+    monkeypatch.setattr(app, "_parse_args", lambda argv: SimpleNamespace(log_level=None, log_format=None))
+    monkeypatch.setattr(app, "uuid4", lambda: SimpleNamespace(hex="new_session"))
+    monkeypatch.setattr(st, "stop", lambda: (_ for _ in ()).throw(SystemExit))
+
+    with pytest.raises(SystemExit):
+        app.main([])
+
+    assert st.session_state.get("session_id") == "new_session"
