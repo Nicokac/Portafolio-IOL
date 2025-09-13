@@ -49,7 +49,7 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
 
 def test_build_iol_client_handles_network_error(monkeypatch):
-    mock_st = SimpleNamespace(session_state={"IOL_USERNAME": "u", "IOL_PASSWORD": "p"})
+    mock_st = SimpleNamespace(session_state={"IOL_USERNAME": "u"})
     monkeypatch.setattr(cache, "st", mock_st)
 
     class DummyAuth:

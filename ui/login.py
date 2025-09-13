@@ -45,37 +45,31 @@ def render_login_page() -> None:
     if submitted:
         user = st.session_state.get("IOL_USERNAME", "")
         password = st.session_state.get("IOL_PASSWORD_WIDGET", "")
-        st.session_state["IOL_PASSWORD"] = password
         provider = get_auth_provider()
         try:
             provider.login(user, password)
             st.session_state["authenticated"] = True
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
-            st.session_state.pop("IOL_PASSWORD", None)
             st.session_state.pop("IOL_PASSWORD_WIDGET", None)
             st.rerun()
         except InvalidCredentialsError:
             logger.warning("Fallo de autenticación")
             st.session_state["login_error"] = "Usuario o contraseña inválidos"
-            st.session_state.pop("IOL_PASSWORD", None)
             st.session_state.pop("IOL_PASSWORD_WIDGET", None)
             st.rerun()
         except NetworkError:
             logger.warning("Error de conexión durante el login")
             st.session_state["login_error"] = "Error de conexión"
-            st.session_state.pop("IOL_PASSWORD", None)
             st.session_state.pop("IOL_PASSWORD_WIDGET", None)
             st.rerun()
         except RuntimeError as e:
             logger.exception("Error durante el login: %s", e)
             st.session_state["login_error"] = str(e)
-            st.session_state.pop("IOL_PASSWORD", None)
             st.session_state.pop("IOL_PASSWORD_WIDGET", None)
             st.rerun()
         except Exception:
             logger.exception("Error inesperado durante el login")
             st.session_state["login_error"] = "Error inesperado, contacte soporte"
-            st.session_state.pop("IOL_PASSWORD", None)
             st.session_state.pop("IOL_PASSWORD_WIDGET", None)
             st.rerun()

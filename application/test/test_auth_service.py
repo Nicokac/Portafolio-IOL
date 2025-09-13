@@ -54,7 +54,6 @@ def test_logout_clears_only_auth_keys(monkeypatch):
         {
             "session_id": "A",
             "IOL_USERNAME": "user",
-            "IOL_PASSWORD": "pass",
             "authenticated": True,
             "client_salt": "s",
             "tokens_file": "foo",
