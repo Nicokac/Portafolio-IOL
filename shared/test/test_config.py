@@ -50,9 +50,9 @@ def test_env_used_when_no_secret(monkeypatch):
 
 
 def test_env_used_when_secrets_missing(monkeypatch):
-    # st.secrets.get should raise StreamlitSecretNotFoundError
+    # st.secrets[key] should raise StreamlitSecretNotFoundError
     class Secrets:
-        def get(self, key):
+        def __getitem__(self, key):
             config = importlib.import_module("shared.config")
             raise config.StreamlitSecretNotFoundError("no secrets")
 

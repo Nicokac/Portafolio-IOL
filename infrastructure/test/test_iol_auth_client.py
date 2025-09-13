@@ -1,11 +1,13 @@
 import json
+import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
 from cryptography.fernet import Fernet
 
 from infrastructure.iol.client import IOLClientAdapter
 
-
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="chmod not supported on Windows")
 def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
     tokens_path = tmp_path / "tokens.json"
     mock_resp = MagicMock()

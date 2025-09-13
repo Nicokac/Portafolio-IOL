@@ -45,19 +45,8 @@ class Settings:
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
-        # def secret_or_env(key: str, default: Any | None = None) -> Any | None:
-        #     val = None
-        #     try:
-        #         val = st.secrets.get(key)
-        #     except (StreamlitSecretNotFoundError, AttributeError):
-        #         val = None
-        #     if val is None:
-        #         return os.getenv(key, default)
-        #     return val
 
         # --- Credenciales IOL ---
-        # self.IOL_USERNAME: str | None = secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
-        # self.IOL_PASSWORD: str | None = secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
 
@@ -95,14 +84,10 @@ class Settings:
         self.LOG_FORMAT: str = os.getenv("LOG_FORMAT", cfg.get("LOG_FORMAT", "plain")).lower()
 
     def secret_or_env(self, key: str, default: Any | None = None) -> Any | None:
-        val = None
         try:
-            val = st.secrets.get(key)
-        except (StreamlitSecretNotFoundError, AttributeError):
-            val = None
-        if val is None:
+            return st.secrets[key]
+        except (KeyError, StreamlitSecretNotFoundError, AttributeError):
             return os.getenv(key, default)
-        return val
 
 settings = Settings()
 
