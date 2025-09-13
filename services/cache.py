@@ -35,7 +35,7 @@ def _trigger_logout() -> None:
         auth_service.logout(user)
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("auto logout failed: %s", e)
-    st.session_state["force_login"] = True
+        raise
 
 
 def _normalize_quote(raw: dict) -> dict:
@@ -68,7 +68,6 @@ def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
         except Exception:
             pass
         _trigger_logout()
-        st.rerun()
         data = {"last": None, "chg_pct": None}
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
@@ -113,8 +112,6 @@ def fetch_portfolio(_cli: IIOLProvider):
             "fetch_portfolio using cache due to invalid credentials",
             extra={"tokens_file": tokens_path},
         )
-        if hasattr(st, "rerun"):
-            getattr(st, "rerun", lambda: None)()
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
@@ -149,7 +146,6 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         except Exception:
             pass
         _trigger_logout()
-        st.rerun()
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)

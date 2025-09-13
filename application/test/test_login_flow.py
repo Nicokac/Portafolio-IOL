@@ -31,7 +31,10 @@ def test_logout_forces_login_page(monkeypatch):
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
 
     with patch("ui.actions.auth_service.logout") as mock_logout:
-        mock_logout.side_effect = lambda *a, **k: st.session_state.clear()
+        def fake_logout(*a, **k):
+            st.session_state.clear()
+            st.session_state["force_login"] = True
+        mock_logout.side_effect = fake_logout
         render_action_menu()
         mock_logout.assert_called_once_with("user")
 
@@ -361,6 +364,7 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
     assert "IOL_PASSWORD" not in st.session_state
 
     # logout clears all credentials
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     auth_service.logout("u")
     assert "IOL_USERNAME" not in st.session_state
     assert "IOL_PASSWORD" not in st.session_state

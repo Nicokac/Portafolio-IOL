@@ -58,6 +58,12 @@ def test_repeated_401_forces_login(monkeypatch):
     svc_cache.st = SimpleNamespace(session_state={}, rerun=rerun)
     svc_cache.fetch_portfolio.clear()
 
+    def dummy_logout(user, password=""):
+        svc_cache.st.session_state["force_login"] = True
+        svc_cache.st.rerun()
+
+    monkeypatch.setattr("application.auth_service.logout", dummy_logout)
+
     with pytest.raises(RuntimeError, match="rerun"):
         svc_cache.fetch_portfolio(cli)
 

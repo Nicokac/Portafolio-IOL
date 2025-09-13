@@ -148,9 +148,11 @@ def test_logout_clears_tokens_and_allows_clean_login(monkeypatch):
     path = Path("tokens") / f"user-{user_hash}.json"
     assert DummyAuth.FILES[path] == tokens1
 
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     auth_service.logout("user")
     assert path not in DummyAuth.FILES
-    assert st.session_state == {}
+    assert st.session_state.get("force_login") is True
+    assert st.session_state.get("logout_done") is True
 
     tokens2 = auth_service.login("user", "pass")
     assert tokens2["access_token"] == "a2"

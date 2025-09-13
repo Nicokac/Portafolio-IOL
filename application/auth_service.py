@@ -7,6 +7,7 @@ from typing import Protocol, Tuple, Any
 import re
 import hashlib
 from uuid import uuid4
+import logging
 
 import streamlit as st
 
@@ -122,5 +123,14 @@ def login(user: str, password: str) -> dict:
 def logout(user: str, password: str = "") -> None:
     """Wrapper para el logout utilizando el proveedor registrado."""
 
-    _provider.logout(user, password)
+    try:
+        _provider.logout(user, password)
+    except Exception as e:  # pragma: no cover - defensive
+        logging.getLogger(__name__).warning("Error al limpiar tokens: %s", e)
+        st.session_state["logout_error"] = str(e)
+    else:
+        st.session_state["logout_done"] = True
+    finally:
+        st.session_state["force_login"] = True
+        st.rerun()
 
