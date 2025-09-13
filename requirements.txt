@@ -8,6 +8,8 @@ plotly==6.3.0
 kaleido==1.1.0
 # Utilidades varias
 cryptography==41.0.3
+pytest==8.4.2
+pytest-cov==7.0.0
 # Dependencias obligatorias para datos e indicadores técnicos
 yfinance==0.2.65
 ta==0.11.0
