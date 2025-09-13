@@ -76,6 +76,40 @@ def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
     )
 
 
+def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
+    monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: {})
+    monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
+    warn_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "warning", warn_mock)
+    monkeypatch.setattr(load_mod.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "error", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "dataframe", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "stop", lambda: None)
+    monkeypatch.setattr(load_mod.st, "session_state", {"force_login": True}, raising=False)
+
+    class RerunCalled(Exception):
+        pass
+
+    def rerun():
+        raise RerunCalled()
+
+    monkeypatch.setattr(load_mod.st, "rerun", rerun)
+
+    class DummyPSvc:
+        def normalize_positions(self, payload):
+            return pd.DataFrame()
+
+        def classify_asset_cached(self, sym):
+            return None
+
+    with pytest.raises(RerunCalled):
+        pm.load_portfolio_data(None, DummyPSvc())
+
+    warn_mock.assert_called_once_with(
+        "Sesión expirada, por favor vuelva a iniciar sesión"
+    )
+
+
 def test_load_portfolio_data_shows_generic_error(monkeypatch):
     def boom(cli):
         raise ValueError("detalle interno")
