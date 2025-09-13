@@ -11,3 +11,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed password from in-memory session state; authentication relies solely on local variables and tokens.
 ### Fixed
 - Successful login now marks the session as authenticated to access the main page.
+### Tests
+- Added tests verifying login reruns for valid, invalid, and expired sessions.
