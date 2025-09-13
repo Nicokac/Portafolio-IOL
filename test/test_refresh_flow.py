@@ -2,6 +2,9 @@ import requests
 import streamlit as st
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+import json
+import time
+import pytest
 
 
 def test_refresh_flow_uses_refresh_token(monkeypatch):
@@ -141,3 +144,28 @@ def test_login_refresh_valid_then_invalid(monkeypatch):
 
     assert svc_cache.st.session_state.get("force_login") is True
     assert cli.auth.tokens == {}
+
+
+def test_refresh_clears_tokens_file_on_invalid_credentials(tmp_path, monkeypatch):
+    from infrastructure.iol import auth as auth_mod
+
+    auth_mod.FERNET = None
+    IOLAuth = auth_mod.IOLAuth
+    InvalidCredentialsError = auth_mod.InvalidCredentialsError
+
+    tokens_path = tmp_path / "tokens.json"
+    tokens_path.write_text(
+        json.dumps({"refresh_token": "r", "access_token": "a", "timestamp": int(time.time())})
+    )
+    auth = IOLAuth("u", "p", tokens_file=tokens_path, allow_plain_tokens=True)
+
+    class Resp:
+        status_code = 401
+        text = "bad"
+
+    monkeypatch.setattr(auth.session, "post", lambda *args, **kwargs: Resp())
+
+    with pytest.raises(InvalidCredentialsError):
+        auth.refresh()
+
+    assert not tokens_path.exists()

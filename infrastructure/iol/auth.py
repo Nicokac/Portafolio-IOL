@@ -189,6 +189,7 @@ class IOLAuth:
                     r.text,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
+                self.clear_tokens()
                 raise InvalidCredentialsError("Credenciales inválidas")
             try:
                 r.raise_for_status()
