@@ -70,6 +70,7 @@ def test_build_iol_client_sanitizes_token_path(monkeypatch):
 
     cache_module.cache.pop('tokens_file', None)
 
+    st.session_state["IOL_USERNAME"] = "ab?c"
     cli, err = cache_module.build_iol_client()
     assert err is None
     sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", 'ab?c')

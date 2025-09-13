@@ -26,7 +26,7 @@ def render_action_menu() -> None:
 
     if st.session_state.pop("logout_pending", False):
         with st.spinner("Cerrando sesión..."):
-            auth_service.logout()
+            auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

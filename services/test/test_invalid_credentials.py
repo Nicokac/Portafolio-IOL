@@ -56,8 +56,8 @@ def test_build_iol_client_triggers_logout(monkeypatch):
 
     logout_called = {"user": None}
 
-    def dummy_logout(user=None, password=""):
-        logout_called["user"] = user
+    def dummy_logout(user="", password=""):
+        logout_called["user"] = user or state.get("IOL_USERNAME")
         state.clear()
         state["force_login"] = True
 
