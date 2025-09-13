@@ -61,15 +61,14 @@ def test_successful_login_redirects_to_main_page(monkeypatch):
     provider.login = MagicMock()
     monkeypatch.setattr(login_mod, "get_auth_provider", lambda: provider)
 
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.session_state.update({"IOL_USERNAME": "u", "some_password": "p"})
     st.rerun.side_effect = RuntimeError("rerun")
 
     with pytest.raises(RuntimeError):
         login_mod.render_login_page()
 
     assert st.session_state.get("authenticated") is True
-    assert "IOL_PASSWORD" not in st.session_state
-    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert not any("password" in k.lower() for k in st.session_state)
     assert "force_login" not in st.session_state
 
     st.rerun = MagicMock()

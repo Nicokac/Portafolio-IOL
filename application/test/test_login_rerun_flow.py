@@ -28,7 +28,7 @@ def _make_streamlit():
     st.cache_data = MagicMock()
     st.rerun = MagicMock()
     st.form = MagicMock(return_value=DummyCtx())
-    st.text_input = MagicMock()
+    st.text_input = MagicMock(return_value="p")
     st.form_submit_button = MagicMock(return_value=True)
     st.error = MagicMock()
     return st
@@ -47,7 +47,7 @@ def test_valid_login_rerun_accesses_main_page(monkeypatch):
     login_mod = importlib.import_module("ui.login")
     monkeypatch.setattr(login_mod.settings, "tokens_key", "k")
     monkeypatch.setattr(login_mod, "render_header", lambda: None)
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.session_state.update({"IOL_USERNAME": "u"})
 
     class DummyProvider:
         def login(self, u, p):
@@ -97,7 +97,7 @@ def test_invalid_login_rerun_stays_on_login(monkeypatch):
     login_mod = importlib.import_module("ui.login")
     monkeypatch.setattr(login_mod.settings, "tokens_key", "k")
     monkeypatch.setattr(login_mod, "render_header", lambda: None)
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.session_state.update({"IOL_USERNAME": "u"})
 
     class DummyProvider:
         def login(self, u, p):
