@@ -15,8 +15,12 @@ def _make_streamlit():
     st.columns = MagicMock(return_value=[MagicMock(), MagicMock()])
     st.caption = MagicMock()
     st.warning = MagicMock()
+    st.error = MagicMock()
     st.container = MagicMock()
     st.rerun = MagicMock()
+    st.cache_resource = lambda func=None, **kwargs: func
+    st.cache_data = st.cache_resource
+    st.title = MagicMock()
     return st
 
 
@@ -29,7 +33,7 @@ def test_login_logout_and_relogin(monkeypatch):
     from contextlib import nullcontext
 
     st.form = MagicMock(return_value=nullcontext())
-    st.text_input = MagicMock()
+    st.text_input = MagicMock(side_effect=["u", "p", "u", "p"])
     st.form_submit_button = MagicMock(return_value=True)
     sys.modules["streamlit"] = st
 
@@ -58,7 +62,7 @@ def test_login_logout_and_relogin(monkeypatch):
     login_mod = importlib.import_module("ui.login")
     monkeypatch.setattr(login_mod, "get_auth_provider", lambda: provider)
 
-    st.session_state.update({"IOL_USERNAME": "u", "some_password": "p"})
+    st.session_state.update({"some_password": "p"})
     st.rerun.side_effect = RuntimeError("rerun")
     with pytest.raises(RuntimeError):
         login_mod.render_login_page()
@@ -90,7 +94,7 @@ def test_login_logout_and_relogin(monkeypatch):
     for key in ("session_id", "authenticated", "tokens"):
         assert key not in st.session_state
 
-    st.session_state.update({"IOL_USERNAME": "u", "some_password": "p"})
+    st.session_state.update({"some_password": "p"})
     st.rerun.side_effect = RuntimeError("rerun")
     with pytest.raises(RuntimeError):
         login_mod.render_login_page()

@@ -28,11 +28,10 @@ _QUOTE_LOCK = Lock()
 
 def _trigger_logout() -> None:
     """Clear session and tokens triggering a fresh login."""
-    user = st.session_state.get("IOL_USERNAME", "")
     try:
         from application import auth_service
 
-        auth_service.logout(user)
+        auth_service.logout()
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("auto logout failed: %s", e)
         raise
@@ -207,23 +206,26 @@ def get_fx_rates_cached():
     )
 
 
-def build_iol_client() -> tuple[IIOLProvider | None, Exception | None]:
-    user = st.session_state.get("IOL_USERNAME")
+def build_iol_client(
+    user: str | None = None,
+) -> tuple[IIOLProvider | None, Exception | None]:
     if "client_salt" not in st.session_state:
         st.session_state["client_salt"] = uuid4().hex
     salt = str(st.session_state.get("client_salt", ""))
     tokens_file = cache.get("tokens_file")
     if not tokens_file:
-        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user or "")
-        user_hash = hashlib.sha256((user or "").encode()).hexdigest()[:12]
+        if not user:
+            return None, RuntimeError("missing user")
+        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
+        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_file = Path("tokens") / f"{sanitized}-{user_hash}.json"
         cache.set("tokens_file", str(tokens_file))
     cache_key = hashlib.sha256(
-        f"{user}:{tokens_file}:{salt}".encode()
+        f"{tokens_file}:{salt}".encode()
     ).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
-        cli = get_client_cached(cache_key, user, tokens_file)
+        cli = get_client_cached(cache_key, user or "", tokens_file)
         return cli, None
     except InvalidCredentialsError as e:
         _trigger_logout()

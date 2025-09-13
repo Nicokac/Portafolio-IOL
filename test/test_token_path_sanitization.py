@@ -1,7 +1,7 @@
-import re
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+import re
 
 import pytest
 
@@ -26,6 +26,9 @@ def test_login_and_logout_sanitize_token_path(monkeypatch):
     class DummyCache:
         def set(self, key, value):
             captured[key] = value
+
+        def get(self, key, default=None):
+            return captured.get(key, default)
 
         def pop(self, key, default=None):
             captured.pop(key, None)
@@ -52,7 +55,6 @@ def test_build_iol_client_sanitizes_token_path(monkeypatch):
     from shared import cache as shared_cache
 
     st = SimpleNamespace(session_state={})
-    st.session_state.update({'IOL_USERNAME': 'ab?c'})
     monkeypatch.setattr(cache_module, 'st', st)
     monkeypatch.setattr(shared_cache, 'st', st)
 

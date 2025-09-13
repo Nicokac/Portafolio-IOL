@@ -37,13 +37,12 @@ def render_login_page() -> None:
         st.error(err)
 
     with st.form("login_form"):
-        st.text_input("Usuario", key="IOL_USERNAME")
+        user = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
         submitted = st.form_submit_button("Iniciar sesión")
         render_footer()
 
     if submitted:
-        user = st.session_state.get("IOL_USERNAME", "")
         provider = get_auth_provider()
 
         def _clear_password_keys() -> None:
