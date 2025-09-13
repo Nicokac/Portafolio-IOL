@@ -80,7 +80,7 @@ def test_controller_build_iol_client_handles_error(monkeypatch):
 
     assert st.session_state.get("force_login") is True
     assert st.session_state.get("login_error") == "Error de conexión"
-    assert st.session_state.get("IOL_PASSWORD") == ""
+    assert "IOL_PASSWORD" not in st.session_state
 
 
 def test_controller_build_iol_client_success_clears_password(monkeypatch):
