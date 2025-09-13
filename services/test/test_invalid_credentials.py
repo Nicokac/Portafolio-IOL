@@ -1,26 +1,33 @@
 import pytest
 from types import SimpleNamespace
+from pathlib import Path
 
 from services import cache as svc_cache
 from infrastructure.iol.auth import InvalidCredentialsError
 
 
-def test_get_client_cached_clears_tokens_and_raises(monkeypatch):
+def test_get_client_cached_clears_tokens_and_raises(monkeypatch, tmp_path):
     state = {}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
     monkeypatch.setattr("shared.cache.st", SimpleNamespace(session_state=state))
-    cleared = {"called": False}
     built = {"called": False}
+
+    tokens_path = tmp_path / "tokens.json"
+    tokens_path.write_text("{}")
 
     class DummyAuth:
         def __init__(self, user, password, tokens_file=None, allow_plain_tokens=False):
-            pass
+            self.tokens_file = Path(tokens_file)
 
         def refresh(self):
+            self.clear_tokens()
             raise InvalidCredentialsError()
 
         def clear_tokens(self):
-            cleared["called"] = True
+            try:
+                self.tokens_file.unlink()
+            except FileNotFoundError:
+                pass
 
     def dummy_build(user, password, tokens_file=None, auth=None):
         built["called"] = True
@@ -31,9 +38,9 @@ def test_get_client_cached_clears_tokens_and_raises(monkeypatch):
     svc_cache.get_client_cached.clear()
 
     with pytest.raises(InvalidCredentialsError):
-        svc_cache.get_client_cached("k", "u", None)
+        svc_cache.get_client_cached("k", "u", tokens_path)
 
-    assert cleared["called"] is True
+    assert not tokens_path.exists()
     assert built["called"] is False
 
 
