@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from functools import lru_cache
 import logging
 import sys
+import streamlit as st
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,15 @@ class Settings:
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
+        def secret_or_env(key: str, default: Any | None = None) -> Any | None:
+            val = st.secrets.get(key)
+            if val is not None:
+                return val
+            return os.getenv(key, default)
+
         # --- Credenciales IOL ---
-        self.IOL_USERNAME: str | None = os.getenv("IOL_USERNAME", cfg.get("IOL_USERNAME"))
-        self.IOL_PASSWORD: str | None = os.getenv("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
+        self.IOL_USERNAME: str | None = secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
+        self.IOL_PASSWORD: str | None = secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
 
         # --- Cache/TTLs usados en app.py ---
         self.cache_ttl_portfolio: int = int(os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 20)))
@@ -51,9 +58,11 @@ class Settings:
 
         # --- Archivo de tokens (IOLAuth) ---
         # Por defecto lo guardamos en la raíz junto a app.py (compat con tu tokens_iol.json existente)
-        self.tokens_file: str = os.getenv("IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json")))
+        self.tokens_file: str = secret_or_env(
+            "IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json"))
+        )
         # Clave opcional para cifrar/descifrar el archivo de tokens (Fernet)
-        self.tokens_key: str | None = os.getenv("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
+        self.tokens_key: str | None = secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
         # Permite (opcionalmente) guardar tokens sin cifrar si falta tokens_key
         self.allow_plain_tokens: bool = (
             os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
