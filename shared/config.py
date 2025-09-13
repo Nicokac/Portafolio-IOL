@@ -9,6 +9,13 @@ import logging
 import sys
 import streamlit as st
 
+try:  # pragma: no cover - import may fail in tests
+    from streamlit.runtime.secrets import StreamlitSecretNotFoundError
+except Exception:  # pragma: no cover - streamlit may not expose runtime module
+    class StreamlitSecretNotFoundError(Exception):
+        """Fallback cuando streamlit no expone StreamlitSecretNotFoundError."""
+        pass
+
 logger = logging.getLogger(__name__)
 
 # Raíz del proyecto (donde están app.py, .env, config.json, etc.)
@@ -39,10 +46,14 @@ class Settings:
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
         def secret_or_env(key: str, default: Any | None = None) -> Any | None:
-            val = st.secrets.get(key)
-            if val is not None:
-                return val
-            return os.getenv(key, default)
+            val = None
+            try:
+                val = st.secrets.get(key)
+            except (StreamlitSecretNotFoundError, AttributeError):
+                val = None
+            if val is None:
+                return os.getenv(key, default)
+            return val
 
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
