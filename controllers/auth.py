@@ -18,7 +18,7 @@ def build_iol_client() -> IIOLProvider | None:
         else:
             st.session_state["login_error"] = "Error de conexión"
         st.session_state["force_login"] = True
-        st.session_state["IOL_PASSWORD"] = ""
+        st.session_state.pop("IOL_PASSWORD", None)
         st.rerun()
         return None
     st.session_state["authenticated"] = True

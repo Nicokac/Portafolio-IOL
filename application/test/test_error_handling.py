@@ -85,8 +85,9 @@ def test_auth_controller_handles_network_error(monkeypatch):
     assert cli is None
     assert mock_st.session_state["login_error"] == "Error de conexión"
     assert mock_st.session_state["force_login"] is True
-    assert mock_st.session_state["IOL_PASSWORD"] == ""
+    assert "IOL_PASSWORD" not in mock_st.session_state
     mock_st.rerun.assert_called_once()
+
 
 def test_auth_controller_handles_invalid_credentials(monkeypatch):
     mock_st = SimpleNamespace(session_state={}, rerun=MagicMock())
@@ -102,5 +103,5 @@ def test_auth_controller_handles_invalid_credentials(monkeypatch):
     assert cli is None
     assert mock_st.session_state["login_error"] == "Credenciales inválidas"
     assert mock_st.session_state["force_login"] is True
-    assert mock_st.session_state["IOL_PASSWORD"] == ""
+    assert "IOL_PASSWORD" not in mock_st.session_state
     mock_st.rerun.assert_called_once()
