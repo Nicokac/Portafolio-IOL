@@ -49,6 +49,7 @@ def render_login_page() -> None:
         provider = get_auth_provider()
         try:
             provider.login(user, password)
+            st.session_state["authenticated"] = True
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
             st.session_state.pop("IOL_PASSWORD", None)

@@ -41,6 +41,55 @@ def test_login_page_rendered_when_missing_credentials(monkeypatch):
     st.stop.assert_called_once()
 
 
+def test_successful_login_redirects_to_main_page(monkeypatch):
+    monkeypatch.setenv("IOL_ALLOW_PLAIN_TOKENS", "1")
+    sys.modules.pop("app", None)
+    sys.modules.pop("ui.login", None)
+    sys.modules.pop("shared.config", None)
+    st = _make_streamlit()
+    sys.modules["streamlit"] = st
+    st.session_state.clear()
+
+    from contextlib import nullcontext
+
+    st.form = MagicMock(return_value=nullcontext())
+    st.text_input = MagicMock()
+    st.form_submit_button = MagicMock(return_value=True)
+
+    login_mod = importlib.import_module("ui.login")
+    provider = MagicMock()
+    provider.login = MagicMock()
+    monkeypatch.setattr(login_mod, "get_auth_provider", lambda: provider)
+
+    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD_WIDGET": "p"})
+    st.rerun.side_effect = RuntimeError("rerun")
+
+    with pytest.raises(RuntimeError):
+        login_mod.render_login_page()
+
+    assert st.session_state.get("authenticated") is True
+    assert "IOL_PASSWORD" not in st.session_state
+    assert "IOL_PASSWORD_WIDGET" not in st.session_state
+    assert "force_login" not in st.session_state
+
+    st.rerun = MagicMock()
+    sys.modules.pop("app", None)
+    app = importlib.import_module("app")
+    monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value=({}, None)))
+    monkeypatch.setattr(app, "render_header", MagicMock())
+    monkeypatch.setattr(app, "render_action_menu", MagicMock())
+    monkeypatch.setattr(app, "render_footer", MagicMock())
+    monkeypatch.setattr(app, "build_iol_client", MagicMock())
+    monkeypatch.setattr(app, "render_portfolio_section", MagicMock(return_value=None))
+    login_mock = MagicMock()
+    monkeypatch.setattr(app, "render_login_page", login_mock)
+
+    app.main()
+
+    login_mock.assert_not_called()
+    app.render_header.assert_called_once()
+
+
 def test_refresh_secs_triggers_rerun(monkeypatch):
     monkeypatch.setenv("IOL_ALLOW_PLAIN_TOKENS", "1")
     sys.modules.pop("app", None)
@@ -48,7 +97,7 @@ def test_refresh_secs_triggers_rerun(monkeypatch):
     st = _make_streamlit()
     st.cache_resource = MagicMock()
     st.session_state.clear()
-    st.session_state.update({"IOL_USERNAME": "u", "IOL_PASSWORD": "p", "last_refresh": 0})
+    st.session_state.update({"IOL_USERNAME": "u", "authenticated": True, "last_refresh": 0})
     st.stop = MagicMock()  # no exception
     sys.modules["streamlit"] = st
 
