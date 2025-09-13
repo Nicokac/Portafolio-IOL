@@ -63,7 +63,12 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 allow_plain_tokens=settings.allow_plain_tokens,
             ).clear_tokens()
         finally:
-            from services.cache import get_client_cached
+            from services.cache import (
+                get_client_cached,
+                fetch_portfolio,
+                fetch_quotes_bulk,
+                fetch_fx_rates,
+            )
             cache_key = st.session_state.get("cache_key")
             if cache_key:
                 get_client_cached.clear(cache_key)
@@ -87,6 +92,9 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 st.session_state.pop(key, None)
             cache.pop("tokens_file", None)
             cache.clear()
+            fetch_portfolio.clear()
+            fetch_quotes_bulk.clear()
+            fetch_fx_rates.clear()
             if theme is not None:
                 st.session_state["ui_theme"] = theme
 

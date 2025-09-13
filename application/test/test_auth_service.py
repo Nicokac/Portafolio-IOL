@@ -105,3 +105,89 @@ def test_logout_generates_new_session_id(monkeypatch):
         app.main([])
 
     assert st.session_state.get("session_id") == "new_session"
+
+
+def test_logout_clears_cached_queries(monkeypatch):
+    from application import auth_service
+    from services import cache as svc_cache
+
+    import streamlit as st
+
+    # Compartir session_state entre módulos y evitar rerun
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "user"})
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
+
+    # Evitar operaciones reales de autenticación
+    class DummyAuth:
+        def __init__(self, *a, **k):
+            pass
+
+        def clear_tokens(self):
+            pass
+
+    monkeypatch.setattr(auth_service, "IOLAuth", DummyAuth)
+
+    # Dummy cache resource used by logout
+    class DummyGetClientCached:
+        def clear(self, key=None):
+            pass
+
+    monkeypatch.setattr(svc_cache, "get_client_cached", DummyGetClientCached())
+
+    # Proveedores y clientes simulados para las funciones cacheadas
+    class DummyClient:
+        def __init__(self):
+            self.portfolio_calls = 0
+            self.quotes_calls = 0
+
+        def get_portfolio(self):
+            self.portfolio_calls += 1
+            return {"n": self.portfolio_calls}
+
+        def get_quotes_bulk(self, items):
+            self.quotes_calls += 1
+            return {("m", "s"): {"last": self.quotes_calls, "chg_pct": None}}
+
+    class DummyFXProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def get_rates(self):
+            self.calls += 1
+            return {"USD": self.calls}, None
+
+    provider = DummyFXProvider()
+    monkeypatch.setattr(svc_cache, "get_fx_provider", lambda: provider)
+
+    # Limpiar caches iniciales
+    svc_cache.fetch_portfolio.clear()
+    svc_cache.fetch_quotes_bulk.clear()
+    svc_cache.fetch_fx_rates.clear()
+
+    cli = DummyClient()
+    items = [("m", "s")]
+
+    # Primeras llamadas pobladas en cache
+    assert svc_cache.fetch_portfolio(cli) == {"n": 1}
+    assert svc_cache.fetch_portfolio(cli) == {"n": 1}
+    assert cli.portfolio_calls == 1
+
+    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 1, "chg_pct": None}}
+    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 1, "chg_pct": None}}
+    assert cli.quotes_calls == 1
+
+    assert svc_cache.fetch_fx_rates() == ({"USD": 1}, None)
+    assert svc_cache.fetch_fx_rates() == ({"USD": 1}, None)
+    assert provider.calls == 1
+
+    # Logout debe limpiar caches
+    auth_service.logout("user")
+
+    assert svc_cache.fetch_portfolio(cli) == {"n": 2}
+    assert cli.portfolio_calls == 2
+
+    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 2, "chg_pct": None}}
+    assert cli.quotes_calls == 2
+
+    assert svc_cache.fetch_fx_rates() == ({"USD": 2}, None)
+    assert provider.calls == 2
