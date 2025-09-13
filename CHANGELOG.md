@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Fixed
 - Successful login now marks the session as authenticated to access the main page.
+- Fixed: los paneles ahora se recargan automáticamente después de logout/login sin requerir refresco manual.
 
 ### Security
 - Removed passwords from `session_state`; authentication now relies solely on local variables and tokens.
