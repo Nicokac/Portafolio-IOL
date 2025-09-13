@@ -45,19 +45,21 @@ class Settings:
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
-        def secret_or_env(key: str, default: Any | None = None) -> Any | None:
-            val = None
-            try:
-                val = st.secrets.get(key)
-            except (StreamlitSecretNotFoundError, AttributeError):
-                val = None
-            if val is None:
-                return os.getenv(key, default)
-            return val
+        # def secret_or_env(key: str, default: Any | None = None) -> Any | None:
+        #     val = None
+        #     try:
+        #         val = st.secrets.get(key)
+        #     except (StreamlitSecretNotFoundError, AttributeError):
+        #         val = None
+        #     if val is None:
+        #         return os.getenv(key, default)
+        #     return val
 
         # --- Credenciales IOL ---
-        self.IOL_USERNAME: str | None = secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
-        self.IOL_PASSWORD: str | None = secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
+        # self.IOL_USERNAME: str | None = secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
+        # self.IOL_PASSWORD: str | None = secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
+        self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
+        self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
 
         # --- Cache/TTLs usados en app.py ---
         self.cache_ttl_portfolio: int = int(os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 20)))
@@ -69,11 +71,11 @@ class Settings:
 
         # --- Archivo de tokens (IOLAuth) ---
         # Por defecto lo guardamos en la raíz junto a app.py (compat con tu tokens_iol.json existente)
-        self.tokens_file: str = secret_or_env(
+        self.tokens_file: str = self.secret_or_env(
             "IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json"))
         )
         # Clave opcional para cifrar/descifrar el archivo de tokens (Fernet)
-        self.tokens_key: str | None = secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
+        self.tokens_key: str | None = self.secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
         # Permite (opcionalmente) guardar tokens sin cifrar si falta tokens_key
         self.allow_plain_tokens: bool = (
             os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
@@ -91,6 +93,16 @@ class Settings:
         # --- Logging ---
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
         self.LOG_FORMAT: str = os.getenv("LOG_FORMAT", cfg.get("LOG_FORMAT", "plain")).lower()
+
+    def secret_or_env(self, key: str, default: Any | None = None) -> Any | None:
+        val = None
+        try:
+            val = st.secrets.get(key)
+        except (StreamlitSecretNotFoundError, AttributeError):
+            val = None
+        if val is None:
+            return os.getenv(key, default)
+        return val
 
 settings = Settings()
 
