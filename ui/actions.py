@@ -6,7 +6,6 @@ from application import auth_service
 
 def render_action_menu() -> None:
     """Render refresh and logout actions in a compact popover."""
-    user = st.session_state.get("IOL_USERNAME")
 
     pop = st.popover("⚙️ Acciones")
     with pop:
@@ -27,7 +26,7 @@ def render_action_menu() -> None:
 
     if st.session_state.pop("logout_pending", False):
         with st.spinner("Cerrando sesión..."):
-            auth_service.logout(user or "")
+            auth_service.logout()
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

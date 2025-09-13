@@ -37,6 +37,7 @@ class IOLAuthenticationProvider(AuthenticationProvider):
     """Proveedor de autenticación basado en IOL."""
 
     def login(self, user: str, password: str) -> dict:
+        self._user = user
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
         user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_path = Path("tokens") / f"{sanitized}-{user_hash}.json"
@@ -51,17 +52,25 @@ class IOLAuthenticationProvider(AuthenticationProvider):
             raise AuthenticationError("Credenciales inválidas")
         return tokens
 
-    def logout(self, user: str, password: str = "") -> None:
-        sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
-        user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
-        tokens_path = Path("tokens") / f"{sanitized}-{user_hash}.json"
+    def logout(self, user: str | None = None, password: str = "") -> None:
+        user = user or getattr(self, "_user", "")
+        tokens_file = cache.get("tokens_file")
+        if user:
+            sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
+            user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
+            tokens_path = Path("tokens") / f"{sanitized}-{user_hash}.json"
+        elif tokens_file:
+            tokens_path = Path(tokens_file)
+        else:
+            tokens_path = None
         try:
-            IOLAuth(
-                user,
-                password,
-                tokens_file=tokens_path,
-                allow_plain_tokens=settings.allow_plain_tokens,
-            ).clear_tokens()
+            if tokens_path:
+                IOLAuth(
+                    user or "",
+                    password,
+                    tokens_file=tokens_path,
+                    allow_plain_tokens=settings.allow_plain_tokens,
+                ).clear_tokens()
         finally:
             from services.cache import (
                 get_client_cached,
@@ -97,11 +106,12 @@ class IOLAuthenticationProvider(AuthenticationProvider):
             fetch_fx_rates.clear()
             if theme is not None:
                 st.session_state["ui_theme"] = theme
+            self._user = None
 
     def build_client(self) -> Tuple[Any | None, Exception | None]:
         from services.cache import build_iol_client
 
-        return build_iol_client()
+        return build_iol_client(getattr(self, "_user", None))
 
 
 _provider: AuthenticationProvider = IOLAuthenticationProvider()
@@ -128,7 +138,7 @@ def login(user: str, password: str) -> dict:
     return tokens
 
 
-def logout(user: str, password: str = "") -> None:
+def logout(user: str | None = None, password: str = "") -> None:
     """Wrapper para el logout utilizando el proveedor registrado."""
 
     try:
