@@ -6,6 +6,8 @@ import os
 from functools import lru_cache
 from typing import Dict
 
+from shared.config import settings
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "assets_catalog.json")
@@ -20,7 +22,7 @@ def get_asset_catalog(path: str | None = None) -> Dict[str, str]:
     activo correspondiente. Si el archivo no existe o es inválido, se
     retorna un ``dict`` vacío.
     """
-    path = path or os.environ.get("ASSET_CATALOG_PATH", DEFAULT_PATH)
+    path = path or settings.secret_or_env("ASSET_CATALOG_PATH", DEFAULT_PATH)
     try:
         with open(path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
