@@ -60,6 +60,7 @@ def test_logout_clears_session_state(monkeypatch):
             "x": 1,
         },
     )
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     with patch("application.auth_service.IOLAuth") as mock_auth:
         user = "user"
         auth_service.logout(user)
@@ -72,7 +73,8 @@ def test_logout_clears_session_state(monkeypatch):
             allow_plain_tokens=False,
         )
         mock_auth.return_value.clear_tokens.assert_called_once()
-    assert st.session_state == {}
+    assert st.session_state.get("force_login") is True
+    assert st.session_state.get("logout_done") is True
 
 
 def test_logout_generates_new_session_id(monkeypatch):
@@ -80,9 +82,11 @@ def test_logout_generates_new_session_id(monkeypatch):
     import app
 
     monkeypatch.setattr(st, "session_state", {"session_id": "old"})
+    monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
     with patch("application.auth_service.IOLAuth"):
         auth_service.logout("user")
-    assert st.session_state == {}
+    assert st.session_state.get("force_login") is True
+    assert st.session_state.get("logout_done") is True
 
     monkeypatch.setattr(app, "render_login_page", lambda: None)
     monkeypatch.setattr(app, "render_header", lambda *a, **k: None)

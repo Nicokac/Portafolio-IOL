@@ -26,21 +26,8 @@ def render_action_menu() -> None:
         st.rerun()
 
     if st.session_state.pop("logout_pending", False):
-        err = ""
         with st.spinner("Cerrando sesión..."):
-            try:
-                auth_service.logout(user or "")
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning("Error al limpiar tokens: %s", e)
-                err = str(e)
-        st.session_state["force_login"] = True
-        if err:
-            st.session_state["logout_error"] = err
-        else:
-            st.session_state["logout_done"] = True
-        st.rerun()
+            auth_service.logout(user or "")
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

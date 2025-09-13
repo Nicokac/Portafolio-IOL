@@ -117,6 +117,11 @@ def test_login_refresh_valid_then_invalid(monkeypatch):
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state={}))
     svc_cache.st.session_state.update({"IOL_USERNAME": "u", "client_salt": "s", "tokens_file": "t.json"})
 
+    def dummy_logout(user, password=""):
+        svc_cache.st.session_state["force_login"] = True
+
+    monkeypatch.setattr("application.auth_service.logout", dummy_logout)
+
     cli, err = svc_cache.build_iol_client()
     assert err is None
 

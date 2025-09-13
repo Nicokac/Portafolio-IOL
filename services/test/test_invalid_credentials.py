@@ -52,6 +52,7 @@ def test_build_iol_client_triggers_logout(monkeypatch):
     def dummy_logout(user, password=""):
         logout_called["user"] = user
         state.clear()
+        state["force_login"] = True
 
     monkeypatch.setattr("application.auth_service.logout", dummy_logout)
 
