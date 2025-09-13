@@ -8,6 +8,8 @@ import pytest
 
 # Stub dotenv to avoid external dependency
 sys.modules.setdefault('dotenv', types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None))
+# Stub streamlit for tests
+sys.modules.setdefault('streamlit', types.SimpleNamespace(secrets={}))
 
 config = importlib.import_module('shared.config')
 
@@ -32,3 +34,18 @@ def test_get_config_sanitizes_types(monkeypatch, tmp_path):
     assert data["fci_symbols"] == []
     assert data["scale_overrides"] == {}
     assert data["classification_patterns"] == {}
+
+def test_secrets_take_priority(monkeypatch):
+    streamlit = sys.modules['streamlit']
+    streamlit.secrets = {"IOL_USERNAME": "secret"}
+    monkeypatch.setenv("IOL_USERNAME", "env")
+    importlib.reload(config)
+    assert config.settings.IOL_USERNAME == "secret"
+
+
+def test_env_used_when_no_secret(monkeypatch):
+    streamlit = sys.modules['streamlit']
+    streamlit.secrets = {}
+    monkeypatch.setenv("IOL_USERNAME", "env")
+    importlib.reload(config)
+    assert config.settings.IOL_USERNAME == "env"

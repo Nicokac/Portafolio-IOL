@@ -45,6 +45,18 @@ LOG_FORMAT="plain"
 # Usuario opcional incluido en los logs
 LOG_USER="usuario"
 ```
+También puedes definir estos valores sensibles en `secrets.toml`,
+el cual `streamlit` expone a través de `st.secrets`. Los valores en
+`secrets.toml` tienen prioridad sobre las variables de entorno.
+
+Ejemplo de `.streamlit/secrets.toml`:
+
+```toml
+IOL_USERNAME = "tu_usuario"
+IOL_PASSWORD = "tu_contraseña"
+IOL_TOKENS_KEY = "clave"
+IOL_TOKENS_FILE = "tokens_iol.json"
+```
 
 `LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Evita usar `DEBUG` u otros niveles muy verbosos en producción, ya que pueden revelar información sensible y generar un volumen excesivo de datos. `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, útil cuando se integran sistemas de logging centralizado o se requiere auditoría. Si `LOG_LEVEL` o `LOG_FORMAT` no están definidos, la aplicación utiliza `INFO` y `plain` como valores por defecto. El valor de `LOG_USER` se incluye en los registros si está definido.
 
