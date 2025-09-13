@@ -67,14 +67,27 @@ class IOLAuthenticationProvider(AuthenticationProvider):
             if cache_key:
                 get_client_cached.clear(cache_key)
             get_client_cached.clear()
+            theme = st.session_state.get("ui_theme")
             for key in (
                 "authenticated",
                 "IOL_USERNAME",
                 "IOL_PASSWORD",
                 "client_salt",
+                "session_id",
+                "last_refresh",
+                "cache_key",
+                "fx_rates",
+                "fx_rates_ts",
+                "fx_rates_error",
+                "portfolio_tab",
+                "controls_snapshot",
+                "quotes_hist",
             ):
                 st.session_state.pop(key, None)
             cache.pop("tokens_file", None)
+            cache.clear()
+            if theme is not None:
+                st.session_state["ui_theme"] = theme
 
     def build_client(self) -> Tuple[Any | None, Exception | None]:
         from services.cache import build_iol_client
