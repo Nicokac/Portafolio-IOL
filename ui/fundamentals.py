@@ -55,8 +55,11 @@ INDICATORS = {
 }
 
 def render_fundamental_data(data: dict):
-    if not data or data.get("error"):
-        st.warning(data.get("error", "Datos fundamentales no disponibles."))
+    if not data or (isinstance(data, dict) and data.get("error")):
+        if isinstance(data, dict):
+            st.warning(data.get("error", "Datos fundamentales no disponibles."))
+        else:
+            st.warning("Datos fundamentales no disponibles.")
         return
 
     st.subheader(f"Análisis Fundamental: {data.get('name', '—')}")
