@@ -54,7 +54,7 @@ def test_build_iol_client_sanitizes_token_path(monkeypatch):
     from services import cache as cache_module
     from shared import cache as shared_cache
 
-    st = SimpleNamespace(session_state={})
+    st = SimpleNamespace(session_state={"IOL_USERNAME": "ab?c"})
     monkeypatch.setattr(cache_module, 'st', st)
     monkeypatch.setattr(shared_cache, 'st', st)
 

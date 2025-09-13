@@ -55,10 +55,12 @@ def test_repeated_401_forces_login(monkeypatch):
         rerun_called["called"] = True
         raise RuntimeError("rerun")
 
-    svc_cache.st = SimpleNamespace(session_state={}, rerun=rerun)
+    monkeypatch.setattr(
+        svc_cache, "st", SimpleNamespace(session_state={}, rerun=rerun)
+    )
     svc_cache.fetch_portfolio.clear()
 
-    def dummy_logout(user, password=""):
+    def dummy_logout(*_, **__):
         svc_cache.st.session_state["force_login"] = True
         svc_cache.st.rerun()
 

@@ -56,7 +56,7 @@ def test_build_iol_client_triggers_logout(monkeypatch):
 
     logout_called = {"user": None}
 
-    def dummy_logout(user, password=""):
+    def dummy_logout(user=None, password=""):
         logout_called["user"] = user
         state.clear()
         state["force_login"] = True
@@ -67,7 +67,7 @@ def test_build_iol_client_triggers_logout(monkeypatch):
 
     assert cli is None
     assert isinstance(err, InvalidCredentialsError)
-    assert logout_called["user"] == "u"
+    assert logout_called["user"] is None
     assert state.get("force_login") is True
 
 

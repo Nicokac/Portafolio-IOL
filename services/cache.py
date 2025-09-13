@@ -31,7 +31,8 @@ def _trigger_logout() -> None:
     try:
         from application import auth_service
 
-        auth_service.logout()
+        u = st.session_state.get("IOL_USERNAME", "")
+        auth_service.logout(u)
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("auto logout failed: %s", e)
         raise
@@ -209,13 +210,14 @@ def get_fx_rates_cached():
 def build_iol_client(
     user: str | None = None,
 ) -> tuple[IIOLProvider | None, Exception | None]:
+    user = user or st.session_state.get("IOL_USERNAME") or settings.IOL_USERNAME
+    if not user:
+        return None, RuntimeError("missing user")
     if "client_salt" not in st.session_state:
         st.session_state["client_salt"] = uuid4().hex
     salt = str(st.session_state.get("client_salt", ""))
     tokens_file = cache.get("tokens_file")
     if not tokens_file:
-        if not user:
-            return None, RuntimeError("missing user")
         sanitized = re.sub(r"[^A-Za-z0-9_-]", "_", user)
         user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_file = Path("tokens") / f"{sanitized}-{user_hash}.json"
@@ -225,12 +227,12 @@ def build_iol_client(
     ).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
-        cli = get_client_cached(cache_key, user or "", tokens_file)
+        cli = get_client_cached(cache_key, user, tokens_file)
         return cli, None
     except InvalidCredentialsError as e:
         _trigger_logout()
         return None, e
-    except (requests.RequestException, RuntimeError, ValueError) as e:
+    except Exception as e:
         logger.exception("build_iol_client failed: %s", e)
         return None, e
 
