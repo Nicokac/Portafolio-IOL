@@ -19,6 +19,7 @@ def _hist_df():
 def test_indicators_for_valid_symbol(monkeypatch):
     fetch_with_indicators.clear()
     monkeypatch.setattr("application.ta_service.yf.download", lambda *a, **k: _hist_df())
+    monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: "AAPL")
     svc = TAService()
     df = svc.indicators_for("AAPL")
     assert not df.empty
@@ -27,7 +28,9 @@ def test_indicators_for_valid_symbol(monkeypatch):
 
 def test_indicators_for_invalid_symbol(monkeypatch):
     fetch_with_indicators.clear()
-    monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: None)
+    def bad_map(sym):
+        raise ValueError("bad")
+    monkeypatch.setattr("application.ta_service.map_to_us_ticker", bad_map)
     svc = TAService()
     with pytest.raises(ValueError):
         svc.indicators_for("INVALID")

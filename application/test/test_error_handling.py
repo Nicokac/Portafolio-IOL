@@ -31,6 +31,7 @@ def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
         raise RuntimeError("fail")
 
     monkeypatch.setattr("application.ta_service.yf.download", boom)
+    monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: "AAPL")
     with pytest.raises(RuntimeError):
         fetch_with_indicators("AAPL")
 

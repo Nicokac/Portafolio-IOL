@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Any, List, Iterable, Optional
+from typing import Dict, Any, List, Iterable
 import os
 import re
 import json
@@ -28,8 +28,11 @@ def clean_symbol(s: str) -> str:
     return re.sub(r"[^A-Z0-9._^-]", "", s)
 
 
-def map_to_us_ticker(simbolo: str) -> Optional[str]:
-    """Map a local symbol to its corresponding US ticker, if available."""
+def map_to_us_ticker(simbolo: str) -> str:
+    """Map a local symbol to its corresponding US ticker.
+
+    Levanta ``ValueError`` si no se encuentra un ticker válido.
+    """
     s = clean_symbol(simbolo)
     cfg = get_config()
     cedear_map = cfg.get("cedear_to_us", {}) or {}
@@ -41,7 +44,7 @@ def map_to_us_ticker(simbolo: str) -> Optional[str]:
     if s in cfg.get("acciones_ar", []):
         return s + ".BA"  # yfinance usa sufijo .BA para acciones argentinas
 
-    return None
+    raise ValueError(f"Símbolo no válido: {simbolo}")
 
 
 # ---------- Clasificación y escala ----------
