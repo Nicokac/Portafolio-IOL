@@ -13,9 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Se corrigieron pruebas fallidas en ta_service, portfolio_controller y
   portfolio_service_utils para alinear expectativas de tests con la
   implementación real.
+- Deployment stable on Streamlit Cloud.
 
 ### Security
 - Removed passwords from `session_state`; authentication now relies solely on local variables and tokens.
+
+### Removed
+- Removed deprecated `use_container_width` parameter (Streamlit ≥ 1.30).
 
 ## [2025-09-13]
 ### Tests
