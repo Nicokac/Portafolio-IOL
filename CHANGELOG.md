@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Removed passwords from `session_state`; authentication now relies solely on local variables and tokens.
 
+## [2025-09-13]
 ### Tests
-- Added tests verifying login reruns for valid, invalid, and expired sessions.
+- Se agregaron pruebas de cobertura para UI, controllers, servicios, application, infrastructure y shared.
 
