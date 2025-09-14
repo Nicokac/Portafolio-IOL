@@ -11,10 +11,10 @@ def render_action_menu() -> None:
     with pop:
         st.caption("Operaciones rápidas")
         c1, c2 = st.columns(2)
-        if c1.button("⟳ Refrescar", use_container_width=True):
+        if c1.button("⟳ Refrescar", width="stretch"):
             st.session_state["refresh_pending"] = True
             st.rerun()
-        if c2.button("🔒 Cerrar sesión", use_container_width=True):
+        if c2.button("🔒 Cerrar sesión", width="stretch"):
             st.session_state["logout_pending"] = True
             st.rerun()
 

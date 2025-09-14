@@ -46,7 +46,7 @@ def render_basic_section(df_view, controls, ccl_rate):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key="pl_topn",
                 config=PLOTLY_CONFIG,
             )
@@ -58,7 +58,7 @@ def render_basic_section(df_view, controls, ccl_rate):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key="donut_tipo",
                 config=PLOTLY_CONFIG,
             )
@@ -70,7 +70,7 @@ def render_basic_section(df_view, controls, ccl_rate):
     if fig is not None:
         st.plotly_chart(
             fig,
-            use_container_width=True,
+            width="stretch",
             key="dist_tipo",
             config=PLOTLY_CONFIG,
         )
@@ -82,7 +82,7 @@ def render_basic_section(df_view, controls, ccl_rate):
     if fig is not None:
         st.plotly_chart(
             fig,
-            use_container_width=True,
+            width="stretch",
             key="pl_diario",
             config=PLOTLY_CONFIG,
         )
@@ -142,7 +142,7 @@ def render_advanced_analysis(df_view):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key="bubble_chart",
                 config=PLOTLY_CONFIG,
             )
@@ -163,7 +163,7 @@ def render_advanced_analysis(df_view):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key="heatmap_chart",
                 config=PLOTLY_CONFIG,
             )

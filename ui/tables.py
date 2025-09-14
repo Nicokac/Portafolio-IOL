@@ -246,7 +246,7 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
             _color_pl,
             subset=["pl_num", "pl_d_num", "pl_pct_num", "chg_pct_num"],
         ),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         height=420,
         column_config=column_config,

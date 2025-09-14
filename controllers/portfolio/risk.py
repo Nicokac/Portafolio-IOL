@@ -53,7 +53,7 @@ def render_risk_analysis(df_view, tasvc):
             )
             st.plotly_chart(
                 fig,
-                use_container_width=True,
+                width="stretch",
                 key="corr_heatmap",
                 config=PLOTLY_CONFIG,
             )
@@ -120,7 +120,7 @@ def render_risk_analysis(df_view, tasvc):
                     )
                     st.plotly_chart(
                         fig_vol,
-                        use_container_width=True,
+                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(
@@ -138,7 +138,7 @@ def render_risk_analysis(df_view, tasvc):
                     )
                     st.plotly_chart(
                         fig_var,
-                        use_container_width=True,
+                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(

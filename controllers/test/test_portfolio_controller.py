@@ -222,5 +222,5 @@ def test_ta_section_symbol_with_data():
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.plotly_chart.assert_called_once_with(
-        'fig', use_container_width=True, key='ta_chart', config=ANY
+        'fig', width="stretch", key='ta_chart', config=ANY
     )

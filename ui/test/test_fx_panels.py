@@ -76,4 +76,4 @@ def test_render_fx_history_plots_when_valid_series():
 
     mock_st.info.assert_not_called()
     mock_st.line_chart.assert_called_once()
-    mock_st.plotly_chart.assert_called_once_with(fig, use_container_width=True)
+    mock_st.plotly_chart.assert_called_once_with(fig, width="stretch")
