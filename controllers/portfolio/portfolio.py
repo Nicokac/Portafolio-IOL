@@ -73,8 +73,9 @@ def render_portfolio_section(container, cli, fx_rates):
                     key="ta_symbol",
                 )
                 if sym:
-                    us_ticker = map_to_us_ticker(sym)
-                    if not us_ticker:
+                    try:
+                        us_ticker = map_to_us_ticker(sym)
+                    except ValueError:
                         st.info("No se encontró ticker US para este activo.")
                     else:
                         fundamental_data = tasvc.fundamentals(us_ticker) or {}
