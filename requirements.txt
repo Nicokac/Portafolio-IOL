@@ -2,7 +2,7 @@ streamlit==1.49.1
 pandas==2.3.2
 numpy==2.3.3
 requests==2.31.0
-urllib3==2.2.2
+#urllib3==2.2.2
 python-dotenv==1.1.1
 iolConn==0.4.2
 plotly==6.3.0
