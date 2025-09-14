@@ -39,3 +39,6 @@ data/
 logs/
 dist/
 build/
+
+# --- Generated version file
+version.py
