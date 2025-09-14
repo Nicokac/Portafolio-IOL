@@ -150,6 +150,18 @@ Para verificar el estilo del código:
 flake8
 ```
 
+## Tiempos de referencia
+
+Los siguientes tiempos se observan en condiciones normales (aprox. 20 posiciones):
+
+| Paso                | Tiempo objetivo | Detalles |
+|---------------------|-----------------|----------|
+| `login`             | < 1 s           | `auth_service.login` |
+| `fetch_portfolio`   | < 600 ms        | ~20 posiciones |
+| `fetch_quotes_bulk` | < 1 s           | 20 símbolos |
+
+Si algún paso supera estos valores, considera reducir llamadas redundantes, ajustar los TTL de cache en `shared/config.py` o incrementar `max_quote_workers` cuando existan muchas posiciones.
+
 ## Fallback de análisis técnico
 
 Si ocurre un `HTTPError` o un `Timeout` al descargar datos con `yfinance`,

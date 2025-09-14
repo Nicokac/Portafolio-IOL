@@ -120,9 +120,11 @@ def fetch_portfolio(_cli: IIOLProvider):
             extra={"tokens_file": tokens_path},
         )
         return {"_cached": True}
-    logger.info(
+    elapsed = (time.time() - start) * 1000
+    log = logger.warning if elapsed > 600 else logger.info
+    log(
         "fetch_portfolio done in %.0fms",
-        (time.time() - start) * 1000,
+        elapsed,
         extra={"tokens_file": tokens_path},
     )
     return data
@@ -130,6 +132,7 @@ def fetch_portfolio(_cli: IIOLProvider):
 
 @cache.cache_data(ttl=settings.cache_ttl_quotes)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
+    start = time.time()
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
 
     try:
@@ -139,6 +142,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 for k, v in data.items():
                     data[k] = _normalize_quote(v)
                     logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
+            elapsed = (time.time() - start) * 1000
+            log = logger.warning if elapsed > 1000 else logger.info
+            log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
             return data
     except InvalidCredentialsError:
         try:
@@ -172,6 +178,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 quote = {"last": None, "chg_pct": None}
             logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
             out[key] = quote
+    elapsed = (time.time() - start) * 1000
+    log = logger.warning if elapsed > 1000 else logger.info
+    log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
     return out
 
 
