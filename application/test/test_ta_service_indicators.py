@@ -27,7 +27,11 @@ def test_indicators_for_valid_symbol(monkeypatch):
 
 def test_indicators_for_invalid_symbol(monkeypatch):
     fetch_with_indicators.clear()
-    monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: None)
+
+    def raise_invalid(symbol):
+        raise ValueError("Símbolo inválido")
+
+    monkeypatch.setattr("application.ta_service.map_to_us_ticker", raise_invalid)
     svc = TAService()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Símbolo inválido"):
         svc.indicators_for("INVALID")

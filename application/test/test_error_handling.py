@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+from requests.exceptions import HTTPError, Timeout
 
 # Stub cryptography to avoid heavy dependency during tests
 crypto_mod = types.ModuleType("cryptography")
@@ -24,15 +25,19 @@ from controllers import auth
 from infrastructure.iol.auth import InvalidCredentialsError
 
 
-def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch):
+@pytest.mark.parametrize("exc_cls", [HTTPError, Timeout])
+def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch, exc_cls):
     fetch_with_indicators.clear()
 
-    def boom(*args, **kwargs):  # simulate network failure
-        raise RuntimeError("fail")
+    def boom(*args, **kwargs):
+        raise exc_cls("fail")
 
     monkeypatch.setattr("application.ta_service.map_to_us_ticker", lambda s: "AAPL")
-    with pytest.raises(RuntimeError):
-        fetch_with_indicators("AAPL")
+    monkeypatch.setattr("application.ta_service.yf.download", boom)
+    monkeypatch.setattr("application.ta_service.Path.exists", lambda self: False)
+
+    df = fetch_with_indicators("AAPL")
+    assert df.empty
 
 
 def test_fetch_fx_rates_handles_network_error(monkeypatch):

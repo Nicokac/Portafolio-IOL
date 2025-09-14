@@ -108,6 +108,7 @@ def test_ta_section_symbol_without_us_ticker():
     mock_st.session_state = {}
     mock_st.radio.return_value = 4
     mock_st.selectbox.return_value = 'AAA'
+    mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
 
     df = pd.DataFrame({'simbolo': ['AAA']})
 
@@ -118,7 +119,7 @@ def test_ta_section_symbol_without_us_ticker():
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=Controls(refresh_secs=0)), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch('controllers.portfolio.portfolio.apply_filters', return_value=df), \
-         patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value=None), \
+         patch('controllers.portfolio.portfolio.map_to_us_ticker', side_effect=ValueError('invalid')), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
