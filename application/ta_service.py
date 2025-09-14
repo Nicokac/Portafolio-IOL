@@ -116,10 +116,11 @@ def fetch_with_indicators(
     if yf is None or RSIIndicator is None:
         raise RuntimeError("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
 
-    ticker = map_to_us_ticker(simbolo)
-    if not ticker:
+    try:
+        ticker = map_to_us_ticker(simbolo)
+    except ValueError:
         logger.info("No se pudo mapear %s a ticker US utilizable.", simbolo)
-        raise ValueError(f"Símbolo no válido: {simbolo}")
+        raise
 
     try:
         hist = yf.download(
@@ -399,8 +400,11 @@ def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
 
     rows: list[dict] = []
     for sym in simbolos:
-        ticker = map_to_us_ticker(sym)
-        if not ticker or ticker.startswith("^"):
+        try:
+            ticker = map_to_us_ticker(sym)
+        except ValueError:
+            continue
+        if ticker.startswith("^"):
             continue
         try:
             stock = yf.Ticker(ticker)
@@ -454,8 +458,13 @@ def _get_portfolio_history_cached(simbolos: tuple[str, ...], period: str = "1y")
     if not simbolos:
         return pd.DataFrame()
 
-    pairs = [(s, map_to_us_ticker(s)) for s in simbolos]
-    pairs = [(clean_symbol(s), t) for (s, t) in pairs if t]
+    pairs = []
+    for s in simbolos:
+        try:
+            t = map_to_us_ticker(s)
+        except ValueError:
+            continue
+        pairs.append((clean_symbol(s), t))
     if not pairs:
         return pd.DataFrame()
 
