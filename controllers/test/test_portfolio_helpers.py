@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+import plotly.express as px
 
 from controllers import portfolio as pm
 import controllers.portfolio.load_data as load_mod
@@ -173,6 +174,17 @@ def test_generate_basic_charts(monkeypatch):
     }
 
 
+def test_generate_basic_charts_missing_columns():
+    df = pd.DataFrame({"foo": [1]})
+    charts = pm.generate_basic_charts(df, top_n=5)
+    assert charts == {
+        "pl_topn": None,
+        "donut_tipo": None,
+        "dist_tipo": None,
+        "pl_diario": None,
+    }
+
+
 def test_compute_risk_metrics():
     returns_df = pd.DataFrame({"A": [0.1, -0.05, 0.02], "B": [0.0, 0.02, -0.01]})
     bench_ret = pd.Series([0.05, 0.01, 0.03])
@@ -193,6 +205,41 @@ def test_render_basic_section_handles_empty(monkeypatch):
     mock_info.assert_called_once_with("No hay datos del portafolio para mostrar.")
 
 
+def test_render_basic_section_with_data(monkeypatch):
+    df = pd.DataFrame({
+        "simbolo": ["AL30"],
+        "valor_actual": [100],
+        "pl": [10],
+        "pl_%": [0.1],
+        "pl_d": [5],
+        "tipo": ["Bono"],
+    })
+    mock_totals = MagicMock()
+    monkeypatch.setattr(charts_mod, "render_totals", mock_totals)
+    monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
+    fig = object()
+    monkeypatch.setattr(
+        charts_mod,
+        "generate_basic_charts",
+        lambda df, top_n: {
+            "pl_topn": fig,
+            "donut_tipo": fig,
+            "dist_tipo": fig,
+            "pl_diario": fig,
+        },
+    )
+    plot_mock = MagicMock()
+    monkeypatch.setattr(charts_mod.st, "plotly_chart", plot_mock)
+    monkeypatch.setattr(charts_mod.st, "columns", lambda n: (DummyCtx(), DummyCtx()))
+    monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "info", lambda *a, **k: None)
+
+    pm.render_basic_section(df, Controls(), None)
+
+    mock_totals.assert_called_once()
+    assert plot_mock.call_count == 4
+
+
 def test_render_advanced_analysis_no_columns(monkeypatch):
     df = pd.DataFrame()
     monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
@@ -200,6 +247,66 @@ def test_render_advanced_analysis_no_columns(monkeypatch):
     monkeypatch.setattr(charts_mod.st, "info", mock_info)
     pm.render_advanced_analysis(df)
     mock_info.assert_called_once_with("No hay columnas disponibles para el gráfico bubble.")
+
+
+def test_render_advanced_analysis_missing_bubble_columns(monkeypatch):
+    df = pd.DataFrame({"pl": [1, 2], "pl_%": [0.1, 0.2]})
+    monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
+    sel_vals = iter(["pl", "pl_%", "Tema", "RdBu"])
+    monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: next(sel_vals))
+    monkeypatch.setattr(charts_mod.st, "checkbox", lambda *a, **k: False)
+    monkeypatch.setattr(charts_mod.st, "columns", lambda n: (DummyCtx(), DummyCtx()))
+    info_mock = MagicMock()
+    monkeypatch.setattr(charts_mod.st, "info", info_mock)
+    monkeypatch.setattr(charts_mod.st, "plotly_chart", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "expander", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(charts_mod.st, "caption", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "plot_bubble_pl_vs_costo", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "plot_heat_pl_pct", lambda *a, **k: None)
+
+    pm.render_advanced_analysis(df)
+
+    info_mock.assert_any_call("No hay datos suficientes para el gráfico bubble.")
+
+
+def test_render_advanced_analysis_palette_and_log(monkeypatch):
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AL30", "GOOG"],
+            "tipo": ["Bono", "Accion"],
+            "valor_actual": [100, 200],
+            "costo": [90, 150],
+            "pl": [10, 50],
+            "pl_d": [1, 2],
+            "pl_%": [0.1, 0.2],
+        }
+    )
+    monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
+    sel_vals = iter(["costo", "pl", "Plotly", "Viridis"])
+    monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: next(sel_vals))
+    chk_vals = iter([True, True])
+    monkeypatch.setattr(charts_mod.st, "checkbox", lambda *a, **k: next(chk_vals))
+    monkeypatch.setattr(charts_mod.st, "columns", lambda n: (DummyCtx(), DummyCtx()))
+    monkeypatch.setattr(charts_mod.st, "expander", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(charts_mod.st, "caption", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "plotly_chart", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "info", lambda *a, **k: None)
+    bubble_mock = MagicMock(return_value="fig1")
+    heat_mock = MagicMock(return_value="fig2")
+    monkeypatch.setattr(charts_mod, "plot_bubble_pl_vs_costo", bubble_mock)
+    monkeypatch.setattr(charts_mod, "plot_heat_pl_pct", heat_mock)
+
+    pm.render_advanced_analysis(df)
+
+    bubble_mock.assert_called_once_with(
+        df,
+        x_axis="costo",
+        y_axis="pl",
+        color_seq=px.colors.qualitative.Plotly,
+        log_x=True,
+        log_y=True,
+    )
+    heat_mock.assert_called_once_with(df, color_scale="Viridis")
 
 
 def test_render_risk_analysis_insufficient_symbols(monkeypatch):
