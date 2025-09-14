@@ -22,7 +22,13 @@ class DummyCtx:
 
 
 def test_load_portfolio_data(monkeypatch):
-    payload = {"activos": [{"simbolo": "AL30", "mercado": "BCBA"}]}
+    payload = {
+        "activos": [
+            {"simbolo": "AL30", "mercado": "BCBA"},
+            {"simbolo": "GOOG", "mercado": "NASDAQ"},
+            {"simbolo": "AL30", "mercado": "BCBA"},
+        ]
+    }
     monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: payload)
     monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
     monkeypatch.setattr(load_mod.st, "warning", lambda *a, **k: None)
@@ -36,12 +42,12 @@ def test_load_portfolio_data(monkeypatch):
             return pd.DataFrame(payload["activos"])
 
         def classify_asset_cached(self, sym):
-            return {"AL30": "Bono"}.get(sym)
+            return {"AL30": "Bono", "GOOG": "Accion"}.get(sym)
 
     df_pos, syms, types = pm.load_portfolio_data(None, DummyPSvc())
-    assert list(df_pos["simbolo"]) == ["AL30"]
-    assert syms == ["AL30"]
-    assert types == ["Bono"]
+    assert list(df_pos["simbolo"]) == ["AL30", "GOOG", "AL30"]
+    assert syms == ["AL30", "GOOG"]
+    assert types == ["Accion", "Bono"]
 
 def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
     monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: {})
@@ -93,10 +99,8 @@ def test_load_portfolio_data_shows_generic_error(monkeypatch):
     class StopCalled(Exception):
         pass
 
-    def stop():
-        raise StopCalled()
-
-    monkeypatch.setattr(load_mod.st, "stop", stop)
+    stop_mock = MagicMock(side_effect=StopCalled)
+    monkeypatch.setattr(load_mod.st, "stop", stop_mock)
     logger_mock = MagicMock()
     monkeypatch.setattr(load_mod, "logger", logger_mock)
 
@@ -108,10 +112,80 @@ def test_load_portfolio_data_shows_generic_error(monkeypatch):
         pm.load_portfolio_data(None, DummyPSvc())
 
     err_mock.assert_called_once()
+    stop_mock.assert_called_once()
     msg = err_mock.call_args[0][0]
     assert msg == "No se pudo cargar el portafolio, intente más tarde"
     assert "detalle interno" not in msg
     logger_mock.error.assert_called_once()
+
+
+def test_load_portfolio_data_reruns_on_auth_error(monkeypatch):
+    payload = {"status": 401}
+    monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: payload)
+    monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
+    warn_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "warning", warn_mock)
+    monkeypatch.setattr(load_mod.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "error", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "dataframe", lambda *a, **k: None)
+    stop_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "stop", stop_mock)
+    monkeypatch.setattr(load_mod.st, "session_state", {}, raising=False)
+
+    class RerunCalled(Exception):
+        pass
+
+    rerun_mock = MagicMock(side_effect=RerunCalled)
+    monkeypatch.setattr(load_mod.st, "rerun", rerun_mock)
+
+    class DummyPSvc:
+        def normalize_positions(self, payload):
+            pytest.fail("normalize_positions should not be called")
+
+        def classify_asset_cached(self, sym):
+            return None
+
+    with pytest.raises(RerunCalled):
+        pm.load_portfolio_data(None, DummyPSvc())
+
+    warn_mock.assert_called_once_with(
+        "Sesión expirada, por favor vuelva a iniciar sesión"
+    )
+    rerun_mock.assert_called_once()
+    stop_mock.assert_not_called()
+
+
+def test_load_portfolio_data_warns_on_empty_positions(monkeypatch):
+    payload = {"activos": []}
+    monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: payload)
+    monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
+    warn_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "warning", warn_mock)
+    monkeypatch.setattr(load_mod.st, "info", lambda *a, **k: None)
+    monkeypatch.setattr(load_mod.st, "error", lambda *a, **k: None)
+    df_mock = MagicMock()
+    monkeypatch.setattr(load_mod.st, "dataframe", df_mock)
+    class StopCalled(Exception):
+        pass
+    stop_mock = MagicMock(side_effect=StopCalled)
+    monkeypatch.setattr(load_mod.st, "stop", stop_mock)
+    monkeypatch.setattr(load_mod.st, "session_state", {}, raising=False)
+
+    class DummyPSvc:
+        def normalize_positions(self, payload):
+            return pd.DataFrame(payload.get("activos", []))
+
+        def classify_asset_cached(self, sym):
+            return None
+
+    with pytest.raises(StopCalled):
+        pm.load_portfolio_data(None, DummyPSvc())
+
+    warn_mock.assert_called_once_with(
+        "No se encontraron posiciones o no pudimos mapear la respuesta."
+    )
+    df_mock.assert_called_once()
+    stop_mock.assert_called_once()
 
 
 def test_apply_filters(monkeypatch):
