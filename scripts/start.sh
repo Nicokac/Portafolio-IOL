@@ -6,4 +6,4 @@ if [ -z "$IOL_TOKENS_KEY" ]; then
   exit 1
 fi
 
-exec streamlit run app.py --server.port=8501 --server.address=0.0.0.0 "$@"
+exec streamlit run app.py --server.port="${PORT:-8501}" --server.address=0.0.0.0 "$@"

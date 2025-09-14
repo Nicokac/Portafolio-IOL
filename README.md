@@ -111,7 +111,24 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 
 1. Subir el repositorio a GitHub.
 2. En [Streamlit Cloud](https://streamlit.io/cloud), crear una nueva aplicación apuntando a `app.py`.
-3. Definir en *Secrets* las variables de entorno descritas en `.env`.
+3. En el panel de la aplicación, abre el menú **⋮** y selecciona **Edit secrets** para mostrar la pestaña **Secrets**.
+4. Completa el editor con un `secrets.toml` mínimo:
+   ```toml
+   USER_AGENT = "Portafolio-IOL/1.0"
+   IOL_TOKENS_FILE = "tokens_iol.json"
+   IOL_TOKENS_KEY = "..."
+   IOL_ALLOW_PLAIN_TOKENS = 0
+   CACHE_TTL_PORTFOLIO = 20
+   CACHE_TTL_LAST_PRICE = 10
+   ASSET_CATALOG_PATH = "/ruta/a/assets_catalog.json"
+   LOG_LEVEL = "INFO"
+   LOG_FORMAT = "plain"
+   LOG_USER = "usuario"
+   ```
+   Estos valores coinciden con las variables del ejemplo `.env`.
+5. Guarda los cambios y despliega la aplicación.
+
+Para más detalles, consulta la [documentación oficial de Streamlit sobre gestión de secrets](https://docs.streamlit.io/streamlit-community-cloud/get-started/deploy-an-app/secrets-management).
 
 ## Pruebas
 
