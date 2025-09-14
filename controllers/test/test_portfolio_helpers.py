@@ -178,12 +178,21 @@ def test_compute_risk_metrics():
     bench_ret = pd.Series([0.05, 0.01, 0.03])
     weights = pd.Series({"A": 0.5, "B": 0.5})
 
+    expected_port_ret = returns_df.mul(weights, axis=1).sum(axis=1)
+    expected_vol = risk_mod.annualized_volatility(expected_port_ret)
+    expected_beta = risk_mod.beta(expected_port_ret, bench_ret)
+    expected_var = risk_mod.historical_var(expected_port_ret)
+    expected_opt_w = risk_mod.markowitz_optimize(returns_df)
+
     vol, b, var_95, opt_w, port_ret = pm.compute_risk_metrics(
         returns_df, bench_ret, weights
     )
-    assert len(port_ret) == len(returns_df)
-    assert vol >= 0
-    assert opt_w.sum() == pytest.approx(1, rel=1e-5)
+
+    pd.testing.assert_series_equal(port_ret, expected_port_ret)
+    assert vol == pytest.approx(expected_vol)
+    assert b == pytest.approx(expected_beta)
+    assert var_95 == pytest.approx(expected_var)
+    pd.testing.assert_series_equal(opt_w, expected_opt_w)
 
 
 def test_render_basic_section_handles_empty(monkeypatch):
@@ -214,6 +223,105 @@ def test_render_risk_analysis_insufficient_symbols(monkeypatch):
     mock_info.assert_any_call(
         "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
     )
+
+
+def test_render_risk_analysis_empty_history(monkeypatch):
+    df = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [100, 200]})
+    monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "selectbox", lambda *a, **k: "1y")
+    monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(risk_mod.st, "warning", lambda *a, **k: None)
+    info_mock = MagicMock()
+    monkeypatch.setattr(risk_mod.st, "info", info_mock)
+    tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
+    pm.render_risk_analysis(df, tasvc)
+    info_mock.assert_any_call(
+        "No se pudieron obtener datos históricos para calcular métricas de riesgo."
+    )
+
+
+def test_render_risk_analysis_valid_data(monkeypatch):
+    df = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [100, 200]})
+    monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(
+        risk_mod.st, "selectbox", lambda label, options, index=0: options[index]
+    )
+    monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(risk_mod.st, "plotly_chart", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "caption", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "bar_chart", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "line_chart", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "write", lambda *a, **k: None)
+    monkeypatch.setattr(
+        risk_mod.st, "number_input", lambda *args, **kwargs: kwargs.get("value")
+    )
+
+    expander_calls = []
+
+    def fake_expander(label):
+        expander_calls.append(label)
+        return DummyCtx()
+
+    monkeypatch.setattr(risk_mod.st, "expander", fake_expander)
+
+    col1 = SimpleNamespace(metric=MagicMock())
+    col2 = SimpleNamespace(metric=MagicMock())
+    col3 = SimpleNamespace(metric=MagicMock())
+    monkeypatch.setattr(risk_mod.st, "columns", lambda n: (col1, col2, col3))
+
+    returns_df = pd.DataFrame({"A": [0.1, 0.2], "B": [0.05, 0.1]})
+    bench_ret = pd.Series([0.03, 0.04])
+
+    def fake_compute_returns(df):
+        if "A" in df.columns:
+            return returns_df
+        return pd.DataFrame({"^GSPC": bench_ret})
+
+    monkeypatch.setattr(risk_mod, "compute_returns", fake_compute_returns)
+
+    fake_port_ret = pd.Series([0.01, -0.02])
+    opt_w = pd.Series({"A": 0.6, "B": 0.4})
+    monkeypatch.setattr(
+        risk_mod,
+        "compute_risk_metrics",
+        lambda r, b, w: (0.2, 1.1, 0.03, opt_w, fake_port_ret),
+    )
+
+    monkeypatch.setattr(risk_mod.px, "line", lambda *a, **k: "fig")
+    monkeypatch.setattr(
+        risk_mod.px,
+        "histogram",
+        lambda *a, **k: SimpleNamespace(add_vline=lambda *a, **k: None),
+    )
+
+    monkeypatch.setattr(
+        risk_mod, "monte_carlo_simulation", lambda *a, **k: pd.Series([1, 2])
+    )
+    monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.05)
+
+    def fake_history(simbolos=None, period=None):
+        if simbolos == ["^GSPC"]:
+            return pd.DataFrame({"^GSPC": [1, 1.01, 1.02]})
+        return pd.DataFrame({"A": [1, 1.1, 1.2], "B": [1, 1.05, 1.1]})
+
+    tasvc = SimpleNamespace(portfolio_history=fake_history)
+
+    pm.render_risk_analysis(df, tasvc)
+
+    assert col1.metric.call_args[0] == (
+        "Volatilidad anualizada",
+        "20.00%",
+    )
+    assert col2.metric.call_args[0] == (
+        "Beta vs S&P 500",
+        "1.10",
+    )
+    assert col3.metric.call_args[0] == (
+        "VaR 5%",
+        "3.00%",
+    )
+    assert len(expander_calls) == 5
 
 
 def test_render_fundamental_analysis_no_symbols(monkeypatch):
