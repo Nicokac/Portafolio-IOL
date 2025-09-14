@@ -2,6 +2,8 @@
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
+Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
+
 ## Requisitos de sistema
 
 - Python 3.10 o superior
@@ -129,6 +131,16 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 5. Guarda los cambios y despliega la aplicación.
 
 Para más detalles, consulta la [documentación oficial de Streamlit sobre gestión de secrets](https://docs.streamlit.io/streamlit-community-cloud/get-started/deploy-an-app/secrets-management).
+
+## Post-deploy notes
+
+- **Revisar métricas de performance**:
+  - En despliegues locales o Docker, usa `docker stats <container>` para monitorear CPU/memoria y `docker logs <container>` para tiempos de respuesta.
+  - En Streamlit Cloud, abre el menú **⋮** y selecciona **View app logs** para ver métricas de la instancia.
+- **Prueba de login multiusuario**:
+  1. Abre dos navegadores distintos o ventanas en modo incógnito.
+  2. Inicia sesión en cada uno con credenciales válidas.
+  3. Verifica que cada sesión opere de forma independiente; cerrar sesión en una no debe afectar a la otra.
 
 ## Pruebas
 
