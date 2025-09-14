@@ -19,7 +19,8 @@ def test_map_to_us_ticker(monkeypatch):
 
     assert map_to_us_ticker("PAMP") == "PAM"
     assert map_to_us_ticker("ALUA") == "ALUA.BA"
-    assert map_to_us_ticker("INEXISTENTE") is None
+    with pytest.raises(ValueError):
+        map_to_us_ticker("INEXISTENTE")
 
 
 def test_classify_symbol_patterns_and_defaults(monkeypatch):
