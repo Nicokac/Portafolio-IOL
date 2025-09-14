@@ -107,7 +107,7 @@ def render_spreads(rates: dict):
         rows.append({"Par": "Mayorista vs CCL", "Brecha": format_percent(pct(ccl, mayorista))})
     rows.append({"Par": "Blue vs Oficial", "Brecha": format_percent(pct(blue, oficial))})
 
-    _ = st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    _ = st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
 def render_fx_history(history: pd.DataFrame):
     st.subheader("⏱️ Serie intradía del dólar")
@@ -123,4 +123,4 @@ def render_fx_history(history: pd.DataFrame):
     df_long = hist[["ts_dt"] + cols].melt("ts_dt", var_name="Tipo", value_name="ARS")
     fig = px.line(df_long, x="ts_dt", y="ARS", color="Tipo", hover_name="Tipo")
     fig.update_layout(xaxis_title="", yaxis_title="ARS / USD", legend_title_text="Tipo")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")

@@ -165,7 +165,7 @@ def render_portfolio_section(container, cli, fx_rates):
                             )
                             st.plotly_chart(
                                 fig,
-                                use_container_width=True,
+                                width="stretch",
                                 key="ta_chart",
                                 config=PLOTLY_CONFIG,
                             )
