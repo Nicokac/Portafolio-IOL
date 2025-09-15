@@ -56,6 +56,7 @@ def load_portfolio_data(cli, psvc):
         )
         if isinstance(payload, dict) and "activos" in payload:
             st.dataframe(pd.DataFrame(payload["activos"]).head(20))
+            st.caption("Ejemplo de datos recibidos del portafolio")
         st.stop()
 
     all_symbols = sorted(df_pos["simbolo"].astype(str).str.upper().unique())
