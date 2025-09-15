@@ -39,6 +39,8 @@ IOL_ALLOW_PLAIN_TOKENS=0
 # Otros ajustes opcionales
 CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
+CACHE_TTL_QUOTES=8
+CACHE_TTL_FX=60
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
 # Nivel de los logs ("DEBUG", "INFO", etc.; predeterminado: INFO)
 LOG_LEVEL="INFO"
@@ -122,6 +124,8 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
    IOL_ALLOW_PLAIN_TOKENS = 0
    CACHE_TTL_PORTFOLIO = 20
    CACHE_TTL_LAST_PRICE = 10
+   CACHE_TTL_QUOTES = 8
+   CACHE_TTL_FX = 60
    ASSET_CATALOG_PATH = "/ruta/a/assets_catalog.json"
    LOG_LEVEL = "INFO"
    LOG_FORMAT = "plain"
@@ -172,7 +176,7 @@ Los siguientes tiempos se observan en condiciones normales (aprox. 20 posiciones
 | `fetch_portfolio`   | < 600 ms        | ~20 posiciones |
 | `fetch_quotes_bulk` | < 1 s           | 20 símbolos |
 
-Si algún paso supera estos valores, considera reducir llamadas redundantes, ajustar los TTL de cache en `shared/config.py` o incrementar `max_quote_workers` cuando existan muchas posiciones.
+Si algún paso supera estos valores, considera reducir llamadas redundantes, ajustar los TTL de cache en `shared/settings.py` o incrementar `MAX_QUOTE_WORKERS` cuando existan muchas posiciones.
 
 ## Fallback de análisis técnico
 

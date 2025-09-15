@@ -16,7 +16,13 @@ from infrastructure.iol.client import (
 )
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
-from shared.config import settings
+from shared.settings import (
+    cache_ttl_fx,
+    cache_ttl_portfolio,
+    cache_ttl_quotes,
+    max_quote_workers,
+    settings,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +58,9 @@ def _normalize_quote(raw: dict) -> dict:
     return data
 
 
-def _get_quote_cached(cli, mercado: str, simbolo: str, ttl: int = 8) -> dict:
+def _get_quote_cached(
+    cli, mercado: str, simbolo: str, ttl: int = cache_ttl_quotes
+) -> dict:
     key = (str(mercado).lower(), str(simbolo).upper())
     now = time.time()
     with _QUOTE_LOCK:
@@ -96,7 +104,7 @@ def get_client_cached(
     return _build_iol_client(user, "", tokens_file=tokens_file, auth=auth)
 
 
-@cache.cache_data(ttl=settings.cache_ttl_portfolio)
+@cache.cache_data(ttl=cache_ttl_portfolio)
 def fetch_portfolio(_cli: IIOLProvider):
     start = time.time()
     tokens_path = getattr(getattr(_cli, "auth", None), "tokens_path", None)
@@ -130,7 +138,7 @@ def fetch_portfolio(_cli: IIOLProvider):
     return data
 
 
-@cache.cache_data(ttl=settings.cache_ttl_quotes)
+@cache.cache_data(ttl=cache_ttl_quotes)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     start = time.time()
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
@@ -157,8 +165,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         logger.exception("get_quotes_bulk falló: %s", e)
 
     out = {}
-    ttl = settings.cache_ttl_quotes
-    max_workers = getattr(settings, "max_quote_workers", 12)
+    ttl = cache_ttl_quotes
+    max_workers = max_quote_workers
     with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
         futs = {
             ex.submit(_get_quote_cached, _cli, m, s, ttl): (
@@ -189,7 +197,7 @@ def get_fx_provider() -> FXProviderAdapter:
     return FXProviderAdapter()
 
 
-@cache.cache_data(ttl=settings.cache_ttl_fx)
+@cache.cache_data(ttl=cache_ttl_fx)
 def fetch_fx_rates():
     data: dict = {}
     error: str | None = None
@@ -203,7 +211,7 @@ def fetch_fx_rates():
 
 def get_fx_rates_cached():
     now = time.time()
-    ttl = getattr(settings, "cache_ttl_fx", 0)
+    ttl = cache_ttl_fx
     last = st.session_state.get("fx_rates_ts", 0)
     if "fx_rates" not in st.session_state or now - last > ttl:
         data, error = fetch_fx_rates()

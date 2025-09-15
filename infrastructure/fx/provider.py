@@ -8,7 +8,7 @@ from typing import Optional, Dict, Tuple, List
 import traceback
 
 from infrastructure.http.session import build_session
-from shared.config import settings
+from shared.settings import cache_ttl_fx, settings
 from shared.utils import _to_float
 import requests
 
@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 CACHE_FILE = BASE_DIR / ".cache" / "fx_rates.json"
 FALLBACK_FILE = BASE_DIR / "fallback_rates.json"
-CACHE_TTL  = 45  # segundos
 
 
 # -------------------------
@@ -79,7 +78,7 @@ class FXProviderAdapter:
             if CACHE_FILE.exists():
                 data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
                 # tolerante: si el cache está viejo, ignoramos
-                if time.time() - float(data.get("_ts", 0)) < CACHE_TTL:
+                if time.time() - float(data.get("_ts", 0)) < cache_ttl_fx:
                     # por si el cache viejo no estaba normalizado
                     return _normalize_rates(data)
         except Exception as e:

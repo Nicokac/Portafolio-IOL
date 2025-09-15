@@ -5,13 +5,14 @@ from unittest.mock import MagicMock
 import requests
 
 from infrastructure.fx import provider as fx_provider
+from shared.settings import cache_ttl_fx
 
 
 # _load_cache tests
 
 def test_load_cache_expired_file(monkeypatch, tmp_path):
     cache_file = tmp_path / "fx_cache.json"
-    data = {"oficial": 1, "_ts": time.time() - fx_provider.CACHE_TTL - 10}
+    data = {"oficial": 1, "_ts": time.time() - cache_ttl_fx - 10}
     cache_file.write_text(json.dumps(data), encoding="utf-8")
     monkeypatch.setattr(fx_provider, "CACHE_FILE", cache_file)
     provider = fx_provider.FXProviderAdapter()
