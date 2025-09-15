@@ -52,6 +52,7 @@ def test_render_fx_history_info_when_no_valid_columns():
         info=MagicMock(),
         line_chart=MagicMock(),
         plotly_chart=MagicMock(),
+        caption=MagicMock(),
     )
     with patch("ui.fx_panels.st", mock_st):
         render_fx_history(hist)
@@ -59,6 +60,7 @@ def test_render_fx_history_info_when_no_valid_columns():
     mock_st.info.assert_called_once_with("No hay series disponibles para graficar.")
     mock_st.line_chart.assert_not_called()
     mock_st.plotly_chart.assert_not_called()
+    mock_st.caption.assert_not_called()
 
 
 def test_render_fx_history_plots_when_valid_series():
@@ -74,6 +76,7 @@ def test_render_fx_history_plots_when_valid_series():
         info=MagicMock(),
         line_chart=MagicMock(),
         plotly_chart=MagicMock(),
+        caption=MagicMock(),
     )
     fig = SimpleNamespace(update_layout=MagicMock())
     mock_px = SimpleNamespace(line=MagicMock(return_value=fig))
@@ -83,3 +86,6 @@ def test_render_fx_history_plots_when_valid_series():
     mock_st.info.assert_not_called()
     mock_st.line_chart.assert_called_once()
     mock_st.plotly_chart.assert_called_once_with(fig, width="stretch")
+    mock_st.caption.assert_called_once_with(
+        "Línea que refleja cómo cambian las cotizaciones del dólar a lo largo del día."
+    )
