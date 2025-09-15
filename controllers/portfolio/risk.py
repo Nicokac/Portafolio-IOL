@@ -42,6 +42,12 @@ def render_risk_analysis(df_view, tasvc):
             )
         fig = plot_correlation_heatmap(hist_df)
         if fig:
+            st.plotly_chart(
+                fig,
+                width="stretch",
+                key="corr_heatmap",
+                config=PLOTLY_CONFIG,
+            )
             st.caption(
                 """
                 Un heatmap de correlación muestra cómo se mueven los activos entre sí.
@@ -50,12 +56,6 @@ def render_risk_analysis(df_view, tasvc):
                 **Blanco (cercano a 0)**: No tienen relación.
                 Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                 """
-            )
-            st.plotly_chart(
-                fig,
-                width="stretch",
-                key="corr_heatmap",
-                config=PLOTLY_CONFIG,
             )
         else:
             st.warning(
