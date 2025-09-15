@@ -108,6 +108,7 @@ def render_spreads(rates: dict):
     rows.append({"Par": "Blue vs Oficial", "Brecha": format_percent(pct(blue, oficial))})
 
     _ = st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.caption("Muestra la diferencia porcentual entre distintas cotizaciones del dólar.")
 
 def render_fx_history(history: pd.DataFrame):
     st.subheader("⏱️ Serie intradía del dólar")
