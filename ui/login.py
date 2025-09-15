@@ -5,16 +5,12 @@ from application.auth_service import (
     InvalidCredentialsError,
     NetworkError,
 )
+from ui.footer import render_footer
 from ui.header import render_header
 from shared.config import settings
 
 
 logger = logging.getLogger(__name__)
-
-
-def render_footer() -> None:
-    """Render developer information at the bottom of the login form."""
-    st.caption("Desarrollado por Nicolás Kachuk")
 
 
 def render_login_page() -> None:
