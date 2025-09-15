@@ -230,7 +230,6 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     )
 
     st.subheader("Detalle por símbolo")
-    st.caption("Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo.")
     df_export = df_tbl.rename(columns=rename_map)
     download_csv(df_export, "portafolio.csv")
 
@@ -252,5 +251,7 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         height=420,
         column_config=column_config,
     )
+
+    st.caption("Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo.")
 
     df_tbl.drop(columns=rename_map.keys(), inplace=True, errors="ignore")
