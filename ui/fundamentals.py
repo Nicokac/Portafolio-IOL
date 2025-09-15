@@ -79,6 +79,7 @@ def render_fundamental_data(data: dict):
         )
         
     st.table(pd.DataFrame(rows))
+    st.caption("Resumen de indicadores fundamentales básicos.")
     st.divider()
 
 def render_fundamental_ranking(df: pd.DataFrame):
