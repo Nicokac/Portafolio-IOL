@@ -62,6 +62,9 @@ def render_basic_section(df_view, controls, ccl_rate):
                 key="donut_tipo",
                 config=PLOTLY_CONFIG,
             )
+            st.caption(
+                "Indica qué porcentaje de tu inversión está en cada tipo de activo para ver si estás diversificando bien."
+            )
         else:
             st.info("No hay datos para el donut por tipo.")
 
