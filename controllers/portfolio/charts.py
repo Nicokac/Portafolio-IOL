@@ -50,6 +50,9 @@ def render_basic_section(df_view, controls, ccl_rate):
                 key="pl_topn",
                 config=PLOTLY_CONFIG,
             )
+            st.caption(
+                "Barras que muestran qué activos ganan o pierden más. Las más altas son las que más afectan tu resultado."
+            )
         else:
             st.info("Sin datos para graficar P/L Top N.")
     with colB:
