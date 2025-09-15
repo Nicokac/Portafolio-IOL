@@ -1,25 +1,12 @@
 import subprocess
-import streamlit as st
 from datetime import datetime
+
+import streamlit as st
+from shared.version import __version__
 
 
 def get_version():
-    try:
-        version = (
-            subprocess.check_output(["git", "describe", "--tags"], stderr=subprocess.STDOUT)
-            .decode()
-            .strip()
-        )
-    except Exception:
-        try:
-            version = (
-                subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.STDOUT)
-                .decode()
-                .strip()
-            )
-        except Exception:
-            version = "desconocida"
-
+    version = __version__
     try:
         date = (
             subprocess.check_output(

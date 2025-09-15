@@ -42,3 +42,4 @@ build/
 
 # --- Generated version file
 version.py
+!shared/version.py
