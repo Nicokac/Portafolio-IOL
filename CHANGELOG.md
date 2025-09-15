@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Centralized cache TTL configuration in `shared/settings` and documented the
+  new environment keys for quote and FX caches.
 ### Fixed
 - Successful login now marks the session as authenticated to access the main page.
 - Fixed: los paneles ahora se recargan automáticamente después de logout/login sin requerir refresco manual.
