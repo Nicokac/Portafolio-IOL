@@ -10,12 +10,14 @@ def test_render_spreads_shows_info_when_no_rates():
         subheader=MagicMock(),
         info=MagicMock(),
         dataframe=MagicMock(),
+        caption=MagicMock(),
     )
     with patch("ui.fx_panels.st", mock_st):
         render_spreads({})
 
     mock_st.info.assert_called_once_with("Sin cotizaciones para calcular brechas.")
     mock_st.dataframe.assert_not_called()
+    mock_st.caption.assert_not_called()
 
 
 def test_render_spreads_includes_mayorista_when_available():
@@ -31,12 +33,16 @@ def test_render_spreads_includes_mayorista_when_available():
         subheader=MagicMock(),
         info=MagicMock(),
         dataframe=MagicMock(side_effect=lambda df, **kwargs: captured_df.update(df=df)),
+        caption=MagicMock(),
     )
     with patch("ui.fx_panels.st", mock_st):
         render_spreads(rates)
 
     mock_st.info.assert_not_called()
     assert "Mayorista vs CCL" in captured_df["df"]["Par"].tolist()
+    mock_st.caption.assert_called_once_with(
+        "Muestra la diferencia porcentual entre distintas cotizaciones del dólar."
+    )
 
 
 def test_render_fx_history_info_when_no_valid_columns():
