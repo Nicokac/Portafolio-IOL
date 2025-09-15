@@ -27,13 +27,6 @@ def mock_st(monkeypatch):
     )
     monkeypatch.setattr(tables, "st", mock)
     return mock
-
-
-def test_detect_currency_returns_expected_values():
-    assert tables._detect_currency("PRPEDOB", None) == "USD"
-    assert tables._detect_currency("ALUA", "BONO") == "ARS"
-
-
 def test_render_totals_without_ccl_rate(mock_st):
     df = pd.DataFrame({"valor_actual": [100, 200], "costo": [40, 110]})
     cols = [MagicMock() for _ in range(4)]

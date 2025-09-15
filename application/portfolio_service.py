@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from typing import Dict, Any, List, Iterable
+from dataclasses import dataclass
 import os
 import re
 import json
@@ -16,6 +17,43 @@ import requests
 
 import numpy as np
 import pandas as pd
+
+
+@dataclass(frozen=True)
+class PortfolioTotals:
+    """Totales básicos del portafolio."""
+
+    total_value: float
+    total_cost: float
+    total_pl: float
+    total_pl_pct: float
+
+
+def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
+    """Calcula totales agregados de valorizado, costo y P/L."""
+
+    if df_view is None or df_view.empty:
+        return PortfolioTotals(0.0, 0.0, 0.0, float("nan"))
+
+    valor_actual = df_view.get("valor_actual", pd.Series(dtype=float))
+    costo = df_view.get("costo", pd.Series(dtype=float))
+
+    total_val = float(np.nansum(getattr(valor_actual, "values", [])))
+    total_cost = float(np.nansum(getattr(costo, "values", [])))
+    total_pl = total_val - total_cost
+
+    if np.isfinite(total_cost) and not np.isclose(total_cost, 0.0):
+        total_pl_pct = (total_pl / total_cost) * 100.0
+    else:
+        total_pl_pct = float("nan")
+
+    return PortfolioTotals(total_val, total_cost, total_pl, total_pl_pct)
+
+
+def detect_currency(sym: str, tipo: str | None) -> str:
+    """Determina la moneda en base al símbolo informado."""
+
+    return "USD" if str(sym).upper() in {"PRPEDOB"} else "ARS"
 
 logger = logging.getLogger(__name__)
 
