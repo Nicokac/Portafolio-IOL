@@ -169,6 +169,11 @@ def render_portfolio_section(container, cli, fx_rates):
                                 key="ta_chart",
                                 config=PLOTLY_CONFIG,
                             )
+                            st.caption(
+                                "Gráfico de precio con indicadores técnicos como "
+                                "medias móviles, RSI o MACD para detectar tendencias "
+                                "y señales."
+                            )
                             alerts = tasvc.alerts_for(df_ind)
                             if alerts:
                                 for a in alerts:
