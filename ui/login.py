@@ -1,10 +1,7 @@
 import logging
 import streamlit as st
-from application.auth_service import (
-    get_auth_provider,
-    InvalidCredentialsError,
-    NetworkError,
-)
+from application.auth_service import get_auth_provider
+from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
 from ui.footer import render_footer
 from ui.header import render_header
 from shared.config import settings
@@ -56,6 +53,11 @@ def render_login_page() -> None:
         except InvalidCredentialsError:
             logger.warning("Fallo de autenticación")
             st.session_state["login_error"] = "Usuario o contraseña inválidos"
+            _clear_password_keys()
+            st.rerun()
+        except TimeoutError:
+            logger.warning("Timeout durante el login")
+            st.session_state["login_error"] = "Tiempo de espera agotado"
             _clear_password_keys()
             st.rerun()
         except NetworkError:

@@ -95,6 +95,14 @@ def test_login_network_error_sets_error_and_reruns(monkeypatch):
     _run_login_with_exception(monkeypatch, DummyNet(), "Error de conexión")
 
 
+def test_login_timeout_sets_error_and_reruns(monkeypatch):
+    class DummyTimeout(Exception):
+        pass
+
+    monkeypatch.setattr(login, "TimeoutError", DummyTimeout)
+    _run_login_with_exception(monkeypatch, DummyTimeout(), "Tiempo de espera agotado")
+
+
 def test_login_runtime_error_sets_error_and_reruns(monkeypatch):
     class DummyRun(Exception):
         pass

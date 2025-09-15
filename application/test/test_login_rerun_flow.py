@@ -123,6 +123,45 @@ def test_invalid_login_rerun_stays_on_login(monkeypatch):
     assert captured.get("msg") == "Usuario o contraseña inválidos"
 
 
+def test_timeout_login_rerun_sets_timeout_message(monkeypatch):
+    for mod in ("streamlit", "ui.login", "shared.config", "ui.ui_settings"):
+        sys.modules.pop(mod, None)
+    st = _make_streamlit()
+    sys.modules["streamlit"] = st
+    export_stub = types.ModuleType("shared.export")
+    export_stub.df_to_csv_bytes = lambda df: b""
+    export_stub.fig_to_png_bytes = lambda fig: b""
+    sys.modules["shared.export"] = export_stub
+
+    login_mod = importlib.import_module("ui.login")
+    monkeypatch.setattr(login_mod.settings, "tokens_key", "k")
+    monkeypatch.setattr(login_mod, "render_header", lambda: None)
+    st.session_state.update({"IOL_USERNAME": "u"})
+
+    class DummyProvider:
+        def login(self, u, p):
+            raise login_mod.TimeoutError()
+
+    monkeypatch.setattr(login_mod, "get_auth_provider", lambda: DummyProvider())
+    st.rerun.side_effect = RuntimeError("rerun")
+
+    with pytest.raises(RuntimeError):
+        login_mod.render_login_page()
+
+    assert st.rerun.called
+    assert st.session_state.get("login_error") == "Tiempo de espera agotado"
+    assert "authenticated" not in st.session_state
+
+    st.rerun = MagicMock()
+    st.form_submit_button = MagicMock(return_value=False)
+    captured = {}
+    st.error = lambda msg: captured.setdefault("msg", msg)
+
+    login_mod.render_login_page()
+
+    assert captured.get("msg") == "Tiempo de espera agotado"
+
+
 def test_expired_session_forces_login(monkeypatch):
     for mod in ("streamlit", "controllers.auth", "app", "shared.config", "ui.ui_settings"):
         sys.modules.pop(mod, None)

@@ -3,7 +3,7 @@ import streamlit as st
 
 from infrastructure.iol.client import IIOLProvider
 from application.auth_service import get_auth_provider
-from infrastructure.iol.auth import InvalidCredentialsError
+from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,10 @@ def build_iol_client() -> IIOLProvider | None:
         logger.exception("build_iol_client failed", exc_info=error)
         if isinstance(error, InvalidCredentialsError):
             st.session_state["login_error"] = "Credenciales inválidas"
+        elif isinstance(error, TimeoutError):
+            st.session_state["login_error"] = "Tiempo de espera agotado"
+        elif isinstance(error, NetworkError):
+            st.session_state["login_error"] = "Error de conexión"
         else:
             st.session_state["login_error"] = "Error de conexión"
         st.session_state["force_login"] = True

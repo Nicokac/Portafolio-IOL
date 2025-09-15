@@ -16,7 +16,8 @@ import streamlit as st
 
 from shared.config import settings
 from shared.utils import _to_float
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
+from infrastructure.iol.auth import IOLAuth
+from shared.errors import InvalidCredentialsError
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
 REQ_TIMEOUT = 30

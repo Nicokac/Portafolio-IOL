@@ -56,7 +56,7 @@ def test_load_tokens_corrupted_json(monkeypatch, tmp_path):
     assert auth.tokens == {}
 
 
-@pytest.mark.parametrize("exc_cls", [requests.ConnectionError, requests.Timeout])
+@pytest.mark.parametrize("exc_cls", [requests.ConnectionError])
 def test_login_network_errors(monkeypatch, tmp_path, exc_cls):
     key = Fernet.generate_key()
     auth_module = _reload_auth(monkeypatch, key)
@@ -67,6 +67,19 @@ def test_login_network_errors(monkeypatch, tmp_path, exc_cls):
     )
     auth = auth_module.IOLAuth("u", "p", tokens_file=tmp_path / "t.json")
     with pytest.raises(auth_module.NetworkError):
+        auth.login()
+
+
+def test_login_timeout_error(monkeypatch, tmp_path):
+    key = Fernet.generate_key()
+    auth_module = _reload_auth(monkeypatch, key)
+    monkeypatch.setattr(
+        auth_module.requests.Session,
+        "post",
+        MagicMock(side_effect=requests.Timeout("boom")),
+    )
+    auth = auth_module.IOLAuth("u", "p", tokens_file=tmp_path / "t.json")
+    with pytest.raises(auth_module.TimeoutError):
         auth.login()
 
 
@@ -95,7 +108,7 @@ def test_login_invalid_credentials(monkeypatch, tmp_path):
         auth.login()
 
 
-@pytest.mark.parametrize("exc_cls", [requests.ConnectionError, requests.Timeout])
+@pytest.mark.parametrize("exc_cls", [requests.ConnectionError])
 def test_refresh_network_errors(monkeypatch, tmp_path, exc_cls):
     key = Fernet.generate_key()
     auth_module = _reload_auth(monkeypatch, key)
@@ -107,6 +120,20 @@ def test_refresh_network_errors(monkeypatch, tmp_path, exc_cls):
     auth = auth_module.IOLAuth("u", "p", tokens_file=tmp_path / "t.json")
     auth.tokens = {"refresh_token": "r"}
     with pytest.raises(auth_module.NetworkError):
+        auth.refresh()
+
+
+def test_refresh_timeout_error(monkeypatch, tmp_path):
+    key = Fernet.generate_key()
+    auth_module = _reload_auth(monkeypatch, key)
+    monkeypatch.setattr(
+        auth_module.requests.Session,
+        "post",
+        MagicMock(side_effect=requests.Timeout("boom")),
+    )
+    auth = auth_module.IOLAuth("u", "p", tokens_file=tmp_path / "t.json")
+    auth.tokens = {"refresh_token": "r"}
+    with pytest.raises(auth_module.TimeoutError):
         auth.refresh()
 
 

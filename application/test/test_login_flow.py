@@ -173,6 +173,24 @@ def test_render_login_page_handles_network_error(monkeypatch):
     assert not any("password" in k.lower() for k in st.session_state)
 
 
+def test_render_login_page_handles_timeout(monkeypatch):
+    from ui import login
+
+    monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
+    _prepare_login_form(monkeypatch)
+
+    class DummyProvider:
+        def login(self, u, p):
+            raise login.TimeoutError()
+
+    monkeypatch.setattr(login, "get_auth_provider", lambda: DummyProvider())
+
+    login.render_login_page()
+
+    assert st.session_state.get("login_error") == "Tiempo de espera agotado"
+    assert not any("password" in k.lower() for k in st.session_state)
+
+
 def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     from ui import login
 

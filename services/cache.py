@@ -14,7 +14,8 @@ from infrastructure.iol.client import (
     IIOLProvider,
     build_iol_client as _build_iol_client,
 )
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
+from infrastructure.iol.auth import IOLAuth
+from shared.errors import InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
 from shared.config import settings
 

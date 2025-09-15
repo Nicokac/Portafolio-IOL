@@ -12,14 +12,23 @@ import time
 
 import streamlit as st
 
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError, NetworkError
+from infrastructure.iol.auth import IOLAuth
+from shared.errors import AuthenticationError, InvalidCredentialsError, NetworkError, TimeoutError
 from shared.cache import cache
 from shared.config import settings
 
-
-class AuthenticationError(Exception):
-    """Se lanza cuando la autenticación falla."""
-
+__all__ = [
+    "AuthenticationError",
+    "AuthenticationProvider",
+    "IOLAuthenticationProvider",
+    "register_auth_provider",
+    "get_auth_provider",
+    "login",
+    "logout",
+    "InvalidCredentialsError",
+    "NetworkError",
+    "TimeoutError",
+]
 
 class AuthenticationProvider(Protocol):
     """Define las operaciones básicas de autenticación."""

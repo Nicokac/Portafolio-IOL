@@ -73,7 +73,7 @@ def test_rerun_preserves_session(monkeypatch):
 
 def test_invalid_refresh_token_forces_login(monkeypatch):
     from controllers import auth
-    from infrastructure.iol.auth import InvalidCredentialsError
+    from shared.errors import InvalidCredentialsError
     mock_st = SimpleNamespace(session_state={"tokens": {"x": 1}}, rerun=MagicMock())
     monkeypatch.setattr(auth, "st", mock_st)
 
