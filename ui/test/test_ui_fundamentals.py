@@ -34,7 +34,12 @@ def test_render_fundamental_data_normal_flow():
         fundamentals.render_fundamental_data(data)
     st.warning.assert_not_called()
     st.subheader.assert_called_once_with("Análisis Fundamental: ACME")
-    st.caption.assert_called_once_with("**Sector:** Tech | **Web:** https://acme.com")
+    st.caption.assert_has_calls(
+        [
+            call("**Sector:** Tech | **Web:** https://acme.com"),
+            call("Resumen de indicadores fundamentales básicos."),
+        ]
+    )
     df_arg = st.table.call_args[0][0]
     assert isinstance(df_arg, pd.DataFrame)
     assert len(df_arg) == len(fundamentals.INDICATORS)
