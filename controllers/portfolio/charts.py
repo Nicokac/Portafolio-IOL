@@ -95,6 +95,9 @@ def render_basic_section(df_view, controls, ccl_rate):
             key="pl_diario",
             config=PLOTLY_CONFIG,
         )
+        st.caption(
+            "Muestra las ganancias o pérdidas del día para los activos con mayor movimiento."
+        )
     else:
         st.info("Aún no hay datos de P/L diario.")
 
