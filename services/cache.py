@@ -10,6 +10,14 @@ from shared.cache import cache
 import requests
 import streamlit as st
 
+from services.health import (
+    record_fx_api_response,
+    record_fx_cache_usage,
+    record_iol_refresh,
+    record_portfolio_load,
+    record_quote_load,
+)
+
 from infrastructure.iol.client import (
     IIOLProvider,
     build_iol_client as _build_iol_client,
@@ -89,10 +97,15 @@ def get_client_cached(
     )
     try:
         auth.refresh()
+        record_iol_refresh(True)
     except InvalidCredentialsError as e:
         auth.clear_tokens()
         st.session_state["force_login"] = True
+        record_iol_refresh(False, detail="Credenciales inválidas")
         raise e
+    except Exception as e:
+        record_iol_refresh(False, detail=e)
+        raise
     return _build_iol_client(user, "", tokens_file=tokens_file, auth=auth)
 
 
@@ -112,6 +125,7 @@ def fetch_portfolio(_cli: IIOLProvider):
             "fetch_portfolio using cache due to invalid credentials",
             extra={"tokens_file": tokens_path},
         )
+        record_portfolio_load(None, source="cache", detail="invalid-credentials")
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
@@ -119,8 +133,10 @@ def fetch_portfolio(_cli: IIOLProvider):
             e,
             extra={"tokens_file": tokens_path},
         )
+        record_portfolio_load(None, source="cache", detail="network-error")
         return {"_cached": True}
     elapsed = (time.time() - start) * 1000
+    record_portfolio_load(elapsed, source="api")
     log = logger.warning if elapsed > 600 else logger.info
     log(
         "fetch_portfolio done in %.0fms",
@@ -134,6 +150,7 @@ def fetch_portfolio(_cli: IIOLProvider):
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     start = time.time()
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
+    fallback_mode = not callable(get_bulk)
 
     try:
         if callable(get_bulk):
@@ -145,6 +162,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             elapsed = (time.time() - start) * 1000
             log = logger.warning if elapsed > 1000 else logger.info
             log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
+            record_quote_load(elapsed, source="bulk", count=len(items))
             return data
     except InvalidCredentialsError:
         try:
@@ -152,9 +170,11 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         except Exception:
             pass
         _trigger_logout()
+        record_quote_load(None, source="auth-error", count=len(items))
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
+        fallback_mode = True
 
     out = {}
     ttl = settings.cache_ttl_quotes
@@ -181,6 +201,11 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     elapsed = (time.time() - start) * 1000
     log = logger.warning if elapsed > 1000 else logger.info
     log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
+    record_quote_load(
+        elapsed,
+        source="fallback" if fallback_mode else "per-symbol",
+        count=len(items),
+    )
     return out
 
 
@@ -193,11 +218,17 @@ def get_fx_provider() -> FXProviderAdapter:
 def fetch_fx_rates():
     data: dict = {}
     error: str | None = None
+    start = time.time()
     try:
         data, error = get_fx_provider().get_rates()
     except (requests.RequestException, RuntimeError) as e:
         error = f"FX provider failed: {e}"
         logger.exception(error)
+    finally:
+        record_fx_api_response(
+            error=error,
+            elapsed_ms=(time.time() - start) * 1000,
+        )
     return data, error
 
 
@@ -210,6 +241,10 @@ def get_fx_rates_cached():
         st.session_state["fx_rates"] = data
         st.session_state["fx_rates_error"] = error
         st.session_state["fx_rates_ts"] = now
+        record_fx_cache_usage("refresh", age=0.0)
+    else:
+        age = now - last if last else None
+        record_fx_cache_usage("hit", age=age)
     return (
         st.session_state.get("fx_rates", {}),
         st.session_state.get("fx_rates_error"),

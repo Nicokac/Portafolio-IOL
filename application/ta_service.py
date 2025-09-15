@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.utils import _to_float
+from services.health import record_yfinance_usage
 
 from functools import lru_cache
 import numpy as np
@@ -147,15 +148,31 @@ def fetch_with_indicators(
                 hist = pd.read_csv(fallback, index_col=0, parse_dates=True)
             except Exception as err:
                 logger.error("No se pudo leer el fallback %s: %s", fallback, err)
+                record_yfinance_usage(
+                    "error",
+                    detail=f"{ticker}: fallback inválido ({err})",
+                )
                 return pd.DataFrame()
+            else:
+                record_yfinance_usage(
+                    "fallback",
+                    detail=f"{ticker}: {e}",
+                )
         else:
             logger.error("No se encontró el archivo de fallback en %s", fallback)
+            record_yfinance_usage(
+                "error",
+                detail=f"{ticker}: fallback ausente ({e})",
+            )
             return pd.DataFrame()
     except Exception as e:
         logger.error("yfinance error (%s): %s", ticker, e)
+        record_yfinance_usage("error", detail=f"{ticker}: {e}")
         raise RuntimeError(
             f"Error al descargar datos de yfinance para {ticker}"
         ) from e
+    else:
+        record_yfinance_usage("yfinance", detail=ticker)
     if hist is None or hist.empty:
         logger.warning(
             "No hay datos históricos para %s, devolviendo placeholder vacío.",

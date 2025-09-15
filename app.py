@@ -15,6 +15,7 @@ from shared.config import configure_logging, ensure_tokens_key
 from ui.ui_settings import init_ui
 from ui.header import render_header
 from ui.actions import render_action_menu
+from ui.health_sidebar import render_health_sidebar
 from ui.login import render_login_page
 from ui.footer import render_footer
 #from controllers.fx import render_fx_section
@@ -62,6 +63,8 @@ def main(argv: list[str] | None = None):
         now = datetime.now()
         st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
         render_action_menu()
+
+    render_health_sidebar()
 
     # main_col, side_col = st.columns([4, 1])
 
