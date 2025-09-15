@@ -19,7 +19,7 @@ jobs:
           pip install pytest pytest-cov
       - name: Run tests
         run: |
-          pytest --cov --cov-report=xml
+          pytest --cov --cov-report=xml tests test shared/test application/test ui/test controllers/test domain/test infrastructure/test services/test
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
