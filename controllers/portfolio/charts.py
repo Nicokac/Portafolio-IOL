@@ -80,6 +80,9 @@ def render_basic_section(df_view, controls, ccl_rate):
             key="dist_tipo",
             config=PLOTLY_CONFIG,
         )
+        st.caption(
+            "Compara cuánto dinero tenés en cada categoría de activos. Ayuda a detectar concentraciones."
+        )
     else:
         st.info("No hay datos para la distribución por tipo.")
 
