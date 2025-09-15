@@ -171,6 +171,9 @@ def render_risk_analysis(df_view, tasvc):
                         returns_df, weights, n_sims=sims, horizon=horizon
                     )
                     st.line_chart(final_prices)
+                    st.caption(
+                        "Simula muchos escenarios posibles para estimar cómo podría variar el valor de la cartera en el futuro."
+                    )
 
                 with st.expander("Aplicar shocks"):
                     templates = {"Leve": 0.03, "Moderado": 0.07, "Fuerte": 0.12}
