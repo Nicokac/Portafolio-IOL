@@ -4,6 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 import streamlit as st
+from application.portfolio_service import calculate_totals, detect_currency
 from shared.utils import (
     _as_float_or_none,
     _is_none_nan_inf,
@@ -13,10 +14,11 @@ from .palette import get_active_palette
 from .export import download_csv
 
 def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
-    total_val  = float(np.nansum(df_view.get("valor_actual", pd.Series(dtype=float)).values))
-    total_cost = float(np.nansum(df_view.get("costo", pd.Series(dtype=float)).values))
-    total_pl   = total_val - total_cost
-    total_pl_pct = (total_pl / total_cost * 100.0) if total_cost else float("nan")
+    totals = calculate_totals(df_view)
+    total_val = totals.total_value
+    total_cost = totals.total_cost
+    total_pl = totals.total_pl
+    total_pl_pct = totals.total_pl_pct
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Valorizado", format_money(total_val))
@@ -26,17 +28,14 @@ def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
 
     if _as_float_or_none(ccl_rate):
         rate = float(ccl_rate)
-        usd_val  = total_val / rate
+        usd_val = total_val / rate
         usd_cost = total_cost / rate
-        usd_pl   = total_pl / rate
+        usd_pl = total_pl / rate
         c1b, c2b, c3b, c4b = st.columns(4)
         c1b.metric("Valorizado (USD CCL)", format_money(usd_val, currency="USD"))
         c2b.metric("Costo (USD CCL)", format_money(usd_cost, currency="USD"))
         c3b.metric("P/L (USD CCL)", format_money(usd_pl, currency="USD"))
         c4b.metric("CCL usado", format_money(rate))
-
-def _detect_currency(sym: str, tipo: str | None) -> str:
-    return "USD" if str(sym).upper() in {"PRPEDOB"} else "ARS"
 
 def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: float | None = None, show_usd: bool = False):
     if df_view is None or df_view.empty:
@@ -99,7 +98,7 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     for _, r in df_sorted.iterrows():
         sym = str(r["simbolo"])
         tipo = str(r.get("tipo") or "")
-        cur = _detect_currency(sym, tipo)
+        cur = detect_currency(sym, tipo)
 
         row = {
             "Símbolo": sym,
