@@ -196,6 +196,9 @@ def render_portfolio_section(container, cli, fx_rates):
                                 st.info("Sin datos suficientes para el backtesting.")
                             else:
                                 st.line_chart(bt["equity"])
+                                st.caption(
+                                    "La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada."
+                                )
                                 st.metric(
                                     "Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}"
                                 )
