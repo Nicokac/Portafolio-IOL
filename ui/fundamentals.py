@@ -99,6 +99,7 @@ def render_fundamental_ranking(df: pd.DataFrame):
     )
     df_sorted = df.sort_values(by=metric, ascending=False)
     st.dataframe(df_sorted.reset_index(drop=True))
+    st.caption("Ordena las empresas según la métrica elegida para comparar de forma rápida.")
 
     neg_growth = df_sorted[df_sorted["earnings_growth"].notna() & (df_sorted["earnings_growth"] < 0)]
     if not neg_growth.empty:
