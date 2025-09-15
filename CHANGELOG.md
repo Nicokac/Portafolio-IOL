@@ -6,9 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [Next-Version]
 ### Added
 - Centralized cache TTL configuration in `shared/settings` and documented the
   new environment keys for quote and FX caches.
+- Added a sidebar health-check indicator so operators can quickly confirm
+  downstream service availability from the navigation.
+- Introduced a shared error hierarchy to standardize how controllers and
+  services surface recoverable issues.
+### Changed
+- Refactored the Streamlit session and routing logic to reuse authentication and
+  page-loading flows between the main application and auxiliary entry points.
 ### Fixed
 - Successful login now marks the session as authenticated to access the main page.
 - Fixed: los paneles ahora se recargan automáticamente después de logout/login sin requerir refresco manual.
@@ -23,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - Removed deprecated `use_container_width` parameter (Streamlit ≥ 1.30).
+
+### Tests
+- Added regression tests covering TTL configuration, sidebar health checks, and
+  the new error hierarchy behavior.
 
 ## [2025-09-13]
 ### Tests
