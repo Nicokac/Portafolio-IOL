@@ -1,6 +1,6 @@
 import pandas as pd
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 
 from ui.fx_panels import render_spreads, render_fx_history
 
@@ -86,6 +86,7 @@ def test_render_fx_history_plots_when_valid_series():
     mock_st.info.assert_not_called()
     mock_st.line_chart.assert_called_once()
     mock_st.plotly_chart.assert_called_once_with(fig, width="stretch")
-    mock_st.caption.assert_called_once_with(
-        "Línea que refleja cómo cambian las cotizaciones del dólar a lo largo del día."
-    )
+    assert mock_st.caption.call_args_list == [
+        call("Evolución intradía de las cotizaciones seleccionadas"),
+        call("Línea que refleja cómo cambian las cotizaciones del dólar a lo largo del día."),
+    ]

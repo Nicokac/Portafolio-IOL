@@ -121,6 +121,7 @@ def render_fx_history(history: pd.DataFrame):
         st.info("No hay series disponibles para graficar.")
         return
     _ = st.line_chart(hist[cols])
+    st.caption("Evolución intradía de las cotizaciones seleccionadas")
     df_long = hist[["ts_dt"] + cols].melt("ts_dt", var_name="Tipo", value_name="ARS")
     fig = px.line(df_long, x="ts_dt", y="ARS", color="Tipo", hover_name="Tipo")
     fig.update_layout(xaxis_title="", yaxis_title="ARS / USD", legend_title_text="Tipo")
