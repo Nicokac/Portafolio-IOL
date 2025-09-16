@@ -13,6 +13,7 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 
 from shared.config import settings
+from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +26,6 @@ if settings.tokens_key:
         FERNET = Fernet(settings.tokens_key.encode())
     except Exception as e:
         logger.warning("Clave de cifrado inválida: %s", e)
-
-
-class InvalidCredentialsError(Exception):
-    """Se lanza cuando el usuario o contraseña son inválidos."""
-
-
-class NetworkError(Exception):
-    """Se lanza ante problemas de conectividad con la API."""
 
 @dataclass
 class IOLAuth:
@@ -116,7 +109,7 @@ class IOLAuth:
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
-                raise NetworkError("Fallo de red") from e
+                raise TimeoutError("Fallo de red") from e
             except requests.RequestException as e:
                 logger.warning(
                     "Login IOL falló: %s",
@@ -141,7 +134,7 @@ class IOLAuth:
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
-                raise NetworkError("Fallo de red") from e
+                raise NetworkError(str(e)) from e
 
             self._save_tokens(self.tokens)
             logger.info(
@@ -174,7 +167,7 @@ class IOLAuth:
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
-                raise NetworkError("Fallo de red") from e
+                raise TimeoutError("Fallo de red") from e
             except requests.RequestException as e:
                 logger.warning(
                     "Refresh falló: %s",
@@ -200,7 +193,7 @@ class IOLAuth:
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
-                raise NetworkError("Fallo de red") from e
+                raise NetworkError(str(e)) from e
 
             self._save_tokens(self.tokens)
             logger.info(
