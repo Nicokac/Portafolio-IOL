@@ -1,18 +1,36 @@
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import services.health as health_service
 import ui.health_sidebar as health_sidebar
 
 
-def _build_sidebar_mock():
-    return SimpleNamespace(
+def _mock_sidebar(monkeypatch):
+    sidebar = SimpleNamespace(
         header=MagicMock(),
         caption=MagicMock(),
         markdown=MagicMock(),
     )
+    monkeypatch.setattr(health_sidebar, "st", SimpleNamespace(sidebar=sidebar))
+    return sidebar
 
 
-def test_render_health_sidebar_with_metrics(monkeypatch):
+def _mock_metrics(monkeypatch, metrics):
+    monkeypatch.setattr(health_service, "get_health_metrics", lambda: metrics)
+    monkeypatch.setattr(health_sidebar, "get_health_metrics", health_service.get_health_metrics)
+
+
+def _collect_markdown(sidebar):
+    return [call.args[0] for call in sidebar.markdown.call_args_list]
+
+
+def test_render_health_sidebar_with_success_metrics(monkeypatch):
     metrics = {
         "iol_refresh": {"status": "success", "detail": "Tokens OK", "ts": 1},
         "yfinance": {"source": "fallback", "detail": "AAPL", "ts": 2},
@@ -24,43 +42,57 @@ def test_render_health_sidebar_with_metrics(monkeypatch):
         },
         "fx_cache": {"mode": "hit", "age": 5.0, "ts": 4},
         "portfolio": {"elapsed_ms": 200.0, "source": "api", "ts": 5},
-        "quotes": {"elapsed_ms": 350.0, "source": "fallback", "count": 3, "ts": 6},
+        "quotes": {
+            "elapsed_ms": 350.0,
+            "source": "fallback",
+            "count": 3,
+            "detail": "cache",
+            "ts": 6,
+        },
     }
-    sidebar_mock = _build_sidebar_mock()
-    monkeypatch.setattr(health_sidebar, "st", SimpleNamespace(sidebar=sidebar_mock))
-    monkeypatch.setattr(health_sidebar, "get_health_metrics", lambda: metrics)
+    sidebar = _mock_sidebar(monkeypatch)
+    _mock_metrics(monkeypatch, metrics)
 
     health_sidebar.render_health_sidebar()
 
-    md_calls = [call.args[0] for call in sidebar_mock.markdown.call_args_list]
+    md_calls = _collect_markdown(sidebar)
     assert any("#### 🔐 Conexión IOL" in text for text in md_calls)
-    assert any("Tokens OK" in text for text in md_calls)
-    assert any("Fallback local" in text for text in md_calls)
-    assert any("API FX OK" in text for text in md_calls)
-    assert any("Uso de caché" in text for text in md_calls)
-    assert any("Portafolio" in text and "200" in text for text in md_calls)
-    assert any("Cotizaciones" in text and "items: 3" in text for text in md_calls)
+    assert any("✅ Refresh correcto" in text and "Tokens OK" in text for text in md_calls)
+    assert any("♻️ Fallback local" in text and "AAPL" in text for text in md_calls)
+    assert any("API FX OK" in text and "123" in text for text in md_calls)
+    assert any("Uso de caché" in text and "edad" in text for text in md_calls)
+    assert any("- Portafolio: 200 ms" in text for text in md_calls)
+    assert any("- Cotizaciones: 350 ms" in text and "items: 3" in text for text in md_calls)
 
 
-def test_render_health_sidebar_without_metrics(monkeypatch):
+def test_render_health_sidebar_with_missing_metrics(monkeypatch):
     metrics = {
-        "iol_refresh": None,
+        "iol_refresh": {"status": "error", "detail": "Token inválido", "ts": 10},
         "yfinance": None,
-        "fx_api": None,
+        "fx_api": {
+            "status": "error",
+            "error": "timeout",
+            "elapsed_ms": None,
+            "ts": 11,
+        },
         "fx_cache": None,
         "portfolio": None,
-        "quotes": None,
+        "quotes": {
+            "elapsed_ms": None,
+            "source": "error",
+            "detail": "sin datos",
+            "ts": None,
+        },
     }
-    sidebar_mock = _build_sidebar_mock()
-    monkeypatch.setattr(health_sidebar, "st", SimpleNamespace(sidebar=sidebar_mock))
-    monkeypatch.setattr(health_sidebar, "get_health_metrics", lambda: metrics)
+    sidebar = _mock_sidebar(monkeypatch)
+    _mock_metrics(monkeypatch, metrics)
 
     health_sidebar.render_health_sidebar()
 
-    md_calls = [call.args[0] for call in sidebar_mock.markdown.call_args_list]
-    assert "_Sin actividad registrada._" in md_calls
+    md_calls = _collect_markdown(sidebar)
+    assert any("⚠️ Error al refrescar" in text and "Token inválido" in text for text in md_calls)
     assert "_Sin consultas registradas._" in md_calls
-    assert "_Sin llamadas a la API FX._" in md_calls
+    assert any("⚠️ API FX con errores" in text and "timeout" in text for text in md_calls)
     assert "_Sin uso de caché registrado._" in md_calls
     assert any(text.startswith("- Portafolio: sin registro") for text in md_calls)
-    assert any(text.startswith("- Cotizaciones: sin registro") for text in md_calls)
+    assert any("- Cotizaciones: s/d" in text and "sin datos" in text for text in md_calls)
