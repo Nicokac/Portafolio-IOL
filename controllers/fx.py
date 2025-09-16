@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st  # Streamlit UI components
 import pandas as pd
 
 from shared.config import settings
