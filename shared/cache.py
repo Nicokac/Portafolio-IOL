@@ -1,4 +1,5 @@
 import time
+from collections import OrderedDict
 from functools import wraps
 from pathlib import PurePath
 from threading import Lock
@@ -14,62 +15,90 @@ class Cache:
         """Session state is delegated to Streamlit's native session."""
         pass
 
-    def cache_resource(self, func: Callable) -> Callable:
-        """Cache resources keyed by user session and function arguments."""
+    def cache_resource(
+        self, func: Callable | None = None, *, maxsize: int | None = None
+    ) -> Callable:
+        """Cache resources keyed by user session and function arguments.
 
-        resources: Dict[Tuple[Callable, Any, Any], Any] = {}
-        lock = Lock()
-
-        def _session_key() -> Any:
-            return st.session_state.get("session_id")
-
-        def make_hashable(value: Any) -> Any:
-            """Convert values into hashable, comparable representations."""
-
-            if isinstance(value, dict):
-                return tuple(
-                    (k, make_hashable(v)) for k, v in sorted(value.items())
-                )
-            if isinstance(value, (list, tuple)):
-                return tuple(make_hashable(v) for v in value)
-            if isinstance(value, (set, frozenset)):
-                return tuple(sorted((make_hashable(v) for v in value), key=repr))
-            if isinstance(value, PurePath):
-                return str(value)
-            return value
-
-        def _arg_key(args: tuple, kwargs: dict) -> Any:
-            ordered_kwargs = tuple(sorted(kwargs.items()))
-            return make_hashable((args, ordered_kwargs))
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func, _session_key(), _arg_key(args, kwargs))
-            with lock:
-                if key not in resources:
-                    resources[key] = func(*args, **kwargs)
-                return resources[key]
-
-        def clear(*call_args, key: Any | None = None, **call_kwargs) -> None:
-            sid = _session_key()
-            with lock:
-                if key is None and not call_args and not call_kwargs:
-                    to_del = [k for k in resources if k[0] is func and k[1] == sid]
-                    for k in to_del:
-                        resources.pop(k, None)
-                else:
-                    if call_args or call_kwargs:
-                        key = _arg_key(call_args, call_kwargs)
-                    resources.pop((func, sid, key), None)
-
-        wrapper.clear = clear
-        return wrapper
-
-    def cache_data(self, ttl: int | None = None) -> Callable:
-        """Decorator to cache data with an optional TTL in seconds."""
+        Parameters
+        ----------
+        maxsize:
+            Optional maximum number of cached entries. When exceeded, the oldest
+            entry is evicted. ``None`` disables the limit.
+        """
 
         def decorator(func: Callable) -> Callable:
-            cache: Dict[Tuple[Any, ...], Any] = {}
+            resources: "OrderedDict[Tuple[Callable, Any, Any], Any]" = OrderedDict()
+            lock = Lock()
+
+            def _session_key() -> Any:
+                return st.session_state.get("session_id")
+
+            # <== De 'main': Función robusta para hashear argumentos complejos.
+            def make_hashable(value: Any) -> Any:
+                """Convert values into hashable, comparable representations."""
+                if isinstance(value, dict):
+                    return tuple(
+                        (k, make_hashable(v)) for k, v in sorted(value.items())
+                    )
+                if isinstance(value, (list, tuple)):
+                    return tuple(make_hashable(v) for v in value)
+                if isinstance(value, (set, frozenset)):
+                    return tuple(sorted((make_hashable(v) for v in value), key=repr))
+                if isinstance(value, PurePath):
+                    return str(value)
+                return value
+
+            # <== De 'main': Usa 'make_hashable' para crear una clave segura.
+            def _arg_key(args: tuple, kwargs: dict) -> Any:
+                ordered_kwargs = tuple(sorted(kwargs.items()))
+                return make_hashable((args, ordered_kwargs))
+
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                # <== De tu rama: Un chequeo inicial para la nueva funcionalidad.
+                if maxsize is not None and maxsize <= 0:
+                    return func(*args, **kwargs)
+
+                key = (func, _session_key(), _arg_key(args, kwargs))
+                with lock:
+                    if key in resources:
+                        return resources[key]
+
+                    result = func(*args, **kwargs)
+                    resources[key] = result
+                    
+                    # <== De tu rama: Lógica para limitar el tamaño máximo de la caché.
+                    if maxsize is not None:
+                        while len(resources) > maxsize:
+                            resources.popitem(last=False)
+                    return result
+
+            # <== De 'main': La función 'clear' mejorada que acepta argumentos.
+            def clear(*call_args, key: Any | None = None, **call_kwargs) -> None:
+                sid = _session_key()
+                with lock:
+                    if key is None and not call_args and not call_kwargs:
+                        to_del = [k for k in resources if k[0] is func and k[1] == sid]
+                        for k in to_del:
+                            resources.pop(k, None)
+                    else:
+                        if call_args or call_kwargs:
+                            key = _arg_key(call_args, call_kwargs)
+                        resources.pop((func, sid, key), None)
+            
+            wrapper.clear = clear
+            return wrapper
+
+        if func is not None:
+            return decorator(func)
+        return decorator
+
+    def cache_data(self, ttl: int | None = None, *, maxsize: int | None = None) -> Callable:
+        """Decorator to cache data with optional TTL and maximum size."""
+
+        def decorator(func: Callable) -> Callable:
+            cache: "OrderedDict[Tuple[Any, ...], Any]" = OrderedDict()
             timestamps: Dict[Tuple[Any, ...], float] = {}
             lock = Lock()
 
@@ -91,6 +120,9 @@ class Cache:
 
             @wraps(func)
             def wrapper(*args, **kwargs):
+                if maxsize is not None and maxsize <= 0:
+                    return func(*args, **kwargs)
+
                 key = (make_hashable(args), make_hashable(sorted(kwargs.items())))
                 now = time.time()
                 with lock:
@@ -99,8 +131,13 @@ class Cache:
                         return cache[key]
                 result = func(*args, **kwargs)
                 with lock:
+                    cleanup(time.time())
                     cache[key] = result
                     timestamps[key] = now
+                    if maxsize is not None:
+                        while len(cache) > maxsize:
+                            oldest_key, _ = cache.popitem(last=False)
+                            timestamps.pop(oldest_key, None)
                 return result
 
             def clear() -> None:
