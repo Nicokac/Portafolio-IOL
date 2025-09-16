@@ -6,6 +6,23 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Uso del proveedor de tiempo
+
+Para generar fechas consistentes en toda la aplicación, importa la clase `TimeProvider`:
+
+```python
+from shared.time_provider import TimeProvider
+
+timestamp = TimeProvider.now()          # "2025-09-21 10:15:42"
+moment = TimeProvider.now_datetime()    # datetime consciente de zona (UTC-3)
+```
+
+- `TimeProvider.now()` devuelve la representación en texto lista para mostrar en la interfaz.
+- `TimeProvider.now_datetime()` expone el mismo instante como un objeto `datetime` con zona horaria de Buenos Aires.
+
+Ambos métodos apuntan al mismo reloj centralizado, por lo que los valores son intercambiables según si necesitas una cadena o un
+`datetime` para cálculos adicionales.
+
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
 ## Seguridad de credenciales

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2025-09-21
+### Fixed
+- Se corrigió `shared.time_provider.TimeProvider` para garantizar que los timestamps y objetos `datetime`
+  generados compartan la misma zona horaria y formato.
+### Changed
+- Se unificó la API de `TimeProvider` documentando explícitamente `now()` y `now_datetime()` para
+  elegir entre cadena formateada u objeto `datetime` según la necesidad.
+
 ## [0.3.2] - 2025-09-20
 ### Changed
 - Se unificó el manejo de hora mediante `shared.time_provider.TimeProvider` para mantener
