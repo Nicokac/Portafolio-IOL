@@ -42,10 +42,13 @@ class TimeProvider:
         return datetime.now(cls._zone)
 
     @classmethod
-    def now(cls) -> TimeSnapshot:
-        """Return the formatted timestamp snapshot; use ``now_datetime`` for raw datetimes."""
-        moment = cls.now_datetime()
-        return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
+    def now(cls) -> str:
+        """Return the current timestamp as a formatted string.
+
+        Call :meth:`now_datetime` when the :class:`~datetime.datetime` object is required.
+        """
+
+        return cls.now_datetime().strftime(TIME_FORMAT)
 
     @classmethod
     def from_timestamp(cls, ts: Optional[float | int | str]) -> Optional[TimeSnapshot]:
