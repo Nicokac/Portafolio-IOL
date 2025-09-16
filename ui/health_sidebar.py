@@ -9,6 +9,7 @@ import streamlit as st
 from services.health import get_health_metrics
 from shared.time_provider import TimeProvider
 from shared.version import __version__
+from shared.time_provider import TimeProvider
 
 
 def _format_timestamp(ts: Optional[float]) -> str:

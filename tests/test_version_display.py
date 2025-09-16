@@ -10,6 +10,7 @@ from ui.login import render_login_page
 import app as main_app
 import ui.footer
 from unittest.mock import MagicMock
+from shared.time_provider import TimeProvider
 
 from shared.time_provider import TIMEZONE, TimeSnapshot
 
@@ -41,7 +42,6 @@ def setup_footer_mocks(monkeypatch):
     mock_markdown = MagicMock()
     monkeypatch.setattr(ui.footer.st, "markdown", mock_markdown)
     return mock_markdown, provider_stub, snapshot
-
 
 def test_version_shown_in_login(monkeypatch):
     monkeypatch.setattr("ui.login.settings.tokens_key", "dummy")

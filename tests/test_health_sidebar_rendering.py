@@ -15,6 +15,9 @@ import streamlit as st
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
+# <== De 'main': Se importa TimeProvider para generar resultados esperados.
+from shared.time_provider import TimeProvider
+# <== De tu rama: Se importa TimeSnapshot para el stub.
 from shared.time_provider import TimeSnapshot
 from shared.version import __version__
 
@@ -94,6 +97,7 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
     base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
     timestamps = [base.timestamp() + offset for offset in range(6)]
 
+    # <== De tu rama: El stub que simula TimeProvider para inyectarlo en el componente.
     class StubTimeProvider:
         def __init__(self) -> None:
             self.calls: list[float | None] = []
@@ -105,13 +109,11 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
             ts_value = float(ts)
             self.calls.append(ts_value)
             moment = datetime.fromtimestamp(ts_value, tz=timezone)
-            return TimeSnapshot(moment.strftime("%Y-%m-%d %H:%M:%S"), moment)
+            # El stub debe devolver un TimeSnapshot, como el TimeProvider real.
+            return TimeSnapshot(moment, moment.strftime("%Y-%m-%d %H:%M:%S"))
 
     provider_stub = StubTimeProvider()
     monkeypatch.setattr("ui.health_sidebar.TimeProvider", provider_stub)
-
-    def fmt(offset: int) -> str:
-        return (base + timedelta(seconds=offset)).strftime("%Y-%m-%d %H:%M:%S")
 
     app = _run_sidebar(
         {
@@ -153,17 +155,21 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
     )
 
     markdown = _collect(app, "markdown")
+    # <== De 'main': Generación de resultados esperados usando el TimeProvider real.
+    # Esto es robusto porque si cambia el formato en TimeProvider, el test se actualiza solo.
+    # Lo que hacemos es pedirle al objeto TimeSnapshot que nos dé su representación en texto.
+    formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
     expected_lines = {
         "#### 🔐 Conexión IOL",
-        f"✅ Refresh correcto • {fmt(0)} — OK",
+        f"✅ Refresh correcto • {formatted[0]} — OK",
         "#### 📈 Yahoo Finance",
-        f"♻️ Fallback local • {fmt(1)} — respaldo",
+        f"♻️ Fallback local • {formatted[1]} — respaldo",
         "#### 💱 FX",
-        f"⚠️ API FX con errores • {fmt(2)} (123 ms) — boom",
-        f"♻️ Uso de caché • {fmt(3)} (edad 46s)",
+        f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom",
+        f"♻️ Uso de caché • {formatted[3]} (edad 46s)",
         "#### ⏱️ Latencias",
-        f"- Portafolio: 457 ms • fuente: api • fresh • {fmt(4)}",
-        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {fmt(5)}",
+        f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[4]}",
+        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[5]}",
     }
 
     missing = expected_lines.difference(markdown)

@@ -63,10 +63,6 @@ def main(argv: list[str] | None = None):
         snapshot = TimeProvider.now()
         st.caption(f"🕒 {snapshot.text}")
         render_action_menu()
-
-    # main_col, side_col = st.columns([4, 1])
-
-    # render_fx_section(side_col, fx_rates)
     main_col = st.container()
 
     cli = build_iol_client()
