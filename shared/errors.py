@@ -1,26 +1,32 @@
-"""Excepciones compartidas para la aplicación."""
+"""Jerarquía de errores de aplicación compartida."""
+
 from __future__ import annotations
 
 
-class Error(Exception):
-    """Excepción base para errores de la aplicación."""
+class AppError(Exception):
+    """Excepción base para errores específicos de la aplicación."""
 
 
-class InvalidCredentialsError(Error):
-    """Se lanza cuando el usuario o contraseña son inválidos."""
+class NetworkError(AppError):
+    """Representa fallas relacionadas con la red."""
 
 
-class NetworkError(Error):
-    """Se lanza ante problemas de conectividad con la API."""
+class InvalidCredentialsError(AppError):
+    """Se genera cuando las credenciales proporcionadas no son válidas."""
 
 
 class TimeoutError(NetworkError):
-    """Se lanza ante timeouts de red."""
+    """Se genera cuando se agota el tiempo de espera de una operación de red."""
+
+
+class ExternalAPIError(AppError):
+    """Se genera cuando una API externa devuelve un error."""
 
 
 __all__ = [
-    "Error",
-    "InvalidCredentialsError",
+    "AppError",
     "NetworkError",
+    "InvalidCredentialsError",
     "TimeoutError",
+    "ExternalAPIError",
 ]
