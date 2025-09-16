@@ -10,9 +10,7 @@ from ui.login import render_login_page
 import app as main_app
 import ui.footer
 from unittest.mock import MagicMock
-from shared.time_provider import TimeProvider
-
-from shared.time_provider import TIMEZONE, TimeSnapshot
+from shared.time_provider import TIMEZONE, TimeProvider, TimeSnapshot
 
 
 class DummyCtx:
@@ -26,10 +24,15 @@ class FixedTimeProvider:
     def __init__(self, snapshot: TimeSnapshot):
         self._snapshot = snapshot
         self.calls = 0
+        self.datetime_calls = 0
 
     def now(self):
         self.calls += 1
-        return self._snapshot
+        return self._snapshot.text
+
+    def now_datetime(self):
+        self.datetime_calls += 1
+        return self._snapshot.moment
 
 
 def setup_footer_mocks(monkeypatch):

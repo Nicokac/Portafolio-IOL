@@ -9,9 +9,8 @@ def get_version() -> str:
 
 def render_footer():
     version = get_version()
-    snapshot = TimeProvider.now()
-    timestamp = snapshot.text
-    year = snapshot.moment.year
+    timestamp = TimeProvider.now()
+    year = TimeProvider.now_datetime().year
     st.markdown(
         f"""
         <hr>

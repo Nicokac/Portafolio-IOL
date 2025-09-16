@@ -60,8 +60,8 @@ def main(argv: list[str] | None = None):
     render_header(rates=fx_rates)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
-        snapshot = TimeProvider.now()
-        st.caption(f"🕒 {snapshot.text}")
+        timestamp = TimeProvider.now()
+        st.caption(f"🕒 {timestamp}")
         render_action_menu()
     main_col = st.container()
 

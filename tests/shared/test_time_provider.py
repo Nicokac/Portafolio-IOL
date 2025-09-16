@@ -9,11 +9,11 @@ from shared.time_provider import TIMEZONE, TimeProvider
 
 
 def test_time_provider_now_returns_formatted_string_and_timezone() -> None:
-    snapshot = TimeProvider.now()
+    timestamp = TimeProvider.now()
 
-    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", snapshot.text)
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", timestamp)
 
-    moment = snapshot.moment
+    moment = TimeProvider.now_datetime()
     assert isinstance(moment.tzinfo, ZoneInfo)
     assert moment.tzinfo.key == TIMEZONE
     assert moment.utcoffset() == timedelta(hours=-3)
