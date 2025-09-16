@@ -77,6 +77,9 @@ def test_fetch_fx_rates_handles_external_api_error(monkeypatch):
         def get_rates(self):
             raise ExternalAPIError("fail")
 
+        def close(self):
+            pass
+
     recorded = {}
 
     def fake_record_fx_api_response(*, error, elapsed_ms):
@@ -91,6 +94,21 @@ def test_fetch_fx_rates_handles_external_api_error(monkeypatch):
 
     assert recorded["error"] is None
     assert recorded["elapsed_ms"] >= 0
+
+
+def test_fetch_fx_rates_closes_provider(monkeypatch):
+    svc_cache.fetch_fx_rates.clear()
+
+    provider = MagicMock()
+    provider.get_rates.return_value = ({"USD": 1}, None)
+
+    monkeypatch.setattr(svc_cache, "get_fx_provider", lambda: provider)
+    monkeypatch.setattr(svc_cache, "record_fx_api_response", lambda **kwargs: None)
+
+    result = svc_cache.fetch_fx_rates()
+
+    assert result == ({"USD": 1}, None)
+    provider.close.assert_called_once()
 
 
 # --- _get_quote_cached ---
