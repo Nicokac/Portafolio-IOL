@@ -16,7 +16,7 @@ from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
 # <== De 'main': Se importa TimeProvider para generar resultados esperados.
-from shared.time_provider import TimeProvider
+from shared.time_provider import TIME_FORMAT, TimeProvider
 # <== De tu rama: Se importa TimeSnapshot para el stub.
 from shared.time_provider import TimeSnapshot
 from shared.version import __version__
@@ -110,7 +110,7 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
             self.calls.append(ts_value)
             moment = datetime.fromtimestamp(ts_value, tz=timezone)
             # El stub debe devolver un TimeSnapshot, como el TimeProvider real.
-            return TimeSnapshot(moment, moment.strftime("%Y-%m-%d %H:%M:%S"))
+            return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
 
     provider_stub = StubTimeProvider()
     monkeypatch.setattr("ui.health_sidebar.TimeProvider", provider_stub)

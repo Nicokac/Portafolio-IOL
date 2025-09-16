@@ -1,6 +1,6 @@
 from pathlib import Path
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 from zoneinfo import ZoneInfo
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -10,7 +10,7 @@ from ui.login import render_login_page
 import app as main_app
 import ui.footer
 from unittest.mock import MagicMock
-from shared.time_provider import TIMEZONE, TimeProvider, TimeSnapshot
+from shared.time_provider import TIMEZONE, TIME_FORMAT, TimeProvider, TimeSnapshot
 
 
 class DummyCtx:
@@ -38,7 +38,7 @@ class FixedTimeProvider:
 def setup_footer_mocks(monkeypatch):
     timezone = ZoneInfo(TIMEZONE)
     fixed_dt = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
-    snapshot = TimeSnapshot(fixed_dt.strftime("%Y-%m-%d %H:%M:%S"), fixed_dt)
+    snapshot = TimeSnapshot(fixed_dt.strftime(TIME_FORMAT), fixed_dt)
     provider_stub = FixedTimeProvider(snapshot)
     monkeypatch.setattr(ui.footer, "TimeProvider", provider_stub)
     monkeypatch.setattr(ui.footer, "get_version", lambda: __version__)
@@ -63,9 +63,11 @@ def test_version_shown_in_login(monkeypatch):
     expected_timestamp = snapshot.text
     assert any(expected_timestamp in block for block in rendered_blocks)
     assert time_provider_stub.calls == 1
+    assert time_provider_stub.datetime_calls == 1
     tzinfo = snapshot.moment.tzinfo
     assert isinstance(tzinfo, ZoneInfo)
     assert tzinfo.key == TIMEZONE
+    assert snapshot.moment.utcoffset() == timedelta(hours=-3)
 
 
 def test_version_shown_in_main_app(monkeypatch):
@@ -97,3 +99,4 @@ def test_version_shown_in_main_app(monkeypatch):
     assert any(expected_timestamp in block for block in rendered_blocks)
     assert any(f"🕒 {snapshot.text}" in caption for caption in captions)
     assert time_provider_stub.calls == 2
+    assert time_provider_stub.datetime_calls == 1
