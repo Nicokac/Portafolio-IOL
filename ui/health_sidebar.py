@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 import streamlit as st
 
 from services.health import get_health_metrics
+from shared.version import __version__
 
 
 def _format_timestamp(ts: Optional[float]) -> str:
@@ -111,7 +112,7 @@ def render_health_sidebar() -> None:
     """Render the health summary panel inside the sidebar."""
     metrics = get_health_metrics()
     sidebar = st.sidebar
-    sidebar.header("🩺 Salud de datos")
+    sidebar.header(f"🩺 Healthcheck (versión {__version__})")
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
     sidebar.markdown("#### 🔐 Conexión IOL")
