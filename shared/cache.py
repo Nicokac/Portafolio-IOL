@@ -1,4 +1,5 @@
 import time
+from collections import OrderedDict
 from functools import wraps
 from threading import Lock
 from typing import Any, Callable, Dict, Tuple
@@ -13,46 +14,69 @@ class Cache:
         """Session state is delegated to Streamlit's native session."""
         pass
 
-    def cache_resource(self, func: Callable) -> Callable:
-        """Cache resources keyed by user session and function arguments."""
+    def cache_resource(
+        self, func: Callable | None = None, *, maxsize: int | None = None
+    ) -> Callable:
+        """Cache resources keyed by user session and function arguments.
 
-        resources: Dict[Tuple[Callable, Any, Any], Any] = {}
-        lock = Lock()
-
-        def _session_key() -> Any:
-            return st.session_state.get("session_id")
-
-        def _arg_key(args: tuple, kwargs: dict) -> Any:
-            if args:
-                return args[0]
-            return (args, tuple(sorted(kwargs.items())))
-
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            key = (func, _session_key(), _arg_key(args, kwargs))
-            with lock:
-                if key not in resources:
-                    resources[key] = func(*args, **kwargs)
-                return resources[key]
-
-        def clear(key: Any | None = None) -> None:
-            sid = _session_key()
-            with lock:
-                if key is None:
-                    to_del = [k for k in resources if k[0] is func and k[1] == sid]
-                    for k in to_del:
-                        resources.pop(k, None)
-                else:
-                    resources.pop((func, sid, key), None)
-
-        wrapper.clear = clear
-        return wrapper
-
-    def cache_data(self, ttl: int | None = None) -> Callable:
-        """Decorator to cache data with an optional TTL in seconds."""
+        Parameters
+        ----------
+        maxsize:
+            Optional maximum number of cached entries. When exceeded, the oldest
+            entry is evicted. ``None`` disables the limit.
+        """
 
         def decorator(func: Callable) -> Callable:
-            cache: Dict[Tuple[Any, ...], Any] = {}
+            resources: "OrderedDict[Tuple[Callable, Any, Any], Any]" = OrderedDict()
+            lock = Lock()
+
+            def _session_key() -> Any:
+                return st.session_state.get("session_id")
+
+            def _arg_key(args: tuple, kwargs: dict) -> Any:
+                if args:
+                    return args[0]
+                return (args, tuple(sorted(kwargs.items())))
+
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                if maxsize is not None and maxsize <= 0:
+                    return func(*args, **kwargs)
+
+                key = (func, _session_key(), _arg_key(args, kwargs))
+                with lock:
+                    if key in resources:
+                        return resources[key]
+
+                    result = func(*args, **kwargs)
+                    resources[key] = result
+                    if maxsize is not None:
+                        while len(resources) > maxsize:
+                            resources.popitem(last=False)
+                    return result
+
+            def clear(key: Any | None = None) -> None:
+                sid = _session_key()
+                with lock:
+                    if key is None:
+                        to_del = [k for k in resources if k[0] is func and k[1] == sid]
+                        for k in to_del:
+                            resources.pop(k, None)
+                    else:
+                        resources.pop((func, sid, key), None)
+
+            wrapper.clear = clear
+            return wrapper
+
+        if func is not None:
+            return decorator(func)
+        return decorator
+
+    def cache_data(self, ttl: int | None = None, *, maxsize: int | None = None) -> Callable:
+        """Decorator to cache data with optional TTL and maximum size."""
+
+        def decorator(func: Callable) -> Callable:
+            cache: "OrderedDict[Tuple[Any, ...], Any]" = OrderedDict()
             timestamps: Dict[Tuple[Any, ...], float] = {}
             lock = Lock()
 
@@ -74,6 +98,9 @@ class Cache:
 
             @wraps(func)
             def wrapper(*args, **kwargs):
+                if maxsize is not None and maxsize <= 0:
+                    return func(*args, **kwargs)
+
                 key = (make_hashable(args), make_hashable(sorted(kwargs.items())))
                 now = time.time()
                 with lock:
@@ -82,8 +109,13 @@ class Cache:
                         return cache[key]
                 result = func(*args, **kwargs)
                 with lock:
+                    cleanup(time.time())
                     cache[key] = result
                     timestamps[key] = now
+                    if maxsize is not None:
+                        while len(cache) > maxsize:
+                            oldest_key, _ = cache.popitem(last=False)
+                            timestamps.pop(oldest_key, None)
                 return result
 
             def clear() -> None:
