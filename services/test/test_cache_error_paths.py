@@ -6,7 +6,7 @@ import pytest
 import requests
 
 from services import cache as svc_cache
-from shared.errors import NetworkError
+from shared.errors import ExternalAPIError, NetworkError, TimeoutError
 
 # --- _trigger_logout ---
 
@@ -45,7 +45,14 @@ def test_fetch_portfolio_handles_invalid_credentials(monkeypatch):
     clear_tokens.assert_called_once()
 
 
-def test_fetch_portfolio_handles_request_exception(monkeypatch):
+@pytest.mark.parametrize(
+    "exc_cls, expected",
+    [
+        (requests.ConnectionError, NetworkError),
+        (requests.Timeout, TimeoutError),
+    ],
+)
+def test_fetch_portfolio_handles_request_exception(monkeypatch, exc_cls, expected):
     state = {}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
     monkeypatch.setattr("shared.cache.st", SimpleNamespace(session_state=state))
@@ -54,13 +61,36 @@ def test_fetch_portfolio_handles_request_exception(monkeypatch):
 
     class DummyCli:
         def get_portfolio(self):
-            raise requests.RequestException("net")
+            raise exc_cls("net")
 
     svc_cache.fetch_portfolio.clear()
     cli = DummyCli()
-    with pytest.raises(NetworkError):
+    with pytest.raises(expected):
         svc_cache.fetch_portfolio(cli)
     logout_mock.assert_not_called()
+
+
+def test_fetch_fx_rates_handles_external_api_error(monkeypatch):
+    svc_cache.fetch_fx_rates.clear()
+
+    class DummyProvider:
+        def get_rates(self):
+            raise ExternalAPIError("fail")
+
+    recorded = {}
+
+    def fake_record_fx_api_response(*, error, elapsed_ms):
+        recorded["error"] = error
+        recorded["elapsed_ms"] = elapsed_ms
+
+    monkeypatch.setattr(svc_cache, "get_fx_provider", lambda: DummyProvider())
+    monkeypatch.setattr(svc_cache, "record_fx_api_response", fake_record_fx_api_response)
+
+    with pytest.raises(ExternalAPIError):
+        svc_cache.fetch_fx_rates()
+
+    assert recorded["error"] is None
+    assert recorded["elapsed_ms"] >= 0
 
 
 # --- _get_quote_cached ---

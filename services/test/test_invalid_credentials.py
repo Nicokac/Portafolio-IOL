@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 from services import cache as svc_cache
-from infrastructure.iol.auth import InvalidCredentialsError
+from shared.errors import InvalidCredentialsError
 
 
 def test_get_client_cached_clears_tokens_and_raises(monkeypatch, tmp_path):

@@ -7,7 +7,7 @@ import re
 from uuid import uuid4
 
 from shared.cache import cache
-from shared.errors import ExternalAPIError, NetworkError
+from shared.errors import ExternalAPIError, NetworkError, TimeoutError
 import requests
 import streamlit as st
 
@@ -136,6 +136,14 @@ def fetch_portfolio(_cli: IIOLProvider):
         )
         record_portfolio_load(None, source="cache", detail="invalid-credentials")
         return {"_cached": True}
+    except requests.Timeout as e:
+        logger.info(
+            "fetch_portfolio failed due to network timeout: %s",
+            e,
+            extra={"tokens_file": tokens_path},
+        )
+        record_portfolio_load(None, source="error", detail="timeout")
+        raise TimeoutError("Error de red al consultar el portafolio") from e
     except requests.RequestException as e:
         logger.info(
             "fetch_portfolio failed due to network error: %s",
