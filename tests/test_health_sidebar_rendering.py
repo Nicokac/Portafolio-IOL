@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import textwrap
 from typing import Any, Dict
 
+import pytest
+from zoneinfo import ZoneInfo
+
 import streamlit as st
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
+from shared.time_provider import TimeSnapshot
 from shared.version import __version__
 
 _ORIGINAL_STREAMLIT = st
@@ -85,9 +89,29 @@ def test_sidebar_shows_empty_state_labels() -> None:
         assert expected in markdown
 
 
-def test_sidebar_formats_populated_metrics() -> None:
-    base = datetime(2024, 1, 2, 3, 4, 5)
+def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
+    timezone = ZoneInfo("America/Argentina/Buenos_Aires")
+    base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
     timestamps = [base.timestamp() + offset for offset in range(6)]
+
+    class StubTimeProvider:
+        def __init__(self) -> None:
+            self.calls: list[float | None] = []
+
+        def from_timestamp(self, ts):
+            if not ts:
+                self.calls.append(ts)
+                return None
+            ts_value = float(ts)
+            self.calls.append(ts_value)
+            moment = datetime.fromtimestamp(ts_value, tz=timezone)
+            return TimeSnapshot(moment.strftime("%Y-%m-%d %H:%M:%S"), moment)
+
+    provider_stub = StubTimeProvider()
+    monkeypatch.setattr("ui.health_sidebar.TimeProvider", provider_stub)
+
+    def fmt(offset: int) -> str:
+        return (base + timedelta(seconds=offset)).strftime("%Y-%m-%d %H:%M:%S")
 
     app = _run_sidebar(
         {
@@ -131,16 +155,19 @@ def test_sidebar_formats_populated_metrics() -> None:
     markdown = _collect(app, "markdown")
     expected_lines = {
         "#### 🔐 Conexión IOL",
-        "✅ Refresh correcto • 02/01/2024 03:04:05 — OK",
+        f"✅ Refresh correcto • {fmt(0)} — OK",
         "#### 📈 Yahoo Finance",
-        "♻️ Fallback local • 02/01/2024 03:04:06 — respaldo",
+        f"♻️ Fallback local • {fmt(1)} — respaldo",
         "#### 💱 FX",
-        "⚠️ API FX con errores • 02/01/2024 03:04:07 (123 ms) — boom",
-        "♻️ Uso de caché • 02/01/2024 03:04:08 (edad 46s)",
+        f"⚠️ API FX con errores • {fmt(2)} (123 ms) — boom",
+        f"♻️ Uso de caché • {fmt(3)} (edad 46s)",
         "#### ⏱️ Latencias",
-        "- Portafolio: 457 ms • fuente: api • fresh • 02/01/2024 03:04:09",
-        "- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • 02/01/2024 03:04:10",
+        f"- Portafolio: 457 ms • fuente: api • fresh • {fmt(4)}",
+        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {fmt(5)}",
     }
 
     missing = expected_lines.difference(markdown)
     assert not missing, f"Missing sidebar lines: {missing}"
+    assert len(provider_stub.calls) == len(timestamps)
+    for call, expected in zip(provider_stub.calls, timestamps):
+        assert call == pytest.approx(expected)
