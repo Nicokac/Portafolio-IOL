@@ -5,6 +5,7 @@ import streamlit as st
 
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
+from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,15 @@ def apply_filters(df_pos, controls, cli, psvc):
         .astype({"mercado": str, "simbolo": str})
         .itertuples(index=False, name=None)
     )
-    quotes_map = fetch_quotes_bulk(cli, pairs)
+    try:
+        quotes_map = fetch_quotes_bulk(cli, pairs)
+    except AppError as err:
+        st.error(str(err))
+        st.stop()
+    except Exception:
+        logger.exception("Error al obtener cotizaciones")
+        st.error("No se pudieron obtener cotizaciones, intente más tarde")
+        st.stop()
     chg_cnt = sum(
         1
         for v in quotes_map.values()

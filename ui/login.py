@@ -1,14 +1,11 @@
 import logging
 import streamlit as st
-from application.auth_service import (
-    get_auth_provider,
-    InvalidCredentialsError,
-    NetworkError,
-)
+from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
 from ui.footer import render_footer
 from ui.header import render_header
 from shared.config import settings  # Re-exported for backwards compatibility
+from shared.errors import AppError, InvalidCredentialsError, NetworkError
 
 
 logger = logging.getLogger(__name__)
@@ -55,6 +52,13 @@ def render_login_page() -> None:
         except NetworkError:
             logger.warning("Error de conexión durante el login")
             st.session_state["login_error"] = "Error de conexión"
+            clear_password_keys(st.session_state)
+            st.rerun()
+        except AppError as err:
+            logger.warning("Error controlado durante el login: %s", err)
+            msg = str(err)
+            st.error(msg)
+            st.session_state["login_error"] = msg
             clear_password_keys(st.session_state)
             st.rerun()
         except RuntimeError as e:

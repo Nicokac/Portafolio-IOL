@@ -116,7 +116,7 @@ def test_load_portfolio_data_shows_generic_error(monkeypatch):
     msg = err_mock.call_args[0][0]
     assert msg == "No se pudo cargar el portafolio, intente más tarde"
     assert "detalle interno" not in msg
-    logger_mock.error.assert_called_once()
+    logger_mock.exception.assert_called_once()
 
 
 def test_load_portfolio_data_reruns_on_auth_error(monkeypatch):

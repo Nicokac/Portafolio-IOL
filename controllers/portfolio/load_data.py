@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from services.cache import fetch_portfolio
+from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,12 @@ def load_portfolio_data(cli, psvc):
     with st.spinner("Cargando y actualizando portafolio... ⏳"):
         try:
             payload = fetch_portfolio(cli)
+        except AppError as err:
+            st.error(str(err))
+            st.stop()
         except Exception:  # pragma: no cover - streamlit error path
-            logger.error(
+            logger.exception(
                 "Error al consultar portafolio",
-                exc_info=True,
                 extra={"tokens_file": tokens_path},
             )
             st.error("No se pudo cargar el portafolio, intente más tarde")
