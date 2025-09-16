@@ -60,12 +60,9 @@ def main(argv: list[str] | None = None):
     render_header(rates=fx_rates)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
-        st.caption(f"🕒 {TimeProvider.now()}")
+        snapshot = TimeProvider.now()
+        st.caption(f"🕒 {snapshot.text}")
         render_action_menu()
-
-    # main_col, side_col = st.columns([4, 1])
-
-    # render_fx_section(side_col, fx_rates)
     main_col = st.container()
 
     cli = build_iol_client()

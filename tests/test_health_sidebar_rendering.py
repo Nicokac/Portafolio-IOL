@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import textwrap
 from typing import Any, Dict
 
+import pytest
+from zoneinfo import ZoneInfo
+
 import streamlit as st
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
+# <== De 'main': Se importa TimeProvider para generar resultados esperados.
 from shared.time_provider import TimeProvider
+# <== De tu rama: Se importa TimeSnapshot para el stub.
+from shared.time_provider import TimeSnapshot
 from shared.version import __version__
 
 _ORIGINAL_STREAMLIT = st
@@ -86,9 +92,28 @@ def test_sidebar_shows_empty_state_labels() -> None:
         assert expected in markdown
 
 
-def test_sidebar_formats_populated_metrics() -> None:
-    base = datetime(2024, 1, 2, 3, 4, 5)
+def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
+    timezone = ZoneInfo("America/Argentina/Buenos_Aires")
+    base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
     timestamps = [base.timestamp() + offset for offset in range(6)]
+
+    # <== De tu rama: El stub que simula TimeProvider para inyectarlo en el componente.
+    class StubTimeProvider:
+        def __init__(self) -> None:
+            self.calls: list[float | None] = []
+
+        def from_timestamp(self, ts):
+            if not ts:
+                self.calls.append(ts)
+                return None
+            ts_value = float(ts)
+            self.calls.append(ts_value)
+            moment = datetime.fromtimestamp(ts_value, tz=timezone)
+            # El stub debe devolver un TimeSnapshot, como el TimeProvider real.
+            return TimeSnapshot(moment, moment.strftime("%Y-%m-%d %H:%M:%S"))
+
+    provider_stub = StubTimeProvider()
+    monkeypatch.setattr("ui.health_sidebar.TimeProvider", provider_stub)
 
     app = _run_sidebar(
         {
@@ -130,7 +155,10 @@ def test_sidebar_formats_populated_metrics() -> None:
     )
 
     markdown = _collect(app, "markdown")
-    formatted = [TimeProvider.from_timestamp(ts) for ts in timestamps]
+    # <== De 'main': Generación de resultados esperados usando el TimeProvider real.
+    # Esto es robusto porque si cambia el formato en TimeProvider, el test se actualiza solo.
+    # Lo que hacemos es pedirle al objeto TimeSnapshot que nos dé su representación en texto.
+    formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
     expected_lines = {
         "#### 🔐 Conexión IOL",
         f"✅ Refresh correcto • {formatted[0]} — OK",
@@ -146,3 +174,6 @@ def test_sidebar_formats_populated_metrics() -> None:
 
     missing = expected_lines.difference(markdown)
     assert not missing, f"Missing sidebar lines: {missing}"
+    assert len(provider_stub.calls) == len(timestamps)
+    for call, expected in zip(provider_stub.calls, timestamps):
+        assert call == pytest.approx(expected)

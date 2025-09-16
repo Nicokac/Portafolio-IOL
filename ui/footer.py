@@ -1,6 +1,6 @@
 import streamlit as st
-from shared.version import __version__
 from shared.time_provider import TimeProvider
+from shared.version import __version__
 
 
 def get_version() -> str:
@@ -9,9 +9,9 @@ def get_version() -> str:
 
 def render_footer():
     version = get_version()
-    now = TimeProvider.now_datetime()
-    timestamp = TimeProvider.now()
-    year = now.year
+    snapshot = TimeProvider.now()
+    timestamp = snapshot.text
+    year = snapshot.moment.year
     st.markdown(
         f"""
         <hr>

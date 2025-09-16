@@ -1,33 +1,57 @@
-"""Centralised time utilities for the application."""
-
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 from zoneinfo import ZoneInfo
-from typing import ClassVar
+
+TIMEZONE = "America/Argentina/Buenos_Aires"
+TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+@dataclass(frozen=True)
+class TimeSnapshot:
+    """Container for a formatted timestamp and its datetime representation."""
+
+    text: str
+    moment: datetime
 
 
 class TimeProvider:
-    """Provide timezone-aware timestamps formatted consistently."""
+    """Centralised time provider to generate formatted timestamps."""
 
-    TIMEZONE: ClassVar[ZoneInfo] = ZoneInfo("America/Argentina/Buenos_Aires")
-    DATETIME_FORMAT: ClassVar[str] = "%Y-%m-%d %H:%M:%S"
-
-    @classmethod
-    def now_datetime(cls) -> datetime:
-        """Return the current datetime aware of the configured timezone."""
-        return datetime.now(tz=cls.TIMEZONE)
+    _zone = ZoneInfo(TIMEZONE)
 
     @classmethod
-    def now(cls) -> str:
-        """Return the current datetime formatted with the standard format."""
-        return cls.now_datetime().strftime(cls.DATETIME_FORMAT)
+    def timezone(cls) -> ZoneInfo:
+        """Return the zoneinfo instance used for timestamp generation."""
+        return cls._zone
 
     @classmethod
-    def from_timestamp(cls, ts: float | int | str) -> str:
-        """Format a numeric timestamp using the configured timezone and format."""
-        moment = datetime.fromtimestamp(float(ts), tz=cls.TIMEZONE)
-        return moment.strftime(cls.DATETIME_FORMAT)
+    def now(cls) -> TimeSnapshot:
+        """Return the current time in the configured timezone."""
+        moment = datetime.now(cls._zone)
+        return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
+
+    @classmethod
+    def from_timestamp(cls, ts: Optional[float | int | str]) -> Optional[TimeSnapshot]:
+        """Convert a POSIX timestamp into a formatted snapshot.
+
+        Invalid or missing values yield ``None`` to mirror previous behaviour
+        in formatting helpers.
+        """
+
+        if ts is None or ts == 0:
+            return None
+        try:
+            raw = float(ts)
+        except (TypeError, ValueError):
+            return None
+        try:
+            moment = datetime.fromtimestamp(raw, tz=cls._zone)
+        except (OverflowError, OSError, ValueError):
+            return None
+        return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
 
 
-__all__ = ["TimeProvider"]
+__all__ = ["TIMEZONE", "TIME_FORMAT", "TimeProvider", "TimeSnapshot"]
