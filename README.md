@@ -19,6 +19,8 @@ Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se r
 
 El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión X.Y.Z".
 
+El sidebar finaliza con un bloque de **Healthcheck (versión X.Y.Z)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
+
 ## Requisitos de sistema
 
 - Python 3.10 o superior
