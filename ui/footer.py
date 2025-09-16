@@ -4,17 +4,18 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from shared.version import __version__
 
+TIMEZONE = "America/Argentina/Buenos_Aires"
 
-def get_version():
-    version = __version__
-    now = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
 
-    return version, now
+def get_version() -> str:
+    return __version__
 
 
 def render_footer():
-    version, now = get_version()
-    formatted_time = now.strftime("%d/%m/%Y %H:%M:%S")
+    version = get_version()
+    timezone = ZoneInfo(TIMEZONE)
+    now = datetime.now(timezone)
+    timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
     year = now.year
     st.markdown(
         f"""
@@ -22,7 +23,8 @@ def render_footer():
         <div style='text-align:center; font-size:0.9em;'>
             Desarrollado por Nicolás K. ·
             <a href='https://github.com/caliari' target='_blank'>Portafolio</a><br>
-            Versión {version} ({formatted_time})<br>
+            Versión {version}<br>
+            Actualizado {timestamp}<br>
             &copy; {year} - Los datos se ofrecen sin garantía. Uso bajo su responsabilidad.
         </div>
         """,

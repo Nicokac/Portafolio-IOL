@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-09-17
+### Added
+- Se incorporó un timestamp argentino en el footer para reflejar la hora local
+  de manera consistente.
+
 ## [0.2.0] - 2025-09-16
 ### Added
 - Centralized cache TTL configuration in `shared/settings` and documented the
