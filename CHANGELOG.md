@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-09-18
+### Added
+- El bloque de seguridad del login ahora muestra dinámicamente la versión actual de la aplicación.
+
 ## [0.2.1] - 2025-09-17
 ### Added
 - Se incorporó un timestamp argentino en el footer para reflejar la hora local
