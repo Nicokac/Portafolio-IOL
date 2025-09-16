@@ -1,85 +1,11 @@
 # ui\fx_panels.py
 from __future__ import annotations
-import html
+
 import pandas as pd
-import streamlit as st
 import plotly.express as px
+import streamlit as st
+
 from shared.utils import _as_float_or_none, format_percent
-from .palette import get_active_palette
-
-# def render_fx_panel(rates: dict):
-#     st.subheader("💵 Cotizaciones del dólar (ARS por USD)")
-#     if not rates:
-#         st.info("No se pudieron obtener cotizaciones en este momento.")
-#         return
-
-#     rows = []
-#     order = ["oficial", "mayorista", "ahorro", "tarjeta", "blue", "mep", "ccl", "cripto"]
-#     labels = {
-#         "oficial": "Oficial",
-#         "mayorista": "Mayorista",
-#         "ahorro": "Ahorro / Solidario",
-#         "tarjeta": "Tarjeta / Turista",
-#         "blue": "Blue",
-#         "mep": "MEP (Bolsa)",
-#         "ccl": "CCL (Contado c/Liq.)",
-#         "cripto": "Cripto",
-#     }
-#     descriptions = {
-#     "oficial": "Tipo de cambio oficial minorista",
-#     "mayorista": "Precio mayorista de referencia",
-#     "ahorro": "Oficial + impuestos",
-#     "tarjeta": "Consumos con tarjeta en el exterior",
-#     "blue": "Mercado paralelo",
-#     "mep": "Compra/venta de bonos en pesos",
-#     "ccl": "Contado con liquidación, referencia para CEDEARs/ADRs",
-#     "cripto": "Cotización en exchanges cripto",
-#     }  
-
-#     for k in order:
-#         if k in rates and _as_float_or_none(rates[k]) is not None:
-#             val = float(rates[k])
-#             label = labels.get(k, k)
-#             rows.append(
-#                 {
-#                     "Tipo": label,
-#                     "ARS / USD": f"$ {val:,.2f}".replace(",", "_").replace(".", ",").replace("_", "."),
-#                     "Ref": "CCL" if k == "ccl" else "",
-#                     "Desc": descriptions.get(k, ""),
-#                 }
-#             )
-
-#     if not rows:
-#         st.info("No hay datos de tipos de cambio para mostrar.")
-#         return
-
-#     df_fx = pd.DataFrame(rows)
-
-#     pal = get_active_palette()
-#     st.markdown(
-#         f"""
-#         <style>
-#         .fx-badge {{
-#             background-color: {pal.highlight_bg};
-#             color: {pal.highlight_text};
-#             padding: 0 0.4em;
-#             border-radius: 0.25rem;
-#             font-size: 0.75em;
-#             font-weight: 600;
-#         }}
-#         </style>
-#         """,
-#         unsafe_allow_html=True,
-#     )
-
-#     df_fx["Ref"] = df_fx["Ref"].apply(lambda v: f"<span class='fx-badge'>{v}</span>" if v else "")
-#     df_fx["Tipo"] = df_fx.apply(
-#         lambda r: f"<span title='{html.escape(r['Desc'])}'>{r['Tipo']}</span>", axis=1
-#     )
-#     df_fx = df_fx.drop(columns=["Desc"])
-
-#     st.write(df_fx.to_html(escape=False, index=False), unsafe_allow_html=True)
-#     st.caption("Nota: el **CCL** es la referencia usual para CEDEARs/ADRs/bonos en USD.")
 
 def render_spreads(rates: dict):
     st.subheader("🔀 Brechas de dólar")
