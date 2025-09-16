@@ -4,6 +4,7 @@ from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
 from ui.footer import render_footer
 from ui.header import render_header
+from ui.security_info import render_security_info
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 
@@ -32,7 +33,9 @@ def render_login_page() -> None:
         user = st.text_input("Usuario")
         password = st.text_input("Contraseña", type="password")
         submitted = st.form_submit_button("Iniciar sesión")
-        render_footer()
+
+    render_security_info()
+    render_footer()
 
     if submitted:
         provider = get_auth_provider()

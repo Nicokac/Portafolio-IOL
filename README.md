@@ -6,6 +6,17 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
+## Seguridad de credenciales
+
+### 🔒 Seguridad de tus credenciales
+
+- Cifrado de tokens con [Fernet](https://cryptography.io/en/latest/fernet/)
+- Almacenamiento de secretos con [Streamlit Secrets](https://docs.streamlit.io/streamlit-community-cloud/get-started/deploy-an-app/secrets-management)
+- Tokens guardados en archivos cifrados locales (no en la nube)
+- Limpieza inmediata de contraseñas en `session_state`
+
+Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
+
 ## Requisitos de sistema
 
 - Python 3.10 o superior
