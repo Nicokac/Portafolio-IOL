@@ -20,6 +20,8 @@ moment = TimeProvider.now_datetime()    # datetime consciente de zona (UTC-3)
 - `TimeProvider.now()` devuelve la representación en texto lista para mostrar en la interfaz.
 - `TimeProvider.now_datetime()` expone el mismo instante como un objeto `datetime` con zona horaria de Buenos Aires.
 
+El método `TimeProvider.now_datetime()` retorna un `datetime` consciente de zona en UTC-3, lo que garantiza que el `tzinfo` se mantenga alineado con Buenos Aires para todo cálculo dentro de la aplicación. Algunos integradores —como el cliente legacy de IOL— deben convertirlo explícitamente a naive (`tzinfo=None`) para continuar siendo compatibles con librerías que no gestionan zonas horarias.
+
 Ambos métodos apuntan al mismo reloj centralizado, por lo que los valores son intercambiables según si necesitas una cadena o un
 `datetime` para cálculos adicionales.
 
