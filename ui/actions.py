@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import logging
 import time
 import streamlit as st
+
 from application import auth_service
 from shared.errors import AppError
 
