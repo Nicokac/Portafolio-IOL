@@ -64,8 +64,6 @@ def main(argv: list[str] | None = None):
         st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
         render_action_menu()
 
-    render_health_sidebar()
-
     # main_col, side_col = st.columns([4, 1])
 
     # render_fx_section(side_col, fx_rates)
@@ -74,6 +72,7 @@ def main(argv: list[str] | None = None):
     cli = build_iol_client()
     refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
     render_footer()
+    render_health_sidebar()
 
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()
