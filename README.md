@@ -2,6 +2,8 @@
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
+> Nota: el footer de la aplicación muestra la hora de Argentina (UTC-3) y se actualiza en cada renderizado.
+
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
 ## Requisitos de sistema
