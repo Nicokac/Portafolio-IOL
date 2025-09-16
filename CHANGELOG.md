@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2025-09-17
+### Fixed
+- Se corrigió la incompatibilidad aware/naive al comparar las marcas de tiempo.
+- Se actualizó `bearer_time` a naive en el cliente legacy para alinear el formato de fechas.
+
 ## [0.3.3] - 2025-09-21
 ### Fixed
 - Se corrigió `shared.time_provider.TimeProvider` para garantizar que los timestamps y objetos `datetime`
