@@ -117,6 +117,48 @@ def test_get_quote_cached_handles_invalid_credentials(monkeypatch):
     clear_tokens.assert_called_once()
 
 
+def test_get_quote_cached_purges_expired_entries(monkeypatch):
+    svc_cache._QUOTE_CACHE.clear()
+
+    class FakeTime:
+        def __init__(self) -> None:
+            self.current = 0.0
+
+        def time(self) -> float:
+            return self.current
+
+    fake_time = FakeTime()
+    monkeypatch.setattr(svc_cache.time, "time", fake_time.time)
+
+    class DummyCli:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_quote(self, mercado, simbolo):
+            self.calls += 1
+            return {"last": simbolo, "chg_pct": float(self.calls)}
+
+    cli = DummyCli()
+    ttl = 5
+    first_key = ("bcba", "SYM0")
+    try:
+        for idx in range(50):
+            fake_time.current = float(idx)
+            symbol = f"SYM{idx}"
+            svc_cache._get_quote_cached(cli, "bcba", symbol, ttl=ttl)
+
+        assert cli.calls == 50
+        assert first_key not in svc_cache._QUOTE_CACHE
+        assert len(svc_cache._QUOTE_CACHE) <= ttl
+        assert all(record.get("ttl") == float(ttl) for record in svc_cache._QUOTE_CACHE.values())
+
+        fake_time.current = 100.0
+        svc_cache._get_quote_cached(cli, "bcba", "LATEST", ttl=ttl)
+        assert set(svc_cache._QUOTE_CACHE.keys()) == {("bcba", "LATEST")}
+    finally:
+        svc_cache._QUOTE_CACHE.clear()
+
+
 # --- build_iol_client ---
 
 def test_build_iol_client_missing_user(monkeypatch):
