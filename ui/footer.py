@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from shared.version import __version__
 
-
 TIMEZONE = "America/Argentina/Buenos_Aires"
 
 
