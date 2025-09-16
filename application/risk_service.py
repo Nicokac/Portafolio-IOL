@@ -6,6 +6,7 @@ from typing import Dict
 
 __all__ = [
     "compute_returns",
+    "portfolio_returns",
     "annualized_volatility",
     "beta",
     "historical_var",
