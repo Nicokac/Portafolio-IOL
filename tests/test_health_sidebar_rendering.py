@@ -12,6 +12,7 @@ import streamlit as st
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
+from shared.version import __version__
 
 _ORIGINAL_STREAMLIT = st
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +62,9 @@ def test_sidebar_shows_empty_state_labels() -> None:
         }
     )
 
-    assert _collect(app, "header") == ["🩺 Salud de datos"]
+    assert _collect(app, "header") == [
+        f"🩺 Healthcheck (versión {__version__})"
+    ]
     assert "Monitorea la procedencia y el rendimiento de los datos cargados." in _collect(
         app, "caption"
     )
