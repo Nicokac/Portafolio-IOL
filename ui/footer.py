@@ -1,5 +1,5 @@
-import subprocess
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from shared.version import __version__
@@ -7,30 +7,22 @@ from shared.version import __version__
 
 def get_version():
     version = __version__
-    try:
-        date = (
-            subprocess.check_output(
-                ["git", "log", "-1", "--format=%cd", "--date=short"], stderr=subprocess.STDOUT
-            )
-            .decode()
-            .strip()
-        )
-    except Exception:
-        date = "desconocida"
+    now = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
 
-    return version, date
+    return version, now
 
 
 def render_footer():
-    version, commit_date = get_version()
-    year = datetime.now().year
+    version, now = get_version()
+    formatted_time = now.strftime("%d/%m/%Y %H:%M:%S")
+    year = now.year
     st.markdown(
         f"""
         <hr>
         <div style='text-align:center; font-size:0.9em;'>
             Desarrollado por Nicolás K. ·
             <a href='https://github.com/caliari' target='_blank'>Portafolio</a><br>
-            Versión {version} ({commit_date})<br>
+            Versión {version} ({formatted_time})<br>
             &copy; {year} - Los datos se ofrecen sin garantía. Uso bajo su responsabilidad.
         </div>
         """,
