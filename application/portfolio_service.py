@@ -390,10 +390,6 @@ def calc_rows(
     return df[cols]
 
 
-# --- Agregar al final de application/portfolio_service.py ---
-from functools import lru_cache
-
-
 @lru_cache(maxsize=1024)
 def _classify_sym_cache(sym: str) -> str:
     """Cachea la clasificación por símbolo usando la función existente classify_asset."""
@@ -419,12 +415,10 @@ class PortfolioService:
         """Classify an asset symbol using a cached helper."""
         return _classify_sym_cache(sym)
 
-    # Accesos directos por si los necesitas
     def classify_asset(self, row):
         """Classify asset row without caching."""
         return classify_asset(row)
 
     def clean_symbol(self, sym: str) -> str:
-        # return clean_symbol(sym)
         """Normalize a symbol string."""
         return clean_symbol(sym)
