@@ -16,6 +16,15 @@ class TimeSnapshot:
     text: str
     moment: datetime
 
+    def __post_init__(self) -> None:  # pragma: no cover - defensive normalisation
+        text, moment = self.text, self.moment
+        if isinstance(text, datetime) and isinstance(moment, str):
+            object.__setattr__(self, "text", moment)
+            object.__setattr__(self, "moment", text)
+
+    def __str__(self) -> str:
+        return self.text
+
 
 class TimeProvider:
     """Centralised time provider to generate formatted timestamps."""
@@ -28,9 +37,14 @@ class TimeProvider:
         return cls._zone
 
     @classmethod
+    def now_datetime(cls) -> datetime:
+        """Return the current datetime in the configured timezone."""
+        return datetime.now(cls._zone)
+
+    @classmethod
     def now(cls) -> TimeSnapshot:
-        """Return the current time in the configured timezone."""
-        moment = datetime.now(cls._zone)
+        """Return the formatted timestamp snapshot; use ``now_datetime`` for raw datetimes."""
+        moment = cls.now_datetime()
         return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
 
     @classmethod
