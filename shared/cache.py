@@ -1,6 +1,7 @@
 import time
 from collections import OrderedDict
 from functools import wraps
+from pathlib import PurePath
 from threading import Lock
 from typing import Any, Callable, Dict, Tuple
 
@@ -33,13 +34,29 @@ class Cache:
             def _session_key() -> Any:
                 return st.session_state.get("session_id")
 
+            # <== De 'main': Función robusta para hashear argumentos complejos.
+            def make_hashable(value: Any) -> Any:
+                """Convert values into hashable, comparable representations."""
+                if isinstance(value, dict):
+                    return tuple(
+                        (k, make_hashable(v)) for k, v in sorted(value.items())
+                    )
+                if isinstance(value, (list, tuple)):
+                    return tuple(make_hashable(v) for v in value)
+                if isinstance(value, (set, frozenset)):
+                    return tuple(sorted((make_hashable(v) for v in value), key=repr))
+                if isinstance(value, PurePath):
+                    return str(value)
+                return value
+
+            # <== De 'main': Usa 'make_hashable' para crear una clave segura.
             def _arg_key(args: tuple, kwargs: dict) -> Any:
-                if args:
-                    return args[0]
-                return (args, tuple(sorted(kwargs.items())))
+                ordered_kwargs = tuple(sorted(kwargs.items()))
+                return make_hashable((args, ordered_kwargs))
 
             @wraps(func)
             def wrapper(*args, **kwargs):
+                # <== De tu rama: Un chequeo inicial para la nueva funcionalidad.
                 if maxsize is not None and maxsize <= 0:
                     return func(*args, **kwargs)
 
@@ -50,21 +67,26 @@ class Cache:
 
                     result = func(*args, **kwargs)
                     resources[key] = result
+                    
+                    # <== De tu rama: Lógica para limitar el tamaño máximo de la caché.
                     if maxsize is not None:
                         while len(resources) > maxsize:
                             resources.popitem(last=False)
                     return result
 
-            def clear(key: Any | None = None) -> None:
+            # <== De 'main': La función 'clear' mejorada que acepta argumentos.
+            def clear(*call_args, key: Any | None = None, **call_kwargs) -> None:
                 sid = _session_key()
                 with lock:
-                    if key is None:
+                    if key is None and not call_args and not call_kwargs:
                         to_del = [k for k in resources if k[0] is func and k[1] == sid]
                         for k in to_del:
                             resources.pop(k, None)
                     else:
+                        if call_args or call_kwargs:
+                            key = _arg_key(call_args, call_kwargs)
                         resources.pop((func, sid, key), None)
-
+            
             wrapper.clear = clear
             return wrapper
 

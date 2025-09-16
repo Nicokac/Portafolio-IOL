@@ -77,6 +77,9 @@ def test_fetch_fx_rates_handles_external_api_error(monkeypatch):
         def get_rates(self):
             raise ExternalAPIError("fail")
 
+        def close(self):
+            pass
+
     recorded = {}
 
     def fake_record_fx_api_response(*, error, elapsed_ms):
@@ -91,6 +94,21 @@ def test_fetch_fx_rates_handles_external_api_error(monkeypatch):
 
     assert recorded["error"] is None
     assert recorded["elapsed_ms"] >= 0
+
+
+def test_fetch_fx_rates_closes_provider(monkeypatch):
+    svc_cache.fetch_fx_rates.clear()
+
+    provider = MagicMock()
+    provider.get_rates.return_value = ({"USD": 1}, None)
+
+    monkeypatch.setattr(svc_cache, "get_fx_provider", lambda: provider)
+    monkeypatch.setattr(svc_cache, "record_fx_api_response", lambda **kwargs: None)
+
+    result = svc_cache.fetch_fx_rates()
+
+    assert result == ({"USD": 1}, None)
+    provider.close.assert_called_once()
 
 
 # --- _get_quote_cached ---
@@ -115,6 +133,48 @@ def test_get_quote_cached_handles_invalid_credentials(monkeypatch):
     assert result == {"last": None, "chg_pct": None}
     logout_mock.assert_called_once()
     clear_tokens.assert_called_once()
+
+
+def test_get_quote_cached_purges_expired_entries(monkeypatch):
+    svc_cache._QUOTE_CACHE.clear()
+
+    class FakeTime:
+        def __init__(self) -> None:
+            self.current = 0.0
+
+        def time(self) -> float:
+            return self.current
+
+    fake_time = FakeTime()
+    monkeypatch.setattr(svc_cache.time, "time", fake_time.time)
+
+    class DummyCli:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_quote(self, mercado, simbolo):
+            self.calls += 1
+            return {"last": simbolo, "chg_pct": float(self.calls)}
+
+    cli = DummyCli()
+    ttl = 5
+    first_key = ("bcba", "SYM0")
+    try:
+        for idx in range(50):
+            fake_time.current = float(idx)
+            symbol = f"SYM{idx}"
+            svc_cache._get_quote_cached(cli, "bcba", symbol, ttl=ttl)
+
+        assert cli.calls == 50
+        assert first_key not in svc_cache._QUOTE_CACHE
+        assert len(svc_cache._QUOTE_CACHE) <= ttl
+        assert all(record.get("ttl") == float(ttl) for record in svc_cache._QUOTE_CACHE.values())
+
+        fake_time.current = 100.0
+        svc_cache._get_quote_cached(cli, "bcba", "LATEST", ttl=ttl)
+        assert set(svc_cache._QUOTE_CACHE.keys()) == {("bcba", "LATEST")}
+    finally:
+        svc_cache._QUOTE_CACHE.clear()
 
 
 # --- build_iol_client ---

@@ -156,6 +156,9 @@ def test_logout_clears_cached_queries(monkeypatch):
             self.calls += 1
             return {"USD": self.calls}, None
 
+        def close(self):
+            pass
+
     provider = DummyFXProvider()
     monkeypatch.setattr(svc_cache, "get_fx_provider", lambda: provider)
 

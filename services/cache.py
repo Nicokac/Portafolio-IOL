@@ -41,6 +41,41 @@ logger = logging.getLogger(__name__)
 _QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 
+
+def _purge_expired_quotes(now: float, fallback_ttl: float) -> None:
+    """Remove quote cache entries whose TTL has expired."""
+
+    fallback = max(float(fallback_ttl), 0.0)
+    if fallback == 0:
+        _QUOTE_CACHE.clear()
+        return
+
+    expired_keys = []
+    for cache_key, record in list(_QUOTE_CACHE.items()):
+        record_ttl = record.get("ttl")
+        if record_ttl is None:
+            record_ttl = fallback
+        try:
+            record_ttl = float(record_ttl)
+        except (TypeError, ValueError):
+            record_ttl = fallback
+        record["ttl"] = record_ttl
+        ts = record.get("ts")
+        if ts is None:
+            ts_value = now
+        else:
+            try:
+                ts_value = float(ts)
+            except (TypeError, ValueError):
+                ts_value = now
+        record["ts"] = ts_value
+        if record_ttl <= 0 or now - ts_value >= record_ttl:
+            expired_keys.append(cache_key)
+
+    for cache_key in expired_keys:
+        _QUOTE_CACHE.pop(cache_key, None)
+
+
 def _trigger_logout() -> None:
     """Clear session and tokens triggering a fresh login."""
     try:
@@ -71,11 +106,34 @@ def _get_quote_cached(
     cli, mercado: str, simbolo: str, ttl: int = cache_ttl_quotes
 ) -> dict:
     key = (str(mercado).lower(), str(simbolo).upper())
+    try:
+        ttl_seconds = float(ttl)
+    except (TypeError, ValueError):
+        ttl_seconds = float(cache_ttl_quotes or 0)
+    if ttl_seconds < 0:
+        ttl_seconds = 0.0
     now = time.time()
-    with _QUOTE_LOCK:
-        rec = _QUOTE_CACHE.get(key)
-        if rec and now - rec["ts"] < ttl:
-            return rec["data"]
+    if ttl_seconds <= 0:
+        with _QUOTE_LOCK:
+            _QUOTE_CACHE.clear()
+    else:
+        with _QUOTE_LOCK:
+            _purge_expired_quotes(now, ttl_seconds)
+            rec = _QUOTE_CACHE.get(key)
+            if rec:
+                try:
+                    rec_ttl = float(rec.get("ttl", ttl_seconds))
+                except (TypeError, ValueError):
+                    rec_ttl = ttl_seconds
+                    rec["ttl"] = rec_ttl
+                ts = rec.get("ts", now)
+                try:
+                    ts_value = float(ts)
+                except (TypeError, ValueError):
+                    ts_value = now
+                    rec["ts"] = ts_value
+                if rec_ttl > 0 and now - ts_value < rec_ttl:
+                    return rec["data"]
     try:
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = _normalize_quote(q)
@@ -89,8 +147,12 @@ def _get_quote_cached(
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
         data = {"last": None, "chg_pct": None}
+    store_time = time.time()
+    if ttl_seconds <= 0:
+        return data
     with _QUOTE_LOCK:
-        _QUOTE_CACHE[key] = {"ts": now, "data": data}
+        _purge_expired_quotes(store_time, ttl_seconds)
+        _QUOTE_CACHE[key] = {"ts": store_time, "ttl": ttl_seconds, "data": data}
     return data
 
 
@@ -237,8 +299,10 @@ def fetch_fx_rates():
     data: dict = {}
     error: str | None = None
     start = time.time()
+    provider: FXProviderAdapter | None = None
     try:
-        data, error = get_fx_provider().get_rates()
+        provider = get_fx_provider()
+        data, error = provider.get_rates()
     except requests.RequestException as e:
         error = f"FX provider failed: {e}"
         logger.exception(error)
@@ -247,6 +311,8 @@ def fetch_fx_rates():
         error = f"FX provider failed: {e}"
         logger.exception(error)
     finally:
+        if provider is not None:
+            provider.close()
         record_fx_api_response(
             error=error,
             elapsed_ms=(time.time() - start) * 1000,

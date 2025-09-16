@@ -70,6 +70,16 @@ class FXProviderAdapter:
         ua = settings.USER_AGENT
         self.session = build_session(ua, retries=2, backoff=0.3, timeout=12)
 
+    def close(self) -> None:
+        """Release the underlying HTTP session resources."""
+        self.session.close()
+
+    def __enter__(self) -> "FXProviderAdapter":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     # ---------------
     # Cache local
     # ---------------
