@@ -1,26 +1,26 @@
-"""Shared application error hierarchy."""
+"""Jerarquía de errores de aplicación compartida."""
 
 from __future__ import annotations
 
 
 class AppError(Exception):
-    """Base exception for application-specific errors."""
+    """Excepción base para errores específicos de la aplicación."""
 
 
 class NetworkError(AppError):
-    """Represents network-related failures."""
+    """Representa fallas relacionadas con la red."""
 
 
 class InvalidCredentialsError(AppError):
-    """Raised when provided credentials are invalid."""
+    """Se genera cuando las credenciales proporcionadas no son válidas."""
 
 
 class TimeoutError(NetworkError):
-    """Raised when a network operation times out."""
+    """Se genera cuando se agota el tiempo de espera de una operación de red."""
 
 
 class ExternalAPIError(AppError):
-    """Raised when an external API returns an error."""
+    """Se genera cuando una API externa devuelve un error."""
 
 
 __all__ = [
