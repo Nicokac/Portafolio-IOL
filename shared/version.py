@@ -4,14 +4,19 @@ from pathlib import Path
 import tomllib
 
 
+DEFAULT_VERSION = "0.3.3"
+PROJECT_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
+
+
 def _read_version() -> str:
-    project_file = Path(__file__).resolve().parent.parent / "pyproject.toml"
     try:
-        with project_file.open("rb") as f:
+        with PROJECT_FILE.open("rb") as f:
             data = tomllib.load(f)
-        return data.get("project", {}).get("version", "0.0.0")
     except Exception:
-        return "0.0.0"
+        return DEFAULT_VERSION
+
+    version = data.get("project", {}).get("version", DEFAULT_VERSION)
+    return version if isinstance(version, str) and version else DEFAULT_VERSION
 
 
 __version__ = _read_version()
