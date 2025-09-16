@@ -1,5 +1,6 @@
 import pytest
 import streamlit as st
+from shared.cache import cache
 from shared.errors import InvalidCredentialsError
 from services import cache as svc_cache
 
@@ -35,7 +36,7 @@ def test_get_client_cached_is_session_isolated(monkeypatch):
     assert other is not first
 
     st.session_state["session_id"] = "A"
-    svc_cache.get_client_cached.clear("k")
+    svc_cache.get_client_cached.clear("k", "u", None)
     rebuilt = svc_cache.get_client_cached("k", "u", None)
     assert rebuilt is not first
 
@@ -106,3 +107,36 @@ def test_get_client_cached_invalid_credentials(monkeypatch):
 
     assert st.session_state["force_login"] is True
     assert cleared["called"] is True
+
+
+def test_cache_resource_uses_all_arguments(monkeypatch):
+    monkeypatch.setattr(st, "session_state", {"session_id": "SID"})
+
+    created = []
+
+    @cache.cache_resource
+    def builder(prefix: str, value: int, *, toggle: bool = False):
+        obj = object()
+        created.append((prefix, value, toggle, obj))
+        return obj
+
+    first = builder("same", 1, toggle=False)
+    again = builder("same", 1, toggle=False)
+    assert first is again
+
+    other_kw = builder("same", 1, toggle=True)
+    assert other_kw is not first
+
+    other_pos = builder("same", 2, toggle=False)
+    assert other_pos is not first
+    assert other_pos is not other_kw
+
+    assert len(created) == 3
+
+    builder.clear("same", 1, toggle=False)
+    rebuilt = builder("same", 1, toggle=False)
+    assert rebuilt is not first
+
+    # Re-using kwargs order shouldn't create duplicate entries.
+    again_kw = builder("same", 1, toggle=True)
+    assert again_kw is other_kw
