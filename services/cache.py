@@ -237,8 +237,10 @@ def fetch_fx_rates():
     data: dict = {}
     error: str | None = None
     start = time.time()
+    provider: FXProviderAdapter | None = None
     try:
-        data, error = get_fx_provider().get_rates()
+        provider = get_fx_provider()
+        data, error = provider.get_rates()
     except requests.RequestException as e:
         error = f"FX provider failed: {e}"
         logger.exception(error)
@@ -247,6 +249,8 @@ def fetch_fx_rates():
         error = f"FX provider failed: {e}"
         logger.exception(error)
     finally:
+        if provider is not None:
+            provider.close()
         record_fx_api_response(
             error=error,
             elapsed_ms=(time.time() - start) * 1000,

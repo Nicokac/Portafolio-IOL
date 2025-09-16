@@ -48,6 +48,9 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
         def get_rates(self):
             raise requests.RequestException("boom")
 
+        def close(self):
+            pass
+
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
     with pytest.raises(ExternalAPIError) as exc:
         cache.fetch_fx_rates()

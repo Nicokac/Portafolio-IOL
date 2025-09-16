@@ -96,6 +96,9 @@ def test_fetch_fx_rates_respects_monkeypatched_ttl(monkeypatch):
                 self.calls += 1
                 return {"USD": self.calls}, None
 
+            def close(self):
+                pass
+
         provider = DummyProvider()
         mp.setattr(cache_module, "get_fx_provider", lambda: provider)
 
