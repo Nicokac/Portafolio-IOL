@@ -17,6 +17,8 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión X.Y.Z".
+
 ## Requisitos de sistema
 
 - Python 3.10 o superior
