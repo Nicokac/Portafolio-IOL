@@ -12,6 +12,7 @@ import streamlit as st
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 
+from shared.time_provider import TimeProvider
 from shared.version import __version__
 
 _ORIGINAL_STREAMLIT = st
@@ -129,17 +130,18 @@ def test_sidebar_formats_populated_metrics() -> None:
     )
 
     markdown = _collect(app, "markdown")
+    formatted = [TimeProvider.from_timestamp(ts) for ts in timestamps]
     expected_lines = {
         "#### 🔐 Conexión IOL",
-        "✅ Refresh correcto • 02/01/2024 03:04:05 — OK",
+        f"✅ Refresh correcto • {formatted[0]} — OK",
         "#### 📈 Yahoo Finance",
-        "♻️ Fallback local • 02/01/2024 03:04:06 — respaldo",
+        f"♻️ Fallback local • {formatted[1]} — respaldo",
         "#### 💱 FX",
-        "⚠️ API FX con errores • 02/01/2024 03:04:07 (123 ms) — boom",
-        "♻️ Uso de caché • 02/01/2024 03:04:08 (edad 46s)",
+        f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom",
+        f"♻️ Uso de caché • {formatted[3]} (edad 46s)",
         "#### ⏱️ Latencias",
-        "- Portafolio: 457 ms • fuente: api • fresh • 02/01/2024 03:04:09",
-        "- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • 02/01/2024 03:04:10",
+        f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[4]}",
+        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[5]}",
     }
 
     missing = expected_lines.difference(markdown)

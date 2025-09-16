@@ -1,10 +1,6 @@
-from datetime import datetime
-from zoneinfo import ZoneInfo
-
 import streamlit as st
 from shared.version import __version__
-
-TIMEZONE = "America/Argentina/Buenos_Aires"
+from shared.time_provider import TimeProvider
 
 
 def get_version() -> str:
@@ -13,9 +9,8 @@ def get_version() -> str:
 
 def render_footer():
     version = get_version()
-    timezone = ZoneInfo(TIMEZONE)
-    now = datetime.now(timezone)
-    timestamp = now.strftime("%d/%m/%Y %H:%M:%S")
+    now = TimeProvider.now_datetime()
+    timestamp = TimeProvider.now()
     year = now.year
     st.markdown(
         f"""

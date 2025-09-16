@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import argparse
 import time
-from datetime import datetime
 import logging
 from uuid import uuid4
 
 import streamlit as st
 
 from shared.config import configure_logging, ensure_tokens_key
+from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui
 from ui.header import render_header
 from ui.actions import render_action_menu
@@ -60,8 +60,7 @@ def main(argv: list[str] | None = None):
     render_header(rates=fx_rates)
     _, hcol2 = st.columns([4, 1])
     with hcol2:
-        now = datetime.now()
-        st.caption(f"🕒 {now.strftime('%d/%m/%Y %H:%M:%S')}")
+        st.caption(f"🕒 {TimeProvider.now()}")
         render_action_menu()
 
     # main_col, side_col = st.columns([4, 1])
