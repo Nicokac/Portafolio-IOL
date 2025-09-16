@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from services import cache as svc_cache
+from shared.errors import NetworkError
 
 # --- _trigger_logout ---
 
@@ -57,8 +58,8 @@ def test_fetch_portfolio_handles_request_exception(monkeypatch):
 
     svc_cache.fetch_portfolio.clear()
     cli = DummyCli()
-    result = svc_cache.fetch_portfolio(cli)
-    assert result == {"_cached": True}
+    with pytest.raises(NetworkError):
+        svc_cache.fetch_portfolio(cli)
     logout_mock.assert_not_called()
 
 
