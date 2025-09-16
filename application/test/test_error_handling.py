@@ -25,7 +25,6 @@ from controllers import auth
 from infrastructure.iol.auth import InvalidCredentialsError
 from shared.errors import ExternalAPIError
 
-
 @pytest.mark.parametrize("exc_cls", [HTTPError, Timeout])
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch, exc_cls):
     fetch_with_indicators.clear()
@@ -46,7 +45,7 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
     class FailProv:
         def get_rates(self):
-            raise requests.RequestException("boom")
+            raise NetworkError("boom")
 
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
     with pytest.raises(ExternalAPIError) as exc:
