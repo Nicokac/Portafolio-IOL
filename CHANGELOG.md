@@ -7,14 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [Next-Version]
+## [0.2.0] - 2025-09-16
 ### Added
 - Centralized cache TTL configuration in `shared/settings` and documented the
   new environment keys for quote and FX caches.
 - Added a sidebar health-check indicator so operators can quickly confirm
   downstream service availability from the navigation.
-- Introduced a shared error hierarchy to standardize how controllers and
-  services surface recoverable issues.
+- Jerarquía de errores compartida (PR1) para estandarizar cómo controllers y
+  services reportan incidencias recuperables.
 ### Changed
 - Refactored the Streamlit session and routing logic to reuse authentication and
   page-loading flows between the main application and auxiliary entry points.
@@ -34,8 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed deprecated `use_container_width` parameter (Streamlit ≥ 1.30).
 
 ### Tests
-- Added regression tests covering TTL configuration, sidebar health checks, and
-  the new error hierarchy behavior.
+- Nuevas pruebas de TTL, health sidebar y propagación de errores (PR2).
 
 ## [2025-09-13]
 ### Tests
