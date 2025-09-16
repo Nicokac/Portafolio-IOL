@@ -2,23 +2,22 @@ from __future__ import annotations
 
 """Sidebar panel summarising recent data source health."""
 
-from datetime import datetime
 from typing import Iterable, Optional
 
 import streamlit as st
 
 from services.health import get_health_metrics
 from shared.version import __version__
+from shared.time_provider import TimeProvider
 
 
 def _format_timestamp(ts: Optional[float]) -> str:
     if not ts:
         return "Sin registro"
     try:
-        dt = datetime.fromtimestamp(float(ts))
+        return TimeProvider.from_timestamp(ts)
     except (TypeError, ValueError, OSError):
         return "Sin registro"
-    return dt.strftime("%d/%m/%Y %H:%M:%S")
 
 
 def _format_iol_status(data: Optional[dict]) -> str:

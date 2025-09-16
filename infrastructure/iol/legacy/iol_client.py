@@ -11,11 +11,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException  # <- importante
-from datetime import datetime
 import streamlit as st
 
 from shared.config import settings
 from shared.utils import _to_float
+from shared.time_provider import TimeProvider
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
@@ -139,7 +139,7 @@ class IOLClient:
                 if bearer and refresh:
                     self.iol_market.bearer = bearer
                     self.iol_market.refresh_token = refresh
-                    self.iol_market.bearer_time = datetime.now()
+                    self.iol_market.bearer_time = TimeProvider.now_datetime()
                 else:
                     st.session_state["force_login"] = True
                     raise InvalidCredentialsError("Token inválido")

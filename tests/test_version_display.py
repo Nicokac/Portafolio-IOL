@@ -9,6 +9,7 @@ from ui.login import render_login_page
 import app as main_app
 import ui.footer
 from unittest.mock import MagicMock
+from shared.time_provider import TimeProvider
 
 
 class DummyCtx:
@@ -18,38 +19,32 @@ class DummyCtx:
         return False
 
 
-class FixedDatetime:
-    def __init__(self, value: datetime):
-        self._value = value
-        self.calls: list[str | None] = []
-
-    def now(self, tz=None):
-        self.calls.append(tz)
-        return self._value
-
-
 def setup_footer_mocks(monkeypatch):
-    fixed_dt = datetime(2024, 1, 2, 3, 4, 5)
-    datetime_stub = FixedDatetime(fixed_dt)
-    monkeypatch.setattr(ui.footer, "datetime", datetime_stub)
+    tz = TimeProvider.TIMEZONE
+    fixed_dt = datetime(2024, 1, 2, 3, 4, 5, tzinfo=tz)
+    formatted = fixed_dt.strftime(TimeProvider.DATETIME_FORMAT)
+    call_counts = {"now": 0, "now_datetime": 0}
 
-    captured_timezones: list[str] = []
+    def fake_now(cls):
+        call_counts["now"] += 1
+        return formatted
 
-    def fake_zoneinfo(name: str):
-        captured_timezones.append(name)
-        return name
+    def fake_now_datetime(cls):
+        call_counts["now_datetime"] += 1
+        return fixed_dt
 
-    monkeypatch.setattr(ui.footer, "ZoneInfo", fake_zoneinfo, raising=False)
+    monkeypatch.setattr(TimeProvider, "now", classmethod(fake_now))
+    monkeypatch.setattr(TimeProvider, "now_datetime", classmethod(fake_now_datetime))
     monkeypatch.setattr(ui.footer, "get_version", lambda: __version__)
     mock_markdown = MagicMock()
     monkeypatch.setattr(ui.footer.st, "markdown", mock_markdown)
-    return mock_markdown, datetime_stub, captured_timezones, fixed_dt
+    return mock_markdown, call_counts, fixed_dt, formatted
 
 
 def test_version_shown_in_login(monkeypatch):
     monkeypatch.setattr("ui.login.settings.tokens_key", "dummy")
     monkeypatch.setattr("ui.login.render_header", lambda *a, **k: None)
-    mock_markdown, datetime_stub, captured_timezones, fixed_dt = setup_footer_mocks(monkeypatch)
+    mock_markdown, call_counts, fixed_dt, formatted = setup_footer_mocks(monkeypatch)
     monkeypatch.setattr("ui.login.st.warning", lambda *a, **k: None)
     monkeypatch.setattr("ui.login.st.error", lambda *a, **k: None)
     monkeypatch.setattr("ui.login.st.text_input", lambda *a, **k: "")
@@ -58,12 +53,13 @@ def test_version_shown_in_login(monkeypatch):
     render_login_page()
     rendered_blocks = [str(call.args[0]) for call in mock_markdown.call_args_list]
     assert any(f"Versión {__version__}" in block for block in rendered_blocks)
-    timestamp_pattern = re.compile(r"\b\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\b")
+    timestamp_pattern = re.compile(r"\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b")
     assert any(timestamp_pattern.search(block) for block in rendered_blocks)
-    expected_timestamp = fixed_dt.strftime("%d/%m/%Y %H:%M:%S")
-    assert any(expected_timestamp in block for block in rendered_blocks)
-    assert any(tz == "America/Argentina/Buenos_Aires" for tz in datetime_stub.calls)
-    assert captured_timezones == ["America/Argentina/Buenos_Aires"]
+    assert any(formatted in block for block in rendered_blocks)
+    assert call_counts["now"] >= 1
+    assert call_counts["now_datetime"] >= 1
+    assert getattr(TimeProvider.TIMEZONE, "key", "") == "America/Argentina/Buenos_Aires"
+    assert fixed_dt.tzinfo is TimeProvider.TIMEZONE
 
 
 def test_version_shown_in_main_app(monkeypatch):
@@ -74,7 +70,7 @@ def test_version_shown_in_main_app(monkeypatch):
     monkeypatch.setattr(main_app, "render_action_menu", lambda *a, **k: None)
     monkeypatch.setattr(main_app, "build_iol_client", lambda: None)
     monkeypatch.setattr(main_app, "render_portfolio_section", lambda *a, **k: None)
-    mock_markdown, datetime_stub, captured_timezones, fixed_dt = setup_footer_mocks(monkeypatch)
+    mock_markdown, call_counts, fixed_dt, formatted = setup_footer_mocks(monkeypatch)
     monkeypatch.setattr(main_app.st, "session_state", {"authenticated": True})
     monkeypatch.setattr(main_app.st, "stop", lambda: None)
     monkeypatch.setattr(main_app.st, "columns", lambda *a, **k: (DummyCtx(), DummyCtx()))
@@ -83,9 +79,10 @@ def test_version_shown_in_main_app(monkeypatch):
     main_app.main([])
     rendered_blocks = [str(call.args[0]) for call in mock_markdown.call_args_list]
     assert any(f"Versión {__version__}" in block for block in rendered_blocks)
-    timestamp_pattern = re.compile(r"\b\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}\b")
+    timestamp_pattern = re.compile(r"\b\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\b")
     assert any(timestamp_pattern.search(block) for block in rendered_blocks)
-    expected_timestamp = fixed_dt.strftime("%d/%m/%Y %H:%M:%S")
-    assert any(expected_timestamp in block for block in rendered_blocks)
-    assert any(tz == "America/Argentina/Buenos_Aires" for tz in datetime_stub.calls)
-    assert captured_timezones == ["America/Argentina/Buenos_Aires"]
+    assert any(formatted in block for block in rendered_blocks)
+    assert call_counts["now"] >= 1
+    assert call_counts["now_datetime"] >= 1
+    assert getattr(TimeProvider.TIMEZONE, "key", "") == "America/Argentina/Buenos_Aires"
+    assert fixed_dt.tzinfo is TimeProvider.TIMEZONE
