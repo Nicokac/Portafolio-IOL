@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Any, Optional, Iterable, Tuple
 import time
 import logging
@@ -139,7 +140,9 @@ class IOLClient:
                 if bearer and refresh:
                     self.iol_market.bearer = bearer
                     self.iol_market.refresh_token = refresh
-                    self.iol_market.bearer_time = TimeProvider.now_datetime()
+                    bearer_time: datetime = TimeProvider.now_datetime()
+                    # iolConn espera un datetime aware en UTC-3 para manejar expiración
+                    self.iol_market.bearer_time = bearer_time
                 else:
                     st.session_state["force_login"] = True
                     raise InvalidCredentialsError("Token inválido")
