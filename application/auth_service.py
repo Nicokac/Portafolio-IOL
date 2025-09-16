@@ -82,7 +82,9 @@ class IOLAuthenticationProvider(AuthenticationProvider):
             )
             cache_key = st.session_state.get("cache_key")
             if cache_key:
-                get_client_cached.clear(cache_key)
+                cache_user = user or st.session_state.get("IOL_USERNAME", "")
+                tokens_arg = tokens_path if tokens_path is not None else cache.get("tokens_file")
+                get_client_cached.clear(cache_key, cache_user, tokens_arg)
             get_client_cached.clear()
             theme = st.session_state.get("ui_theme")
             for key in (
