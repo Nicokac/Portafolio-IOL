@@ -1,6 +1,6 @@
 import pytest
 import streamlit as st
-from infrastructure.iol.auth import InvalidCredentialsError
+from shared.errors import InvalidCredentialsError
 from services import cache as svc_cache
 
 
