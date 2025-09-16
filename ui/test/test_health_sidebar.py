@@ -9,6 +9,7 @@ if str(ROOT) not in sys.path:
 
 import services.health as health_service
 import ui.health_sidebar as health_sidebar
+from shared.version import __version__
 
 
 def _mock_sidebar(monkeypatch):
@@ -55,6 +56,10 @@ def test_render_health_sidebar_with_success_metrics(monkeypatch):
 
     health_sidebar.render_health_sidebar()
 
+    sidebar.header.assert_called_once_with(
+        f"🩺 Healthcheck (versión {__version__})"
+    )
+
     md_calls = _collect_markdown(sidebar)
     assert any("#### 🔐 Conexión IOL" in text for text in md_calls)
     assert any("✅ Refresh correcto" in text and "Tokens OK" in text for text in md_calls)
@@ -88,6 +93,10 @@ def test_render_health_sidebar_with_missing_metrics(monkeypatch):
     _mock_metrics(monkeypatch, metrics)
 
     health_sidebar.render_health_sidebar()
+
+    sidebar.header.assert_called_once_with(
+        f"🩺 Healthcheck (versión {__version__})"
+    )
 
     md_calls = _collect_markdown(sidebar)
     assert any("⚠️ Error al refrescar" in text and "Token inválido" in text for text in md_calls)
