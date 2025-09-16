@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-09-20
+### Changed
+- Se unificó el manejo de hora mediante `shared.time_provider.TimeProvider` para mantener
+  timestamps consistentes en formato `YYYY-MM-DD HH:MM:SS` (UTC-3).
+
 ## [0.3.1] - 2025-09-19
 ### Changed
 - El healthcheck del sidebar ahora expone la versión actual de la aplicación y se movió al final para concentrar en un único bloque el estado de los servicios monitoreados.

@@ -2,7 +2,9 @@
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
-> Nota: el footer de la aplicación muestra la hora de Argentina (UTC-3) y se actualiza en cada renderizado.
+> Nota: todos los timestamps visibles provienen de `shared.time_provider.TimeProvider` y se muestran
+> en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
+> renderizado con la hora de Argentina.
 
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
