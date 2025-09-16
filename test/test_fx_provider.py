@@ -2,9 +2,11 @@ import json
 import time
 from unittest.mock import MagicMock
 
+import pytest
 import requests
 
 from infrastructure.fx import provider as fx_provider
+from shared.exceptions import NetworkError
 from shared.settings import cache_ttl_fx
 
 
@@ -72,7 +74,8 @@ def test_get_rates_request_exception_uses_fallback(monkeypatch):
 
     rates, err = provider.get_rates()
     assert rates == fallback
-    assert err and "Usando datos locales de FX" in err
+    assert err and "No se pudo obtener blue" in err
+    assert "Usando datos locales de FX" in err
 
 
 def test_get_rates_general_exception_returns_cache(monkeypatch):
@@ -109,3 +112,17 @@ def test_get_rates_general_exception_returns_fallback(monkeypatch):
     rates, err = provider.get_rates()
     assert rates == fallback
     assert err and "FXProviderAdapter failed" in err
+
+
+def test_get_rates_raises_network_error_without_cache(monkeypatch):
+    provider = fx_provider.FXProviderAdapter()
+
+    def raise_exc(url):
+        raise requests.RequestException("boom")
+
+    provider.session.get = MagicMock(side_effect=raise_exc)
+    monkeypatch.setattr(provider, "_load_cache", lambda: None)
+    monkeypatch.setattr(provider, "_load_fallback", lambda: None)
+
+    with pytest.raises(NetworkError):
+        provider.get_rates()

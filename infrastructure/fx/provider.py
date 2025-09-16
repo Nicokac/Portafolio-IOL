@@ -5,11 +5,11 @@ import logging
 import json
 from pathlib import Path
 from typing import Optional, Dict, Tuple, List
-import traceback
 
 from infrastructure.http.session import build_session
 from shared.settings import cache_ttl_fx, settings
 from shared.utils import _to_float
+from shared.exceptions import NetworkError, ExternalAPIError
 import requests
 
 logger = logging.getLogger(__name__)
@@ -127,27 +127,25 @@ class FXProviderAdapter:
             # blue (bluelytics)
             try:
                 r = self.session.get(urls["blue"])
+            except requests.RequestException as e:
+                raise ExternalAPIError("No se pudo obtener blue") from e
+            else:
                 if r.ok:
                     j = r.json()
                     # bluelytics tiene "blue": {"value_avg": ...}
                     raw["blue"] = float(j["blue"]["value_avg"])
-            except requests.RequestException as e:
-                msg = f"No se pudo obtener blue: {e}"
-                logger.warning(msg)
-                errors.append(msg)
 
             # oficial / mep / ccl (dolarapi)
             for k in ("oficial", "mep", "ccl"):
                 try:
                     r = self.session.get(urls[k])
+                except requests.RequestException as e:
+                    raise ExternalAPIError(f"No se pudo obtener {k}") from e
+                else:
                     if r.ok:
                         j = r.json()
                         # dolarapi usa 'venta'
                         raw[k] = float(j["venta"])
-                except requests.RequestException as e:
-                    msg = f"No se pudo obtener {k}: {e}"
-                    logger.warning(msg)
-                    errors.append(msg)
 
             raw["_ts"] = int(time.time())
 
@@ -161,11 +159,31 @@ class FXProviderAdapter:
 
             self._save_cache(normalized)
             return normalized, "; ".join(errors) if errors else None
+        except ExternalAPIError as e:
+            msg = str(e)
+            logger.warning(msg, exc_info=e)
+            cached = self._load_cache()
+            if cached:
+                errors.append(msg)
+                return cached, "; ".join(errors) if errors else msg
+            fallback = self._load_fallback()
+            if fallback:
+                errors.append(msg)
+                errors.append("Usando datos locales de FX")
+                self._save_cache(fallback)
+                return fallback, "; ".join(errors)
+            raise NetworkError(msg) from e
         except Exception as e:
             msg = f"FXProviderAdapter failed: {e}"
             logger.exception(msg)
-            cached = self._load_cache() or self._load_fallback() or {}
+            cached = self._load_cache()
             if cached:
                 errors.append(msg)
                 return cached, "; ".join(errors)
-            return {}, msg + "\n" + traceback.format_exc()
+            fallback = self._load_fallback()
+            if fallback:
+                errors.append(msg)
+                errors.append("Usando datos locales de FX")
+                self._save_cache(fallback)
+                return fallback, "; ".join(errors)
+            raise NetworkError(msg) from e

@@ -23,6 +23,7 @@ from application.ta_service import fetch_with_indicators
 from services import cache
 from controllers import auth
 from infrastructure.iol.auth import InvalidCredentialsError
+from shared.exceptions import NetworkError
 
 
 @pytest.mark.parametrize("exc_cls", [HTTPError, Timeout])
@@ -45,7 +46,7 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
 
     class FailProv:
         def get_rates(self):
-            raise requests.RequestException("boom")
+            raise NetworkError("boom")
 
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
     data, error = cache.fetch_fx_rates()

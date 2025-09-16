@@ -24,6 +24,7 @@ from infrastructure.iol.client import (
 )
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
+from shared.exceptions import NetworkError, ExternalAPIError
 from shared.settings import (
     cache_ttl_fx,
     cache_ttl_portfolio,
@@ -229,7 +230,13 @@ def fetch_fx_rates():
     start = time.time()
     try:
         data, error = get_fx_provider().get_rates()
-    except (requests.RequestException, RuntimeError) as e:
+    except ExternalAPIError as e:
+        error = str(e)
+        logger.warning("FX provider error: %s", e)
+    except NetworkError as e:
+        error = str(e)
+        logger.error("FX provider network error: %s", e)
+    except Exception as e:  # pragma: no cover - defensive
         error = f"FX provider failed: {e}"
         logger.exception(error)
     finally:
