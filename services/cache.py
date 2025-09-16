@@ -7,6 +7,7 @@ import re
 from uuid import uuid4
 
 from shared.cache import cache
+from shared.errors import ExternalAPIError, NetworkError
 import requests
 import streamlit as st
 
@@ -24,7 +25,6 @@ from infrastructure.iol.client import (
 )
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from infrastructure.fx.provider import FXProviderAdapter
-from shared.exceptions import NetworkError, ExternalAPIError
 from shared.settings import (
     cache_ttl_fx,
     cache_ttl_portfolio,
@@ -138,12 +138,12 @@ def fetch_portfolio(_cli: IIOLProvider):
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
-            "fetch_portfolio using cache due to network error: %s",
+            "fetch_portfolio failed due to network error: %s",
             e,
             extra={"tokens_file": tokens_path},
         )
-        record_portfolio_load(None, source="cache", detail="network-error")
-        return {"_cached": True}
+        record_portfolio_load(None, source="error", detail="network-error")
+        raise NetworkError("Error de red al consultar el portafolio") from e
     elapsed = (time.time() - start) * 1000
     record_portfolio_load(elapsed, source="api")
     log = logger.warning if elapsed > 600 else logger.info
@@ -183,7 +183,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
-        fallback_mode = True
+        record_quote_load(None, source="error", count=len(items))
+        raise NetworkError("Error de red al obtener cotizaciones") from e
 
     out = {}
     ttl = cache_ttl_quotes

@@ -23,8 +23,7 @@ from application.ta_service import fetch_with_indicators
 from services import cache
 from controllers import auth
 from infrastructure.iol.auth import InvalidCredentialsError
-from shared.exceptions import NetworkError
-
+from shared.errors import ExternalAPIError
 
 @pytest.mark.parametrize("exc_cls", [HTTPError, Timeout])
 def test_fetch_with_indicators_handles_yfinance_failure(monkeypatch, exc_cls):
@@ -49,9 +48,9 @@ def test_fetch_fx_rates_handles_network_error(monkeypatch):
             raise NetworkError("boom")
 
     monkeypatch.setattr(cache, "get_fx_provider", lambda: FailProv())
-    data, error = cache.fetch_fx_rates()
-    assert data == {}
-    assert error is not None
+    with pytest.raises(ExternalAPIError) as exc:
+        cache.fetch_fx_rates()
+    assert "FX provider failed" in str(exc.value)
 
 
 def test_build_iol_client_handles_network_error(monkeypatch):
