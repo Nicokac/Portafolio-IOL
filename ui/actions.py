@@ -1,7 +1,12 @@
 from __future__ import annotations
+import logging
 import time
 import streamlit as st
 from application import auth_service
+from shared.errors import AppError
+
+
+logger = logging.getLogger(__name__)
 
 
 def render_action_menu() -> None:
@@ -26,7 +31,15 @@ def render_action_menu() -> None:
 
     if st.session_state.pop("logout_pending", False):
         with st.spinner("Cerrando sesión..."):
-            auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
+            try:
+                auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
+            except AppError as err:
+                st.error(str(err))
+                st.stop()
+            except Exception:
+                logger.exception("Error inesperado al cerrar sesión")
+                st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
+                st.stop()
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

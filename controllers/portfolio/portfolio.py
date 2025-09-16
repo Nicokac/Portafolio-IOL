@@ -1,3 +1,4 @@
+import logging
 import streamlit as st
 
 from domain.models import Controls
@@ -8,12 +9,16 @@ from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
+from shared.errors import AppError
 
 from .load_data import load_portfolio_data
 from .filters import apply_filters
 from .charts import render_basic_section, render_advanced_analysis
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
+
+
+logger = logging.getLogger(__name__)
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -78,8 +83,19 @@ def render_portfolio_section(container, cli, fx_rates):
                     except ValueError:
                         st.info("No se encontró ticker US para este activo.")
                     else:
-                        fundamental_data = tasvc.fundamentals(us_ticker) or {}
-                        render_fundamental_data(fundamental_data)
+                        try:
+                            fundamental_data = tasvc.fundamentals(us_ticker) or {}
+                        except AppError as err:
+                            st.error(str(err))
+                        except Exception:
+                            logger.exception(
+                                "Error al obtener datos fundamentales para %s", sym
+                            )
+                            st.error(
+                                "No se pudieron obtener datos fundamentales, intente más tarde"
+                            )
+                        else:
+                            render_fundamental_data(fundamental_data)
 
                         cols = st.columns([1, 1, 1, 1])
                         with cols[0]:
@@ -139,22 +155,34 @@ def render_portfolio_section(container, cli, fx_rates):
                                 "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
                             )
 
-                        df_ind = tasvc.indicators_for(
-                            sym,
-                            period=period,
-                            interval=interval,
-                            sma_fast=sma_fast,
-                            sma_slow=sma_slow,
-                            macd_fast=macd_fast,
-                            macd_slow=macd_slow,
-                            macd_signal=macd_signal,
-                            atr_win=atr_win,
-                            stoch_win=stoch_win,
-                            stoch_smooth=stoch_smooth,
-                            ichi_conv=ichi_conv,
-                            ichi_base=ichi_base,
-                            ichi_span=ichi_span,
-                        )
+                        try:
+                            df_ind = tasvc.indicators_for(
+                                sym,
+                                period=period,
+                                interval=interval,
+                                sma_fast=sma_fast,
+                                sma_slow=sma_slow,
+                                macd_fast=macd_fast,
+                                macd_slow=macd_slow,
+                                macd_signal=macd_signal,
+                                atr_win=atr_win,
+                                stoch_win=stoch_win,
+                                stoch_smooth=stoch_smooth,
+                                ichi_conv=ichi_conv,
+                                ichi_base=ichi_base,
+                                ichi_span=ichi_span,
+                            )
+                        except AppError as err:
+                            st.error(str(err))
+                            return
+                        except Exception:
+                            logger.exception(
+                                "Error al obtener indicadores técnicos para %s", sym
+                            )
+                            st.error(
+                                "No se pudieron obtener indicadores técnicos, intente más tarde"
+                            )
+                            return
                         if df_ind.empty:
                             st.info(
                                 "No se pudo descargar histórico para ese símbolo/periodo/intervalo."
@@ -191,7 +219,19 @@ def render_portfolio_section(container, cli, fx_rates):
                             strat = st.selectbox(
                                 "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
                             )
-                            bt = tasvc.backtest(df_ind, strategy=strat)
+                            try:
+                                bt = tasvc.backtest(df_ind, strategy=strat)
+                            except AppError as err:
+                                st.error(str(err))
+                                return
+                            except Exception:
+                                logger.exception(
+                                    "Error al ejecutar backtesting para %s", sym
+                                )
+                                st.error(
+                                    "No se pudo ejecutar el backtesting, intente más tarde"
+                                )
+                                return
                             if bt.empty:
                                 st.info("Sin datos suficientes para el backtesting.")
                             else:

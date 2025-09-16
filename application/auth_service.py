@@ -12,7 +12,8 @@ import time
 
 import streamlit as st
 
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError, NetworkError
+from infrastructure.iol.auth import IOLAuth
+from shared.errors import InvalidCredentialsError, NetworkError
 from shared.cache import cache
 from shared.config import settings
 

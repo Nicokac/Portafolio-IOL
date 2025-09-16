@@ -1,4 +1,5 @@
 import numpy as np
+import logging
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -14,6 +15,10 @@ from application.risk_service import (
 )
 from ui.charts import plot_correlation_heatmap
 from ui.export import PLOTLY_CONFIG
+from shared.errors import AppError
+
+
+logger = logging.getLogger(__name__)
 
 
 def compute_risk_metrics(returns_df, bench_ret, weights):
@@ -37,9 +42,21 @@ def render_risk_analysis(df_view, tasvc):
     portfolio_symbols = df_view["simbolo"].tolist()
     if len(portfolio_symbols) >= 2:
         with st.spinner(f"Calculando correlación ({corr_period})…"):
-            hist_df = tasvc.portfolio_history(
-                simbolos=portfolio_symbols, period=corr_period
-            )
+            try:
+                hist_df = tasvc.portfolio_history(
+                    simbolos=portfolio_symbols, period=corr_period
+                )
+            except AppError as err:
+                st.error(str(err))
+                return
+            except Exception:
+                logger.exception(
+                    "Error al obtener históricos para correlación",
+                )
+                st.error(
+                    "No se pudieron obtener datos históricos, intente nuevamente más tarde",
+                )
+                return
         fig = plot_correlation_heatmap(hist_df)
         if fig:
             st.plotly_chart(
@@ -69,10 +86,22 @@ def render_risk_analysis(df_view, tasvc):
     st.subheader("Análisis de Riesgo")
     if portfolio_symbols:
         with st.spinner("Descargando históricos…"):
-            prices_df = tasvc.portfolio_history(
-                simbolos=portfolio_symbols, period="1y"
-            )
-            bench_df = tasvc.portfolio_history(simbolos=["^GSPC"], period="1y")
+            try:
+                prices_df = tasvc.portfolio_history(
+                    simbolos=portfolio_symbols, period="1y"
+                )
+                bench_df = tasvc.portfolio_history(simbolos=["^GSPC"], period="1y")
+            except AppError as err:
+                st.error(str(err))
+                return
+            except Exception:
+                logger.exception(
+                    "Error al obtener históricos para análisis de riesgo",
+                )
+                st.error(
+                    "No se pudieron obtener datos históricos, intente nuevamente más tarde",
+                )
+                return
         if prices_df.empty or bench_df.empty:
             st.info(
                 "No se pudieron obtener datos históricos para calcular métricas de riesgo."
