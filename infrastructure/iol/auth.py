@@ -13,6 +13,7 @@ import requests
 from cryptography.fernet import Fernet, InvalidToken
 
 from shared.config import settings
+from shared.errors import NetworkError
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,6 @@ if settings.tokens_key:
 
 class InvalidCredentialsError(Exception):
     """Se lanza cuando el usuario o contraseña son inválidos."""
-
-
-class NetworkError(Exception):
-    """Se lanza ante problemas de conectividad con la API."""
-
 @dataclass
 class IOLAuth:
     user: str

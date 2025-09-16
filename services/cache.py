@@ -7,6 +7,7 @@ import re
 from uuid import uuid4
 
 from shared.cache import cache
+from shared.errors import ExternalAPIError, NetworkError
 import requests
 import streamlit as st
 
@@ -137,12 +138,12 @@ def fetch_portfolio(_cli: IIOLProvider):
         return {"_cached": True}
     except requests.RequestException as e:
         logger.info(
-            "fetch_portfolio using cache due to network error: %s",
+            "fetch_portfolio failed due to network error: %s",
             e,
             extra={"tokens_file": tokens_path},
         )
-        record_portfolio_load(None, source="cache", detail="network-error")
-        return {"_cached": True}
+        record_portfolio_load(None, source="error", detail="network-error")
+        raise NetworkError("Error de red al consultar el portafolio") from e
     elapsed = (time.time() - start) * 1000
     record_portfolio_load(elapsed, source="api")
     log = logger.warning if elapsed > 600 else logger.info
@@ -182,7 +183,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         return {}
     except requests.RequestException as e:
         logger.exception("get_quotes_bulk falló: %s", e)
-        fallback_mode = True
+        record_quote_load(None, source="error", count=len(items))
+        raise NetworkError("Error de red al obtener cotizaciones") from e
 
     out = {}
     ttl = cache_ttl_quotes
@@ -229,7 +231,11 @@ def fetch_fx_rates():
     start = time.time()
     try:
         data, error = get_fx_provider().get_rates()
-    except (requests.RequestException, RuntimeError) as e:
+    except requests.RequestException as e:
+        error = f"FX provider failed: {e}"
+        logger.exception(error)
+        raise ExternalAPIError(error) from e
+    except RuntimeError as e:
         error = f"FX provider failed: {e}"
         logger.exception(error)
     finally:
