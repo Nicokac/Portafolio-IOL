@@ -530,10 +530,6 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
 
 get_portfolio_history.clear = _get_portfolio_history_cached.cache_clear  # type: ignore[attr-defined]
 
-
-# --- Agregar al final de application/ta_service.py ---
-
-
 class TAService:
     """Fachada de análisis técnico que envuelve las funciones existentes."""
 
