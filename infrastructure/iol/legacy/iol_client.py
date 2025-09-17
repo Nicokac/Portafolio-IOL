@@ -142,7 +142,7 @@ class IOLClient:
                     self.iol_market.refresh_token = refresh
                     # <== LÍNEA CORREGIDA: Usa la nueva API de TimeProvider
                     # iolConn requiere un datetime naive para compatibilidad
-                    bearer_time = TimeProvider.now().moment.replace(tzinfo=None)
+                    bearer_time = TimeProvider.now_datetime().replace(tzinfo=None)
                     self.iol_market.bearer_time = bearer_time
                 else:
                     st.session_state["force_login"] = True
