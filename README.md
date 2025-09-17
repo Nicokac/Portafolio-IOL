@@ -153,6 +153,7 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
 
 1. Subir el repositorio a GitHub.
 2. En [Streamlit Cloud](https://streamlit.io/cloud), crear una nueva aplicación apuntando a `app.py`.
+   La carpeta `.streamlit` ya incluye un `config.toml` con `fileWatcherType = "poll"` para evitar el límite de inotify en la plataforma.
 3. En el panel de la aplicación, abre el menú **⋮** y selecciona **Edit secrets** para mostrar la pestaña **Secrets**.
 4. Completa el editor con un `secrets.toml` mínimo:
    ```toml
