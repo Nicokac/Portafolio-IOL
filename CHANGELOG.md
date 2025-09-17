@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6] - 2025-09-17
+### Removed
+- Se eliminó la referencia obsoleta a `TimeProvider.now().moment` para evitar invocaciones inexistentes.
+### Fixed
+- Se corrigió el uso de `bearer_time` asegurando que utilice la clave actualizada.
+
 ## [0.3.5] - 2025-09-17
 ### Fixed
 - Se configuró `fileWatcherType = "poll"` en Streamlit para evitar bloqueos del recargador
