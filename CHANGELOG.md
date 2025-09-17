@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2025-09-17
+### Fixed
+- Se configuró `fileWatcherType = "poll"` en Streamlit para evitar bloqueos del recargador
+  en entornos con sistemas de archivos basados en red.
+
 ## [0.3.4] - 2025-09-17
 ### Fixed
 - Se corrigió la incompatibilidad aware/naive al comparar las marcas de tiempo.
