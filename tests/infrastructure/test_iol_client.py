@@ -63,10 +63,17 @@ def aware_moment() -> datetime:
 def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware_moment: datetime) -> None:
     """Instantiating IOLClient with bearer tokens should set a naive bearer_time."""
 
+    call_count = 0
+
+    def fake_now_datetime(cls: type[iol_client_module.TimeProvider]) -> datetime:
+        nonlocal call_count
+        call_count += 1
+        return aware_moment
+
     monkeypatch.setattr(
         iol_client_module.TimeProvider,
         "now_datetime",
-        classmethod(lambda cls: aware_moment),
+        classmethod(fake_now_datetime),
     )
     monkeypatch.setattr(iol_client_module, "Iol", StubIol)
     monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
@@ -78,3 +85,5 @@ def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware
     assert client.iol_market.refresh_token == "refresh"
     assert client.iol_market.bearer_time is not None
     assert client.iol_market.bearer_time.tzinfo is None
+    assert client.iol_market.bearer_time == aware_moment.replace(tzinfo=None)
+    assert call_count == 1
