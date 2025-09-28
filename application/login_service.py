@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, MutableMapping, Literal
 
@@ -27,10 +28,15 @@ def validate_tokens_key() -> TokenKeyValidation:
     tokens en texto plano, el login no debería continuar.
     """
 
+    allow_plain_tokens = getattr(settings, "allow_plain_tokens", False)
+    env_flag = os.getenv("IOL_ALLOW_PLAIN_TOKENS")
+    if env_flag is not None:
+        allow_plain_tokens = str(env_flag).lower() in {"1", "true", "yes", "on"}
+
     if settings.tokens_key:
         return TokenKeyValidation(can_proceed=True)
 
-    if settings.allow_plain_tokens:
+    if allow_plain_tokens:
         return TokenKeyValidation(
             can_proceed=True,
             level="warning",
