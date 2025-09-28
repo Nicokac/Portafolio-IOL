@@ -58,6 +58,15 @@ class Settings:
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
 
+        flag_value = os.getenv(
+            "FEATURE_OPPORTUNITIES_TAB",
+            cfg.get("FEATURE_OPPORTUNITIES_TAB", "true"),
+        )
+        if isinstance(flag_value, bool):
+            self.FEATURE_OPPORTUNITIES_TAB = flag_value
+        else:
+            self.FEATURE_OPPORTUNITIES_TAB = str(flag_value).lower() in {"1", "true", "yes", "on"}
+
         # --- Archivo de tokens (IOLAuth) ---
         # Por defecto lo guardamos en la raíz junto a app.py (compat con tu tokens_iol.json existente)
         self.tokens_file: str = self.secret_or_env(

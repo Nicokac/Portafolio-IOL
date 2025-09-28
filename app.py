@@ -11,6 +11,7 @@ from uuid import uuid4
 import streamlit as st
 
 from shared.config import configure_logging, ensure_tokens_key
+from shared.settings import FEATURE_OPPORTUNITIES_TAB
 from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui
 from ui.header import render_header
@@ -66,7 +67,22 @@ def main(argv: list[str] | None = None):
     main_col = st.container()
 
     cli = build_iol_client()
-    refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
+
+    can_render_opportunities = FEATURE_OPPORTUNITIES_TAB and hasattr(st, "tabs")
+
+    if can_render_opportunities:
+        with main_col:
+            tab_labels = ["Portafolio", "Empresas con oportunidad"]
+            portfolio_tab, opportunities_tab = st.tabs(tab_labels)
+        refresh_secs = render_portfolio_section(portfolio_tab, cli, fx_rates)
+        with opportunities_tab:
+            from ui.tabs.opportunities import render_opportunities_tab
+
+            render_opportunities_tab()
+    else:
+        refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
+        if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
+            logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
     render_footer()
     render_health_sidebar()
 

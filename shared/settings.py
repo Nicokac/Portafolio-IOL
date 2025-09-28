@@ -20,6 +20,11 @@ cache_ttl_quotes: int = settings.cache_ttl_quotes
 quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 
+# Feature flags
+FEATURE_OPPORTUNITIES_TAB: bool = bool(
+    getattr(settings, "FEATURE_OPPORTUNITIES_TAB", False)
+)
+
 __all__ = [
     "settings",
     "cache_ttl_portfolio",
@@ -28,4 +33,5 @@ __all__ = [
     "cache_ttl_quotes",
     "quotes_hist_maxlen",
     "max_quote_workers",
+    "FEATURE_OPPORTUNITIES_TAB",
 ]
