@@ -27,6 +27,10 @@ Ambos métodos apuntan al mismo reloj centralizado, por lo que los valores son i
 
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
+### Empresas con oportunidad (beta)
+
+Esta pestaña experimental destaca emisores que cumplen criterios combinados de liquidez mínima, spread ajustado y momentum de precio positivo observados en las últimas ruedas. El listado actual se genera a partir de un dataset simulado que replica patrones de mercado para validar la experiencia de usuario sin requerir aún el acceso a fuentes productivas. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
+
 ## Seguridad de credenciales
 
 ### 🔒 Seguridad de tus credenciales
