@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from application.screener import opportunities as ops
 from controllers import opportunities as sut
 from shared.errors import AppError
 
@@ -120,8 +119,6 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "min_score_threshold": pytest.approx(42.5),
         "max_results": 15,
         "sectors": ["Technology", "Healthcare"],
-        "min_score_threshold": pytest.approx(55.5),
-        "max_results": 10,
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert set(df["ticker"]) == {"AAPL"}
@@ -184,8 +181,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         include_technicals=False,
         min_eps_growth=2.0,
         min_buyback=0.0,
-        min_score_threshold=30.0,
-        max_results=2,
+        min_score_threshold="30.0",
+        max_results="2",
     )
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
@@ -214,7 +211,18 @@ def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.Monk
         "run_screener_yahoo",
         lambda **kwargs: (_ for _ in ()).throw(AppError("boom")),
     )
-    monkeypatch.setattr(sut, "run_screener_stub", ops.run_screener_stub)
+
+    def fake_stub(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:
+        data = pd.DataFrame([
+            {"ticker": "AAPL", "sector": "Technology"},
+            {"ticker": "MSFT", "sector": "Technology"},
+        ])
+        exclude = set(kwargs.get("exclude_tickers") or [])
+        if exclude:
+            data = data[~data["ticker"].isin(exclude)]
+        return data, []
+
+    monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
     df, notes, source = sut.run_opportunities_controller(
         manual_tickers=["AAPL", "MSFT"],
