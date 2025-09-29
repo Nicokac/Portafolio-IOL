@@ -69,6 +69,7 @@ def _run_app_with_result(
                 list(app.get("number_input"))
                 + list(app.get("slider"))
                 + list(app.get("checkbox"))
+                + list(app.get("multiselect"))
             )
             for element in elements:
                 label = getattr(element, "label", None)
@@ -127,8 +128,10 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
             "ticker": ["AAPL", "MSFT"],
             "price": [180.12, 325.74],
             "score_compuesto": [8.5, 7.9],
+            "sector": ["Technology", "Technology"],
         }
     )
+    assert "sector" in df.columns
     overrides = {
         "Capitalización mínima (US$ MM)": 750,
         "P/E máximo": 18.5,
@@ -137,6 +140,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Racha mínima de dividendos (años)": 7,
         "CAGR mínimo de dividendos (%)": 6.5,
         "Incluir Latam": False,
+        "Sectores": ["Technology"],
     }
     app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
     assert mock.call_count == 1
@@ -149,6 +153,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "min_div_streak": 7,
         "min_cagr": 6.5,
         "include_latam": False,
+        "sectors": ["Technology"],
     }
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
