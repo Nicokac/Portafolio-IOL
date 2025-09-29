@@ -94,6 +94,9 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured_kwargs == {
         "manual_tickers": ["AAPL", "MSFT"],
         "include_technicals": True,
+        "max_payout": pytest.approx(70.0),
+        "min_div_streak": 5,
+        "min_cagr": pytest.approx(3.5),
         "min_market_cap": pytest.approx(1_500_000_000.0),
         "max_pe": pytest.approx(25.0),
         "min_revenue_growth": pytest.approx(7.5),
@@ -128,13 +131,11 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         include_technicals=False,
     )
 
-    assert stub_calls == {
-        "manual_tickers": ["AAPL"],
-        "max_payout": 60,
-        "min_div_streak": 8,
-        "min_cagr": 4.2,
-        "include_technicals": False,
-    }
+    assert stub_calls["manual_tickers"] == ["AAPL"]
+    assert stub_calls["max_payout"] == 60
+    assert stub_calls["min_div_streak"] == 8
+    assert stub_calls["min_cagr"] == 4.2
+    assert stub_calls["include_technicals"] is False
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
     assert "AAPL" in notes[1]
