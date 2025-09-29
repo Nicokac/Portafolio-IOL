@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.10] - 2025-09-30
+### Fixed
+- Se corrigió el `ImportError` que se disparaba al inicializar los módulos de Yahoo Finance en entornos sin dependencias opcionales.
+### Changed
+- Los TTL por defecto de Yahoo Finance ahora se aplican automáticamente cuando no hay configuración explícita, permitiendo reutilizar cachés sin sobrecostos manuales.
+
 ## [0.3.9] - 2025-09-29
 ### Changed
 - Los filtros de payout ratio, racha de dividendos y CAGR mínima ahora se aplican
