@@ -118,6 +118,9 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
         "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
         in captions
     )
+    fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert not any(fallback_note in block for block in markdown_blocks)
 
 
 def test_fallback_note_is_displayed_when_present() -> None:
