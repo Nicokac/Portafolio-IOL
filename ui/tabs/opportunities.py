@@ -144,6 +144,9 @@ def render_opportunities_tab() -> None:
         st.caption(
             "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
         )
+        st.caption(
+            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
+        )
 
         if notes:
             st.markdown("### Notas")
