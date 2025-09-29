@@ -49,3 +49,22 @@ def test_manual_tickers_return_placeholder_after_filters() -> None:
     row = df.loc[df["ticker"] == "MELI"].iloc[0]
     assert pd.isna(row["pe_ratio"])
     assert pd.isna(row["market_cap"])
+
+
+def test_run_screener_stub_applies_normalised_score_threshold_inclusively() -> None:
+    baseline = run_screener_stub(include_technicals=False)
+    ordered = baseline.sort_values("score_compuesto", ascending=True).reset_index(drop=True)
+
+    below_row = ordered.iloc[0]
+    threshold_row = ordered.iloc[1]
+    threshold_value = float(threshold_row["score_compuesto"])
+
+    assert threshold_value > float(below_row["score_compuesto"])
+
+    filtered = run_screener_stub(
+        include_technicals=False,
+        min_score_threshold=threshold_value,
+    )
+
+    assert threshold_row["ticker"] in _tickers(filtered)
+    assert below_row["ticker"] not in _tickers(filtered)

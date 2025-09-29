@@ -396,6 +396,34 @@ def _append_placeholder_rows(df: pd.DataFrame, tickers: Sequence[str]) -> pd.Dat
     return df.reset_index()
 
 
+def _normalise_score_column(
+    df: pd.DataFrame, column: str = "score_compuesto"
+) -> None:
+    """Normalise ``column`` values to the 0-100 range in-place."""
+
+    if column not in df.columns:
+        return
+
+    scores = pd.to_numeric(df[column], errors="coerce")
+    valid_scores = scores.dropna()
+    if valid_scores.empty:
+        df[column] = pd.NA
+        return
+
+    min_score = float(valid_scores.min())
+    max_score = float(valid_scores.max())
+    if math.isclose(max_score, min_score):
+        normalized = pd.Series(100.0, index=df.index, dtype="float64")
+    else:
+        span = max_score - min_score
+        normalized = (
+            (scores - min_score) / span * 100.0
+        ).clip(lower=0, upper=100)
+
+    normalized = normalized.round(2)
+    df[column] = normalized.where(~scores.isna(), pd.NA)
+
+
 def _apply_filters_and_finalize(
     df: pd.DataFrame,
     *,
@@ -527,6 +555,9 @@ def _apply_filters_and_finalize(
             mask = series.isna() | mask
         result = result[mask]
 
+    if "score_compuesto" in result.columns:
+        _normalise_score_column(result)
+
     if min_score_threshold is not None and "score_compuesto" in result.columns:
         threshold = float(min_score_threshold)
         series = pd.to_numeric(result["score_compuesto"], errors="coerce")
@@ -592,27 +623,12 @@ def _apply_filters_and_finalize(
     result = result.reset_index(drop=True)
 
     if "score_compuesto" in result.columns:
-        scores = pd.to_numeric(result["score_compuesto"], errors="coerce")
-        valid_scores = scores.dropna()
-        if not valid_scores.empty:
-            min_score = float(valid_scores.min())
-            max_score = float(valid_scores.max())
-            if math.isclose(max_score, min_score):
-                normalized = pd.Series(100.0, index=result.index, dtype="float64")
-            else:
-                span = max_score - min_score
-                normalized = ((scores - min_score) / span * 100.0).clip(lower=0, upper=100)
-            normalized = normalized.round(2)
-            result["score_compuesto"] = normalized.where(~scores.isna(), pd.NA)
-        else:
-            result["score_compuesto"] = pd.NA
-
-        if "score_compuesto" in result.columns:
-            result = result.sort_values(
-                by="score_compuesto",
-                ascending=False,
-                na_position="last",
-            )
+        _normalise_score_column(result)
+        result = result.sort_values(
+            by="score_compuesto",
+            ascending=False,
+            na_position="last",
+        )
     if max_results is not None:
         try:
             limit = int(max_results)
@@ -729,12 +745,18 @@ def run_screener_stub(
         manual = [ticker for ticker in manual if ticker not in excluded]
 
     df = df.copy()
-    payout_component = (100 - df["payout_ratio"]).clip(lower=0, upper=100) * 0.4
-    streak_component = df["dividend_streak"].clip(lower=0) * 0.3
-    cagr_component = df["cagr"].clip(lower=0) * 0.3
-    df["score_compuesto"] = (
-        payout_component + streak_component + cagr_component
-    ) / 10.0
+
+    def _score_from_row(row: pd.Series) -> float | pd.NA:
+        metrics = {
+            "payout_ratio": row.get("payout_ratio"),
+            "dividend_streak": row.get("dividend_streak"),
+            "cagr": row.get("cagr"),
+            "buyback": row.get("buyback"),
+            "rsi": row.get("rsi"),
+        }
+        return _compute_score(metrics)
+
+    df["score_compuesto"] = df.apply(_score_from_row, axis=1)
 
     result = _apply_filters_and_finalize(
         df,
@@ -910,7 +932,7 @@ def _compute_score(metrics: dict[str, float | int | pd.NA]) -> float | pd.NA:
         return pd.NA
 
     score = sum(contributions) / len(contributions)
-    return round(score, 2)
+    return round(score * 10.0, 2)
 
 
 def _fetch_with_warning(
