@@ -13,6 +13,7 @@ import os
 from collections.abc import Mapping, Sequence
 from typing import Callable, Iterable, List, Optional
 
+import numpy as np
 import pandas as pd
 
 from infrastructure.market import YahooFinanceClient
@@ -37,6 +38,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 30.2,
         "revenue_growth": 7.4,
         "is_latam": False,
+        "trailing_eps": 6.1,
+        "forward_eps": 6.6,
+        "buyback": 1.8,
     },
     {
         "ticker": "MSFT",
@@ -52,6 +56,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 33.5,
         "revenue_growth": 14.8,
         "is_latam": False,
+        "trailing_eps": 9.2,
+        "forward_eps": 9.8,
+        "buyback": 1.1,
     },
     {
         "ticker": "KO",
@@ -67,6 +74,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 24.7,
         "revenue_growth": 4.3,
         "is_latam": False,
+        "trailing_eps": 2.3,
+        "forward_eps": 2.4,
+        "buyback": 0.3,
     },
     {
         "ticker": "JNJ",
@@ -82,6 +92,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 21.4,
         "revenue_growth": 3.1,
         "is_latam": False,
+        "trailing_eps": 8.5,
+        "forward_eps": 8.7,
+        "buyback": 0.6,
     },
     {
         "ticker": "NUE",
@@ -97,6 +110,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 8.9,
         "revenue_growth": -6.2,
         "is_latam": False,
+        "trailing_eps": 18.4,
+        "forward_eps": 18.6,
+        "buyback": 0.0,
     },
     {
         "ticker": "MELI",
@@ -112,6 +128,9 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 76.4,
         "revenue_growth": 31.5,
         "is_latam": True,
+        "trailing_eps": 4.8,
+        "forward_eps": 6.2,
+        "buyback": 0.0,
     },
 ]
 
@@ -353,6 +372,8 @@ def _apply_filters_and_finalize(
     min_market_cap: Optional[float] = None,
     max_pe: Optional[float] = None,
     min_revenue_growth: Optional[float] = None,
+    min_eps_growth: Optional[float] = None,
+    min_buyback: Optional[float] = None,
     include_latam_flag: bool | None = True,
     include_technicals: bool,
     restrict_to_tickers: Sequence[str] | None = None,
@@ -361,6 +382,9 @@ def _apply_filters_and_finalize(
     pe_ratio_column: str = "pe_ratio",
     revenue_growth_column: str = "revenue_growth",
     latam_column: str = "is_latam",
+    trailing_eps_column: str = "trailing_eps",
+    forward_eps_column: str = "forward_eps",
+    buyback_column: str = "buyback",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
@@ -406,6 +430,42 @@ def _apply_filters_and_finalize(
     if min_revenue_growth is not None and revenue_growth_column in result.columns:
         series = result[revenue_growth_column]
         mask = series >= float(min_revenue_growth)
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if trailing_eps_column in result.columns:
+        series = pd.to_numeric(result[trailing_eps_column], errors="coerce")
+        mask = series > 0
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if forward_eps_column in result.columns:
+        series = pd.to_numeric(result[forward_eps_column], errors="coerce")
+        mask = series > 0
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if (
+        min_eps_growth is not None
+        and trailing_eps_column in result.columns
+        and forward_eps_column in result.columns
+    ):
+        trailing = pd.to_numeric(result[trailing_eps_column], errors="coerce")
+        forward = pd.to_numeric(result[forward_eps_column], errors="coerce")
+        denominator = trailing.replace(0, pd.NA)
+        growth = (forward - trailing) / denominator
+        growth = growth.replace([np.inf, -np.inf], pd.NA) * 100.0
+        mask = (trailing > 0) & (forward > 0) & (growth >= float(min_eps_growth))
+        if allow_na_filters:
+            mask = trailing.isna() | forward.isna() | growth.isna() | mask
+        result = result[mask]
+
+    if min_buyback is not None and buyback_column in result.columns:
+        series = pd.to_numeric(result[buyback_column], errors="coerce")
+        mask = series >= float(min_buyback)
         if allow_na_filters:
             mask = series.isna() | mask
         result = result[mask]
@@ -501,6 +561,8 @@ def run_screener_stub(
     min_revenue_growth: Optional[float] = None,
     include_latam: bool = True,
     include_technicals: bool = False,
+    min_eps_growth: Optional[float] = None,
+    min_buyback: Optional[float] = None,
 ) -> pd.DataFrame:
     """Return a filtered sample dataset that mimics a screener output.
 
@@ -523,6 +585,13 @@ def run_screener_stub(
         Maximum price to earnings ratio allowed.
     min_revenue_growth:
         Minimum year-over-year revenue growth percentage required.
+    min_eps_growth:
+        Minimum EPS growth percentage (forward vs trailing) required when
+        available. When ``None`` the growth filter is skipped but EPS must be
+        positive to remain in the dataset.
+    min_buyback:
+        Minimum buyback percentage (share reduction) required. ``None`` keeps
+        companies regardless of their buyback ratio.
     include_latam:
         When ``False`` securities flagged as originating from Latin America are
         excluded from the results.
@@ -550,6 +619,8 @@ def run_screener_stub(
         min_market_cap=min_market_cap,
         max_pe=max_pe,
         min_revenue_growth=min_revenue_growth,
+        min_eps_growth=min_eps_growth,
+        min_buyback=min_buyback,
         include_latam_flag=include_latam,
         include_technicals=include_technicals,
         restrict_to_tickers=manual or None,
@@ -558,6 +629,11 @@ def run_screener_stub(
         pe_ratio_column="pe_ratio",
         revenue_growth_column="revenue_growth",
         latam_column="is_latam",
+        extra_drop_columns=(
+            "trailing_eps",
+            "forward_eps",
+            "buyback",
+        ),
     )
 
 
@@ -785,6 +861,8 @@ def run_screener_yahoo(
     max_pe: Optional[float] = None,
     min_revenue_growth: Optional[float] = None,
     include_latam: Optional[bool] = None,
+    min_eps_growth: Optional[float] = None,
+    min_buyback: Optional[float] = None,
     client: YahooFinanceClient | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
     """Run the Yahoo-based screener returning the same schema as the stub."""
@@ -867,6 +945,16 @@ def run_screener_yahoo(
         revenue_growth = _as_optional_float(
             fundamentals.get("revenue_growth") if fundamentals else pd.NA
         )
+        trailing_eps = _as_optional_float(
+            fundamentals.get("trailing_eps") if fundamentals else pd.NA
+        )
+        if trailing_eps is pd.NA and fundamentals and "trailingEps" in fundamentals:
+            trailing_eps = _as_optional_float(fundamentals.get("trailingEps"))
+        forward_eps = _as_optional_float(
+            fundamentals.get("forward_eps") if fundamentals else pd.NA
+        )
+        if forward_eps is pd.NA and fundamentals and "forwardEps" in fundamentals:
+            forward_eps = _as_optional_float(fundamentals.get("forwardEps"))
         is_latam = False
         if fundamentals:
             country = fundamentals.get("country") or fundamentals.get("region")
@@ -887,6 +975,9 @@ def run_screener_yahoo(
             "_meta_pe_ratio": pe_ratio,
             "_meta_revenue_growth": revenue_growth,
             "_meta_is_latam": is_latam,
+            "_meta_trailing_eps": trailing_eps,
+            "_meta_forward_eps": forward_eps,
+            "_meta_buyback": _as_optional_float(buyback),
         }
 
         rows.append(row)
@@ -903,6 +994,8 @@ def run_screener_yahoo(
         min_market_cap=min_market_cap,
         max_pe=max_pe,
         min_revenue_growth=min_revenue_growth,
+        min_eps_growth=min_eps_growth,
+        min_buyback=min_buyback,
         include_latam_flag=include_latam_flag,
         include_technicals=include_technicals,
         placeholder_tickers=tickers,
@@ -910,12 +1003,18 @@ def run_screener_yahoo(
         pe_ratio_column="_meta_pe_ratio",
         revenue_growth_column="_meta_revenue_growth",
         latam_column="_meta_is_latam",
+        trailing_eps_column="_meta_trailing_eps",
+        forward_eps_column="_meta_forward_eps",
+        buyback_column="_meta_buyback",
         allow_na_filters=True,
         extra_drop_columns=(
             "_meta_market_cap",
             "_meta_pe_ratio",
             "_meta_revenue_growth",
             "_meta_is_latam",
+            "_meta_trailing_eps",
+            "_meta_forward_eps",
+            "_meta_buyback",
         ),
     )
 
