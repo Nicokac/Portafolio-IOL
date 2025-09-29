@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.13] - 2025-09-30
 ### Changed
 - La leyenda en la pestaña beta ahora destaca dinámicamente si los datos provienen de Yahoo Finance o del stub local, evitando confusiones durante los failovers.
+- Se diferencian explícitamente las captions de Yahoo y del stub para que cada flujo muestre su fuente en el encabezado correspondiente.
+
+### Tests
+- Se actualizaron las pruebas de UI para validar la nueva diferenciación de captions entre Yahoo y el stub.
 
 ## [0.3.12] - 2025-09-29
 ### Fixed
