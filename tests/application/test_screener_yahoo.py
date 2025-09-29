@@ -15,8 +15,14 @@ from shared.errors import AppError
 
 
 class FakeYahooClient:
-    def __init__(self, data: dict[str, dict[str, object]]) -> None:
+    def __init__(
+        self,
+        data: dict[str, dict[str, object]],
+        *,
+        listings: dict[str, list[dict[str, object] | str]] | None = None,
+    ) -> None:
         self._data = data
+        self._listings = listings or {}
 
     def get_fundamentals(self, ticker: str) -> dict[str, object]:
         return self._data[ticker]["fundamentals"]
@@ -29,6 +35,17 @@ class FakeYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:
         return self._data[ticker]["prices"]
+
+    def list_symbols_by_markets(self, markets: list[str]) -> list[dict[str, object] | str]:
+        results: list[dict[str, object] | str] = []
+        for market in markets:
+            entries = self._listings.get(market, [])
+            for entry in entries:
+                if isinstance(entry, dict):
+                    results.append(dict(entry))
+                else:
+                    results.append(entry)
+        return results
 
 
 class MissingYahooClient:
@@ -43,6 +60,9 @@ class MissingYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:  # noqa: ARG002
         raise AppError("missing prices")
+
+    def list_symbols_by_markets(self, markets: list[str]) -> list[dict[str, object]]:  # noqa: ARG002
+        raise AppError("missing listings")
 
 
 @pytest.fixture
@@ -299,6 +319,23 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
     assert df_latam.shape[0] == 1
     assert df_latam.iloc[0]["ticker"] == "LAT"
     assert df_latam.iloc[0]["payout_ratio"] == 55.0
+
+
+def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data):
+    listings = {"TEST": [{"ticker": "ABC", "market_cap": 1_200_000_000}]}
+    client = FakeYahooClient(comprehensive_data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(manual_tickers=None, client=client)
+
+    if isinstance(result, tuple):
+        df, notes = result
+    else:  # pragma: no cover - defensive guard
+        df, notes = result, []
+
+    assert list(df["ticker"]) == ["ABC"]
+    assert any("seleccionados automáticamente" in note for note in notes)
+    assert any("TEST" in note for note in notes)
 
 
 def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_data):
