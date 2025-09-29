@@ -31,31 +31,20 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 La vista beta evoluciona hacia un universo dinámico que se recalcula en cada sesión combinando:
 
-- Emisores declarados en `config.json`.
-- Pools definidos mediante las variables de entorno `OPPORTUNITIES_SYMBOL_POOL` y `OPPORTUNITIES_SYMBOL_POOL_FILE`.
-- Un conjunto determinista de respaldo para garantizar resultados cuando no hay configuración externa.
+- Emisores declarados manualmente en `config.json` (cuando existen).
+- Un listado generado por `YahooFinanceClient.list_symbols_by_markets` siempre que no haya tickers definidos en la configuración. El alcance del listado se controla mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
+- Un conjunto determinista de respaldo para garantizar resultados cuando no hay configuración externa ni datos remotos.
 
-El ranking final pondera criterios técnicos y fundamentales inspirados en la metodología de Andy: liquidez mínima diaria, spread promedio ajustado, momentum positivo a 21 días, payout ratio máximo configurable, techo de endeudamiento neto, crecimiento compuesto (`CAGR`) en ingresos y consistencia de dividendos. Adicionalmente se exige que cada emisora pertenezca a los sectores y regiones habilitados para la sesión.
+El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
 
-La interfaz incorpora nuevos controles para manipular los filtros sin tocar el código:
+La interfaz incorpora controles que permiten ajustar esos filtros sin modificar código:
 
-- Selector múltiple de sectores y regiones para limitar el universo visible.
-- Conmutador **“Andy Filters”** que activa el preset completo de payout, deuda y momentum.
-- Deslizadores para ajustar el rango de RSI y el umbral de medias móviles.
-- Checkboxes para incluir indicadores técnicos (RSI, MACD, SMA/EMA y Bandas de Bollinger) en el ranking y en la tabla de resultados.
+- Multiselect de sectores para recortar el universo devuelto por la búsqueda.
+- Checkbox **Incluir indicadores técnicos** para agregar RSI y medias móviles al resultado.
+- Inputs dedicados a crecimiento mínimo de EPS y porcentaje mínimo de recompras (`buybacks`).
+- Sliders y number inputs para capitalización, payout, P/E, crecimiento de ingresos, racha/CAGR de dividendos e inclusión de Latinoamérica.
 
-La cabecera del listado sigue mostrando la procedencia de los datos con los captions de Yahoo/Stub, manteniendo la trazabilidad de la fuente durante los failovers.
-
-Para alinear la lista con los mercados deseados declara en tu `.env` las variables:
-
-```env
-OPPORTUNITIES_MARKETS="BYMA,NASDAQ,NYSE"
-OPPORTUNITIES_DEFAULT_MARKET="BYMA"
-```
-
-`OPPORTUNITIES_MARKETS` define qué mercados quedan disponibles en los selectores de la UI y `OPPORTUNITIES_DEFAULT_MARKET` preselecciona el que se usará al cargar la pestaña. Si no se establecen, la aplicación habilita BYMA y NASDAQ como valores predeterminados.
-
-Los pools configurados vía JSON y las opciones de `.env` pueden convivir: la vista fusiona los universos y descarta duplicados respetando las reglas de filtrado activas.
+La cabecera del listado diferencia la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
 
 ## Integración con Yahoo Finance
 
