@@ -7,9 +7,15 @@ final data provider in place.
 """
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Sequence
+import logging
+from typing import Callable, Iterable, List, Optional, Sequence
 
 import pandas as pd
+
+from infrastructure.market import YahooFinanceClient
+from shared.errors import AppError
+
+LOGGER = logging.getLogger(__name__)
 
 # Base dataset used to simulate screener output.
 _BASE_OPPORTUNITIES = [
@@ -160,4 +166,268 @@ def run_screener_stub(
     return df
 
 
-__all__ = ["run_screener_stub"]
+def _is_valid_number(value: float | int | pd.NA | None) -> bool:
+    return value is not None and not pd.isna(value)
+
+
+def _safe_round(value: float | pd.NA | None, digits: int = 2) -> float | pd.NA:
+    if not _is_valid_number(value):
+        return pd.NA
+    return round(float(value), digits)
+
+
+def _compute_cagr(price_history: pd.DataFrame | None, years: int) -> float | pd.NA:
+    if price_history is None or price_history.empty:
+        return pd.NA
+    data = price_history.sort_values("date")["date"].reset_index(drop=True)
+    prices = price_history.sort_values("date")["adj_close"].astype(float).reset_index(drop=True)
+    end_price = prices.iloc[-1]
+    if end_price <= 0:
+        return pd.NA
+    cutoff = data.iloc[-1] - pd.DateOffset(years=years)
+    mask = data <= cutoff
+    if not mask.any():
+        return pd.NA
+    start_price = prices[mask].iloc[-1]
+    if start_price <= 0:
+        return pd.NA
+    cagr = (end_price / start_price) ** (1 / years) - 1
+    return float(cagr * 100.0)
+
+
+def _compute_dividend_streak(dividends: pd.DataFrame | None) -> int | pd.NA:
+    if dividends is None or dividends.empty:
+        return pd.NA
+    df = dividends.copy()
+    df["year"] = df["date"].dt.year
+    annual = df.groupby("year")["amount"].sum().sort_index()
+    if annual.empty:
+        return pd.NA
+    streak = 0
+    previous = None
+    for _, value in reversed(list(annual.items())):
+        if value <= 0:
+            break
+        if previous is None:
+            streak = 1
+            previous = value
+            continue
+        if value >= previous:
+            streak += 1
+            previous = value
+        else:
+            break
+    return streak or pd.NA
+
+
+def _compute_buyback_ratio(shares: pd.DataFrame | None) -> float | pd.NA:
+    if shares is None or shares.empty:
+        return pd.NA
+    df = shares.sort_values("date")
+    start = float(df["shares"].iloc[0])
+    end = float(df["shares"].iloc[-1])
+    if start <= 0 or end <= 0:
+        return pd.NA
+    return float((start - end) / start * 100.0)
+
+
+def _compute_rsi(price_history: pd.DataFrame | None, period: int = 14) -> float | pd.NA:
+    if price_history is None or len(price_history) <= period:
+        return pd.NA
+    closes = price_history.sort_values("date")["adj_close"].astype(float)
+    delta = closes.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period).mean()
+    if avg_gain.empty or avg_loss.empty:
+        return pd.NA
+    last_gain = avg_gain.iloc[-1]
+    last_loss = avg_loss.iloc[-1]
+    if pd.isna(last_gain) or pd.isna(last_loss):
+        return pd.NA
+    if last_loss == 0:
+        return 100.0
+    rs = last_gain / last_loss
+    return float(100 - (100 / (1 + rs)))
+
+
+def _compute_macd(price_history: pd.DataFrame | None, fast: int = 12, slow: int = 26, signal: int = 9) -> tuple[float | pd.NA, float | pd.NA]:
+    if price_history is None or len(price_history) < slow + signal:
+        return pd.NA, pd.NA
+    closes = price_history.sort_values("date")["adj_close"].astype(float)
+    ema_fast = closes.ewm(span=fast, adjust=False).mean()
+    ema_slow = closes.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    hist = macd_line - signal_line
+    macd_value = macd_line.iloc[-1]
+    hist_value = hist.iloc[-1]
+    if pd.isna(macd_value) or pd.isna(hist_value):
+        return pd.NA, pd.NA
+    return float(macd_value), float(hist_value)
+
+
+def _compute_sma(price_history: pd.DataFrame | None, window: int) -> float | pd.NA:
+    if price_history is None or len(price_history) < window:
+        return pd.NA
+    closes = price_history.sort_values("date")["adj_close"].astype(float)
+    sma = closes.rolling(window=window).mean().iloc[-1]
+    return float(sma) if not pd.isna(sma) else pd.NA
+
+
+def _compute_score(metrics: dict[str, float | int | pd.NA]) -> float | pd.NA:
+    contributions: list[float] = []
+
+    payout = metrics.get("payout_ratio")
+    if _is_valid_number(payout):
+        contributions.append(max(0.0, min(100.0, 100.0 - float(payout))) / 10.0)
+
+    streak = metrics.get("dividend_streak")
+    if _is_valid_number(streak):
+        contributions.append(min(float(streak), 50.0) / 5.0)
+
+    cagr = metrics.get("cagr")
+    if _is_valid_number(cagr):
+        contributions.append(max(0.0, min(25.0, float(cagr))) / 2.5)
+
+    buyback = metrics.get("buyback")
+    if _is_valid_number(buyback):
+        contributions.append(max(0.0, min(20.0, float(buyback))) / 2.0)
+
+    rsi = metrics.get("rsi")
+    if _is_valid_number(rsi):
+        contributions.append(max(0.0, 100.0 - abs(float(rsi) - 50.0) * 2.0) / 10.0)
+
+    macd_hist = metrics.get("macd_hist")
+    if _is_valid_number(macd_hist):
+        contributions.append((max(-5.0, min(5.0, float(macd_hist))) + 5.0))
+
+    if not contributions:
+        return pd.NA
+
+    score = sum(contributions) / len(contributions)
+    return round(score, 2)
+
+
+def _fetch_with_warning(
+    fetcher: Callable[[str], object], ticker: str, label: str
+) -> object | None:
+    try:
+        return fetcher(ticker)
+    except AppError as exc:
+        LOGGER.warning("Faltan datos de %s para %s: %s", label, ticker, exc)
+        return None
+
+
+def _output_columns(include_technicals: bool) -> list[str]:
+    columns = [
+        "ticker",
+        "payout_ratio",
+        "dividend_streak",
+        "cagr",
+        "dividend_yield",
+        "price",
+        "rsi",
+        "sma_50",
+        "sma_200",
+        "score_compuesto",
+    ]
+    if include_technicals:
+        return columns
+    return [c for c in columns if c not in {"rsi", "sma_50", "sma_200"}]
+
+
+def run_screener_yahoo(
+    *,
+    manual_tickers: Optional[Iterable[str]] = None,
+    max_payout: Optional[float] = None,
+    min_div_streak: Optional[int] = None,
+    min_cagr: Optional[float] = None,
+    include_technicals: bool = False,
+    client: YahooFinanceClient | None = None,
+) -> pd.DataFrame:
+    """Run the Yahoo-based screener returning the same schema as the stub."""
+
+    tickers = _normalise_tickers(manual_tickers)
+    if not tickers:
+        columns = _output_columns(include_technicals)
+        return pd.DataFrame(columns=columns)
+
+    client = client or YahooFinanceClient()
+    rows: list[dict[str, object]] = []
+
+    for ticker in tickers:
+        fundamentals = _fetch_with_warning(client.get_fundamentals, ticker, "fundamentals")
+        dividends = _fetch_with_warning(client.get_dividends, ticker, "dividendos")
+        shares = _fetch_with_warning(client.get_shares_outstanding, ticker, "acciones")
+        prices = _fetch_with_warning(client.get_price_history, ticker, "precios")
+
+        payout = _safe_round(fundamentals["payout_ratio"] if fundamentals else pd.NA)
+        dividend_yield = _safe_round(fundamentals["dividend_yield"] if fundamentals else pd.NA)
+        dividend_streak = _compute_dividend_streak(dividends)
+
+        cagr_values = []
+        for years in (3, 5):
+            value = _compute_cagr(prices, years)
+            if _is_valid_number(value):
+                cagr_values.append(float(value))
+        cagr = _safe_round(sum(cagr_values) / len(cagr_values) if cagr_values else pd.NA)
+
+        price = pd.NA
+        if prices is not None and not prices.empty:
+            price = _safe_round(prices.sort_values("date")["close"].iloc[-1])
+
+        rsi = _safe_round(_compute_rsi(prices))
+        sma_50 = _safe_round(_compute_sma(prices, 50))
+        sma_200 = _safe_round(_compute_sma(prices, 200))
+        _, macd_hist = _compute_macd(prices)
+        macd_hist = _safe_round(macd_hist, digits=4) if _is_valid_number(macd_hist) else pd.NA
+        buyback = _safe_round(_compute_buyback_ratio(shares))
+
+        metrics = {
+            "payout_ratio": payout,
+            "dividend_streak": dividend_streak,
+            "cagr": cagr,
+            "buyback": buyback,
+            "rsi": rsi,
+            "macd_hist": macd_hist,
+        }
+        score = _compute_score(metrics)
+
+        row = {
+            "ticker": ticker,
+            "payout_ratio": payout,
+            "dividend_streak": dividend_streak,
+            "cagr": cagr,
+            "dividend_yield": dividend_yield,
+            "price": price,
+            "rsi": rsi,
+            "sma_50": sma_50,
+            "sma_200": sma_200,
+            "score_compuesto": score,
+        }
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows).convert_dtypes()
+
+    if max_payout is not None:
+        df = df[df["payout_ratio"].isna() | (df["payout_ratio"] <= max_payout)]
+    if min_div_streak is not None:
+        df = df[df["dividend_streak"].isna() | (df["dividend_streak"] >= min_div_streak)]
+    if min_cagr is not None:
+        df = df[df["cagr"].isna() | (df["cagr"] >= min_cagr)]
+
+    df = _append_placeholder_rows(df, tickers)
+
+    if not include_technicals:
+        df = df[_output_columns(False)]
+    else:
+        df = df[_output_columns(True)]
+
+    df = df.reset_index(drop=True)
+    return df
+
+
+__all__ = ["run_screener_stub", "run_screener_yahoo"]

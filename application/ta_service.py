@@ -17,6 +17,8 @@ from services.health import record_yfinance_usage
 import numpy as np
 import pandas as pd
 from requests.exceptions import HTTPError, Timeout
+from shared.cache import cache
+from shared.settings import yahoo_fundamentals_ttl, yahoo_quotes_ttl
 
 # yfinance para históricos
 try:
@@ -281,8 +283,6 @@ def fetch_with_indicators(
 
 # allow external code/tests to reset cache
 fetch_with_indicators.cache_clear = fetch_with_indicators.clear  # type: ignore[attr-defined]
-
-
 def simple_alerts(df: pd.DataFrame) -> List[str]:
     """
     Alertas simples:
@@ -358,7 +358,6 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     res["strategy_ret"] = res["signal"].shift(1) * res["ret"]
     res["equity"] = (1 + res["strategy_ret"]).cumprod()
     return res.dropna()
-
 
 @cache.cache_data(ttl=cache_ttl_yf_fundamentals, maxsize=128)
 def get_fundamental_data(ticker: str) -> dict:

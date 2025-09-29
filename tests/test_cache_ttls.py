@@ -6,6 +6,12 @@ import importlib
 from contextlib import contextmanager
 from types import SimpleNamespace
 
+import pandas as pd
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 
 @contextmanager
 def reload_cache_with(monkeypatch, setting_name: str, value: int):
@@ -25,6 +31,31 @@ def reload_cache_with(monkeypatch, setting_name: str, value: int):
                     func.clear()
 
     importlib.reload(cache_module)
+
+
+@contextmanager
+def reload_ta_with(monkeypatch, setting_name: str, value: int):
+    """Reload ``application.ta_service`` with a patched TTL setting value."""
+
+    import application.ta_service as ta_module
+
+    with monkeypatch.context() as mp:
+        mp.setattr(f"shared.settings.{setting_name}", value)
+        module = importlib.reload(ta_module)
+        try:
+            yield module, mp
+        finally:
+            for attr in (
+                "fetch_with_indicators",
+                "get_fundamental_data",
+                "portfolio_fundamentals",
+                "get_portfolio_history",
+            ):
+                func = getattr(module, attr, None)
+                if func and hasattr(func, "clear"):
+                    func.clear()
+
+    importlib.reload(ta_module)
 
 
 def test_fetch_portfolio_respects_monkeypatched_ttl(monkeypatch):
@@ -109,3 +140,131 @@ def test_fetch_fx_rates_respects_monkeypatched_ttl(monkeypatch):
         assert provider.calls == 2
         assert first[0] == {"USD": 1}
         assert second[0] == {"USD": 2}
+
+
+def test_fetch_with_indicators_respects_monkeypatched_ttl(monkeypatch):
+    """``fetch_with_indicators`` should honour Yahoo quotes TTL overrides."""
+
+    with reload_ta_with(monkeypatch, "yahoo_quotes_ttl", 0) as (ta_module, mp):
+        mp.setattr(ta_module, "map_to_us_ticker", lambda sym: sym)
+        mp.setattr(ta_module, "record_yfinance_usage", lambda *_, **__: None)
+
+        class DummyYF:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def download(self, ticker, **kwargs):
+                self.calls += 1
+                idx = pd.date_range("2021-01-01", periods=60, freq="D")
+                values = list(range(60))
+                return pd.DataFrame(
+                    {
+                        "Open": values,
+                        "High": values,
+                        "Low": values,
+                        "Close": values,
+                        "Volume": [1] * 60,
+                    },
+                    index=idx,
+                )
+
+        dummy_yf = DummyYF()
+        mp.setattr(ta_module, "yf", dummy_yf)
+
+        class DummyRSI:
+            def __init__(self, close, window, fillna):
+                self._index = close.index
+
+            def rsi(self):
+                return pd.Series([50.0] * len(self._index), index=self._index)
+
+        class DummyMACD:
+            def __init__(self, close, window_slow, window_fast, window_sign):
+                self._index = close.index
+
+            def macd(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def macd_signal(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def macd_diff(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+        class DummyATR:
+            def __init__(self, high, low, close, window):
+                self._index = close.index
+
+            def average_true_range(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+        class DummyStoch:
+            def __init__(self, high, low, close, window, smooth_window):
+                self._index = close.index
+
+            def stoch(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def stoch_signal(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+        class DummyIchimoku:
+            def __init__(self, high, low, window1, window2, window3):
+                self._index = high.index
+
+            def ichimoku_conversion_line(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def ichimoku_base_line(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def ichimoku_a(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+            def ichimoku_b(self):
+                return pd.Series([0.0] * len(self._index), index=self._index)
+
+        mp.setattr(ta_module, "RSIIndicator", DummyRSI)
+        mp.setattr(ta_module, "MACD", DummyMACD)
+        mp.setattr(ta_module, "AverageTrueRange", DummyATR)
+        mp.setattr(ta_module, "StochasticOscillator", DummyStoch)
+        mp.setattr(ta_module, "IchimokuIndicator", DummyIchimoku)
+
+        ta_module.fetch_with_indicators.clear()
+        first = ta_module.fetch_with_indicators("AAPL")
+        second = ta_module.fetch_with_indicators("AAPL")
+
+        assert dummy_yf.calls == 2
+        assert not first.empty
+        assert not second.empty
+
+
+def test_get_fundamental_data_respects_monkeypatched_ttl(monkeypatch):
+    """``get_fundamental_data`` should honour Yahoo fundamentals TTL overrides."""
+
+    with reload_ta_with(monkeypatch, "yahoo_fundamentals_ttl", 0) as (ta_module, mp):
+        class DummyYF:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def Ticker(self, ticker):
+                self.calls += 1
+                return SimpleNamespace(
+                    info={
+                        "marketCap": 1,
+                        "shortName": ticker,
+                        "sector": "Tech",
+                        "previousClose": 10,
+                        "dividendRate": 0.5,
+                    }
+                )
+
+        dummy_yf = DummyYF()
+        mp.setattr(ta_module, "yf", dummy_yf)
+
+        result_one = ta_module.get_fundamental_data("AAPL")
+        result_two = ta_module.get_fundamental_data("AAPL")
+
+        assert dummy_yf.calls == 2
+        assert result_one["name"] == "AAPL"
+        assert result_two["name"] == "AAPL"
