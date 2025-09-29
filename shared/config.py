@@ -45,6 +45,32 @@ class Settings:
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
+        default_markets = ["NASDAQ", "NYSE", "AMEX"]
+        sentinel = object()
+        raw_markets: Any = os.getenv("OPPORTUNITIES_TARGET_MARKETS", sentinel)
+        if raw_markets is sentinel:
+            raw_markets = cfg.get("OPPORTUNITIES_TARGET_MARKETS", default_markets)
+
+        parsed_candidates: Any = raw_markets
+        if isinstance(parsed_candidates, str):
+            try:
+                parsed_candidates = json.loads(parsed_candidates)
+            except json.JSONDecodeError:
+                parsed_candidates = [part.strip() for part in parsed_candidates.split(",")]
+
+        markets: list[str] = []
+        if isinstance(parsed_candidates, (list, tuple, set)):
+            for candidate in parsed_candidates:
+                text = str(candidate or "").strip()
+                if text:
+                    markets.append(text.upper())
+        elif isinstance(parsed_candidates, str):
+            text = parsed_candidates.strip()
+            if text:
+                markets.append(text.upper())
+
+        self.OPPORTUNITIES_TARGET_MARKETS: list[str] = markets or [item.upper() for item in default_markets]
+
 
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))

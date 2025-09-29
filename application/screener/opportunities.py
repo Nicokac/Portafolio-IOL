@@ -18,6 +18,7 @@ import pandas as pd
 from infrastructure.market import YahooFinanceClient
 from shared import config as shared_config
 from shared.errors import AppError
+from shared.settings import settings as shared_settings
 
 LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 30.2,
         "revenue_growth": 7.4,
         "is_latam": False,
+        "sector": "Technology",
     },
     {
         "ticker": "MSFT",
@@ -52,6 +54,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 33.5,
         "revenue_growth": 14.8,
         "is_latam": False,
+        "sector": "Technology",
     },
     {
         "ticker": "KO",
@@ -67,6 +70,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 24.7,
         "revenue_growth": 4.3,
         "is_latam": False,
+        "sector": "Consumer Defensive",
     },
     {
         "ticker": "JNJ",
@@ -82,6 +86,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 21.4,
         "revenue_growth": 3.1,
         "is_latam": False,
+        "sector": "Healthcare",
     },
     {
         "ticker": "NUE",
@@ -97,6 +102,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 8.9,
         "revenue_growth": -6.2,
         "is_latam": False,
+        "sector": "Basic Materials",
     },
     {
         "ticker": "MELI",
@@ -112,6 +118,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 76.4,
         "revenue_growth": 31.5,
         "is_latam": True,
+        "sector": "Consumer Cyclical",
     },
 ]
 
@@ -313,6 +320,30 @@ def _get_symbol_pool() -> list[dict[str, object]]:
     return list(_DEFAULT_SYMBOL_POOL)
 
 
+def _get_target_markets() -> list[str]:
+    try:
+        configured = getattr(shared_settings, "OPPORTUNITIES_TARGET_MARKETS", [])
+    except Exception:  # pragma: no cover - defensive fallback
+        configured = []
+
+    if isinstance(configured, str):
+        configured = [configured]
+
+    markets: list[str] = []
+    seen: set[str] = set()
+    for entry in configured or []:
+        market = str(entry or "").strip().upper()
+        if not market or market in seen:
+            continue
+        markets.append(market)
+        seen.add(market)
+
+    if not markets:
+        markets = ["NASDAQ", "NYSE", "AMEX"]
+
+    return markets
+
+
 def _normalise_tickers(manual_tickers: Optional[Sequence[str]]) -> List[str]:
     """Normalise tickers to uppercase strings without duplicates."""
 
@@ -361,12 +392,25 @@ def _apply_filters_and_finalize(
     pe_ratio_column: str = "pe_ratio",
     revenue_growth_column: str = "revenue_growth",
     latam_column: str = "is_latam",
+    allowed_sectors: Sequence[str] | None = None,
+    sector_column: str = "sector",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
     result = df.copy()
+    normalized_allowed: set[str] | None = None
+    if allowed_sectors:
+        normalized_allowed = {str(value).casefold() for value in allowed_sectors}
+    original_sector_series: pd.Series | None = None
+    if sector_column in df.columns:
+        original_sector_series = (
+            df.set_index("ticker")[sector_column]
+            .astype("string")
+            .str.strip()
+            .str.casefold()
+        )
 
     if max_payout is not None and "payout_ratio" in result.columns:
         series = result["payout_ratio"]
@@ -413,11 +457,29 @@ def _apply_filters_and_finalize(
     if include_latam_flag is False and latam_column in result.columns:
         result = result[~result[latam_column].fillna(False)]
 
+    if normalized_allowed and sector_column in result.columns:
+        result = result[
+            result[sector_column]
+            .astype("string")
+            .str.strip()
+            .str.casefold()
+            .isin(normalized_allowed)
+        ]
+
     if restrict_to_tickers:
         result = result[result["ticker"].isin(restrict_to_tickers)]
 
     if placeholder_tickers:
-        result = _append_placeholder_rows(result, placeholder_tickers)
+        placeholders = list(placeholder_tickers)
+        if normalized_allowed and original_sector_series is not None:
+            placeholders = [
+                ticker
+                for ticker in placeholders
+                if ticker in original_sector_series.index
+                and original_sector_series[ticker] in normalized_allowed
+            ]
+        if placeholders:
+            result = _append_placeholder_rows(result, placeholders)
 
     if extra_drop_columns:
         to_drop = [col for col in extra_drop_columns if col in result.columns]
@@ -433,63 +495,6 @@ def _apply_filters_and_finalize(
     return result.reset_index(drop=True)
 
 
-def _load_default_tickers(
-    *,
-    min_market_cap: Optional[float] = None,
-    max_pe: Optional[float] = None,
-    min_revenue_growth: Optional[float] = None,
-    include_latam: Optional[bool] = None,
-    symbol_pool: Optional[Sequence[Mapping[str, object]] | Sequence[str]] = None,
-) -> List[str]:
-    """Return a deterministic list of tickers based on the static pool."""
-
-    entries = (
-        _normalise_symbol_pool(symbol_pool)
-        if symbol_pool is not None
-        else _get_symbol_pool()
-    )
-
-    tickers: List[str] = []
-    latam_allowed = bool(include_latam) if include_latam is not None else False
-
-    for entry in entries:
-        ticker = str(entry.get("ticker", "")).strip().upper()
-        if not ticker or ticker in tickers:
-            continue
-
-        region = str(entry.get("region", "")).strip().upper() or "US"
-        if not latam_allowed and region == "LATAM":
-            continue
-
-        market_cap = entry.get("market_cap")
-        if min_market_cap is not None:
-            try:
-                if market_cap is None or float(market_cap) < float(min_market_cap):
-                    continue
-            except (TypeError, ValueError):
-                continue
-
-        pe_ratio = entry.get("pe")
-        if max_pe is not None:
-            try:
-                if pe_ratio is None or float(pe_ratio) > float(max_pe):
-                    continue
-            except (TypeError, ValueError):
-                continue
-
-        revenue_growth = entry.get("revenue_growth")
-        if min_revenue_growth is not None:
-            try:
-                if revenue_growth is None or float(revenue_growth) < float(min_revenue_growth):
-                    continue
-            except (TypeError, ValueError):
-                continue
-
-        tickers.append(ticker)
-
-    return tickers
-
-
 def run_screener_stub(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
@@ -501,6 +506,7 @@ def run_screener_stub(
     min_revenue_growth: Optional[float] = None,
     include_latam: bool = True,
     include_technicals: bool = False,
+    sectors: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Return a filtered sample dataset that mimics a screener output.
 
@@ -558,6 +564,7 @@ def run_screener_stub(
         pe_ratio_column="pe_ratio",
         revenue_growth_column="revenue_growth",
         latam_column="is_latam",
+        allowed_sectors=_normalize_sector_filters(sectors),
     )
 
 
@@ -718,6 +725,7 @@ def _fetch_with_warning(
 def _output_columns(include_technicals: bool) -> list[str]:
     columns = [
         "ticker",
+        "sector",
         "payout_ratio",
         "dividend_streak",
         "cagr",
@@ -756,6 +764,32 @@ _LATAM_COUNTRIES = {
 }
 
 
+def _normalize_sector_name(value: object) -> str | pd.NA:
+    if value is None or pd.isna(value):
+        return pd.NA
+    text = str(value).strip()
+    if not text:
+        return pd.NA
+    return text.title()
+
+
+def _normalize_sector_filters(values: Optional[Iterable[str]]) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized_value = _normalize_sector_name(raw)
+        if normalized_value is pd.NA:
+            continue
+        key = str(normalized_value).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(str(normalized_value))
+    return normalized
+
+
 def _as_optional_float(value: object) -> float | pd.NA:
     if value is None or pd.isna(value):
         return pd.NA
@@ -763,6 +797,14 @@ def _as_optional_float(value: object) -> float | pd.NA:
         return float(value)
     except (TypeError, ValueError):
         return pd.NA
+
+
+def _pick_first_numeric(values: Iterable[object]) -> float | pd.NA:
+    for raw in values:
+        result = _as_optional_float(raw)
+        if result is not pd.NA:
+            return result
+    return pd.NA
 
 
 def _is_latam_country(country: object | None) -> bool:
@@ -780,6 +822,7 @@ def run_screener_yahoo(
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
+    sectors: Optional[Iterable[str]] = None,
     include_technicals: bool = False,
     min_market_cap: Optional[float] = None,
     max_pe: Optional[float] = None,
@@ -792,27 +835,45 @@ def run_screener_yahoo(
     tickers = _normalise_tickers(manual_tickers)
     notes: list[str] = []
     using_default_universe = False
+    listings_meta: dict[str, Mapping[str, object]] = {}
+    target_markets: list[str] = []
+
+    client = client or YahooFinanceClient()
 
     if not tickers:
-        tickers = _load_default_tickers(
-            min_market_cap=min_market_cap,
-            max_pe=max_pe,
-            min_revenue_growth=min_revenue_growth,
-            include_latam=include_latam,
-        )
+        target_markets = _get_target_markets()
+        listings = client.list_symbols_by_markets(target_markets)
+        seen: set[str] = set()
+        for entry in listings:
+            if isinstance(entry, Mapping):
+                metadata = dict(entry)
+                ticker_value = metadata.get("ticker") or metadata.get("symbol")
+            else:
+                metadata = {}
+                ticker_value = entry
+
+            ticker_clean = str(ticker_value or "").strip().upper()
+            if not ticker_clean or ticker_clean in seen:
+                continue
+
+            metadata["ticker"] = ticker_clean
+            listings_meta[ticker_clean] = metadata
+            tickers.append(ticker_clean)
+            seen.add(ticker_clean)
+
         using_default_universe = True
 
     if not tickers:
         columns = _output_columns(include_technicals)
         df = pd.DataFrame(columns=columns)
         if using_default_universe:
-            notes.append(
-                "No se encontraron símbolos que cumplan los filtros especificados."
-            )
+            message = "No se encontraron símbolos que cumplan los filtros especificados."
+            if target_markets:
+                message += " Mercados consultados: " + ", ".join(target_markets)
+            notes.append(message)
         return (df, notes) if notes else df
-
-    client = client or YahooFinanceClient()
     rows: list[dict[str, object]] = []
+    sector_filters = _normalize_sector_filters(sectors)
 
     for ticker in tickers:
         fundamentals = _fetch_with_warning(client.get_fundamentals, ticker, "fundamentals")
@@ -854,26 +915,46 @@ def run_screener_yahoo(
         }
         score = _compute_score(metrics)
 
-        market_cap = _as_optional_float(
-            fundamentals.get("market_cap") if fundamentals else pd.NA
+        listing_meta = listings_meta.get(ticker, {})
+        if not isinstance(listing_meta, Mapping):
+            listing_meta = {}
+
+        market_cap = _pick_first_numeric(
+            (
+                fundamentals.get("market_cap") if fundamentals else None,
+                fundamentals.get("marketCap") if fundamentals else None,
+                listing_meta.get("market_cap"),
+                listing_meta.get("marketCap"),
+            )
         )
-        pe_ratio = _as_optional_float(
-            fundamentals.get("pe_ratio")
-            if fundamentals and "pe_ratio" in fundamentals
-            else (fundamentals.get("trailingPE") if fundamentals else pd.NA)
+        pe_ratio = _pick_first_numeric(
+            (
+                fundamentals.get("pe_ratio") if fundamentals else None,
+                fundamentals.get("trailingPE") if fundamentals else None,
+                fundamentals.get("pe") if fundamentals else None,
+                listing_meta.get("pe_ratio"),
+                listing_meta.get("trailingPE"),
+                listing_meta.get("pe"),
+            )
         )
-        if pe_ratio is pd.NA and fundamentals and "pe" in fundamentals:
-            pe_ratio = _as_optional_float(fundamentals.get("pe"))
-        revenue_growth = _as_optional_float(
-            fundamentals.get("revenue_growth") if fundamentals else pd.NA
+        revenue_growth = _pick_first_numeric(
+            (
+                fundamentals.get("revenue_growth") if fundamentals else None,
+                listing_meta.get("revenue_growth"),
+            )
         )
-        is_latam = False
+        country: object | None = None
+        sector = pd.NA
         if fundamentals:
             country = fundamentals.get("country") or fundamentals.get("region")
-            is_latam = _is_latam_country(country)
+            sector = _normalize_sector_name(fundamentals.get("sector"))
+        if not country and listing_meta:
+            country = listing_meta.get("country") or listing_meta.get("region")
+        is_latam = _is_latam_country(country)
 
         row = {
             "ticker": ticker,
+            "sector": sector,
             "payout_ratio": payout,
             "dividend_streak": dividend_streak,
             "cagr": cagr,
@@ -910,6 +991,7 @@ def run_screener_yahoo(
         pe_ratio_column="_meta_pe_ratio",
         revenue_growth_column="_meta_revenue_growth",
         latam_column="_meta_is_latam",
+        allowed_sectors=sector_filters,
         allow_na_filters=True,
         extra_drop_columns=(
             "_meta_market_cap",
@@ -930,9 +1012,10 @@ def run_screener_yahoo(
         if include_latam is not None:
             filters_applied.append(f"include_latam={bool(include_latam)}")
 
-        notes.append(
-            f"📈 Analizando {len(tickers)} símbolos seleccionados automáticamente"
-        )
+        message = f"📈 Analizando {len(tickers)} símbolos seleccionados automáticamente"
+        if target_markets:
+            message += " de " + ", ".join(target_markets)
+        notes.append(message)
         if filters_applied:
             notes.append("Filtros aplicados: " + ", ".join(filters_applied))
 
