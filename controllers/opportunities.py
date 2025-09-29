@@ -131,6 +131,10 @@ def run_opportunities_controller(
             max_payout=max_payout,
             min_div_streak=min_div_streak,
             min_cagr=min_cagr,
+            min_market_cap=min_market_cap,
+            max_pe=max_pe,
+            min_revenue_growth=min_revenue_growth,
+            include_latam=True if include_latam is None else include_latam,
             include_technicals=include_technicals,
         )
         notes.append("⚠️ Datos simulados (Yahoo no disponible)")

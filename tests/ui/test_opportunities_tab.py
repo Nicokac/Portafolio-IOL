@@ -114,6 +114,10 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
         "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
         in captions
     )
+    assert (
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
+        in captions
+    )
 
 
 def test_fallback_note_is_displayed_when_present() -> None:

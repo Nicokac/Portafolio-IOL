@@ -29,6 +29,10 @@ _BASE_OPPORTUNITIES = [
         "rsi": 56.8,
         "sma_50": 172.34,
         "sma_200": 158.44,
+        "market_cap": 2_800_000,
+        "pe_ratio": 30.2,
+        "revenue_growth": 7.4,
+        "is_latam": False,
     },
     {
         "ticker": "MSFT",
@@ -40,6 +44,10 @@ _BASE_OPPORTUNITIES = [
         "rsi": 48.9,
         "sma_50": 312.66,
         "sma_200": 289.14,
+        "market_cap": 2_450_000,
+        "pe_ratio": 33.5,
+        "revenue_growth": 14.8,
+        "is_latam": False,
     },
     {
         "ticker": "KO",
@@ -51,6 +59,10 @@ _BASE_OPPORTUNITIES = [
         "rsi": 44.1,
         "sma_50": 59.0,
         "sma_200": 60.8,
+        "market_cap": 260_000,
+        "pe_ratio": 24.7,
+        "revenue_growth": 4.3,
+        "is_latam": False,
     },
     {
         "ticker": "JNJ",
@@ -62,6 +74,10 @@ _BASE_OPPORTUNITIES = [
         "rsi": 52.7,
         "sma_50": 158.9,
         "sma_200": 165.2,
+        "market_cap": 415_000,
+        "pe_ratio": 21.4,
+        "revenue_growth": 3.1,
+        "is_latam": False,
     },
     {
         "ticker": "NUE",
@@ -73,6 +89,25 @@ _BASE_OPPORTUNITIES = [
         "rsi": 62.1,
         "sma_50": 160.3,
         "sma_200": 155.6,
+        "market_cap": 42_000,
+        "pe_ratio": 8.9,
+        "revenue_growth": -6.2,
+        "is_latam": False,
+    },
+    {
+        "ticker": "MELI",
+        "payout_ratio": 0.0,
+        "dividend_streak": 0,
+        "cagr": 0.0,
+        "dividend_yield": 0.0,
+        "price": 1225.5,
+        "rsi": 58.2,
+        "sma_50": 1187.4,
+        "sma_200": 1042.8,
+        "market_cap": 72_000,
+        "pe_ratio": 76.4,
+        "revenue_growth": 31.5,
+        "is_latam": True,
     },
 ]
 
@@ -114,6 +149,10 @@ def run_screener_stub(
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
+    min_market_cap: Optional[float] = None,
+    max_pe: Optional[float] = None,
+    min_revenue_growth: Optional[float] = None,
+    include_latam: bool = True,
     include_technicals: bool = False,
 ) -> pd.DataFrame:
     """Return a filtered sample dataset that mimics a screener output.
@@ -131,6 +170,15 @@ def run_screener_stub(
         Minimum number of consecutive years of dividend growth required.
     min_cagr:
         Minimum compound annual growth rate required.
+    min_market_cap:
+        Minimum market capitalisation (expressed in USD millions) required.
+    max_pe:
+        Maximum price to earnings ratio allowed.
+    min_revenue_growth:
+        Minimum year-over-year revenue growth percentage required.
+    include_latam:
+        When ``False`` securities flagged as originating from Latin America are
+        excluded from the results.
     include_technicals:
         When ``True`` technical indicators (e.g., RSI, SMAs) are included in the
         DataFrame. When ``False`` those columns are omitted.
@@ -144,6 +192,14 @@ def run_screener_stub(
         df = df[df["dividend_streak"] >= min_div_streak]
     if min_cagr is not None:
         df = df[df["cagr"] >= min_cagr]
+    if min_market_cap is not None and "market_cap" in df:
+        df = df[df["market_cap"] >= min_market_cap]
+    if max_pe is not None and "pe_ratio" in df:
+        df = df[df["pe_ratio"] <= max_pe]
+    if min_revenue_growth is not None and "revenue_growth" in df:
+        df = df[df["revenue_growth"] >= min_revenue_growth]
+    if not include_latam and "is_latam" in df:
+        df = df[~df["is_latam"]]
 
     manual = _normalise_tickers(manual_tickers)
     if manual:
