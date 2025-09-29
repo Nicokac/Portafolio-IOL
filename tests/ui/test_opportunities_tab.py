@@ -170,7 +170,7 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
         {"table": df, "notes": [extra_note], "source": "stub"}
     )
     captions = [element.value for element in app.get("caption")]
-    assert "⚠️ Datos simulados (Yahoo no disponible)" in captions
+    assert "⚠️ Resultados simulados (Yahoo no disponible)" in captions
     assert not any(
         "Resultados obtenidos de Yahoo Finance" in caption for caption in captions
     )

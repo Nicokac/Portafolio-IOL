@@ -152,11 +152,9 @@ def render_opportunities_tab() -> None:
             st.dataframe(table, use_container_width=True)
 
         if source == "stub":
-            st.caption("⚠️ Datos simulados (Yahoo no disponible)")
+            st.caption("⚠️ Resultados simulados (Yahoo no disponible)")
         else:
-            st.caption(
-                "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
-            )
+            st.caption("Resultados obtenidos de Yahoo Finance")
         st.caption(
             "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
         )
