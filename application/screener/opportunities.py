@@ -399,29 +399,18 @@ def _append_placeholder_rows(df: pd.DataFrame, tickers: Sequence[str]) -> pd.Dat
 def _normalise_score_column(
     df: pd.DataFrame, column: str = "score_compuesto"
 ) -> None:
-    """Normalise ``column`` values to the 0-100 range in-place."""
+    """Clamp ``column`` values to the 0-100 range in-place."""
 
     if column not in df.columns:
         return
 
     scores = pd.to_numeric(df[column], errors="coerce")
-    valid_scores = scores.dropna()
-    if valid_scores.empty:
+    if scores.isna().all():
         df[column] = pd.NA
         return
 
-    min_score = float(valid_scores.min())
-    max_score = float(valid_scores.max())
-    if math.isclose(max_score, min_score):
-        normalized = pd.Series(100.0, index=df.index, dtype="float64")
-    else:
-        span = max_score - min_score
-        normalized = (
-            (scores - min_score) / span * 100.0
-        ).clip(lower=0, upper=100)
-
-    normalized = normalized.round(2)
-    df[column] = normalized.where(~scores.isna(), pd.NA)
+    clamped = scores.clip(lower=0.0, upper=100.0)
+    df[column] = clamped.round(2).where(~scores.isna(), pd.NA)
 
 
 def _apply_filters_and_finalize(
@@ -554,9 +543,6 @@ def _apply_filters_and_finalize(
         if allow_na_filters:
             mask = series.isna() | mask
         result = result[mask]
-
-    if "score_compuesto" in result.columns:
-        _normalise_score_column(result)
 
     if min_score_threshold is not None and "score_compuesto" in result.columns:
         threshold = float(min_score_threshold)

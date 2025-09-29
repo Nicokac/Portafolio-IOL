@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 
 import pandas as pd
+import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -51,13 +52,16 @@ def test_manual_tickers_return_placeholder_after_filters() -> None:
     assert pd.isna(row["market_cap"])
 
 
-def test_run_screener_stub_applies_normalised_score_threshold_inclusively() -> None:
+def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
     baseline = run_screener_stub(include_technicals=False)
     ordered = baseline.sort_values("score_compuesto", ascending=True).reset_index(drop=True)
 
     below_row = ordered.iloc[0]
     threshold_row = ordered.iloc[1]
     threshold_value = float(threshold_row["score_compuesto"])
+
+    assert float(below_row["score_compuesto"]) == pytest.approx(36.72, abs=1e-2)
+    assert threshold_value == pytest.approx(49.34, abs=1e-2)
 
     assert threshold_value > float(below_row["score_compuesto"])
 

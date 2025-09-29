@@ -171,7 +171,7 @@ def test_run_screener_yahoo_computes_metrics(comprehensive_data):
     }
     base_score = ops._compute_score(metrics)
     assert base_score is not pd.NA
-    assert row["score_compuesto"] == pytest.approx(100.0)
+    assert row["score_compuesto"] == pytest.approx(float(base_score), abs=1e-2)
 
 
 def test_run_screener_yahoo_marks_missing(caplog):
@@ -429,7 +429,7 @@ def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data
     assert any("TEST" in note for note in notes)
 
 
-def test_apply_filters_normalises_scores_and_limits_results(monkeypatch):
+def test_apply_filters_clamps_scores_and_limits_results(monkeypatch):
     base = pd.DataFrame(
         {
             "ticker": ["AAA", "BBB", "CCC"],
@@ -458,7 +458,7 @@ def test_apply_filters_normalises_scores_and_limits_results(monkeypatch):
     notes = result.attrs.get("_notes", [])
 
     assert list(result["ticker"]) == ["BBB", "CCC"]
-    assert list(result["score_compuesto"]) == pytest.approx([100.0, 50.0])
+    assert list(result["score_compuesto"]) == pytest.approx([20.0, 15.0])
     assert any("máximo solicitado" in note for note in notes)
     assert any("mínimo esperado: 4" in note for note in notes)
 
@@ -490,6 +490,8 @@ def test_apply_filters_keeps_scores_equal_to_threshold():
     scores = baseline.set_index("ticker")["score_compuesto"].astype(float)
     threshold_value = float(scores["BBB"])
     below_value = float(scores["AAA"])
+    assert threshold_value == pytest.approx(55.0)
+    assert below_value == pytest.approx(50.0)
     assert below_value < threshold_value
 
     result = ops._apply_filters_and_finalize(
@@ -502,12 +504,12 @@ def test_apply_filters_keeps_scores_equal_to_threshold():
     assert set(result["ticker"]) == {"BBB", "CCC"}
     threshold_row = result[result["ticker"] == "BBB"]
     assert not threshold_row.empty
-    assert threshold_row["score_compuesto"].iloc[0] == pytest.approx(0.0)
+    assert threshold_row["score_compuesto"].iloc[0] == pytest.approx(threshold_value)
     notes = result.attrs.get("_notes", [])
     assert not any("puntaje mínimo" in note for note in notes)
 
 
-def test_run_screener_yahoo_applies_normalised_score_threshold_inclusively(
+def test_run_screener_yahoo_applies_score_threshold_inclusively(
     comprehensive_data: dict[str, dict[str, object]]
 ) -> None:
     base = comprehensive_data["ABC"]
@@ -592,6 +594,8 @@ def test_run_screener_yahoo_applies_normalised_score_threshold_inclusively(
     scores = baseline_df.set_index("ticker")["score_compuesto"].astype(float)
     threshold_value = float(scores["ABC"])
     below_value = float(scores["WEAK"])
+    assert threshold_value == pytest.approx(28.17, abs=1e-2)
+    assert below_value == pytest.approx(12.17, abs=1e-2)
     assert below_value < threshold_value
 
     filtered = ops.run_screener_yahoo(
