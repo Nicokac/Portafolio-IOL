@@ -38,6 +38,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 30.2,
         "revenue_growth": 7.4,
         "is_latam": False,
+        "sector": "Technology",
     },
     {
         "ticker": "MSFT",
@@ -53,6 +54,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 33.5,
         "revenue_growth": 14.8,
         "is_latam": False,
+        "sector": "Technology",
     },
     {
         "ticker": "KO",
@@ -68,6 +70,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 24.7,
         "revenue_growth": 4.3,
         "is_latam": False,
+        "sector": "Consumer Defensive",
     },
     {
         "ticker": "JNJ",
@@ -83,6 +86,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 21.4,
         "revenue_growth": 3.1,
         "is_latam": False,
+        "sector": "Healthcare",
     },
     {
         "ticker": "NUE",
@@ -98,6 +102,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 8.9,
         "revenue_growth": -6.2,
         "is_latam": False,
+        "sector": "Basic Materials",
     },
     {
         "ticker": "MELI",
@@ -113,6 +118,7 @@ _BASE_OPPORTUNITIES = [
         "pe_ratio": 76.4,
         "revenue_growth": 31.5,
         "is_latam": True,
+        "sector": "Consumer Cyclical",
     },
 ]
 
@@ -386,12 +392,25 @@ def _apply_filters_and_finalize(
     pe_ratio_column: str = "pe_ratio",
     revenue_growth_column: str = "revenue_growth",
     latam_column: str = "is_latam",
+    allowed_sectors: Sequence[str] | None = None,
+    sector_column: str = "sector",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
     result = df.copy()
+    normalized_allowed: set[str] | None = None
+    if allowed_sectors:
+        normalized_allowed = {str(value).casefold() for value in allowed_sectors}
+    original_sector_series: pd.Series | None = None
+    if sector_column in df.columns:
+        original_sector_series = (
+            df.set_index("ticker")[sector_column]
+            .astype("string")
+            .str.strip()
+            .str.casefold()
+        )
 
     if max_payout is not None and "payout_ratio" in result.columns:
         series = result["payout_ratio"]
@@ -438,11 +457,29 @@ def _apply_filters_and_finalize(
     if include_latam_flag is False and latam_column in result.columns:
         result = result[~result[latam_column].fillna(False)]
 
+    if normalized_allowed and sector_column in result.columns:
+        result = result[
+            result[sector_column]
+            .astype("string")
+            .str.strip()
+            .str.casefold()
+            .isin(normalized_allowed)
+        ]
+
     if restrict_to_tickers:
         result = result[result["ticker"].isin(restrict_to_tickers)]
 
     if placeholder_tickers:
-        result = _append_placeholder_rows(result, placeholder_tickers)
+        placeholders = list(placeholder_tickers)
+        if normalized_allowed and original_sector_series is not None:
+            placeholders = [
+                ticker
+                for ticker in placeholders
+                if ticker in original_sector_series.index
+                and original_sector_series[ticker] in normalized_allowed
+            ]
+        if placeholders:
+            result = _append_placeholder_rows(result, placeholders)
 
     if extra_drop_columns:
         to_drop = [col for col in extra_drop_columns if col in result.columns]
@@ -469,6 +506,7 @@ def run_screener_stub(
     min_revenue_growth: Optional[float] = None,
     include_latam: bool = True,
     include_technicals: bool = False,
+    sectors: Optional[Iterable[str]] = None,
 ) -> pd.DataFrame:
     """Return a filtered sample dataset that mimics a screener output.
 
@@ -526,6 +564,7 @@ def run_screener_stub(
         pe_ratio_column="pe_ratio",
         revenue_growth_column="revenue_growth",
         latam_column="is_latam",
+        allowed_sectors=_normalize_sector_filters(sectors),
     )
 
 
@@ -686,6 +725,7 @@ def _fetch_with_warning(
 def _output_columns(include_technicals: bool) -> list[str]:
     columns = [
         "ticker",
+        "sector",
         "payout_ratio",
         "dividend_streak",
         "cagr",
@@ -724,6 +764,32 @@ _LATAM_COUNTRIES = {
 }
 
 
+def _normalize_sector_name(value: object) -> str | pd.NA:
+    if value is None or pd.isna(value):
+        return pd.NA
+    text = str(value).strip()
+    if not text:
+        return pd.NA
+    return text.title()
+
+
+def _normalize_sector_filters(values: Optional[Iterable[str]]) -> list[str]:
+    if not values:
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized_value = _normalize_sector_name(raw)
+        if normalized_value is pd.NA:
+            continue
+        key = str(normalized_value).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(str(normalized_value))
+    return normalized
+
+
 def _as_optional_float(value: object) -> float | pd.NA:
     if value is None or pd.isna(value):
         return pd.NA
@@ -756,6 +822,7 @@ def run_screener_yahoo(
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
+    sectors: Optional[Iterable[str]] = None,
     include_technicals: bool = False,
     min_market_cap: Optional[float] = None,
     max_pe: Optional[float] = None,
@@ -806,6 +873,7 @@ def run_screener_yahoo(
             notes.append(message)
         return (df, notes) if notes else df
     rows: list[dict[str, object]] = []
+    sector_filters = _normalize_sector_filters(sectors)
 
     for ticker in tickers:
         fundamentals = _fetch_with_warning(client.get_fundamentals, ticker, "fundamentals")
@@ -876,14 +944,17 @@ def run_screener_yahoo(
             )
         )
         country: object | None = None
+        sector = pd.NA
         if fundamentals:
             country = fundamentals.get("country") or fundamentals.get("region")
+            sector = _normalize_sector_name(fundamentals.get("sector"))
         if not country and listing_meta:
             country = listing_meta.get("country") or listing_meta.get("region")
         is_latam = _is_latam_country(country)
 
         row = {
             "ticker": ticker,
+            "sector": sector,
             "payout_ratio": payout,
             "dividend_streak": dividend_streak,
             "cagr": cagr,
@@ -920,6 +991,7 @@ def run_screener_yahoo(
         pe_ratio_column="_meta_pe_ratio",
         revenue_growth_column="_meta_revenue_growth",
         latam_column="_meta_is_latam",
+        allowed_sectors=sector_filters,
         allow_na_filters=True,
         extra_drop_columns=(
             "_meta_market_cap",
