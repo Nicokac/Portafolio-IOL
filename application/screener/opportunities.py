@@ -425,8 +425,6 @@ def _apply_filters_and_finalize(
     sector_column: str = "sector",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
-    min_score_threshold: Optional[float] = None,
-    max_results: Optional[int] = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
@@ -768,12 +766,7 @@ def run_screener_stub(
             "forward_eps",
             "buyback",
         ),
-
         allowed_sectors=_normalize_sector_filters(sectors),
-
-        min_score_threshold=min_score_threshold,
-        max_results=max_results,
-
     )
 
     notes = list(result.attrs.pop("_notes", []))
@@ -1244,9 +1237,7 @@ def run_screener_yahoo(
         trailing_eps_column="_meta_trailing_eps",
         forward_eps_column="_meta_forward_eps",
         buyback_column="_meta_buyback",
-
         allowed_sectors=sector_filters,
-
         allow_na_filters=True,
         extra_drop_columns=(
             "_meta_market_cap",
@@ -1257,9 +1248,6 @@ def run_screener_yahoo(
             "_meta_forward_eps",
             "_meta_buyback",
         ),
-
-        min_score_threshold=min_score_threshold,
-        max_results=max_results,
     )
 
     filter_notes = list(df.attrs.pop("_notes", []))
