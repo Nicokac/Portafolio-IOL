@@ -29,7 +29,12 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 ### Empresas con oportunidad (beta)
 
-Esta pestaña experimental destaca emisores que cumplen criterios combinados de liquidez mínima, spread ajustado y momentum de precio positivo observados en las últimas ruedas. Además admite filtros avanzados como payout ratio máximo, racha mínima de dividendos y CAGR mínima para afinar la búsqueda. El listado actual se genera a partir de un dataset simulado que replica patrones de mercado mientras se evalúa la integración productiva; la lógica de filtrado es la misma tanto para los datos de Yahoo Finance como para el stub de respaldo, y la UI muestra explícitamente en la cabecera del listado cuál fue la fuente utilizada para cada renderizado. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
+Esta pestaña experimental destaca emisores que cumplen criterios combinados de liquidez mínima, spread ajustado y momentum de precio positivo observados en las últimas ruedas. Además, admite filtros avanzados como payout ratio máximo, racha mínima de dividendos y CAGR mínima para afinar la búsqueda. El listado actual se genera a partir de un dataset simulado que replica patrones de mercado mientras se evalúa la integración productiva; la lógica de filtrado es la misma tanto para los datos de Yahoo Finance como para el stub de respaldo, y la UI muestra explícitamente en la cabecera del listado cuál fue la fuente utilizada para cada renderizado mediante los siguientes captions:
+
+- **Resultados obtenidos de Yahoo Finance**: aparece cuando la descarga desde Yahoo se completa sin errores.
+- **⚠️ Resultados simulados (Yahoo no disponible)**: se muestra cuando la vista recurre al stub temporal.
+
+La nota informativa sobre los filtros avanzados permanece visible en ambos escenarios para recordar que los criterios pueden ajustarse sin importar la fuente de datos. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
 
 ## Integración con Yahoo Finance
 
