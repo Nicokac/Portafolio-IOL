@@ -25,10 +25,14 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
+min_score_threshold: int = settings.min_score_threshold
+max_results: int = settings.max_results
 
 # Backwards compatibility for legacy imports
 YAHOO_FUNDAMENTALS_TTL: int = yahoo_fundamentals_ttl
 YAHOO_QUOTES_TTL: int = yahoo_quotes_ttl
+MIN_SCORE_THRESHOLD: int = min_score_threshold
+MAX_RESULTS: int = max_results
 
 # Feature flags
 FEATURE_OPPORTUNITIES_TAB: bool = bool(
@@ -49,7 +53,11 @@ __all__ = [
     "max_quote_workers",
     "yahoo_fundamentals_ttl",
     "yahoo_quotes_ttl",
+    "min_score_threshold",
+    "max_results",
     "YAHOO_FUNDAMENTALS_TTL",
     "YAHOO_QUOTES_TTL",
+    "MIN_SCORE_THRESHOLD",
+    "MAX_RESULTS",
     "FEATURE_OPPORTUNITIES_TAB",
 ]

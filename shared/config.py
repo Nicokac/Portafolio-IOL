@@ -105,6 +105,11 @@ class Settings:
             os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300))
         )
 
+        self.min_score_threshold: int = int(
+            os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80))
+        )
+        self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 5)))
+
         flag_value = os.getenv(
             "FEATURE_OPPORTUNITIES_TAB",
             cfg.get("FEATURE_OPPORTUNITIES_TAB", "true"),
