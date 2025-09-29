@@ -19,6 +19,8 @@ cache_ttl_fx: int = settings.cache_ttl_fx
 cache_ttl_quotes: int = settings.cache_ttl_quotes
 quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
+YAHOO_FUNDAMENTALS_TTL: int = settings.YAHOO_FUNDAMENTALS_TTL
+YAHOO_QUOTES_TTL: int = settings.YAHOO_QUOTES_TTL
 
 # Feature flags
 FEATURE_OPPORTUNITIES_TAB: bool = bool(
@@ -33,5 +35,7 @@ __all__ = [
     "cache_ttl_quotes",
     "quotes_hist_maxlen",
     "max_quote_workers",
+    "YAHOO_FUNDAMENTALS_TTL",
+    "YAHOO_QUOTES_TTL",
     "FEATURE_OPPORTUNITIES_TAB",
 ]

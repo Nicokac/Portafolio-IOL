@@ -170,4 +170,32 @@ class Cache:
 # Global cache instance used across the application
 cache = Cache()
 
-__all__ = ["Cache", "cache"]
+
+def cached(func: Callable | None = None, *, ttl: int | None = None, maxsize: int | None = None) -> Callable:
+    """Convenience decorator wrapping :meth:`Cache.cache_data`.
+
+    Parameters
+    ----------
+    func:
+        Optional function being decorated when ``@cached`` is used without
+        arguments.
+    ttl:
+        Time-to-live for cached entries in seconds. ``None`` disables
+        expiration.
+    maxsize:
+        Maximum number of cached entries allowed. ``None`` keeps the cache
+        unbounded.
+    """
+
+    def _decorate(inner: Callable) -> Callable:
+        wrapped = cache.cache_data(ttl=ttl, maxsize=maxsize)(inner)
+        setattr(wrapped, "cache_ttl", ttl)
+        setattr(wrapped, "cache_maxsize", maxsize)
+        return wrapped
+
+    if func is not None and callable(func):
+        return _decorate(func)
+    return _decorate
+
+
+__all__ = ["Cache", "cache", "cached"]

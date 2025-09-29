@@ -57,6 +57,12 @@ class Settings:
         self.cache_ttl_quotes: int = int(os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 8)))
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
+        self.YAHOO_FUNDAMENTALS_TTL: int = int(
+            os.getenv("YAHOO_FUNDAMENTALS_TTL", cfg.get("YAHOO_FUNDAMENTALS_TTL", 3600))
+        )
+        self.YAHOO_QUOTES_TTL: int = int(
+            os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 900))
+        )
 
         flag_value = os.getenv(
             "FEATURE_OPPORTUNITIES_TAB",
