@@ -480,11 +480,23 @@ def test_apply_filters_keeps_scores_equal_to_threshold():
         }
     )
 
+    baseline = ops._apply_filters_and_finalize(
+        base,
+        include_technicals=False,
+        allow_na_filters=False,
+        min_score_threshold=None,
+    )
+
+    scores = baseline.set_index("ticker")["score_compuesto"].astype(float)
+    threshold_value = float(scores["BBB"])
+    below_value = float(scores["AAA"])
+    assert below_value < threshold_value
+
     result = ops._apply_filters_and_finalize(
         base,
         include_technicals=False,
         allow_na_filters=False,
-        min_score_threshold=55.0,
+        min_score_threshold=threshold_value,
     )
 
     assert set(result["ticker"]) == {"BBB", "CCC"}
@@ -493,6 +505,111 @@ def test_apply_filters_keeps_scores_equal_to_threshold():
     assert threshold_row["score_compuesto"].iloc[0] == pytest.approx(0.0)
     notes = result.attrs.get("_notes", [])
     assert not any("puntaje mínimo" in note for note in notes)
+
+
+def test_run_screener_yahoo_applies_normalised_score_threshold_inclusively(
+    comprehensive_data: dict[str, dict[str, object]]
+) -> None:
+    base = comprehensive_data["ABC"]
+
+    weak_fundamentals = base["fundamentals"].copy()
+    weak_fundamentals.update(
+        {
+            "ticker": "WEAK",
+            "dividend_yield": 0.8,
+            "payout_ratio": 85.0,
+            "market_cap": 900_000_000,
+            "pe_ratio": 28.0,
+            "revenue_growth": 1.5,
+            "trailing_eps": 4.0,
+            "forward_eps": 3.8,
+        }
+    )
+
+    weak_dividends = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2020-03-01",
+                    "2021-03-01",
+                    "2022-03-01",
+                    "2023-03-01",
+                ],
+                utc=True,
+            ),
+            "amount": [1.0, 0.95, 0.92, 0.9],
+        }
+    )
+
+    weak_shares = pd.DataFrame(
+        {
+            "date": base["shares"]["date"],
+            "shares": [
+                1_000_000,
+                1_005_000,
+                1_010_000,
+                1_020_000,
+                1_030_000,
+                1_040_000,
+            ],
+        }
+    )
+
+    weak_dates = base["prices"]["date"].reset_index(drop=True)
+    weak_trend = np.linspace(120.0, 80.0, len(weak_dates))
+    weak_prices = pd.DataFrame(
+        {
+            "date": weak_dates,
+            "close": weak_trend,
+            "adj_close": weak_trend,
+            "volume": np.linspace(1500, 500, len(weak_dates)),
+        }
+    )
+
+    data = {
+        "ABC": base,
+        "WEAK": {
+            "fundamentals": weak_fundamentals,
+            "dividends": weak_dividends,
+            "shares": weak_shares,
+            "prices": weak_prices,
+        },
+    }
+
+    client = FakeYahooClient(data)
+
+    baseline = ops.run_screener_yahoo(
+        manual_tickers=["ABC", "WEAK"],
+        client=client,
+        include_technicals=False,
+    )
+
+    if isinstance(baseline, tuple):
+        baseline_df = baseline[0]
+    else:
+        baseline_df = baseline
+
+    scores = baseline_df.set_index("ticker")["score_compuesto"].astype(float)
+    threshold_value = float(scores["ABC"])
+    below_value = float(scores["WEAK"])
+    assert below_value < threshold_value
+
+    filtered = ops.run_screener_yahoo(
+        manual_tickers=["ABC", "WEAK"],
+        client=client,
+        include_technicals=False,
+        min_score_threshold=threshold_value,
+    )
+
+    if isinstance(filtered, tuple):
+        filtered_df = filtered[0]
+    else:
+        filtered_df = filtered
+
+    assert "ABC" in set(filtered_df["ticker"])
+    weak_row = filtered_df[filtered_df["ticker"] == "WEAK"]
+    assert not weak_row.empty
+    assert weak_row["score_compuesto"].isna().all()
 
 
 def test_run_screener_yahoo_emits_note_when_score_threshold_excludes_all(
