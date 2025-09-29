@@ -107,6 +107,8 @@ def run_opportunities_controller(
     include_latam: Optional[bool] = None,
     min_eps_growth: Optional[float] = None,
     min_buyback: Optional[float] = None,
+    min_score_threshold: Optional[float] = None,
+    max_results: Optional[int] = None,
 ) -> Tuple[pd.DataFrame, List[str], str]:
     """Run the opportunities screener and return the results, notes and source."""
 
@@ -115,6 +117,20 @@ def run_opportunities_controller(
     excluded_set = set(excluded)
 
     selected_sectors = _clean_sectors(sectors)
+
+    min_score_value: Optional[float] = None
+    if min_score_threshold is not None:
+        try:
+            min_score_value = float(min_score_threshold)
+        except (TypeError, ValueError):
+            min_score_value = None
+
+    max_results_value: Optional[int] = None
+    if max_results is not None:
+        try:
+            max_results_value = int(max_results)
+        except (TypeError, ValueError):
+            max_results_value = None
 
     yahoo_kwargs: dict[str, Any] = {
         "manual_tickers": tickers or None,
@@ -140,6 +156,10 @@ def run_opportunities_controller(
         yahoo_kwargs["min_eps_growth"] = float(min_eps_growth)
     if min_buyback is not None:
         yahoo_kwargs["min_buyback"] = float(min_buyback)
+    if min_score_value is not None:
+        yahoo_kwargs["min_score_threshold"] = float(min_score_value)
+    if max_results_value is not None:
+        yahoo_kwargs["max_results"] = int(max_results_value)
 
     if selected_sectors:
         yahoo_kwargs["sectors"] = selected_sectors
@@ -173,7 +193,7 @@ def run_opportunities_controller(
 
     if fallback_used:
         source = "stub"
-        df = run_screener_stub(
+        stub_result = run_screener_stub(
             manual_tickers=tickers,
             exclude_tickers=excluded or None,
             max_payout=max_payout,
@@ -186,11 +206,20 @@ def run_opportunities_controller(
             include_technicals=include_technicals,
             min_eps_growth=min_eps_growth,
             min_buyback=min_buyback,
+            min_score_threshold=min_score_value,
+            max_results=max_results_value,
 
             sectors=selected_sectors or None,
 
         )
+        stub_notes: List[str] = []
+        if isinstance(stub_result, tuple) and len(stub_result) == 2:
+            df, stub_notes = stub_result
+        else:
+            df = stub_result  # type: ignore[assignment]
         notes.append("⚠️ Datos simulados (Yahoo no disponible)")
+        if stub_notes:
+            notes.extend(_normalize_notes(stub_notes))
         df = _ensure_columns(df, include_technicals)
     else:
         notes.extend(extra_notes)
@@ -338,6 +367,8 @@ def generate_opportunities_report(
         include_latam=_as_optional_bool(filters.get("include_latam")),
         min_eps_growth=_as_optional_float(filters.get("min_eps_growth")),
         min_buyback=_as_optional_float(filters.get("min_buyback")),
+        min_score_threshold=_as_optional_float(filters.get("min_score_threshold")),
+        max_results=_as_optional_int(filters.get("max_results")),
     )
 
     return {"table": df, "notes": notes, "source": source}
