@@ -207,11 +207,7 @@ def run_opportunities_controller(
             min_buyback=min_buyback,
             min_score_threshold=min_score_value,
             max_results=max_results_value,
-
             sectors=selected_sectors or None,
-            min_score_threshold=min_score_threshold,
-            max_results=max_results,
-
         )
         stub_notes: List[str] = []
         if isinstance(stub_result, tuple) and len(stub_result) == 2:
