@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Tuple
 
 import sys
 
@@ -79,7 +79,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("fallback used")),
     )
 
-    df, notes = sut.run_opportunities_controller(
+    df, notes, source = sut.run_opportunities_controller(
         manual_tickers=[" aapl", "MSFT", "msft"],
         max_payout=70.0,
         min_div_streak=5,
@@ -104,6 +104,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert notes == []
+    assert source == "yahoo"
 
 
 def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,7 +124,7 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
-    df, notes = sut.run_opportunities_controller(
+    df, notes, source = sut.run_opportunities_controller(
         manual_tickers=["aapl", None],
         max_payout=60,
         min_div_streak=8,
@@ -139,6 +140,7 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
     assert "AAPL" in notes[1]
+    assert source == "stub"
 
 
 def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -157,7 +159,7 @@ def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) ->
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("fallback used")),
     )
 
-    df, notes = sut.run_opportunities_controller(
+    df, notes, source = sut.run_opportunities_controller(
         manual_tickers=["aaa", "bbb"],
         include_technicals=True,
     )
@@ -170,3 +172,18 @@ def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) ->
     assert pd.isna(aaa_row["rsi"])
     assert "Partial data" in notes
     assert any("BBB" in note for note in notes)
+    assert source == "yahoo"
+
+
+def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame([_make_sample_row()])
+
+    def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
+        assert kwargs["manual_tickers"] == ["abc"]
+        return df, ["note"], "stub"
+
+    monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
+
+    result = sut.generate_opportunities_report({"manual_tickers": ["abc"]})
+
+    assert result == {"table": df, "notes": ["note"], "source": "stub"}
