@@ -193,6 +193,95 @@ def _append_placeholder_rows(df: pd.DataFrame, tickers: Sequence[str]) -> pd.Dat
     return df.reset_index()
 
 
+def _apply_filters_and_finalize(
+    df: pd.DataFrame,
+    *,
+    max_payout: Optional[float] = None,
+    min_div_streak: Optional[int] = None,
+    min_cagr: Optional[float] = None,
+    min_market_cap: Optional[float] = None,
+    max_pe: Optional[float] = None,
+    min_revenue_growth: Optional[float] = None,
+    include_latam_flag: bool | None = True,
+    include_technicals: bool,
+    restrict_to_tickers: Sequence[str] | None = None,
+    placeholder_tickers: Sequence[str] | None = None,
+    market_cap_column: str = "market_cap",
+    pe_ratio_column: str = "pe_ratio",
+    revenue_growth_column: str = "revenue_growth",
+    latam_column: str = "is_latam",
+    allow_na_filters: bool = False,
+    extra_drop_columns: Sequence[str] | None = None,
+) -> pd.DataFrame:
+    """Apply common filters and final adjustments for screener outputs."""
+
+    result = df.copy()
+
+    if max_payout is not None and "payout_ratio" in result.columns:
+        series = result["payout_ratio"]
+        mask = series <= max_payout
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if min_div_streak is not None and "dividend_streak" in result.columns:
+        series = result["dividend_streak"]
+        mask = series >= min_div_streak
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if min_cagr is not None and "cagr" in result.columns:
+        series = result["cagr"]
+        mask = series >= min_cagr
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if min_market_cap is not None and market_cap_column in result.columns:
+        series = result[market_cap_column]
+        mask = series >= float(min_market_cap)
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if max_pe is not None and pe_ratio_column in result.columns:
+        series = result[pe_ratio_column]
+        mask = series <= float(max_pe)
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if min_revenue_growth is not None and revenue_growth_column in result.columns:
+        series = result[revenue_growth_column]
+        mask = series >= float(min_revenue_growth)
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
+    if include_latam_flag is False and latam_column in result.columns:
+        result = result[~result[latam_column].fillna(False)]
+
+    if restrict_to_tickers:
+        result = result[result["ticker"].isin(restrict_to_tickers)]
+
+    if placeholder_tickers:
+        result = _append_placeholder_rows(result, placeholder_tickers)
+
+    if extra_drop_columns:
+        to_drop = [col for col in extra_drop_columns if col in result.columns]
+        if to_drop:
+            result = result.drop(columns=to_drop)
+
+    if not include_technicals:
+        technical_columns = ["rsi", "sma_50", "sma_200"]
+        to_drop = [col for col in technical_columns if col in result.columns]
+        if to_drop:
+            result = result.drop(columns=to_drop)
+
+    return result.reset_index(drop=True)
+
+
 def _load_default_tickers(
     *,
     min_market_cap: Optional[float] = None,
@@ -285,26 +374,7 @@ def run_screener_stub(
     """
 
     df = pd.DataFrame(_BASE_OPPORTUNITIES)
-
-    if max_payout is not None:
-        df = df[df["payout_ratio"] <= max_payout]
-    if min_div_streak is not None:
-        df = df[df["dividend_streak"] >= min_div_streak]
-    if min_cagr is not None:
-        df = df[df["cagr"] >= min_cagr]
-    if min_market_cap is not None and "market_cap" in df:
-        df = df[df["market_cap"] >= min_market_cap]
-    if max_pe is not None and "pe_ratio" in df:
-        df = df[df["pe_ratio"] <= max_pe]
-    if min_revenue_growth is not None and "revenue_growth" in df:
-        df = df[df["revenue_growth"] >= min_revenue_growth]
-    if not include_latam and "is_latam" in df:
-        df = df[~df["is_latam"]]
-
     manual = _normalise_tickers(manual_tickers)
-    if manual:
-        df = df[df["ticker"].isin(manual)]
-        df = _append_placeholder_rows(df, manual)
 
     df = df.copy()
     payout_component = (100 - df["payout_ratio"]).clip(lower=0, upper=100) * 0.4
@@ -314,12 +384,23 @@ def run_screener_stub(
         payout_component + streak_component + cagr_component
     ) / 10.0
 
-    technical_columns = ["rsi", "sma_50", "sma_200"]
-    if not include_technicals:
-        df = df.drop(columns=[c for c in technical_columns if c in df.columns])
-
-    df = df.reset_index(drop=True)
-    return df
+    return _apply_filters_and_finalize(
+        df,
+        max_payout=max_payout,
+        min_div_streak=min_div_streak,
+        min_cagr=min_cagr,
+        min_market_cap=min_market_cap,
+        max_pe=max_pe,
+        min_revenue_growth=min_revenue_growth,
+        include_latam_flag=include_latam,
+        include_technicals=include_technicals,
+        restrict_to_tickers=manual or None,
+        placeholder_tickers=manual or None,
+        market_cap_column="market_cap",
+        pe_ratio_column="pe_ratio",
+        revenue_growth_column="revenue_growth",
+        latam_column="is_latam",
+    )
 
 
 def _is_valid_number(value: float | int | pd.NA | None) -> bool:
@@ -654,47 +735,31 @@ def run_screener_yahoo(
 
     df = pd.DataFrame(rows).convert_dtypes()
 
-    if max_payout is not None:
-        df = df[df["payout_ratio"].isna() | (df["payout_ratio"] <= max_payout)]
-    if min_div_streak is not None:
-        df = df[df["dividend_streak"].isna() | (df["dividend_streak"] >= min_div_streak)]
-    if min_cagr is not None:
-        df = df[df["cagr"].isna() | (df["cagr"] >= min_cagr)]
-    if min_market_cap is not None:
-        df = df[
-            df["_meta_market_cap"].isna()
-            | (df["_meta_market_cap"] >= float(min_market_cap))
-        ]
-    if max_pe is not None:
-        df = df[
-            df["_meta_pe_ratio"].isna() | (df["_meta_pe_ratio"] <= float(max_pe))
-        ]
-    if min_revenue_growth is not None:
-        df = df[
-            df["_meta_revenue_growth"].isna()
-            | (df["_meta_revenue_growth"] >= float(min_revenue_growth))
-        ]
-
     include_latam_flag = True if include_latam is None else bool(include_latam)
-    if not include_latam_flag:
-        df = df[~df["_meta_is_latam"].fillna(False)]
 
-    df = _append_placeholder_rows(df, tickers)
-
-    df = df.drop(
-        columns=[
-            c
-            for c in ("_meta_market_cap", "_meta_pe_ratio", "_meta_revenue_growth", "_meta_is_latam")
-            if c in df.columns
-        ]
+    df = _apply_filters_and_finalize(
+        df,
+        max_payout=max_payout,
+        min_div_streak=min_div_streak,
+        min_cagr=min_cagr,
+        min_market_cap=min_market_cap,
+        max_pe=max_pe,
+        min_revenue_growth=min_revenue_growth,
+        include_latam_flag=include_latam_flag,
+        include_technicals=include_technicals,
+        placeholder_tickers=tickers,
+        market_cap_column="_meta_market_cap",
+        pe_ratio_column="_meta_pe_ratio",
+        revenue_growth_column="_meta_revenue_growth",
+        latam_column="_meta_is_latam",
+        allow_na_filters=True,
+        extra_drop_columns=(
+            "_meta_market_cap",
+            "_meta_pe_ratio",
+            "_meta_revenue_growth",
+            "_meta_is_latam",
+        ),
     )
-
-    if not include_technicals:
-        df = df[_output_columns(False)]
-    else:
-        df = df[_output_columns(True)]
-
-    df = df.reset_index(drop=True)
 
     if using_default_universe and tickers:
         filters_applied: list[str] = []
