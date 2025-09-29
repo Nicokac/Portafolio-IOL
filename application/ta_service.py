@@ -6,10 +6,10 @@ from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.cache import cache
 from shared.settings import (
-    cache_ttl_yf_fundamentals,
     cache_ttl_yf_history,
-    cache_ttl_yf_indicators,
     cache_ttl_yf_portfolio_fundamentals,
+    yahoo_fundamentals_ttl,
+    yahoo_quotes_ttl,
 )
 from shared.utils import _to_float
 from services.health import record_yfinance_usage
@@ -17,8 +17,6 @@ from services.health import record_yfinance_usage
 import numpy as np
 import pandas as pd
 from requests.exceptions import HTTPError, Timeout
-from shared.cache import cache
-from shared.settings import yahoo_fundamentals_ttl, yahoo_quotes_ttl
 
 # yfinance para históricos
 try:
@@ -89,7 +87,7 @@ def _bollinger_pandas(close: pd.Series, window: int = 20, std: float = 2.0):
 # -----------------------
 
 
-@cache.cache_data(ttl=cache_ttl_yf_indicators, maxsize=128)
+@cache.cache_data(ttl=yahoo_quotes_ttl, maxsize=128)
 def fetch_with_indicators(
     simbolo: str,
     period: str = "6mo",
@@ -359,7 +357,7 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     res["equity"] = (1 + res["strategy_ret"]).cumprod()
     return res.dropna()
 
-@cache.cache_data(ttl=cache_ttl_yf_fundamentals, maxsize=128)
+@cache.cache_data(ttl=yahoo_fundamentals_ttl, maxsize=128)
 def get_fundamental_data(ticker: str) -> dict:
     """
     Obtiene datos fundamentales clave con yfinance. Filtra dividend yields implausibles (>20%).
