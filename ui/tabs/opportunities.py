@@ -147,6 +147,10 @@ def render_opportunities_tab() -> None:
             value=True,
             help="Extiende el screening a emisores listados en Latinoamérica.",
         )
+        include_technicals = st.checkbox(
+            "Incluir indicadores técnicos",
+            value=False,
+            help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
         sectors = st.multiselect(
             "Sectores",
             options=_SECTOR_OPTIONS,
@@ -182,6 +186,7 @@ def render_opportunities_tab() -> None:
             "min_div_streak": int(min_div_streak),
             "min_cagr": float(min_cagr),
             "include_latam": bool(include_latam),
+            "include_technicals": bool(include_technicals),
         }
         if sectors:
             params["sectors"] = list(sectors)

@@ -153,6 +153,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "min_div_streak": 7,
         "min_cagr": 6.5,
         "include_latam": False,
+        "include_technicals": False,
         "sectors": ["Technology"],
     }
     dataframes = app.get("arrow_data_frame")
@@ -166,6 +167,26 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert not any(fallback_note in block for block in markdown_blocks)
+
+
+def test_checkbox_include_technicals_updates_params() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "price": [180.12],
+            "score_compuesto": [8.5],
+        }
+    )
+    overrides = {"Incluir indicadores técnicos": True}
+    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
+
+    assert mock.call_count == 1
+    called_with = mock.call_args.args[0]
+    assert called_with["include_technicals"] is True
+    assert called_with["include_latam"] is True
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected Streamlit dataframe component after execution"
 
 
 def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:

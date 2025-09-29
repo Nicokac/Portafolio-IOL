@@ -295,7 +295,14 @@ def generate_opportunities_report(
 
     filters = filters or {}
     manual = filters.get("manual_tickers") or filters.get("tickers")
-    include_technicals = bool(filters.get("include_technicals", False))
+    include_technicals_value = filters.get("include_technicals")
+    include_technicals_parsed = _as_optional_bool(include_technicals_value)
+    if include_technicals_parsed is not None:
+        include_technicals = include_technicals_parsed
+    elif isinstance(include_technicals_value, bool):
+        include_technicals = include_technicals_value
+    else:
+        include_technicals = False
 
     df, notes, source = run_opportunities_controller(
         manual_tickers=manual,
