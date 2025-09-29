@@ -31,6 +31,22 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 Esta pestaña experimental destaca emisores que cumplen criterios combinados de liquidez mínima, spread ajustado y momentum de precio positivo observados en las últimas ruedas. El listado actual se genera a partir de un dataset simulado que replica patrones de mercado para validar la experiencia de usuario sin requerir aún el acceso a fuentes productivas. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
 
+## Integración con Yahoo Finance
+
+La aplicación consulta [Yahoo Finance](https://finance.yahoo.com/) mediante la librería `yfinance` para enriquecer la vista de portafolio con series históricas, indicadores técnicos y métricas fundamentales/ESG. La barra lateral de healthcheck refleja si la última descarga provino de Yahoo o si fue necesario recurrir a un respaldo local, facilitando la observabilidad de esta dependencia externa.
+
+### Indicadores técnicos y fallback local
+
+La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, EMA, MACD, RSI, Bollinger, ATR, Estocástico e Ichimoku). Los resultados se almacenan en caché durante el intervalo definido por `CACHE_TTL_YF_INDICATORS` (predeterminado: 900 segundos) para evitar llamadas redundantes. Cuando `yfinance` produce un `HTTPError` o `Timeout`, la aplicación recurre automáticamente a `infrastructure/cache/ta_fallback.csv` como stub hasta que el servicio se restablezca.
+
+### Métricas fundamentales y ranking del portafolio
+
+`get_fundamental_data` obtiene valuaciones básicas (PE, P/B, márgenes, ROE, deuda, dividend yield depurado) y respeta el TTL de `CACHE_TTL_YF_FUNDAMENTALS` (6 horas por defecto). Para el ranking consolidado se utiliza `portfolio_fundamentals`, que agrega métricas y puntajes ESG por símbolo y persiste los resultados según `CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS` (4 horas por defecto). Ambos bloques se muestran en la pestaña principal del portafolio, con mensajes claros cuando los datos no están disponibles.
+
+### Históricos y monitoreo
+
+`get_portfolio_history` construye series ajustadas para todos los símbolos y las conserva durante `CACHE_TTL_YF_HISTORY` (valor inicial: 3600 segundos). El healthcheck `📈 Yahoo Finance` indica si la última consulta provino de la API, de la caché o del stub, junto con detalles del símbolo involucrado.
+
 ## Seguridad de credenciales
 
 ### 🔒 Seguridad de tus credenciales
@@ -83,6 +99,10 @@ CACHE_TTL_PORTFOLIO=20
 CACHE_TTL_LAST_PRICE=10
 CACHE_TTL_QUOTES=8
 CACHE_TTL_FX=60
+CACHE_TTL_YF_INDICATORS=900
+CACHE_TTL_YF_HISTORY=3600
+CACHE_TTL_YF_FUNDAMENTALS=21600
+CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS=14400
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
 # Nivel de los logs ("DEBUG", "INFO", etc.; predeterminado: INFO)
 LOG_LEVEL="INFO"
@@ -91,6 +111,7 @@ LOG_FORMAT="plain"
 # Usuario opcional incluido en los logs
 LOG_USER="usuario"
 ```
+Los parámetros `CACHE_TTL_YF_*` ajustan cuánto tiempo se reutiliza cada respuesta de Yahoo Finance antes de volver a consultar la API (indicadores técnicos, históricos, fundamentales individuales y ranking del portafolio, respectivamente).
 También puedes definir estos valores sensibles en `secrets.toml`,
 el cual `streamlit` expone a través de `st.secrets`. Los valores en
 `secrets.toml` tienen prioridad sobre las variables de entorno.
@@ -169,6 +190,10 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
    CACHE_TTL_LAST_PRICE = 10
    CACHE_TTL_QUOTES = 8
    CACHE_TTL_FX = 60
+   CACHE_TTL_YF_INDICATORS = 900
+   CACHE_TTL_YF_HISTORY = 3600
+   CACHE_TTL_YF_FUNDAMENTALS = 21600
+   CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS = 14400
    ASSET_CATALOG_PATH = "/ruta/a/assets_catalog.json"
    LOG_LEVEL = "INFO"
    LOG_FORMAT = "plain"

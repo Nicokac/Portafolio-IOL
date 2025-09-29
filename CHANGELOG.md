@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2025-09-29
+### Added
+- Integración con Yahoo Finance para descargar históricos, indicadores técnicos y
+  métricas fundamentales visibles en la pestaña de portafolio.
+- Nuevos paneles con métricas fundamentales y ranking ESG del portafolio basados
+  en los datos enriquecidos de Yahoo Finance.
+### Changed
+- Caché configurable para las consultas de Yahoo Finance mediante los TTL
+  `CACHE_TTL_YF_*`, documentados en la configuración.
+### Fixed
+- Fallback automático al stub `infrastructure/cache/ta_fallback.csv` cuando la
+  API de Yahoo Finance devuelve errores, con trazabilidad en el healthcheck.
+
 ## [0.3.7] - 2025-09-28
 ### Added
 - Se agregó la pestaña beta de "Empresas con oportunidad" junto con su stub inicial para explorar la integración futura.

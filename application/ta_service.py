@@ -4,6 +4,13 @@ import logging
 from pathlib import Path
 from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
+from shared.cache import cache
+from shared.settings import (
+    cache_ttl_yf_fundamentals,
+    cache_ttl_yf_history,
+    cache_ttl_yf_indicators,
+    cache_ttl_yf_portfolio_fundamentals,
+)
 from shared.utils import _to_float
 from services.health import record_yfinance_usage
 
@@ -82,7 +89,7 @@ def _bollinger_pandas(close: pd.Series, window: int = 20, std: float = 2.0):
 # -----------------------
 
 
-@cache.cache_data(ttl=yahoo_quotes_ttl, maxsize=128)
+@cache.cache_data(ttl=cache_ttl_yf_indicators, maxsize=128)
 def fetch_with_indicators(
     simbolo: str,
     period: str = "6mo",
@@ -275,6 +282,7 @@ def fetch_with_indicators(
 
 
 # allow external code/tests to reset cache
+fetch_with_indicators.cache_clear = fetch_with_indicators.clear  # type: ignore[attr-defined]
 def simple_alerts(df: pd.DataFrame) -> List[str]:
     """
     Alertas simples:
@@ -351,8 +359,7 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     res["equity"] = (1 + res["strategy_ret"]).cumprod()
     return res.dropna()
 
-
-@cache.cache_data(ttl=yahoo_fundamentals_ttl, maxsize=128)
+@cache.cache_data(ttl=cache_ttl_yf_fundamentals, maxsize=128)
 def get_fundamental_data(ticker: str) -> dict:
     """
     Obtiene datos fundamentales clave con yfinance. Filtra dividend yields implausibles (>20%).
@@ -404,7 +411,10 @@ def get_fundamental_data(ticker: str) -> dict:
         return {"error": f"No se pudo contactar a la API para {ticker}."}
 
 
-@cache.cache_data(ttl=yahoo_fundamentals_ttl, maxsize=128)
+get_fundamental_data.cache_clear = get_fundamental_data.clear  # type: ignore[attr-defined]
+
+
+@cache.cache_data(ttl=cache_ttl_yf_portfolio_fundamentals, maxsize=128)
 def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
     """Devuelve un DataFrame con métricas fundamentales y ESG para cada símbolo."""
     if yf is None:
@@ -454,11 +464,11 @@ def portfolio_fundamentals(simbolos: List[str]) -> pd.DataFrame:
     return _portfolio_fundamentals_cached(tuple(simbolos))
 
 
-if hasattr(_portfolio_fundamentals_cached, "clear"):
-    portfolio_fundamentals.clear = _portfolio_fundamentals_cached.clear  # type: ignore[attr-defined]
+portfolio_fundamentals.clear = _portfolio_fundamentals_cached.clear  # type: ignore[attr-defined]
+portfolio_fundamentals.cache_clear = _portfolio_fundamentals_cached.clear  # type: ignore[attr-defined]
 
 
-@cache.cache_data(ttl=yahoo_quotes_ttl, maxsize=128)
+@cache.cache_data(ttl=cache_ttl_yf_history, maxsize=128)
 def _get_portfolio_history_cached(simbolos: tuple[str, ...], period: str = "1y") -> pd.DataFrame:
     """
     Descarga el historial (Adj Close si está, sino Close) para los símbolos indicados.
@@ -524,8 +534,8 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
     return _get_portfolio_history_cached(tuple(simbolos), period)
 
 
-if hasattr(_get_portfolio_history_cached, "clear"):
-    get_portfolio_history.clear = _get_portfolio_history_cached.clear  # type: ignore[attr-defined]
+get_portfolio_history.clear = _get_portfolio_history_cached.clear  # type: ignore[attr-defined]
+get_portfolio_history.cache_clear = _get_portfolio_history_cached.clear  # type: ignore[attr-defined]
 
 class TAService:
     """Fachada de análisis técnico que envuelve las funciones existentes."""
