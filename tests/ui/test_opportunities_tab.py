@@ -107,7 +107,7 @@ def test_header_displays_version() -> None:
     assert expected_header in headers
 
 
-def test_button_executes_controller_and_shows_yahoo_note() -> None:
+def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     df = pd.DataFrame(
         {
             "ticker": ["AAPL", "MSFT"],
@@ -115,7 +115,7 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
             "score_compuesto": [8.5, 7.9],
         }
     )
-    app, mock = _run_app_with_result({"table": df, "notes": []})
+    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"})
     assert mock.call_count == 1
     called_with = mock.call_args.args[0]
     assert called_with == {
@@ -127,10 +127,7 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
     captions = [element.value for element in app.get("caption")]
-    assert (
-        "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
-        in captions
-    )
+    assert any("Yahoo Finance" in caption for caption in captions)
     assert (
         "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
         in captions
@@ -140,7 +137,7 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
     assert not any(fallback_note in block for block in markdown_blocks)
 
 
-def test_fallback_note_is_displayed_when_present() -> None:
+def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     df = pd.DataFrame(
         {
             "ticker": ["KO"],
@@ -149,9 +146,15 @@ def test_fallback_note_is_displayed_when_present() -> None:
         }
     )
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
-    app, _ = _run_app_with_result({"table": df, "notes": [fallback_note]})
+    extra_note = "ℹ️ Recuerda validar con fuentes oficiales"
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [fallback_note, extra_note], "source": "stub"}
+    )
+    captions = [element.value for element in app.get("caption")]
+    assert any("Resultados simulados" in caption for caption in captions)
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(fallback_note in block for block in markdown_blocks)
+    assert any(extra_note in block for block in markdown_blocks)
 
 
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
