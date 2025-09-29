@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.12] - 2025-09-29
+### Fixed
+- Se repararon las pruebas de `shared.settings` para que consuman los TTL y alias directamente desde la configuración compartida.
+### Tests
+- La suite de CI recuperó su estabilidad al eliminar los falsos negativos que provocaba la discrepancia en los tests de configuración.
+
 ## [0.3.11] - 2025-10-01
 ### Fixed
 - Se repararon los tests de la pestaña beta para alinear las expectativas con el flujo visible en la UI.
