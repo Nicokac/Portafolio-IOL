@@ -100,6 +100,8 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         include_latam=True,
         min_eps_growth=4.5,
         min_buyback=0.5,
+        min_score_threshold=55.5,
+        max_results=10,
     )
 
     assert captured_kwargs == {
@@ -116,10 +118,35 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "min_eps_growth": pytest.approx(4.5),
         "min_buyback": pytest.approx(0.5),
         "sectors": ["Technology", "Healthcare"],
+        "min_score_threshold": pytest.approx(55.5),
+        "max_results": 10,
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert set(df["ticker"]) == {"AAPL"}
     assert notes == []
+    assert source == "yahoo"
+
+
+def test_controller_propagates_yahoo_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = pd.DataFrame([_make_sample_row()])
+
+    def fake_yahoo(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:  # noqa: ARG001
+        return payload, ["Nota desde Yahoo"]
+
+    monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
+    monkeypatch.setattr(
+        sut,
+        "run_screener_stub",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("stub used")),
+    )
+
+    df, notes, source = sut.run_opportunities_controller(
+        manual_tickers=["aapl"],
+        include_technicals=False,
+    )
+
+    assert df.equals(payload[_EXPECTED_COLUMNS])
+    assert notes == ["Nota desde Yahoo"]
     assert source == "yahoo"
 
 
@@ -136,13 +163,15 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     ])
     stub_calls: Dict[str, Any] = {}
 
-    def fake_stub(**kwargs: Any) -> pd.DataFrame:
+    def fake_stub(**kwargs: Any) -> pd.DataFrame | Tuple[pd.DataFrame, List[str]]:
         stub_calls.clear()
         stub_calls.update(kwargs)
         exclude = set(kwargs.get("exclude_tickers") or [])
         if not exclude:
-            return stub_result
-        return stub_result[~stub_result["ticker"].isin(exclude)]
+            filtered = stub_result
+        else:
+            filtered = stub_result[~stub_result["ticker"].isin(exclude)]
+        return filtered, ["Nota generada por el stub"]
 
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
@@ -155,6 +184,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         include_technicals=False,
         min_eps_growth=2.0,
         min_buyback=0.0,
+        min_score_threshold=60.0,
+        max_results=1,
     )
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
@@ -165,12 +196,15 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["include_technicals"] is False
     assert stub_calls["min_eps_growth"] == 2.0
     assert stub_calls["min_buyback"] == 0.0
+    assert stub_calls["min_score_threshold"] == 60.0
+    assert stub_calls["max_results"] == 1
     assert "sector" in df.columns
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert "MSFT" not in set(df["ticker"])
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
-    assert "AAPL" in notes[1]
+    assert "Nota generada por el stub" in notes[1]
+    assert "AAPL" in notes[2]
     assert source == "stub"
 
 

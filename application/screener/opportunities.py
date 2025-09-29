@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections.abc import Mapping, Sequence
 from typing import Callable, Iterable, List, Optional
@@ -422,10 +423,13 @@ def _apply_filters_and_finalize(
     sector_column: str = "sector",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
+    min_score_threshold: Optional[float] = None,
+    max_results: Optional[int] = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
     result = df.copy()
+    notes: list[str] = []
     exclude_set: set[str] | None = None
     if exclude_tickers:
         exclude_set = {
@@ -571,7 +575,85 @@ def _apply_filters_and_finalize(
         if to_drop:
             result = result.drop(columns=to_drop)
 
-    return result.reset_index(drop=True)
+    result = result.reset_index(drop=True)
+
+    if "score_compuesto" in result.columns:
+        scores = pd.to_numeric(result["score_compuesto"], errors="coerce")
+        valid_scores = scores.dropna()
+        if not valid_scores.empty:
+            min_score = float(valid_scores.min())
+            max_score = float(valid_scores.max())
+            if math.isclose(max_score, min_score):
+                normalized = pd.Series(100.0, index=result.index, dtype="float64")
+            else:
+                span = max_score - min_score
+                normalized = ((scores - min_score) / span * 100.0).clip(lower=0, upper=100)
+            normalized = normalized.round(2)
+            result["score_compuesto"] = normalized.where(~scores.isna(), pd.NA)
+        else:
+            result["score_compuesto"] = pd.NA
+
+        if min_score_threshold is not None:
+            threshold = float(min_score_threshold)
+            before_threshold = len(result)
+            mask = pd.to_numeric(result["score_compuesto"], errors="coerce") >= threshold
+            result = result[mask]
+            if before_threshold > 0 and result.empty:
+                notes.append(
+                    "Ningún ticker superó el puntaje mínimo de "
+                    f"{threshold:g}."
+                )
+
+        if "score_compuesto" in result.columns:
+            result = result.sort_values(
+                by="score_compuesto",
+                ascending=False,
+                na_position="last",
+            )
+
+    if max_results is not None:
+        try:
+            limit = int(max_results)
+        except (TypeError, ValueError):
+            limit = None
+        if limit is not None and limit >= 0:
+            before_truncate = len(result)
+            if limit == 0:
+                result = result.iloc[0:0]
+            elif before_truncate > limit:
+                result = result.iloc[:limit]
+            if before_truncate > len(result):
+                notes.append(
+                    "Se muestran "
+                    f"{len(result)} resultados de {before_truncate} tras aplicar el máximo solicitado ({limit})."
+                )
+
+    target_min_results: Optional[int] = None
+    for candidate in (
+        getattr(shared_settings, "OPPORTUNITIES_MIN_RESULTS", None),
+        getattr(shared_config.settings, "OPPORTUNITIES_MIN_RESULTS", None),
+    ):
+        if target_min_results is not None:
+            break
+        if candidate is None:
+            continue
+        try:
+            target_min_results = int(candidate)
+        except (TypeError, ValueError):
+            target_min_results = None
+    if target_min_results and len(result) < target_min_results:
+        notes.append(
+            "Solo se encontraron "
+            f"{len(result)} oportunidades (mínimo esperado: {target_min_results})."
+        )
+
+    result = result.reset_index(drop=True)
+
+    if notes:
+        result.attrs.setdefault("_notes", [])
+        result.attrs["_notes"].extend(notes)
+
+    return result
 
 
 def run_screener_stub(
@@ -589,7 +671,9 @@ def run_screener_stub(
     min_eps_growth: Optional[float] = None,
     min_buyback: Optional[float] = None,
     sectors: Optional[Iterable[str]] = None,
-) -> pd.DataFrame:
+    min_score_threshold: Optional[float] = None,
+    max_results: Optional[int] = None,
+) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
     """Return a filtered sample dataset that mimics a screener output.
 
     Parameters
@@ -645,7 +729,7 @@ def run_screener_stub(
         payout_component + streak_component + cagr_component
     ) / 10.0
 
-    return _apply_filters_and_finalize(
+    result = _apply_filters_and_finalize(
         df,
         max_payout=max_payout,
         min_div_streak=min_div_streak,
@@ -672,7 +756,13 @@ def run_screener_stub(
 
         allowed_sectors=_normalize_sector_filters(sectors),
 
+        min_score_threshold=min_score_threshold,
+        max_results=max_results,
+
     )
+
+    notes = list(result.attrs.pop("_notes", []))
+    return (result, notes) if notes else result
 
 
 def _is_valid_number(value: float | int | pd.NA | None) -> bool:
@@ -938,6 +1028,8 @@ def run_screener_yahoo(
     include_latam: Optional[bool] = None,
     min_eps_growth: Optional[float] = None,
     min_buyback: Optional[float] = None,
+    min_score_threshold: Optional[float] = None,
+    max_results: Optional[int] = None,
     client: YahooFinanceClient | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
     """Run the Yahoo-based screener returning the same schema as the stub.
@@ -1148,7 +1240,14 @@ def run_screener_yahoo(
             "_meta_forward_eps",
             "_meta_buyback",
         ),
+
+        min_score_threshold=min_score_threshold,
+        max_results=max_results,
     )
+
+    filter_notes = list(df.attrs.pop("_notes", []))
+    if filter_notes:
+        notes.extend(filter_notes)
 
     if using_default_universe and tickers:
         filters_applied: list[str] = []
