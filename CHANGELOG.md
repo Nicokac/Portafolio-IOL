@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.13] - 2025-09-30
+### Changed
+- La leyenda en la pestaña beta ahora destaca dinámicamente si los datos provienen de Yahoo Finance o del stub local, evitando confusiones durante los failovers.
+
 ## [0.3.12] - 2025-09-29
 ### Fixed
 - Se repararon las pruebas de `shared.settings` para que consuman los TTL y alias directamente desde la configuración compartida.
