@@ -37,7 +37,8 @@ def _normalize_table(table: object) -> pd.DataFrame | None:
         return None
 
 
-def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str]]:
+def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str], str]:
+    source = "yahoo"
     if isinstance(result, Mapping):
         table = None
         for key in ("table", "data", "df"):
@@ -49,11 +50,15 @@ def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str]]:
             if key in result and result[key]:
                 notes = result[key]
                 break
-        return _normalize_table(table), _normalize_notes(notes)
-    if isinstance(result, Sequence) and len(result) == 2:
-        table, notes = result  # type: ignore[assignment]
-        return _normalize_table(table), _normalize_notes(notes)
-    return _normalize_table(result), []
+        if "source" in result and result["source"]:
+            source = str(result["source"])
+        return _normalize_table(table), _normalize_notes(notes), source
+    if isinstance(result, Sequence) and not isinstance(result, (str, bytes, bytearray)) and len(result) >= 2:
+        table, notes = result[:2]  # type: ignore[assignment]
+        if len(result) >= 3 and result[2]:
+            source = str(result[2])
+        return _normalize_table(table), _normalize_notes(notes), source
+    return _normalize_table(result), [], source
 
 
 def render_opportunities_tab() -> None:
@@ -138,7 +143,7 @@ def render_opportunities_tab() -> None:
         with st.spinner("Generando screening de oportunidades..."):
             result = generate_opportunities_report(params)
 
-        table, notes = _extract_result(result)
+        table, notes, source = _extract_result(result)
 
         if table is None or table.empty:
             st.info("No se encontraron oportunidades con los filtros seleccionados.")
@@ -146,9 +151,12 @@ def render_opportunities_tab() -> None:
             st.subheader("Resultados del screening")
             st.dataframe(table, use_container_width=True)
 
-        st.caption(
-            "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
-        )
+        if source == "stub":
+            st.caption("⚠️ Datos simulados (Yahoo no disponible)")
+        else:
+            st.caption(
+                "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
+            )
         st.caption(
             "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
         )
