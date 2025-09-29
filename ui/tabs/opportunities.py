@@ -23,6 +23,28 @@ _SECTOR_OPTIONS: Sequence[str] = (
 )
 
 
+def _format_note(note: str) -> str:
+    """Return a formatted representation for notes that need emphasis."""
+
+    normalized = note.casefold()
+    highlight_top_results = (
+        any(keyword in normalized for keyword in ("top", "mejores"))
+        and any(
+            keyword in normalized
+            for keyword in ("recort", "limit", "límite", "limite")
+        )
+    )
+    highlight_threshold = (
+        any(keyword in normalized for keyword in ("threshold", "umbral", "score"))
+        and any(
+            keyword in normalized for keyword in ("no se encontraron", "sin candidatos")
+        )
+    )
+    if highlight_top_results or highlight_threshold:
+        return f"**{note}**"
+    return note
+
+
 def _normalize_notes(notes: object) -> list[str]:
     if notes is None:
         return []
@@ -166,6 +188,21 @@ def render_opportunities_tab() -> None:
             value=False,
             help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
         )
+        min_score_threshold = st.slider(
+            "Score mínimo",
+            min_value=0.0,
+            max_value=10.0,
+            value=6.0,
+            step=0.1,
+            help="Define el puntaje mínimo requerido para considerar un candidato.",
+        )
+        max_results = st.number_input(
+            "Máximo de resultados",
+            min_value=1,
+            value=25,
+            step=1,
+            help="Limita la cantidad de oportunidades mostradas al tope indicado.",
+        )
         sectors = st.multiselect(
             "Sectores",
             options=_SECTOR_OPTIONS,
@@ -204,6 +241,8 @@ def render_opportunities_tab() -> None:
             "min_buyback": float(min_buyback),
             "include_latam": bool(include_latam),
             "include_technicals": bool(include_technicals),
+            "min_score_threshold": float(min_score_threshold),
+            "max_results": int(max_results),
         }
         if sectors:
             params["sectors"] = list(sectors)
@@ -230,6 +269,6 @@ def render_opportunities_tab() -> None:
         if notes:
             st.markdown("### Notas")
             for note in notes:
-                st.markdown(f"- {note}")
+                st.markdown(f"- {_format_note(note)}")
     else:
         st.info("El screening se ejecuta manualmente para evitar demoras innecesarias.")
