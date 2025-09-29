@@ -55,6 +55,21 @@ class Settings:
         self.cache_ttl_last_price: int = int(os.getenv("CACHE_TTL_LAST_PRICE", cfg.get("CACHE_TTL_LAST_PRICE", 10)))
         self.cache_ttl_fx: int = int(os.getenv("CACHE_TTL_FX", cfg.get("CACHE_TTL_FX", 60)))
         self.cache_ttl_quotes: int = int(os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 8)))
+        self.cache_ttl_yf_indicators: int = int(
+            os.getenv("CACHE_TTL_YF_INDICATORS", cfg.get("CACHE_TTL_YF_INDICATORS", 900))
+        )
+        self.cache_ttl_yf_history: int = int(
+            os.getenv("CACHE_TTL_YF_HISTORY", cfg.get("CACHE_TTL_YF_HISTORY", 3600))
+        )
+        self.cache_ttl_yf_fundamentals: int = int(
+            os.getenv("CACHE_TTL_YF_FUNDAMENTALS", cfg.get("CACHE_TTL_YF_FUNDAMENTALS", 21600))
+        )
+        self.cache_ttl_yf_portfolio_fundamentals: int = int(
+            os.getenv(
+                "CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS",
+                cfg.get("CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS", 14400),
+            )
+        )
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
 

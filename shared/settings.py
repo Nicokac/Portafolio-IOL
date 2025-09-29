@@ -17,6 +17,10 @@ cache_ttl_portfolio: int = settings.cache_ttl_portfolio
 cache_ttl_last_price: int = settings.cache_ttl_last_price
 cache_ttl_fx: int = settings.cache_ttl_fx
 cache_ttl_quotes: int = settings.cache_ttl_quotes
+cache_ttl_yf_indicators: int = settings.cache_ttl_yf_indicators
+cache_ttl_yf_history: int = settings.cache_ttl_yf_history
+cache_ttl_yf_fundamentals: int = settings.cache_ttl_yf_fundamentals
+cache_ttl_yf_portfolio_fundamentals: int = settings.cache_ttl_yf_portfolio_fundamentals
 quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 
@@ -31,6 +35,10 @@ __all__ = [
     "cache_ttl_last_price",
     "cache_ttl_fx",
     "cache_ttl_quotes",
+    "cache_ttl_yf_indicators",
+    "cache_ttl_yf_history",
+    "cache_ttl_yf_fundamentals",
+    "cache_ttl_yf_portfolio_fundamentals",
     "quotes_hist_maxlen",
     "max_quote_workers",
     "FEATURE_OPPORTUNITIES_TAB",
