@@ -28,12 +28,14 @@ def test_filters_apply_to_base_dataset() -> None:
     assert (df["pe_ratio"] <= 35.0).all()
     assert (df["revenue_growth"] >= 5.0).all()
     assert not df.get("is_latam", pd.Series(dtype=bool)).any()
+    assert {"rsi", "sma_50", "sma_200"}.isdisjoint(df.columns)
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
-    df = run_screener_stub(include_latam=True)
+    df = run_screener_stub(include_latam=True, include_technicals=True)
     assert "MELI" in _tickers(df)
     assert bool(df.loc[df["ticker"] == "MELI", "is_latam"].iloc[0])
+    assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
 
 
 def test_manual_tickers_return_placeholder_after_filters() -> None:

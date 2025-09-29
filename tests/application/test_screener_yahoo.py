@@ -110,6 +110,7 @@ def test_run_screener_yahoo_computes_metrics(comprehensive_data):
     )
 
     assert df.shape[0] == 1
+    assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
     row = df.iloc[0]
 
     prices = comprehensive_data["ABC"]["prices"]
@@ -203,6 +204,7 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
         "price",
         "score_compuesto",
     ]
+    assert not any(col.startswith("_meta") for col in df.columns)
     assert df.iloc[0]["ticker"] == "ABC"
     assert pd.isna(df.iloc[1]["payout_ratio"])
 
