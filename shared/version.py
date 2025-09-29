@@ -4,7 +4,7 @@ from pathlib import Path
 import tomllib
 
 
-DEFAULT_VERSION = "0.3.11"
+DEFAULT_VERSION = "0.3.12"
 PROJECT_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
