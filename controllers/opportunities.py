@@ -82,8 +82,8 @@ def run_opportunities_controller(
     max_pe: Optional[float] = None,
     min_revenue_growth: Optional[float] = None,
     include_latam: Optional[bool] = None,
-) -> Tuple[pd.DataFrame, List[str]]:
-    """Run the opportunities screener and return the results and notes."""
+) -> Tuple[pd.DataFrame, List[str], str]:
+    """Run the opportunities screener and return the results, notes and source."""
 
     tickers = _clean_manual_tickers(manual_tickers)
 
@@ -108,6 +108,7 @@ def run_opportunities_controller(
 
     notes: List[str] = []
     fallback_used = False
+    source = "yahoo"
 
     extra_notes: List[str] = []
 
@@ -132,6 +133,7 @@ def run_opportunities_controller(
         fallback_used = True
 
     if fallback_used:
+        source = "stub"
         df = run_screener_stub(
             manual_tickers=tickers,
             max_payout=max_payout,
@@ -163,7 +165,7 @@ def run_opportunities_controller(
                 "No se encontraron datos para: " + ", ".join(sorted(set(missing)))
             )
 
-    return df, notes
+    return df, notes, source
 
 
 def _normalize_yahoo_response(
@@ -268,7 +270,7 @@ def generate_opportunities_report(
     manual = filters.get("manual_tickers") or filters.get("tickers")
     include_technicals = bool(filters.get("include_technicals", False))
 
-    df, notes = run_opportunities_controller(
+    df, notes, source = run_opportunities_controller(
         manual_tickers=manual,
         max_payout=_as_optional_float(filters.get("max_payout")),
         min_div_streak=_as_optional_int(filters.get("min_div_streak")),
@@ -280,7 +282,7 @@ def generate_opportunities_report(
         include_latam=_as_optional_bool(filters.get("include_latam")),
     )
 
-    return {"table": df, "notes": notes}
+    return {"table": df, "notes": notes, "source": source}
 
 
 __all__ = ["run_opportunities_controller", "generate_opportunities_report"]
