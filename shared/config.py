@@ -76,7 +76,7 @@ class Settings:
             os.getenv("YAHOO_FUNDAMENTALS_TTL", cfg.get("YAHOO_FUNDAMENTALS_TTL", 3600))
         )
         self.YAHOO_QUOTES_TTL: int = int(
-            os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 900))
+            os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300))
         )
 
         flag_value = os.getenv(
