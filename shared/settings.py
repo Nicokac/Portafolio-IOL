@@ -17,6 +17,8 @@ cache_ttl_portfolio: int = settings.cache_ttl_portfolio
 cache_ttl_last_price: int = settings.cache_ttl_last_price
 cache_ttl_fx: int = settings.cache_ttl_fx
 cache_ttl_quotes: int = settings.cache_ttl_quotes
+yahoo_fundamentals_ttl: int = settings.yahoo_fundamentals_ttl
+yahoo_quotes_ttl: int = settings.yahoo_quotes_ttl
 quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 
@@ -31,6 +33,8 @@ __all__ = [
     "cache_ttl_last_price",
     "cache_ttl_fx",
     "cache_ttl_quotes",
+    "yahoo_fundamentals_ttl",
+    "yahoo_quotes_ttl",
     "quotes_hist_maxlen",
     "max_quote_workers",
     "FEATURE_OPPORTUNITIES_TAB",
