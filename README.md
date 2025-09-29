@@ -36,6 +36,8 @@ Esta pestaña experimental destaca emisores que cumplen criterios combinados de 
 
 La nota informativa sobre los filtros avanzados permanece visible en ambos escenarios para recordar que los criterios pueden ajustarse sin importar la fuente de datos. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
 
+El universo automático que alimenta esta pestaña puede personalizarse sin modificar el código. Define la variable de entorno `OPPORTUNITIES_SYMBOL_POOL` con una lista JSON de tickers y métricas mínimas (`ticker`, `market_cap`, `pe`, `revenue_growth`, `region`) o apunta `OPPORTUNITIES_SYMBOL_POOL_FILE` a un archivo JSON externo con la misma estructura. Alternativamente, agrega la clave `"opportunities_symbol_pool"` en `config.json`. Si ninguno de estos valores está presente, la aplicación recurre a un conjunto determinista de emisores estadounidenses y latinoamericanos para mantener la estabilidad de los tests.
+
 ## Integración con Yahoo Finance
 
 La aplicación consulta [Yahoo Finance](https://finance.yahoo.com/) mediante la librería `yfinance` para enriquecer la vista de portafolio con series históricas, indicadores técnicos y métricas fundamentales/ESG. La barra lateral de healthcheck refleja si la última descarga provino de Yahoo o si fue necesario recurrir a un respaldo local, facilitando la observabilidad de esta dependencia externa.
