@@ -4,6 +4,7 @@ from pathlib import Path
 from types import ModuleType
 import sys
 import textwrap
+from typing import Mapping
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -53,7 +54,9 @@ def _render_app() -> AppTest:
     return app
 
 
-def _run_app_with_result(result: dict[str, object]) -> tuple[AppTest, MagicMock]:
+def _run_app_with_result(
+    result: dict[str, object], overrides: Mapping[str, object] | None = None
+) -> tuple[AppTest, MagicMock]:
     _normalize_streamlit_module()
     if not hasattr(st, "secrets"):
         st.secrets = Secrets({})
@@ -61,6 +64,17 @@ def _run_app_with_result(result: dict[str, object]) -> tuple[AppTest, MagicMock]
     patch_target = "controllers.opportunities.generate_opportunities_report"
     with patch(patch_target, return_value=result) as mock:
         app.run()
+        if overrides:
+            elements = (
+                list(app.get("number_input"))
+                + list(app.get("slider"))
+                + list(app.get("checkbox"))
+            )
+            for element in elements:
+                label = getattr(element, "label", None)
+                if label and label in overrides:
+                    element.set_value(overrides[label])
+            app.run()
         buttons = [
             button for button in app.get("button") if getattr(button, "key", None) == "search_opportunities"
         ]
@@ -115,21 +129,33 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
             "score_compuesto": [8.5, 7.9],
         }
     )
-    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"})
+    overrides = {
+        "Capitalización mínima (US$ MM)": 750,
+        "P/E máximo": 18.5,
+        "Crecimiento ingresos mínimo (%)": 12.0,
+        "Payout máximo (%)": 65.0,
+        "Racha mínima de dividendos (años)": 7,
+        "CAGR mínimo de dividendos (%)": 6.5,
+        "Incluir Latam": False,
+    }
+    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
     assert mock.call_count == 1
     called_with = mock.call_args.args[0]
     assert called_with == {
-        "min_market_cap": 500.0,
-        "max_pe": 25.0,
-        "min_revenue_growth": 5.0,
-        "include_latam": True,
+        "min_market_cap": 750.0,
+        "max_pe": 18.5,
+        "min_revenue_growth": 12.0,
+        "max_payout": 65.0,
+        "min_div_streak": 7,
+        "min_cagr": 6.5,
+        "include_latam": False,
     }
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
     captions = [element.value for element in app.get("caption")]
     assert any("Yahoo Finance" in caption for caption in captions)
     assert (
-        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento, payout, racha de dividendos, CAGR e inclusión de Latam requieren datos en vivo de Yahoo."
         in captions
     )
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
