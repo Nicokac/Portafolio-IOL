@@ -31,9 +31,8 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 La vista beta evoluciona hacia un universo dinámico que se recalcula en cada sesión combinando:
 
-- Emisores declarados manualmente en `config.json` (cuando existen).
-- Un listado generado por `YahooFinanceClient.list_symbols_by_markets` siempre que no haya tickers definidos en la configuración. El alcance del listado se controla mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
-- Un conjunto determinista de respaldo para garantizar resultados cuando no hay configuración externa ni datos remotos.
+- Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
+- Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
 El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
 
