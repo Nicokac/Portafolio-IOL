@@ -106,6 +106,28 @@ def render_opportunities_tab() -> None:
             step=1.0,
             help="Requiere un crecimiento anual de ingresos superior al valor indicado.",
         )
+        max_payout = st.number_input(
+            "Payout máximo (%)",
+            min_value=0.0,
+            max_value=200.0,
+            value=80.0,
+            step=1.0,
+            help="Descarta empresas con payout ratio superior al valor indicado (predeterminado: 80%).",
+        )
+        min_div_streak = st.slider(
+            "Racha mínima de dividendos (años)",
+            min_value=0,
+            max_value=30,
+            value=5,
+            help="Exige al menos la cantidad seleccionada de años consecutivos pagando dividendos (predeterminado: 5 años).",
+        )
+        min_cagr = st.number_input(
+            "CAGR mínimo de dividendos (%)",
+            min_value=-50.0,
+            value=4.0,
+            step=0.5,
+            help="Filtra compañías con crecimiento anual compuesto inferior al valor indicado (predeterminado: 4%).",
+        )
         include_latam = st.checkbox(
             "Incluir Latam",
             value=True,
@@ -137,6 +159,9 @@ def render_opportunities_tab() -> None:
             "min_market_cap": float(min_market_cap),
             "max_pe": float(max_pe),
             "min_revenue_growth": float(min_growth),
+            "max_payout": float(max_payout),
+            "min_div_streak": int(min_div_streak),
+            "min_cagr": float(min_cagr),
             "include_latam": bool(include_latam),
         }
 
@@ -156,7 +181,7 @@ def render_opportunities_tab() -> None:
         else:
             st.caption("Resultados obtenidos de Yahoo Finance")
         st.caption(
-            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento e inclusión de Latam requieren datos en vivo de Yahoo."
+            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento, payout, racha de dividendos, CAGR e inclusión de Latam requieren datos en vivo de Yahoo."
         )
 
         if notes:
