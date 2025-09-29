@@ -91,6 +91,12 @@ def run_opportunities_controller(
         "manual_tickers": tickers or None,
         "include_technicals": include_technicals,
     }
+    if max_payout is not None:
+        yahoo_kwargs["max_payout"] = float(max_payout)
+    if min_div_streak is not None:
+        yahoo_kwargs["min_div_streak"] = int(min_div_streak)
+    if min_cagr is not None:
+        yahoo_kwargs["min_cagr"] = float(min_cagr)
     if min_market_cap is not None:
         yahoo_kwargs["min_market_cap"] = float(min_market_cap)
     if max_pe is not None:

@@ -305,3 +305,99 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
 
     assert not any("Datos simulados" in note for note in notes)
     assert {ticker for ticker in df["ticker"]} == {"ABC"}
+
+
+def test_run_opportunities_controller_applies_new_filters(
+    monkeypatch: pytest.MonkeyPatch, comprehensive_data: dict[str, dict[str, object]]
+) -> None:
+    base_fundamentals = comprehensive_data["ABC"]["fundamentals"].copy()
+    base_shares = comprehensive_data["ABC"]["shares"].copy()
+    base_prices = comprehensive_data["ABC"]["prices"].copy()
+
+    abc_dividends = pd.DataFrame(
+        {
+            "date": pd.to_datetime(
+                [
+                    "2020-03-01",
+                    "2021-03-01",
+                    "2022-03-01",
+                    "2023-03-01",
+                ],
+                utc=True,
+            ),
+            "amount": [1.5, 1.5, 1.5, 1.5],
+        }
+    )
+
+    payout_fundamentals = base_fundamentals.copy()
+    payout_fundamentals.update({"ticker": "PAY", "payout_ratio": 80.0})
+
+    streak_dividends = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2022-03-01", "2023-03-01"], utc=True),
+            "amount": [1.0, 0.4],
+        }
+    )
+    streak_fundamentals = base_fundamentals.copy()
+    streak_fundamentals.update({"ticker": "STK"})
+
+    cagr_prices = base_prices.copy()
+    cagr_prices["close"] = 100.0
+    cagr_prices["adj_close"] = 100.0
+    cagr_fundamentals = base_fundamentals.copy()
+    cagr_fundamentals.update({"ticker": "CGR"})
+
+    data = {
+        "ABC": {
+            "fundamentals": base_fundamentals.copy(),
+            "dividends": abc_dividends,
+            "shares": base_shares.copy(),
+            "prices": base_prices.copy(),
+        },
+        "PAY": {
+            "fundamentals": payout_fundamentals,
+            "dividends": abc_dividends.copy(),
+            "shares": base_shares.copy(),
+            "prices": base_prices.copy(),
+        },
+        "STK": {
+            "fundamentals": streak_fundamentals,
+            "dividends": streak_dividends,
+            "shares": base_shares.copy(),
+            "prices": base_prices.copy(),
+        },
+        "CGR": {
+            "fundamentals": cagr_fundamentals,
+            "dividends": abc_dividends.copy(),
+            "shares": base_shares.copy(),
+            "prices": cagr_prices,
+        },
+    }
+
+    client = FakeYahooClient(data)
+
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
+
+    def _stub_not_expected(**_kwargs):
+        raise AssertionError("stub should not be used when Yahoo succeeds")
+
+    monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
+
+    df, notes = ctrl.run_opportunities_controller(
+        manual_tickers=["abc", "pay", "stk", "cgr"],
+        max_payout=50.0,
+        min_div_streak=3,
+        min_cagr=5.0,
+        include_technicals=False,
+    )
+
+    assert list(df["ticker"]) == ["ABC", "PAY", "STK", "CGR"]
+    results = {row["ticker"]: row for _, row in df.iterrows()}
+
+    assert not pd.isna(results["ABC"]["payout_ratio"])
+    assert float(results["ABC"]["payout_ratio"]) == pytest.approx(40.0)
+    assert pd.isna(results["PAY"]["payout_ratio"])
+    assert pd.isna(results["STK"]["dividend_streak"])
+    assert pd.isna(results["CGR"]["cagr"])
+
+    assert notes == ["No se encontraron datos para: CGR, PAY, STK"]
