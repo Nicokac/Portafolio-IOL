@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, TypeVar
+from typing import Any, Callable, Dict, Iterable, Sequence, TypeVar
 
 import pandas as pd
 import requests
@@ -36,6 +36,8 @@ def _normalise_percentage(value: Any) -> float | pd.NA:
 class YahooFinanceClient:
     """Wrapper around :mod:`yfinance` with consistent outputs."""
 
+    _SCREENER_URL = "https://query2.finance.yahoo.com/v1/finance/screener"
+
     def _with_ticker(self, ticker: str, loader: Callable[[yf.Ticker], T]) -> T:
         session = requests.Session()
         symbol = _normalise_symbol(ticker)
@@ -46,6 +48,106 @@ class YahooFinanceClient:
             raise
         except Exception as exc:  # pragma: no cover - network/parsing issues
             raise AppError(f"Error al obtener datos para {symbol} desde Yahoo Finance") from exc
+        finally:
+            session.close()
+
+    @cached(ttl=YAHOO_QUOTES_TTL)
+    def list_symbols_by_markets(
+        self, markets: Sequence[str], *, size: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Fetch a list of tickers for the requested exchanges."""
+
+        normalized_markets: list[str] = []
+        seen_markets: set[str] = set()
+        for raw in markets:
+            market = str(raw or "").strip().upper()
+            if not market or market in seen_markets:
+                continue
+            normalized_markets.append(market)
+            seen_markets.add(market)
+
+        if not normalized_markets:
+            return []
+
+        limit = size if isinstance(size, int) and size > 0 else 250
+        limit = min(limit, 250)
+
+        session = requests.Session()
+        try:
+            aggregated: list[dict[str, Any]] = []
+            seen_symbols: set[str] = set()
+
+            for market in normalized_markets:
+                payload = {
+                    "offset": 0,
+                    "size": limit,
+                    "quoteType": "EQUITY",
+                    "sortField": "intradaymarketcap",
+                    "sortType": "DESC",
+                    "query": {
+                        "operator": "and",
+                        "operands": [
+                            {
+                                "operator": "or",
+                                "operands": [
+                                    {"operator": "eq", "operands": ["exchange", market]},
+                                    {"operator": "eq", "operands": ["market", market]},
+                                ],
+                            }
+                        ],
+                    },
+                }
+
+                try:
+                    response = session.post(
+                        self._SCREENER_URL, json=payload, timeout=15
+                    )
+                    response.raise_for_status()
+                except requests.RequestException as exc:  # pragma: no cover - network issues
+                    raise AppError(
+                        f"No se pudo obtener el listado de {market} desde Yahoo Finance"
+                    ) from exc
+
+                try:
+                    data = response.json()
+                except ValueError as exc:  # pragma: no cover - invalid payload
+                    raise AppError(
+                        "Yahoo Finance devolvió una respuesta inválida para el screener"
+                    ) from exc
+
+                finance = data.get("finance") if isinstance(data, dict) else None
+                results = finance.get("result") if isinstance(finance, dict) else None
+                if not isinstance(results, Iterable):
+                    continue
+
+                quotes: list[dict[str, Any]] = []
+                for item in results:
+                    if not isinstance(item, dict):
+                        continue
+                    entries = item.get("quotes")
+                    if isinstance(entries, list):
+                        quotes.extend(q for q in entries if isinstance(q, dict))
+
+                for quote in quotes:
+                    symbol = quote.get("symbol")
+                    ticker = _normalise_symbol(symbol)
+                    if not ticker or ticker in seen_symbols:
+                        continue
+
+                    aggregated.append(
+                        {
+                            "ticker": ticker,
+                            "market_cap": quote.get("marketCap"),
+                            "pe_ratio": quote.get("trailingPE") or quote.get("peRatio"),
+                            "revenue_growth": quote.get("revenueGrowth"),
+                            "country": quote.get("country") or quote.get("region"),
+                            "market": quote.get("market"),
+                            "exchange": quote.get("exchange"),
+                        }
+                    )
+                    seen_symbols.add(ticker)
+
+            return aggregated
         finally:
             session.close()
 
