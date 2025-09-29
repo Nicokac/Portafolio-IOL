@@ -134,7 +134,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         {
             "ticker": ["AAPL", "MSFT"],
             "price": [180.12, 325.74],
-            "score_compuesto": [8.5, 7.9],
+            "score_compuesto": [85.0, 79.0],
             "sector": ["Technology", "Technology"],
         }
     )
@@ -149,7 +149,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Crecimiento mínimo de EPS (%)": 4.0,
         "Buyback mínimo (%)": 1.5,
         "Incluir Latam": False,
-        "Score mínimo": 7.2,
+        "Score mínimo": 72,
         "Máximo de resultados": 15,
         "Sectores": ["Technology"],
     }
@@ -167,7 +167,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "min_buyback": 1.5,
         "include_latam": False,
         "include_technicals": False,
-        "min_score_threshold": 7.2,
+        "min_score_threshold": 72.0,
         "max_results": 15,
         "sectors": ["Technology"],
     }
@@ -189,7 +189,7 @@ def test_checkbox_include_technicals_updates_params() -> None:
         {
             "ticker": ["AAPL"],
             "price": [180.12],
-            "score_compuesto": [8.5],
+            "score_compuesto": [85.0],
         }
     )
     overrides = {"Incluir indicadores técnicos": True}
@@ -229,6 +229,7 @@ def test_excluded_tickers_not_displayed_even_when_relaxing_filters(
     overrides = {
         "Capitalización mínima (US$ MM)": 0,
         "P/E máximo": 60.0,
+        "Score mínimo": 50,
     }
 
     app, mock = _run_app_with_result(fake_generate, overrides)
@@ -251,7 +252,7 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
         {
             "ticker": ["KO"],
             "price": [58.31],
-            "score_compuesto": [6.1],
+            "score_compuesto": [61.0],
         }
     )
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
@@ -271,7 +272,7 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
         {
             "ticker": ["PFE"],
             "price": [35.12],
-            "score_compuesto": [5.4],
+            "score_compuesto": [54.0],
         }
     )
     extra_note = "Dato adicional relevante"
@@ -295,11 +296,11 @@ def test_notes_block_highlights_backend_messages() -> None:
         {
             "ticker": ["AMZN"],
             "price": [140.25],
-            "score_compuesto": [7.8],
+            "score_compuesto": [78.0],
         }
     )
     top_note = "Se recortaron los resultados a los 5 mejores según el score compuesto."
-    threshold_note = "No se encontraron candidatos con score >= 7.5 tras aplicar el threshold."
+    threshold_note = "No se encontraron candidatos con score >= 75 tras aplicar el threshold."
     regular_note = "Considerar diversificación adicional."
 
     app, _ = _run_app_with_result(

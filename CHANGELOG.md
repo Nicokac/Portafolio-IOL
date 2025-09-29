@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.1]
 ### Changed
-- El `score_compuesto` ahora se normaliza en escala 0-10 y se filtra automáticamente usando el umbral configurable `MIN_SCORE_THRESHOLD` (6.0 por defecto) para reducir ruido en los resultados de la pestaña beta.
+- El `score_compuesto` ahora se normaliza en escala 0-100 y se filtra automáticamente usando el umbral configurable `MIN_SCORE_THRESHOLD` (80 por defecto) para reducir ruido en los resultados de la pestaña beta.
 - El listado final de oportunidades respeta el límite configurable `MAX_RESULTS` (20 por defecto), manteniendo la tabla acotada incluso cuando Yahoo Finance devuelve universos extensos.
 
 ### UI

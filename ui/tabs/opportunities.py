@@ -190,10 +190,10 @@ def render_opportunities_tab() -> None:
         )
         min_score_threshold = st.slider(
             "Score mínimo",
-            min_value=0.0,
-            max_value=10.0,
-            value=6.0,
-            step=0.1,
+            min_value=0,
+            max_value=100,
+            value=80,
+            step=1,
             help="Define el puntaje mínimo requerido para considerar un candidato.",
         )
         max_results = st.number_input(
