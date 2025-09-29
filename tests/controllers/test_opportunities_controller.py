@@ -180,10 +180,29 @@ def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
         assert kwargs["manual_tickers"] == ["abc"]
+        assert kwargs["include_technicals"] is True
         return df, ["note"], "stub"
 
     monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
 
-    result = sut.generate_opportunities_report({"manual_tickers": ["abc"]})
+    result = sut.generate_opportunities_report(
+        {"manual_tickers": ["abc"], "include_technicals": True}
+    )
 
     assert result == {"table": df, "notes": ["note"], "source": "stub"}
+
+
+def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame([_make_sample_row()])
+
+    captured: Dict[str, Any] = {}
+
+    def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
+        captured.update(kwargs)
+        return df, [], "yahoo"
+
+    monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
+
+    sut.generate_opportunities_report({"include_technicals": "false"})
+
+    assert captured["include_technicals"] is False

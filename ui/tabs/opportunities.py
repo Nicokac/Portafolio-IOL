@@ -133,6 +133,11 @@ def render_opportunities_tab() -> None:
             value=True,
             help="Extiende el screening a emisores listados en Latinoamérica.",
         )
+        include_technicals = st.checkbox(
+            "Incluir indicadores técnicos",
+            value=False,
+            help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
+        )
 
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
@@ -163,6 +168,7 @@ def render_opportunities_tab() -> None:
             "min_div_streak": int(min_div_streak),
             "min_cagr": float(min_cagr),
             "include_latam": bool(include_latam),
+            "include_technicals": bool(include_technicals),
         }
 
         with st.spinner("Generando screening de oportunidades..."):

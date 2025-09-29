@@ -308,6 +308,27 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
     assert not any("Datos simulados" in note for note in notes)
     assert {ticker for ticker in df["ticker"]} == {"ABC"}
     assert source == "yahoo"
+    assert {"rsi", "sma_50", "sma_200"}.isdisjoint(df.columns)
+
+
+def test_run_opportunities_controller_exposes_technicals(monkeypatch, comprehensive_data):
+    fake_client = FakeYahooClient(comprehensive_data)
+
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: fake_client)
+    monkeypatch.setattr(
+        ctrl,
+        "run_screener_stub",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fallback should not run")),
+    )
+
+    df, notes, source = ctrl.run_opportunities_controller(
+        manual_tickers=["abc"],
+        include_technicals=True,
+    )
+
+    assert not notes
+    assert source == "yahoo"
+    assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
 
 
 def test_run_opportunities_controller_applies_new_filters(
