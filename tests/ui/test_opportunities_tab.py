@@ -61,8 +61,12 @@ def _run_app_with_result(result: dict[str, object]) -> tuple[AppTest, MagicMock]
     patch_target = "controllers.opportunities.generate_opportunities_report"
     with patch(patch_target, return_value=result) as mock:
         app.run()
-        buttons = app.get("button")
-        assert buttons, "Expected the action button to be rendered"
+        buttons = [
+            button for button in app.get("button") if getattr(button, "key", None) == "search_opportunities"
+        ]
+        assert (
+            buttons
+        ), "Expected the search button with key 'search_opportunities' to be rendered"
         buttons[0].click()
         app.run()
     return app, mock

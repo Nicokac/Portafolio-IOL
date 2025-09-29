@@ -112,7 +112,12 @@ def render_opportunities_tab() -> None:
         "el análisis en modo beta."
     )
 
-    if st.button("Buscar oportunidades", type="primary", use_container_width=True):
+    if st.button(
+        "Buscar oportunidades",
+        key="search_opportunities",
+        type="primary",
+        use_container_width=True,
+    ):
         try:
             from controllers.opportunities import generate_opportunities_report
         except ImportError as err:  # pragma: no cover - fallback when controller missing
