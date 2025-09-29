@@ -111,6 +111,56 @@ _BASE_OPPORTUNITIES = [
     },
 ]
 
+# Base universe used when the screener needs to propose tickers automatically.
+# These values are intentionally static to guarantee deterministic behaviour in
+# tests and during local development. The financial metrics are approximate and
+# only serve to exercise the filtering logic when an external data provider is
+# not available.
+_DEFAULT_SYMBOL_POOL: list[dict[str, object]] = [
+    {
+        "ticker": "AAPL",
+        "market_cap": 2_700_000_000_000,
+        "pe": 29.4,
+        "revenue_growth": 7.8,
+        "region": "US",
+    },
+    {
+        "ticker": "MSFT",
+        "market_cap": 2_500_000_000_000,
+        "pe": 33.7,
+        "revenue_growth": 10.5,
+        "region": "US",
+    },
+    {
+        "ticker": "KO",
+        "market_cap": 260_000_000_000,
+        "pe": 24.1,
+        "revenue_growth": 4.2,
+        "region": "US",
+    },
+    {
+        "ticker": "JNJ",
+        "market_cap": 420_000_000_000,
+        "pe": 15.9,
+        "revenue_growth": 3.5,
+        "region": "US",
+    },
+    {
+        "ticker": "MELI",
+        "market_cap": 60_000_000_000,
+        "pe": 78.0,
+        "revenue_growth": 25.0,
+        "region": "LATAM",
+    },
+    {
+        "ticker": "GGAL",
+        "market_cap": 7_500_000_000,
+        "pe": 12.4,
+        "revenue_growth": 18.2,
+        "region": "LATAM",
+    },
+]
+
 
 def _normalise_tickers(manual_tickers: Optional[Sequence[str]]) -> List[str]:
     """Normalise tickers to uppercase strings without duplicates."""
@@ -141,6 +191,56 @@ def _append_placeholder_rows(df: pd.DataFrame, tickers: Sequence[str]) -> pd.Dat
     df = df.reindex(tickers)
     df.index.name = "ticker"
     return df.reset_index()
+
+
+def _load_default_tickers(
+    *,
+    min_market_cap: Optional[float] = None,
+    max_pe: Optional[float] = None,
+    min_revenue_growth: Optional[float] = None,
+    include_latam: Optional[bool] = None,
+) -> List[str]:
+    """Return a deterministic list of tickers based on the static pool."""
+
+    tickers: List[str] = []
+    latam_allowed = bool(include_latam) if include_latam is not None else False
+
+    for entry in _DEFAULT_SYMBOL_POOL:
+        ticker = str(entry.get("ticker", "")).strip().upper()
+        if not ticker or ticker in tickers:
+            continue
+
+        region = str(entry.get("region", "")).strip().upper() or "US"
+        if not latam_allowed and region == "LATAM":
+            continue
+
+        market_cap = entry.get("market_cap")
+        if min_market_cap is not None:
+            try:
+                if market_cap is None or float(market_cap) < float(min_market_cap):
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+        pe_ratio = entry.get("pe")
+        if max_pe is not None:
+            try:
+                if pe_ratio is None or float(pe_ratio) > float(max_pe):
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+        revenue_growth = entry.get("revenue_growth")
+        if min_revenue_growth is not None:
+            try:
+                if revenue_growth is None or float(revenue_growth) < float(min_revenue_growth):
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+        tickers.append(ticker)
+
+    return tickers
 
 
 def run_screener_stub(
@@ -447,13 +547,30 @@ def run_screener_yahoo(
     min_revenue_growth: Optional[float] = None,
     include_latam: Optional[bool] = None,
     client: YahooFinanceClient | None = None,
-) -> pd.DataFrame:
+) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
     """Run the Yahoo-based screener returning the same schema as the stub."""
 
     tickers = _normalise_tickers(manual_tickers)
+    notes: list[str] = []
+    using_default_universe = False
+
+    if not tickers:
+        tickers = _load_default_tickers(
+            min_market_cap=min_market_cap,
+            max_pe=max_pe,
+            min_revenue_growth=min_revenue_growth,
+            include_latam=include_latam,
+        )
+        using_default_universe = True
+
     if not tickers:
         columns = _output_columns(include_technicals)
-        return pd.DataFrame(columns=columns)
+        df = pd.DataFrame(columns=columns)
+        if using_default_universe:
+            notes.append(
+                "No se encontraron símbolos que cumplan los filtros especificados."
+            )
+        return (df, notes) if notes else df
 
     client = client or YahooFinanceClient()
     rows: list[dict[str, object]] = []
@@ -578,7 +695,25 @@ def run_screener_yahoo(
         df = df[_output_columns(True)]
 
     df = df.reset_index(drop=True)
-    return df
+
+    if using_default_universe and tickers:
+        filters_applied: list[str] = []
+        if min_market_cap is not None:
+            filters_applied.append(f"min_market_cap={min_market_cap}")
+        if max_pe is not None:
+            filters_applied.append(f"max_pe={max_pe}")
+        if min_revenue_growth is not None:
+            filters_applied.append(f"min_revenue_growth={min_revenue_growth}")
+        if include_latam is not None:
+            filters_applied.append(f"include_latam={bool(include_latam)}")
+
+        notes.append(
+            f"📈 Analizando {len(tickers)} símbolos seleccionados automáticamente"
+        )
+        if filters_applied:
+            notes.append("Filtros aplicados: " + ", ".join(filters_applied))
+
+    return (df, notes) if notes else df
 
 
 __all__ = ["run_screener_stub", "run_screener_yahoo"]
