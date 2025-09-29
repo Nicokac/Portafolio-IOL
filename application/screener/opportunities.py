@@ -410,6 +410,7 @@ def _apply_filters_and_finalize(
     include_technicals: bool,
     restrict_to_tickers: Sequence[str] | None = None,
     placeholder_tickers: Sequence[str] | None = None,
+    exclude_tickers: Sequence[str] | None = None,
     market_cap_column: str = "market_cap",
     pe_ratio_column: str = "pe_ratio",
     revenue_growth_column: str = "revenue_growth",
@@ -425,6 +426,13 @@ def _apply_filters_and_finalize(
     """Apply common filters and final adjustments for screener outputs."""
 
     result = df.copy()
+    exclude_set: set[str] | None = None
+    if exclude_tickers:
+        exclude_set = {
+            str(ticker).strip().upper()
+            for ticker in exclude_tickers
+            if str(ticker).strip()
+        }
     normalized_allowed: set[str] | None = None
     if allowed_sectors:
         normalized_allowed = {str(value).casefold() for value in allowed_sectors}
@@ -527,11 +535,21 @@ def _apply_filters_and_finalize(
             .isin(normalized_allowed)
         ]
 
+    if exclude_set and "ticker" in result.columns:
+        normalized_tickers = result["ticker"].astype("string").str.upper()
+        result = result[~normalized_tickers.isin(exclude_set)]
+
     if restrict_to_tickers:
         result = result[result["ticker"].isin(restrict_to_tickers)]
 
     if placeholder_tickers:
         placeholders = list(placeholder_tickers)
+        if exclude_set:
+            placeholders = [
+                ticker
+                for ticker in placeholders
+                if str(ticker).strip().upper() not in exclude_set
+            ]
         if normalized_allowed and original_sector_series is not None:
             placeholders = [
                 ticker
@@ -559,6 +577,7 @@ def _apply_filters_and_finalize(
 def run_screener_stub(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
+    exclude_tickers: Optional[Iterable[str]] = None,
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
@@ -579,6 +598,9 @@ def run_screener_stub(
         Optional iterable of tickers to focus on. When provided, the returned
         DataFrame will contain rows for these tickers (missing data will be
         represented with ``NaN`` values).
+    exclude_tickers:
+        Iterable opcional de símbolos que deben descartarse del resultado
+        final incluso si aparecen en la base simulada o en la lista manual.
     max_payout:
         Maximum payout ratio percentage allowed. Rows exceeding this value are
         dropped.
@@ -609,6 +631,11 @@ def run_screener_stub(
 
     df = pd.DataFrame(_BASE_OPPORTUNITIES)
     manual = _normalise_tickers(manual_tickers)
+    excluded = set(_normalise_tickers(exclude_tickers))
+
+    if excluded:
+        df = df[~df["ticker"].isin(excluded)]
+        manual = [ticker for ticker in manual if ticker not in excluded]
 
     df = df.copy()
     payout_component = (100 - df["payout_ratio"]).clip(lower=0, upper=100) * 0.4
@@ -632,6 +659,7 @@ def run_screener_stub(
         include_technicals=include_technicals,
         restrict_to_tickers=manual or None,
         placeholder_tickers=manual or None,
+        exclude_tickers=sorted(excluded) or None,
         market_cap_column="market_cap",
         pe_ratio_column="pe_ratio",
         revenue_growth_column="revenue_growth",
@@ -898,6 +926,7 @@ def _is_latam_country(country: object | None) -> bool:
 def run_screener_yahoo(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
+    exclude_tickers: Optional[Iterable[str]] = None,
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
@@ -911,9 +940,19 @@ def run_screener_yahoo(
     min_buyback: Optional[float] = None,
     client: YahooFinanceClient | None = None,
 ) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
-    """Run the Yahoo-based screener returning the same schema as the stub."""
+    """Run the Yahoo-based screener returning the same schema as the stub.
+
+    Parameters
+    ----------
+    exclude_tickers:
+        Iterable opcional de símbolos a excluir de los resultados finales aun
+        cuando aparezcan en la respuesta del proveedor de datos.
+    """
 
     tickers = _normalise_tickers(manual_tickers)
+    excluded = set(_normalise_tickers(exclude_tickers))
+    if excluded:
+        tickers = [ticker for ticker in tickers if ticker not in excluded]
     notes: list[str] = []
     using_default_universe = False
     listings_meta: dict[str, Mapping[str, object]] = {}
@@ -934,7 +973,11 @@ def run_screener_yahoo(
                 ticker_value = entry
 
             ticker_clean = str(ticker_value or "").strip().upper()
-            if not ticker_clean or ticker_clean in seen:
+            if (
+                not ticker_clean
+                or ticker_clean in seen
+                or ticker_clean in excluded
+            ):
                 continue
 
             metadata["ticker"] = ticker_clean
@@ -1084,6 +1127,7 @@ def run_screener_yahoo(
         include_latam_flag=include_latam_flag,
         include_technicals=include_technicals,
         placeholder_tickers=tickers,
+        exclude_tickers=sorted(excluded) or None,
         market_cap_column="_meta_market_cap",
         pe_ratio_column="_meta_pe_ratio",
         revenue_growth_column="_meta_revenue_growth",

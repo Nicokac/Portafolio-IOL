@@ -95,6 +95,7 @@ def _ensure_columns(df: pd.DataFrame, include_technicals: bool) -> pd.DataFrame:
 def run_opportunities_controller(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
+    exclude_tickers: Optional[Iterable[str]] = None,
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
@@ -110,6 +111,8 @@ def run_opportunities_controller(
     """Run the opportunities screener and return the results, notes and source."""
 
     tickers = _clean_manual_tickers(manual_tickers)
+    excluded = _clean_manual_tickers(exclude_tickers)
+    excluded_set = set(excluded)
 
     selected_sectors = _clean_sectors(sectors)
 
@@ -117,6 +120,8 @@ def run_opportunities_controller(
         "manual_tickers": tickers or None,
         "include_technicals": include_technicals,
     }
+    if excluded_set:
+        yahoo_kwargs["exclude_tickers"] = sorted(excluded_set)
     if max_payout is not None:
         yahoo_kwargs["max_payout"] = float(max_payout)
     if min_div_streak is not None:
@@ -170,6 +175,7 @@ def run_opportunities_controller(
         source = "stub"
         df = run_screener_stub(
             manual_tickers=tickers,
+            exclude_tickers=excluded or None,
             max_payout=max_payout,
             min_div_streak=min_div_streak,
             min_cagr=min_cagr,
@@ -192,6 +198,8 @@ def run_opportunities_controller(
     if tickers:
         missing = []
         for ticker in tickers:
+            if ticker in excluded_set:
+                continue
             rows = df[df["ticker"] == ticker]
             if rows.empty:
                 missing.append(ticker)
@@ -318,6 +326,7 @@ def generate_opportunities_report(
 
     df, notes, source = run_opportunities_controller(
         manual_tickers=manual,
+        exclude_tickers=filters.get("exclude_tickers"),
         max_payout=_as_optional_float(filters.get("max_payout")),
         min_div_streak=_as_optional_int(filters.get("min_div_streak")),
         min_cagr=_as_optional_float(filters.get("min_cagr")),
