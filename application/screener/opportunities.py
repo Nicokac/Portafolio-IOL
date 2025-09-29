@@ -528,11 +528,18 @@ def _apply_filters_and_finalize(
         result = result[mask]
 
     if min_score_threshold is not None and "score_compuesto" in result.columns:
+        threshold = float(min_score_threshold)
         series = pd.to_numeric(result["score_compuesto"], errors="coerce")
-        mask = series >= float(min_score_threshold)
+        before_threshold = len(result)
+        mask = series >= threshold
         if allow_na_filters:
             mask = series.isna() | mask
         result = result[mask]
+        if before_threshold > 0 and result.empty:
+            notes.append(
+                "Ningún ticker superó el puntaje mínimo de "
+                f"{threshold:g}."
+            )
 
     if include_latam_flag is False and latam_column in result.columns:
         result = result[~result[latam_column].fillna(False)]
@@ -599,17 +606,6 @@ def _apply_filters_and_finalize(
             result["score_compuesto"] = normalized.where(~scores.isna(), pd.NA)
         else:
             result["score_compuesto"] = pd.NA
-
-        if min_score_threshold is not None:
-            threshold = float(min_score_threshold)
-            before_threshold = len(result)
-            mask = pd.to_numeric(result["score_compuesto"], errors="coerce") >= threshold
-            result = result[mask]
-            if before_threshold > 0 and result.empty:
-                notes.append(
-                    "Ningún ticker superó el puntaje mínimo de "
-                    f"{threshold:g}."
-                )
 
         if "score_compuesto" in result.columns:
             result = result.sort_values(

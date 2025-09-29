@@ -463,6 +463,38 @@ def test_apply_filters_normalises_scores_and_limits_results(monkeypatch):
     assert any("mínimo esperado: 4" in note for note in notes)
 
 
+def test_apply_filters_keeps_scores_equal_to_threshold():
+    base = pd.DataFrame(
+        {
+            "ticker": ["AAA", "BBB", "CCC"],
+            "sector": ["Tech", "Tech", "Tech"],
+            "payout_ratio": [20.0, 30.0, 10.0],
+            "dividend_streak": [5, 7, 9],
+            "cagr": [6.0, 8.0, 12.0],
+            "dividend_yield": [1.0, 1.1, 1.2],
+            "price": [100.0, 110.0, 120.0],
+            "score_compuesto": [50.0, 55.0, 70.0],
+            "trailing_eps": [5.0, 5.0, 5.0],
+            "forward_eps": [5.5, 5.5, 5.5],
+            "buyback": [0.5, 0.5, 0.5],
+        }
+    )
+
+    result = ops._apply_filters_and_finalize(
+        base,
+        include_technicals=False,
+        allow_na_filters=False,
+        min_score_threshold=55.0,
+    )
+
+    assert set(result["ticker"]) == {"BBB", "CCC"}
+    threshold_row = result[result["ticker"] == "BBB"]
+    assert not threshold_row.empty
+    assert threshold_row["score_compuesto"].iloc[0] == pytest.approx(0.0)
+    notes = result.attrs.get("_notes", [])
+    assert not any("puntaje mínimo" in note for note in notes)
+
+
 def test_run_screener_yahoo_emits_note_when_score_threshold_excludes_all(
     comprehensive_data: dict[str, dict[str, object]]
 ) -> None:
@@ -476,7 +508,8 @@ def test_run_screener_yahoo_emits_note_when_score_threshold_excludes_all(
 
     assert isinstance(result, tuple)
     df, notes = result
-    assert df.empty
+    assert list(df["ticker"]) == ["ABC"]
+    assert df["score_compuesto"].isna().all()
     assert any("puntaje mínimo" in note for note in notes)
 
 
