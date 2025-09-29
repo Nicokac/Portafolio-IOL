@@ -208,7 +208,6 @@ def run_opportunities_controller(
             min_score_threshold=min_score_value,
             max_results=max_results_value,
             sectors=selected_sectors or None,
-
         )
         stub_notes: List[str] = []
         if isinstance(stub_result, tuple) and len(stub_result) == 2:

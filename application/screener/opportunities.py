@@ -766,9 +766,7 @@ def run_screener_stub(
             "forward_eps",
             "buyback",
         ),
-
         allowed_sectors=_normalize_sector_filters(sectors),
-
     )
 
     notes = list(result.attrs.pop("_notes", []))
@@ -1239,9 +1237,7 @@ def run_screener_yahoo(
         trailing_eps_column="_meta_trailing_eps",
         forward_eps_column="_meta_forward_eps",
         buyback_column="_meta_buyback",
-
         allowed_sectors=sector_filters,
-
         allow_na_filters=True,
         extra_drop_columns=(
             "_meta_market_cap",
@@ -1252,7 +1248,6 @@ def run_screener_yahoo(
             "_meta_forward_eps",
             "_meta_buyback",
         ),
-
     )
 
     filter_notes = list(df.attrs.pop("_notes", []))
