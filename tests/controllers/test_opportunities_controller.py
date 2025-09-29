@@ -120,10 +120,35 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "min_score_threshold": pytest.approx(42.5),
         "max_results": 15,
         "sectors": ["Technology", "Healthcare"],
+        "min_score_threshold": pytest.approx(55.5),
+        "max_results": 10,
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert set(df["ticker"]) == {"AAPL"}
     assert notes == ["Yahoo note"]
+    assert source == "yahoo"
+
+
+def test_controller_propagates_yahoo_notes(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = pd.DataFrame([_make_sample_row()])
+
+    def fake_yahoo(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:  # noqa: ARG001
+        return payload, ["Nota desde Yahoo"]
+
+    monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
+    monkeypatch.setattr(
+        sut,
+        "run_screener_stub",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("stub used")),
+    )
+
+    df, notes, source = sut.run_opportunities_controller(
+        manual_tickers=["aapl"],
+        include_technicals=False,
+    )
+
+    assert df.equals(payload[_EXPECTED_COLUMNS])
+    assert notes == ["Nota desde Yahoo"]
     assert source == "yahoo"
 
 
@@ -148,7 +173,6 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
             return stub_result, ["Stub note"]
         filtered = stub_result[~stub_result["ticker"].isin(exclude)]
         return filtered, ["Stub note"]
-
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
     df, notes, source = sut.run_opportunities_controller(

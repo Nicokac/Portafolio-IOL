@@ -160,7 +160,6 @@ def run_opportunities_controller(
         yahoo_kwargs["min_score_threshold"] = float(min_score_value)
     if max_results_value is not None:
         yahoo_kwargs["max_results"] = int(max_results_value)
-
     if selected_sectors:
         yahoo_kwargs["sectors"] = selected_sectors
 
@@ -210,6 +209,8 @@ def run_opportunities_controller(
             max_results=max_results_value,
 
             sectors=selected_sectors or None,
+            min_score_threshold=min_score_threshold,
+            max_results=max_results,
 
         )
         stub_notes: List[str] = []

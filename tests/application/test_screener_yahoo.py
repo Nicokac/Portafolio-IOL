@@ -169,7 +169,9 @@ def test_run_screener_yahoo_computes_metrics(comprehensive_data):
         "rsi": row["rsi"],
         "macd_hist": macd_hist,
     }
-    assert row["score_compuesto"] == ops._compute_score(metrics)
+    base_score = ops._compute_score(metrics)
+    assert base_score is not pd.NA
+    assert row["score_compuesto"] == pytest.approx(100.0)
 
 
 def test_run_screener_yahoo_marks_missing(caplog):
@@ -425,6 +427,57 @@ def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data
     assert list(df["ticker"]) == ["ABC"]
     assert any("seleccionados automáticamente" in note for note in notes)
     assert any("TEST" in note for note in notes)
+
+
+def test_apply_filters_normalises_scores_and_limits_results(monkeypatch):
+    base = pd.DataFrame(
+        {
+            "ticker": ["AAA", "BBB", "CCC"],
+            "sector": ["Tech", "Tech", "Tech"],
+            "payout_ratio": [20.0, 10.0, 15.0],
+            "dividend_streak": [5, 12, 8],
+            "cagr": [6.0, 12.0, 9.0],
+            "dividend_yield": [1.0, 1.2, 1.1],
+            "price": [100.0, 110.0, 105.0],
+            "score_compuesto": [10.0, 20.0, 15.0],
+            "trailing_eps": [5.0, 6.0, 5.5],
+            "forward_eps": [5.5, 6.5, 6.0],
+            "buyback": [0.5, 1.0, 0.8],
+        }
+    )
+    monkeypatch.setattr(ops.shared_settings, "OPPORTUNITIES_MIN_RESULTS", 4, raising=False)
+
+    result = ops._apply_filters_and_finalize(
+        base,
+        include_technicals=False,
+        allow_na_filters=True,
+        min_score_threshold=None,
+        max_results=2,
+    )
+
+    notes = result.attrs.get("_notes", [])
+
+    assert list(result["ticker"]) == ["BBB", "CCC"]
+    assert list(result["score_compuesto"]) == pytest.approx([100.0, 50.0])
+    assert any("máximo solicitado" in note for note in notes)
+    assert any("mínimo esperado: 4" in note for note in notes)
+
+
+def test_run_screener_yahoo_emits_note_when_score_threshold_excludes_all(
+    comprehensive_data: dict[str, dict[str, object]]
+) -> None:
+    client = FakeYahooClient(comprehensive_data)
+
+    result = ops.run_screener_yahoo(
+        manual_tickers=["ABC"],
+        client=client,
+        min_score_threshold=150.0,
+    )
+
+    assert isinstance(result, tuple)
+    df, notes = result
+    assert df.empty
+    assert any("puntaje mínimo" in note for note in notes)
 
 
 def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_data):
