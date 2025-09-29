@@ -86,7 +86,7 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
     client = AutoYahooClient(auto_dataset)
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
 
-    df, notes = run_opportunities_controller(
+    df, notes, source = run_opportunities_controller(
         manual_tickers=None,
         include_technicals=False,
         min_market_cap=8_000_000_000,
@@ -99,13 +99,15 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
     assert not df.isna().all(axis=None)
     assert any("seleccionados automáticamente" in note for note in notes)
     assert any("min_market_cap" in note for note in notes)
+    assert source == "yahoo"
 
 
 def test_controller_reports_when_no_candidates(monkeypatch):
     monkeypatch.setattr(ops, "_DEFAULT_SYMBOL_POOL", [], raising=False)
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: AutoYahooClient({}))
 
-    df, notes = run_opportunities_controller(manual_tickers=None)
+    df, notes, source = run_opportunities_controller(manual_tickers=None)
 
     assert df.empty
     assert any("No se encontraron símbolos" in note for note in notes)
+    assert source == "yahoo"

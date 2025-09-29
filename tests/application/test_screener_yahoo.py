@@ -296,7 +296,7 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
 
     monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
 
-    df, notes = ctrl.run_opportunities_controller(
+    df, notes, source = ctrl.run_opportunities_controller(
         manual_tickers=["abc"],
         include_technicals=False,
         min_market_cap=500_000_000,
@@ -307,6 +307,7 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
 
     assert not any("Datos simulados" in note for note in notes)
     assert {ticker for ticker in df["ticker"]} == {"ABC"}
+    assert source == "yahoo"
 
 
 def test_run_opportunities_controller_applies_new_filters(
@@ -385,7 +386,7 @@ def test_run_opportunities_controller_applies_new_filters(
 
     monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
 
-    df, notes = ctrl.run_opportunities_controller(
+    df, notes, source = ctrl.run_opportunities_controller(
         manual_tickers=["abc", "pay", "stk", "cgr"],
         max_payout=50.0,
         min_div_streak=3,
@@ -403,3 +404,4 @@ def test_run_opportunities_controller_applies_new_filters(
     assert pd.isna(results["CGR"]["cagr"])
 
     assert notes == ["No se encontraron datos para: CGR, PAY, STK"]
+    assert source == "yahoo"

@@ -115,7 +115,7 @@ def test_button_executes_controller_and_shows_yahoo_note() -> None:
             "score_compuesto": [8.5, 7.9],
         }
     )
-    app, mock = _run_app_with_result({"table": df, "notes": []})
+    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"})
     assert mock.call_count == 1
     called_with = mock.call_args.args[0]
     assert called_with == {
@@ -149,7 +149,7 @@ def test_fallback_note_is_displayed_when_present() -> None:
         }
     )
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
-    app, _ = _run_app_with_result({"table": df, "notes": [fallback_note]})
+    app, _ = _run_app_with_result({"table": df, "notes": [fallback_note], "source": "stub"})
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(fallback_note in block for block in markdown_blocks)
 
