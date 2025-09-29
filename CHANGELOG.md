@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - Las pruebas del controlador de oportunidades contemplan la parametrización del universo automático y los pools inyectados por entorno.
 
+## [0.3.14]
+### Added
+- Universo dinámico de oportunidades que combina emisores definidos en `config.json`, pools externos y el fallback determinista para adaptarse a cada sesión.
+- Filtros curados por Andy que ponderan payout ratio, deuda, crecimiento y momentum para priorizar emisores defensivos con upside.
+- Segmentación por sectores y regiones con etiquetas visibles en la UI para ajustar la composición del screener en tiempo real.
+- Indicadores técnicos configurables (RSI, MACD, medias móviles y Bandas de Bollinger) que se activan desde la barra lateral y alimentan el ranking final.
+
 ## [0.3.13] - 2025-09-30
 ### Changed
 - La leyenda en la pestaña beta ahora destaca dinámicamente si los datos provienen de Yahoo Finance o del stub local, evitando confusiones durante los failovers.

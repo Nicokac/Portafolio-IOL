@@ -29,14 +29,33 @@ Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se real
 
 ### Empresas con oportunidad (beta)
 
-Esta pestaña experimental destaca emisores que cumplen criterios combinados de liquidez mínima, spread ajustado y momentum de precio positivo observados en las últimas ruedas. Además, admite filtros avanzados como payout ratio máximo, racha mínima de dividendos y CAGR mínima para afinar la búsqueda. El listado actual se genera a partir de un dataset simulado que replica patrones de mercado mientras se evalúa la integración productiva; la lógica de filtrado es la misma tanto para los datos de Yahoo Finance como para el stub de respaldo, y la UI muestra explícitamente en la cabecera del listado cuál fue la fuente utilizada para cada renderizado mediante los siguientes captions:
+La vista beta evoluciona hacia un universo dinámico que se recalcula en cada sesión combinando:
 
-- **Resultados obtenidos de Yahoo Finance**: aparece cuando la descarga desde Yahoo se completa sin errores.
-- **⚠️ Resultados simulados (Yahoo no disponible)**: se muestra cuando la vista recurre al stub temporal.
+- Emisores declarados en `config.json`.
+- Pools definidos mediante las variables de entorno `OPPORTUNITIES_SYMBOL_POOL` y `OPPORTUNITIES_SYMBOL_POOL_FILE`.
+- Un conjunto determinista de respaldo para garantizar resultados cuando no hay configuración externa.
 
-La nota informativa sobre los filtros avanzados permanece visible en ambos escenarios para recordar que los criterios pueden ajustarse sin importar la fuente de datos. Los próximos pasos incluyen conectar con el servicio oficial de oportunidades, incorporar métricas en tiempo real y documentar el flujo de aprobación para publicar el módulo en la instancia principal.
+El ranking final pondera criterios técnicos y fundamentales inspirados en la metodología de Andy: liquidez mínima diaria, spread promedio ajustado, momentum positivo a 21 días, payout ratio máximo configurable, techo de endeudamiento neto, crecimiento compuesto (`CAGR`) en ingresos y consistencia de dividendos. Adicionalmente se exige que cada emisora pertenezca a los sectores y regiones habilitados para la sesión.
 
-El universo automático que alimenta esta pestaña puede personalizarse sin modificar el código. Define la variable de entorno `OPPORTUNITIES_SYMBOL_POOL` con una lista JSON de tickers y métricas mínimas (`ticker`, `market_cap`, `pe`, `revenue_growth`, `region`) o apunta `OPPORTUNITIES_SYMBOL_POOL_FILE` a un archivo JSON externo con la misma estructura. Alternativamente, agrega la clave `"opportunities_symbol_pool"` en `config.json`. Si ninguno de estos valores está presente, la aplicación recurre a un conjunto determinista de emisores estadounidenses y latinoamericanos para mantener la estabilidad de los tests.
+La interfaz incorpora nuevos controles para manipular los filtros sin tocar el código:
+
+- Selector múltiple de sectores y regiones para limitar el universo visible.
+- Conmutador **“Andy Filters”** que activa el preset completo de payout, deuda y momentum.
+- Deslizadores para ajustar el rango de RSI y el umbral de medias móviles.
+- Checkboxes para incluir indicadores técnicos (RSI, MACD, SMA/EMA y Bandas de Bollinger) en el ranking y en la tabla de resultados.
+
+La cabecera del listado sigue mostrando la procedencia de los datos con los captions de Yahoo/Stub, manteniendo la trazabilidad de la fuente durante los failovers.
+
+Para alinear la lista con los mercados deseados declara en tu `.env` las variables:
+
+```env
+OPPORTUNITIES_MARKETS="BYMA,NASDAQ,NYSE"
+OPPORTUNITIES_DEFAULT_MARKET="BYMA"
+```
+
+`OPPORTUNITIES_MARKETS` define qué mercados quedan disponibles en los selectores de la UI y `OPPORTUNITIES_DEFAULT_MARKET` preselecciona el que se usará al cargar la pestaña. Si no se establecen, la aplicación habilita BYMA y NASDAQ como valores predeterminados.
+
+Los pools configurados vía JSON y las opciones de `.env` pueden convivir: la vista fusiona los universos y descarta duplicados respetando las reglas de filtrado activas.
 
 ## Integración con Yahoo Finance
 
