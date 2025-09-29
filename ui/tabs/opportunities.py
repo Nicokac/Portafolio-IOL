@@ -39,8 +39,16 @@ def _normalize_table(table: object) -> pd.DataFrame | None:
 
 def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str]]:
     if isinstance(result, Mapping):
-        table = result.get("table") or result.get("data") or result.get("df")
-        notes = result.get("notes") or result.get("messages") or result.get("warnings")
+        table = None
+        for key in ("table", "data", "df"):
+            if key in result and result[key] is not None:
+                table = result[key]
+                break
+        notes = None
+        for key in ("notes", "messages", "warnings"):
+            if key in result and result[key]:
+                notes = result[key]
+                break
         return _normalize_table(table), _normalize_notes(notes)
     if isinstance(result, Sequence) and len(result) == 2:
         table, notes = result  # type: ignore[assignment]
@@ -132,6 +140,10 @@ def render_opportunities_tab() -> None:
         else:
             st.subheader("Resultados del screening")
             st.dataframe(table, use_container_width=True)
+
+        st.caption(
+            "Resultados obtenidos de Yahoo Finance (con fallback a datos simulados si falta información)."
+        )
 
         if notes:
             st.markdown("### Notas")
