@@ -18,6 +18,7 @@ from shared.errors import AppError
 
 _EXPECTED_COLUMNS: Sequence[str] = (
     "ticker",
+    "sector",
     "payout_ratio",
     "dividend_streak",
     "cagr",
@@ -50,6 +51,26 @@ def _clean_manual_tickers(manual_tickers: Optional[Iterable[str]]) -> List[str]:
     return cleaned
 
 
+def _clean_sectors(sectors: Optional[Iterable[str]]) -> List[str]:
+    if not sectors:
+        return []
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for raw in sectors:
+        if raw is None:
+            continue
+        sector = str(raw).strip()
+        if not sector:
+            continue
+        sector_title = sector.title()
+        key = sector_title.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(sector_title)
+    return cleaned
+
+
 def _ensure_columns(df: pd.DataFrame, include_technicals: bool) -> pd.DataFrame:
     """Guarantee that the DataFrame exposes the expected schema."""
 
@@ -77,6 +98,7 @@ def run_opportunities_controller(
     max_payout: Optional[float] = None,
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
+    sectors: Optional[Iterable[str]] = None,
     include_technicals: bool = False,
     min_market_cap: Optional[float] = None,
     max_pe: Optional[float] = None,
@@ -88,6 +110,8 @@ def run_opportunities_controller(
     """Run the opportunities screener and return the results, notes and source."""
 
     tickers = _clean_manual_tickers(manual_tickers)
+
+    selected_sectors = _clean_sectors(sectors)
 
     yahoo_kwargs: dict[str, Any] = {
         "manual_tickers": tickers or None,
@@ -111,6 +135,10 @@ def run_opportunities_controller(
         yahoo_kwargs["min_eps_growth"] = float(min_eps_growth)
     if min_buyback is not None:
         yahoo_kwargs["min_buyback"] = float(min_buyback)
+
+    if selected_sectors:
+        yahoo_kwargs["sectors"] = selected_sectors
+
 
     notes: List[str] = []
     fallback_used = False
@@ -152,6 +180,9 @@ def run_opportunities_controller(
             include_technicals=include_technicals,
             min_eps_growth=min_eps_growth,
             min_buyback=min_buyback,
+
+            sectors=selected_sectors or None,
+
         )
         notes.append("⚠️ Datos simulados (Yahoo no disponible)")
         df = _ensure_columns(df, include_technicals)
@@ -276,13 +307,21 @@ def generate_opportunities_report(
 
     filters = filters or {}
     manual = filters.get("manual_tickers") or filters.get("tickers")
-    include_technicals = bool(filters.get("include_technicals", False))
+    include_technicals_value = filters.get("include_technicals")
+    include_technicals_parsed = _as_optional_bool(include_technicals_value)
+    if include_technicals_parsed is not None:
+        include_technicals = include_technicals_parsed
+    elif isinstance(include_technicals_value, bool):
+        include_technicals = include_technicals_value
+    else:
+        include_technicals = False
 
     df, notes, source = run_opportunities_controller(
         manual_tickers=manual,
         max_payout=_as_optional_float(filters.get("max_payout")),
         min_div_streak=_as_optional_int(filters.get("min_div_streak")),
         min_cagr=_as_optional_float(filters.get("min_cagr")),
+        sectors=filters.get("sectors"),
         include_technicals=include_technicals,
         min_market_cap=_as_optional_float(filters.get("min_market_cap")),
         max_pe=_as_optional_float(filters.get("max_pe")),

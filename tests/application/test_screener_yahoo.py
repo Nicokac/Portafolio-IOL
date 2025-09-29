@@ -15,8 +15,14 @@ from shared.errors import AppError
 
 
 class FakeYahooClient:
-    def __init__(self, data: dict[str, dict[str, object]]) -> None:
+    def __init__(
+        self,
+        data: dict[str, dict[str, object]],
+        *,
+        listings: dict[str, list[dict[str, object] | str]] | None = None,
+    ) -> None:
         self._data = data
+        self._listings = listings or {}
 
     def get_fundamentals(self, ticker: str) -> dict[str, object]:
         return self._data[ticker]["fundamentals"]
@@ -29,6 +35,17 @@ class FakeYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:
         return self._data[ticker]["prices"]
+
+    def list_symbols_by_markets(self, markets: list[str]) -> list[dict[str, object] | str]:
+        results: list[dict[str, object] | str] = []
+        for market in markets:
+            entries = self._listings.get(market, [])
+            for entry in entries:
+                if isinstance(entry, dict):
+                    results.append(dict(entry))
+                else:
+                    results.append(entry)
+        return results
 
 
 class MissingYahooClient:
@@ -43,6 +60,9 @@ class MissingYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:  # noqa: ARG002
         raise AppError("missing prices")
+
+    def list_symbols_by_markets(self, markets: list[str]) -> list[dict[str, object]]:  # noqa: ARG002
+        raise AppError("missing listings")
 
 
 @pytest.fixture
@@ -93,6 +113,9 @@ def comprehensive_data() -> dict[str, dict[str, object]]:
         "country": "United States",
         "trailing_eps": 5.2,
         "forward_eps": 5.9,
+
+        "sector": "Technology",
+
     }
 
     return {
@@ -126,6 +149,7 @@ def test_run_screener_yahoo_computes_metrics(comprehensive_data):
     expected_cagr = ops._safe_round(sum(expected_cagrs) / len(expected_cagrs))
 
     assert row["ticker"] == "ABC"
+    assert row["sector"] == "Technology"
     assert row["payout_ratio"] == 40.0
     assert row["dividend_yield"] == 2.0
     assert row["dividend_streak"] == ops._compute_dividend_streak(dividends)
@@ -154,6 +178,8 @@ def test_run_screener_yahoo_marks_missing(caplog):
 
     assert df.iloc[0]["ticker"] == "ZZZ"
     assert df.iloc[0]["score_compuesto"] is pd.NA
+    assert "sector" in df.columns
+    assert pd.isna(df.iloc[0]["sector"])
     assert any("faltan datos" in record.getMessage().lower() for record in caplog.records)
 
 
@@ -169,6 +195,9 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
         "country": "Canada",
         "trailing_eps": -1.0,
         "forward_eps": -0.5,
+
+        "sector": "Industrials",
+
     }
 
     dividends_bad = pd.DataFrame(
@@ -201,6 +230,7 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
 
     assert list(df.columns) == [
         "ticker",
+        "sector",
         "payout_ratio",
         "dividend_streak",
         "cagr",
@@ -211,6 +241,16 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     assert not any(col.startswith("_meta") for col in df.columns)
     assert df.iloc[0]["ticker"] == "ABC"
     assert pd.isna(df.iloc[1]["payout_ratio"])
+
+    df_filtered = ops.run_screener_yahoo(
+        manual_tickers=["ABC", "BAD"],
+        client=client,
+        include_technicals=False,
+        sectors=["technology"],
+    )
+
+    assert list(df_filtered["ticker"]) == ["ABC"]
+    assert set(df_filtered["sector"].dropna()) == {"Technology"}
 
 
 def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
@@ -223,8 +263,12 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
         "pe_ratio": 15.0,
         "revenue_growth": 6.0,
         "country": "Brazil",
+
         "trailing_eps": 3.4,
         "forward_eps": 3.6,
+
+        "sector": "Financial Services",
+
     }
     latam_dividends = comprehensive_data["ABC"]["dividends"].copy()
     latam_shares = comprehensive_data["ABC"]["shares"].copy()
@@ -239,6 +283,9 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
         "country": "United States",
         "trailing_eps": 1.2,
         "forward_eps": 1.1,
+
+        "sector": "Technology",
+
     }
     small_dividends = comprehensive_data["ABC"]["dividends"].copy()
     small_shares = comprehensive_data["ABC"]["shares"].copy()
@@ -272,6 +319,7 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
         include_latam=False,
     )
 
+    assert "sector" in df.columns
     assert list(df["ticker"]) == ["ABC", "LAT", "SMALL"]
     results = {row["ticker"]: row for _, row in df.iterrows()}
     assert results["ABC"]["payout_ratio"] == 40.0
@@ -362,6 +410,21 @@ def test_run_screener_yahoo_filters_eps_and_buybacks(
     assert pd.isna(results["FLT"]["payout_ratio"])
     assert pd.isna(results["NEG"]["payout_ratio"])
     assert pd.isna(results["BUY"]["payout_ratio"])
+def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data):
+    listings = {"TEST": [{"ticker": "ABC", "market_cap": 1_200_000_000}]}
+    client = FakeYahooClient(comprehensive_data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(manual_tickers=None, client=client)
+
+    if isinstance(result, tuple):
+        df, notes = result
+    else:  # pragma: no cover - defensive guard
+        df, notes = result, []
+
+    assert list(df["ticker"]) == ["ABC"]
+    assert any("seleccionados automáticamente" in note for note in notes)
+    assert any("TEST" in note for note in notes)
 
 
 def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_data):
@@ -390,6 +453,27 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
     assert not any("Datos simulados" in note for note in notes)
     assert {ticker for ticker in df["ticker"]} == {"ABC"}
     assert source == "yahoo"
+    assert {"rsi", "sma_50", "sma_200"}.isdisjoint(df.columns)
+
+
+def test_run_opportunities_controller_exposes_technicals(monkeypatch, comprehensive_data):
+    fake_client = FakeYahooClient(comprehensive_data)
+
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: fake_client)
+    monkeypatch.setattr(
+        ctrl,
+        "run_screener_stub",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fallback should not run")),
+    )
+
+    df, notes, source = ctrl.run_opportunities_controller(
+        manual_tickers=["abc"],
+        include_technicals=True,
+    )
+
+    assert not notes
+    assert source == "yahoo"
+    assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
 
 
 def test_run_opportunities_controller_applies_new_filters(

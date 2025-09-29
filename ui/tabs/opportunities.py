@@ -8,6 +8,20 @@ import streamlit as st
 
 from shared.version import __version__
 
+_SECTOR_OPTIONS: Sequence[str] = (
+    "Basic Materials",
+    "Communication Services",
+    "Consumer Cyclical",
+    "Consumer Defensive",
+    "Energy",
+    "Financial Services",
+    "Healthcare",
+    "Industrials",
+    "Real Estate",
+    "Technology",
+    "Utilities",
+)
+
 
 def _normalize_notes(notes: object) -> list[str]:
     if notes is None:
@@ -147,6 +161,15 @@ def render_opportunities_tab() -> None:
             value=True,
             help="Extiende el screening a emisores listados en Latinoamérica.",
         )
+        include_technicals = st.checkbox(
+            "Incluir indicadores técnicos",
+            value=False,
+            help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
+        sectors = st.multiselect(
+            "Sectores",
+            options=_SECTOR_OPTIONS,
+            help="Limitá los resultados a los sectores seleccionados.",
+        )
 
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
@@ -179,7 +202,10 @@ def render_opportunities_tab() -> None:
             "min_eps_growth": float(min_eps_growth),
             "min_buyback": float(min_buyback),
             "include_latam": bool(include_latam),
+            "include_technicals": bool(include_technicals),
         }
+        if sectors:
+            params["sectors"] = list(sectors)
 
         with st.spinner("Generando screening de oportunidades..."):
             result = generate_opportunities_report(params)

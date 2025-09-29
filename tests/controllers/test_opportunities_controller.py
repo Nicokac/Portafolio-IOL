@@ -19,6 +19,7 @@ from shared.errors import AppError
 
 _EXPECTED_COLUMNS = [
     "ticker",
+    "sector",
     "payout_ratio",
     "dividend_streak",
     "cagr",
@@ -50,6 +51,7 @@ def restore_yahoo(monkeypatch: pytest.MonkeyPatch) -> None:
 def _make_sample_row(include_technicals: bool = False) -> Dict[str, Any]:
     row: Dict[str, Any] = {
         "ticker": "AAPL",
+        "sector": "Technology",
         "payout_ratio": 25.0,
         "dividend_streak": 10,
         "cagr": 8.0,
@@ -84,6 +86,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         max_payout=70.0,
         min_div_streak=5,
         min_cagr=3.5,
+        sectors=["technology", "HEALTHCARE"],
         include_technicals=True,
         min_market_cap=1_500_000_000,
         max_pe=25,
@@ -105,6 +108,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "include_latam": True,
         "min_eps_growth": pytest.approx(4.5),
         "min_buyback": pytest.approx(0.5),
+        "sectors": ["Technology", "Healthcare"],
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert notes == []
@@ -145,6 +149,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["include_technicals"] is False
     assert stub_calls["min_eps_growth"] == 2.0
     assert stub_calls["min_buyback"] == 0.0
+    assert "sector" in df.columns
+    assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
     assert "AAPL" in notes[1]
@@ -177,6 +183,7 @@ def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) ->
     assert aaa_row["price"] == pytest.approx(10.0)
     assert pd.isna(aaa_row["payout_ratio"])
     assert pd.isna(aaa_row["dividend_streak"])
+    assert pd.isna(aaa_row["sector"])
     assert pd.isna(aaa_row["rsi"])
     assert "Partial data" in notes
     assert any("BBB" in note for note in notes)
@@ -188,10 +195,30 @@ def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> Non
 
     def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
         assert kwargs["manual_tickers"] == ["abc"]
+        assert kwargs["include_technicals"] is True
+        assert kwargs.get("sectors") is None
         return df, ["note"], "stub"
 
     monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
 
-    result = sut.generate_opportunities_report({"manual_tickers": ["abc"]})
+    result = sut.generate_opportunities_report(
+        {"manual_tickers": ["abc"], "include_technicals": True}
+    )
 
     assert result == {"table": df, "notes": ["note"], "source": "stub"}
+
+
+def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame([_make_sample_row()])
+
+    captured: Dict[str, Any] = {}
+
+    def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
+        captured.update(kwargs)
+        return df, [], "yahoo"
+
+    monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
+
+    sut.generate_opportunities_report({"include_technicals": "false"})
+
+    assert captured["include_technicals"] is False

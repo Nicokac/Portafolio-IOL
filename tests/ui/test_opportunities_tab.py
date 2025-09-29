@@ -69,6 +69,7 @@ def _run_app_with_result(
                 list(app.get("number_input"))
                 + list(app.get("slider"))
                 + list(app.get("checkbox"))
+                + list(app.get("multiselect"))
             )
             for element in elements:
                 label = getattr(element, "label", None)
@@ -127,8 +128,10 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
             "ticker": ["AAPL", "MSFT"],
             "price": [180.12, 325.74],
             "score_compuesto": [8.5, 7.9],
+            "sector": ["Technology", "Technology"],
         }
     )
+    assert "sector" in df.columns
     overrides = {
         "Capitalización mínima (US$ MM)": 750,
         "P/E máximo": 18.5,
@@ -139,6 +142,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Crecimiento mínimo de EPS (%)": 4.0,
         "Buyback mínimo (%)": 1.5,
         "Incluir Latam": False,
+        "Sectores": ["Technology"],
     }
     app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
     assert mock.call_count == 1
@@ -153,6 +157,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "min_eps_growth": 4.0,
         "min_buyback": 1.5,
         "include_latam": False,
+        "include_technicals": False,
+        "sectors": ["Technology"],
     }
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
@@ -165,6 +171,26 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert not any(fallback_note in block for block in markdown_blocks)
+
+
+def test_checkbox_include_technicals_updates_params() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "price": [180.12],
+            "score_compuesto": [8.5],
+        }
+    )
+    overrides = {"Incluir indicadores técnicos": True}
+    app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
+
+    assert mock.call_count == 1
+    called_with = mock.call_args.args[0]
+    assert called_with["include_technicals"] is True
+    assert called_with["include_latam"] is True
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected Streamlit dataframe component after execution"
 
 
 def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
