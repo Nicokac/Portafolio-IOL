@@ -103,6 +103,8 @@ CACHE_TTL_YF_INDICATORS=900
 CACHE_TTL_YF_HISTORY=3600
 CACHE_TTL_YF_FUNDAMENTALS=21600
 CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS=14400
+YAHOO_FUNDAMENTALS_TTL=3600
+YAHOO_QUOTES_TTL=300
 ASSET_CATALOG_PATH="/ruta/a/assets_catalog.json"
 # Nivel de los logs ("DEBUG", "INFO", etc.; predeterminado: INFO)
 LOG_LEVEL="INFO"
@@ -111,7 +113,7 @@ LOG_FORMAT="plain"
 # Usuario opcional incluido en los logs
 LOG_USER="usuario"
 ```
-Los parámetros `CACHE_TTL_YF_*` ajustan cuánto tiempo se reutiliza cada respuesta de Yahoo Finance antes de volver a consultar la API (indicadores técnicos, históricos, fundamentales individuales y ranking del portafolio, respectivamente).
+Los parámetros `CACHE_TTL_YF_*` ajustan cuánto tiempo se reutiliza cada respuesta de Yahoo Finance antes de volver a consultar la API (indicadores técnicos, históricos, fundamentales individuales y ranking del portafolio, respectivamente). Las variables `YAHOO_FUNDAMENTALS_TTL` (3600 segundos por defecto) y `YAHOO_QUOTES_TTL` (300 segundos por defecto) controlan el TTL de la caché específica para fundamentales y cotizaciones de Yahoo; puedes redefinir estos valores en el `.env` o en `secrets.toml` según tus necesidades.
 También puedes definir estos valores sensibles en `secrets.toml`,
 el cual `streamlit` expone a través de `st.secrets`. Los valores en
 `secrets.toml` tienen prioridad sobre las variables de entorno.
