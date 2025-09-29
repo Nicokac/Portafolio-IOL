@@ -338,6 +338,47 @@ def _output_columns(include_technicals: bool) -> list[str]:
     return [c for c in columns if c not in {"rsi", "sma_50", "sma_200"}]
 
 
+_LATAM_COUNTRIES = {
+    "argentina",
+    "bolivia",
+    "brazil",
+    "chile",
+    "colombia",
+    "costa rica",
+    "cuba",
+    "dominican republic",
+    "ecuador",
+    "el salvador",
+    "guatemala",
+    "honduras",
+    "mexico",
+    "nicaragua",
+    "panama",
+    "paraguay",
+    "peru",
+    "uruguay",
+    "venezuela",
+}
+
+
+def _as_optional_float(value: object) -> float | pd.NA:
+    if value is None or pd.isna(value):
+        return pd.NA
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return pd.NA
+
+
+def _is_latam_country(country: object | None) -> bool:
+    if not country:
+        return False
+    normalized = str(country).strip().lower()
+    if not normalized:
+        return False
+    return normalized in _LATAM_COUNTRIES
+
+
 def run_screener_yahoo(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
@@ -345,6 +386,10 @@ def run_screener_yahoo(
     min_div_streak: Optional[int] = None,
     min_cagr: Optional[float] = None,
     include_technicals: bool = False,
+    min_market_cap: Optional[float] = None,
+    max_pe: Optional[float] = None,
+    min_revenue_growth: Optional[float] = None,
+    include_latam: Optional[bool] = None,
     client: YahooFinanceClient | None = None,
 ) -> pd.DataFrame:
     """Run the Yahoo-based screener returning the same schema as the stub."""
@@ -364,7 +409,9 @@ def run_screener_yahoo(
         prices = _fetch_with_warning(client.get_price_history, ticker, "precios")
 
         payout = _safe_round(fundamentals["payout_ratio"] if fundamentals else pd.NA)
-        dividend_yield = _safe_round(fundamentals["dividend_yield"] if fundamentals else pd.NA)
+        dividend_yield = _safe_round(
+            fundamentals["dividend_yield"] if fundamentals else pd.NA
+        )
         dividend_streak = _compute_dividend_streak(dividends)
 
         cagr_values = []
@@ -395,6 +442,24 @@ def run_screener_yahoo(
         }
         score = _compute_score(metrics)
 
+        market_cap = _as_optional_float(
+            fundamentals.get("market_cap") if fundamentals else pd.NA
+        )
+        pe_ratio = _as_optional_float(
+            fundamentals.get("pe_ratio")
+            if fundamentals and "pe_ratio" in fundamentals
+            else (fundamentals.get("trailingPE") if fundamentals else pd.NA)
+        )
+        if pe_ratio is pd.NA and fundamentals and "pe" in fundamentals:
+            pe_ratio = _as_optional_float(fundamentals.get("pe"))
+        revenue_growth = _as_optional_float(
+            fundamentals.get("revenue_growth") if fundamentals else pd.NA
+        )
+        is_latam = False
+        if fundamentals:
+            country = fundamentals.get("country") or fundamentals.get("region")
+            is_latam = _is_latam_country(country)
+
         row = {
             "ticker": ticker,
             "payout_ratio": payout,
@@ -406,6 +471,10 @@ def run_screener_yahoo(
             "sma_50": sma_50,
             "sma_200": sma_200,
             "score_compuesto": score,
+            "_meta_market_cap": market_cap,
+            "_meta_pe_ratio": pe_ratio,
+            "_meta_revenue_growth": revenue_growth,
+            "_meta_is_latam": is_latam,
         }
 
         rows.append(row)
@@ -418,8 +487,34 @@ def run_screener_yahoo(
         df = df[df["dividend_streak"].isna() | (df["dividend_streak"] >= min_div_streak)]
     if min_cagr is not None:
         df = df[df["cagr"].isna() | (df["cagr"] >= min_cagr)]
+    if min_market_cap is not None:
+        df = df[
+            df["_meta_market_cap"].isna()
+            | (df["_meta_market_cap"] >= float(min_market_cap))
+        ]
+    if max_pe is not None:
+        df = df[
+            df["_meta_pe_ratio"].isna() | (df["_meta_pe_ratio"] <= float(max_pe))
+        ]
+    if min_revenue_growth is not None:
+        df = df[
+            df["_meta_revenue_growth"].isna()
+            | (df["_meta_revenue_growth"] >= float(min_revenue_growth))
+        ]
+
+    include_latam_flag = True if include_latam is None else bool(include_latam)
+    if not include_latam_flag:
+        df = df[~df["_meta_is_latam"].fillna(False)]
 
     df = _append_placeholder_rows(df, tickers)
+
+    df = df.drop(
+        columns=[
+            c
+            for c in ("_meta_market_cap", "_meta_pe_ratio", "_meta_revenue_growth", "_meta_is_latam")
+            if c in df.columns
+        ]
+    )
 
     if not include_technicals:
         df = df[_output_columns(False)]

@@ -10,6 +10,7 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from application.screener import opportunities as ops
+from controllers import opportunities as ctrl
 from shared.errors import AppError
 
 
@@ -86,6 +87,10 @@ def comprehensive_data() -> dict[str, dict[str, object]]:
         "ticker": "ABC",
         "dividend_yield": 2.0,
         "payout_ratio": 40.0,
+        "market_cap": 1_200_000_000,
+        "pe_ratio": 18.0,
+        "revenue_growth": 7.5,
+        "country": "United States",
     }
 
     return {
@@ -151,7 +156,15 @@ def test_run_screener_yahoo_marks_missing(caplog):
 
 def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     other_prices = comprehensive_data["ABC"]["prices"].copy()
-    fundamentals_bad = {"ticker": "BAD", "dividend_yield": 1.0, "payout_ratio": 90.0}
+    fundamentals_bad = {
+        "ticker": "BAD",
+        "dividend_yield": 1.0,
+        "payout_ratio": 90.0,
+        "market_cap": 900_000_000,
+        "pe_ratio": 30.0,
+        "revenue_growth": -2.5,
+        "country": "Canada",
+    }
 
     dividends_bad = pd.DataFrame(
         {
@@ -192,3 +205,103 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     ]
     assert df.iloc[0]["ticker"] == "ABC"
     assert pd.isna(df.iloc[1]["payout_ratio"])
+
+
+def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
+    latam_prices = comprehensive_data["ABC"]["prices"].copy()
+    latam_fundamentals = {
+        "ticker": "LAT",
+        "dividend_yield": 3.0,
+        "payout_ratio": 55.0,
+        "market_cap": 2_500_000_000,
+        "pe_ratio": 15.0,
+        "revenue_growth": 6.0,
+        "country": "Brazil",
+    }
+    latam_dividends = comprehensive_data["ABC"]["dividends"].copy()
+    latam_shares = comprehensive_data["ABC"]["shares"].copy()
+
+    small_fundamentals = {
+        "ticker": "SMALL",
+        "dividend_yield": 1.5,
+        "payout_ratio": 20.0,
+        "market_cap": 150_000_000,
+        "pe_ratio": 35.0,
+        "revenue_growth": 1.0,
+        "country": "United States",
+    }
+    small_dividends = comprehensive_data["ABC"]["dividends"].copy()
+    small_shares = comprehensive_data["ABC"]["shares"].copy()
+    small_prices = comprehensive_data["ABC"]["prices"].copy()
+
+    data = {
+        "ABC": comprehensive_data["ABC"],
+        "LAT": {
+            "fundamentals": latam_fundamentals,
+            "dividends": latam_dividends,
+            "shares": latam_shares,
+            "prices": latam_prices,
+        },
+        "SMALL": {
+            "fundamentals": small_fundamentals,
+            "dividends": small_dividends,
+            "shares": small_shares,
+            "prices": small_prices,
+        },
+    }
+
+    client = FakeYahooClient(data)
+
+    df = ops.run_screener_yahoo(
+        manual_tickers=["ABC", "LAT", "SMALL"],
+        client=client,
+        include_technicals=False,
+        min_market_cap=500_000_000,
+        max_pe=20.0,
+        min_revenue_growth=5.0,
+        include_latam=False,
+    )
+
+    assert list(df["ticker"]) == ["ABC", "LAT", "SMALL"]
+    results = {row["ticker"]: row for _, row in df.iterrows()}
+    assert results["ABC"]["payout_ratio"] == 40.0
+    assert pd.isna(results["LAT"]["payout_ratio"])
+    assert pd.isna(results["SMALL"]["payout_ratio"])
+
+    df_latam = ops.run_screener_yahoo(
+        manual_tickers=["LAT"],
+        client=client,
+        include_technicals=False,
+        include_latam=True,
+    )
+
+    assert df_latam.shape[0] == 1
+    assert df_latam.iloc[0]["ticker"] == "LAT"
+    assert df_latam.iloc[0]["payout_ratio"] == 55.0
+
+
+def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_data):
+    latam_free_data = {
+        "ABC": comprehensive_data["ABC"],
+    }
+
+    fake_client = FakeYahooClient(latam_free_data)
+
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: fake_client)
+
+    def _stub_not_expected(**_kwargs):
+        raise AssertionError("stub should not be used when Yahoo succeeds")
+
+    monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
+
+    df, notes = ctrl.run_opportunities_controller(
+        manual_tickers=["abc"],
+        include_technicals=False,
+        min_market_cap=500_000_000,
+        max_pe=25.0,
+        min_revenue_growth=5.0,
+        include_latam=True,
+    )
+
+    assert not any("Datos simulados" in note for note in notes)
+    assert {ticker for ticker in df["ticker"]} == {"ABC"}
