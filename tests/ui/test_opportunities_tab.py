@@ -4,7 +4,7 @@ from pathlib import Path
 from types import ModuleType
 import sys
 import textwrap
-from typing import Mapping
+from typing import Callable, Mapping
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -17,6 +17,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from shared.errors import AppError
 
 def _resolve_streamlit_module() -> ModuleType:
     """Ensure we use the real Streamlit implementation, not a test stub."""
@@ -55,14 +56,20 @@ def _render_app() -> AppTest:
 
 
 def _run_app_with_result(
-    result: dict[str, object], overrides: Mapping[str, object] | None = None
+    result: Mapping[str, object]
+    | Callable[[Mapping[str, object]], Mapping[str, object]],
+    overrides: Mapping[str, object] | None = None,
 ) -> tuple[AppTest, MagicMock]:
     _normalize_streamlit_module()
     if not hasattr(st, "secrets"):
         st.secrets = Secrets({})
     app = AppTest.from_string(_SCRIPT)
     patch_target = "controllers.opportunities.generate_opportunities_report"
-    with patch(patch_target, return_value=result) as mock:
+    with patch(patch_target) as mock:
+        if callable(result):
+            mock.side_effect = result
+        else:
+            mock.return_value = result
         app.run()
         if overrides:
             elements = (
@@ -191,6 +198,48 @@ def test_checkbox_include_technicals_updates_params() -> None:
 
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
+
+
+def test_excluded_tickers_not_displayed_even_when_relaxing_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from controllers import opportunities as controller_mod
+
+    excluded = ["MSFT"]
+    real_generate = controller_mod.generate_opportunities_report
+
+    monkeypatch.setattr(
+        controller_mod,
+        "run_screener_yahoo",
+        lambda **kwargs: (_ for _ in ()).throw(AppError("Yahoo no disponible")),
+    )
+
+    captured_params: list[Mapping[str, object]] = []
+
+    def fake_generate(params: Mapping[str, object]) -> Mapping[str, object]:
+        updated = dict(params)
+        updated["exclude_tickers"] = excluded
+        captured_params.append(updated)
+        return real_generate(updated)
+
+    overrides = {
+        "Capitalización mínima (US$ MM)": 0,
+        "P/E máximo": 60.0,
+    }
+
+    app, mock = _run_app_with_result(fake_generate, overrides)
+
+    assert mock.call_count >= 1
+    assert captured_params, "Expected generate_opportunities_report to be invoked"
+    for payload in captured_params:
+        assert payload.get("exclude_tickers") == excluded
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected Streamlit dataframe component after execution"
+    displayed = dataframes[0].value
+    assert not displayed.empty
+    assert "MSFT" not in set(displayed["ticker"])
+    assert "AAPL" in set(displayed["ticker"])
 
 
 def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:

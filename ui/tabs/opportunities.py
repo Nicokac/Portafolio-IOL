@@ -165,6 +165,7 @@ def render_opportunities_tab() -> None:
             "Incluir indicadores técnicos",
             value=False,
             help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
+        )
         sectors = st.multiselect(
             "Sectores",
             options=_SECTOR_OPTIONS,

@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from application.screener import opportunities as ops
 from controllers import opportunities as sut
 from shared.errors import AppError
 
@@ -72,7 +73,11 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         captured_kwargs.update(kwargs)
         base = _make_sample_row(include_technicals=True)
         extra = {**base, "ticker": "MSFT"}
-        return pd.DataFrame([base, extra])
+        df = pd.DataFrame([base, extra])
+        exclude = set(kwargs.get("exclude_tickers") or [])
+        if exclude:
+            df = df[~df["ticker"].isin(exclude)]
+        return df
 
     monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
     monkeypatch.setattr(
@@ -83,6 +88,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
 
     df, notes, source = sut.run_opportunities_controller(
         manual_tickers=[" aapl", "MSFT", "msft"],
+        exclude_tickers=[" msft"],
         max_payout=70.0,
         min_div_streak=5,
         min_cagr=3.5,
@@ -99,6 +105,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
     assert captured_kwargs == {
         "manual_tickers": ["AAPL", "MSFT"],
         "include_technicals": True,
+        "exclude_tickers": ["MSFT"],
         "max_payout": pytest.approx(70.0),
         "min_div_streak": 5,
         "min_cagr": pytest.approx(3.5),
@@ -111,6 +118,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "sectors": ["Technology", "Healthcare"],
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
+    assert set(df["ticker"]) == {"AAPL"}
     assert notes == []
     assert source == "yahoo"
 
@@ -122,18 +130,25 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         lambda **kwargs: (_ for _ in ()).throw(AppError("boom")),
     )
 
-    stub_result = pd.DataFrame([{"ticker": "AAPL"}])
+    stub_result = pd.DataFrame([
+        {"ticker": "AAPL"},
+        {"ticker": "MSFT"},
+    ])
     stub_calls: Dict[str, Any] = {}
 
     def fake_stub(**kwargs: Any) -> pd.DataFrame:
         stub_calls.clear()
         stub_calls.update(kwargs)
-        return stub_result
+        exclude = set(kwargs.get("exclude_tickers") or [])
+        if not exclude:
+            return stub_result
+        return stub_result[~stub_result["ticker"].isin(exclude)]
 
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
     df, notes, source = sut.run_opportunities_controller(
         manual_tickers=["aapl", None],
+        exclude_tickers=["MSFT"],
         max_payout=60,
         min_div_streak=8,
         min_cagr=4.2,
@@ -143,6 +158,7 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
+    assert stub_calls["exclude_tickers"] == ["MSFT"]
     assert stub_calls["max_payout"] == 60
     assert stub_calls["min_div_streak"] == 8
     assert stub_calls["min_cagr"] == 4.2
@@ -152,8 +168,29 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert "sector" in df.columns
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
+    assert "MSFT" not in set(df["ticker"])
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
     assert "AAPL" in notes[1]
+    assert source == "stub"
+
+
+def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sut,
+        "run_screener_yahoo",
+        lambda **kwargs: (_ for _ in ()).throw(AppError("boom")),
+    )
+    monkeypatch.setattr(sut, "run_screener_stub", ops.run_screener_stub)
+
+    df, notes, source = sut.run_opportunities_controller(
+        manual_tickers=["AAPL", "MSFT"],
+        exclude_tickers=["MSFT"],
+        min_buyback=0.0,
+    )
+
+    assert "MSFT" not in set(df["ticker"])
+    assert any(ticker == "AAPL" for ticker in df["ticker"])
+    assert not any("MSFT" in note for note in notes)
     assert source == "stub"
 
 
@@ -197,6 +234,7 @@ def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> Non
         assert kwargs["manual_tickers"] == ["abc"]
         assert kwargs["include_technicals"] is True
         assert kwargs.get("sectors") is None
+        assert kwargs.get("exclude_tickers") is None
         return df, ["note"], "stub"
 
     monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
@@ -222,3 +260,4 @@ def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> 
     sut.generate_opportunities_report({"include_technicals": "false"})
 
     assert captured["include_technicals"] is False
+    assert "exclude_tickers" not in captured or captured["exclude_tickers"] is None
