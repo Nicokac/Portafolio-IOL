@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.9] - 2025-09-29
+### Changed
+- Los filtros de payout ratio, racha de dividendos y CAGR mínima ahora se aplican
+  también en el screener de Yahoo para mantener una experiencia consistente con
+  el stub local.
+- Refactorización de `_apply_filters_and_finalize` para compartir la lógica de
+  filtrado entre la integración de Yahoo Finance y el stub de respaldo.
+### Tests
+- Refuerzo de pruebas que cubren el filtrado compartido y la alineación de
+  resultados entre ambas fuentes de datos.
+
 ## [0.3.8] - 2025-09-29
 ### Added
 - Integración con Yahoo Finance para descargar históricos, indicadores técnicos y
