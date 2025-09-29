@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as _streamlit_module
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
+import pytest
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -70,6 +71,18 @@ def _run_app_with_result(result: dict[str, object]) -> tuple[AppTest, MagicMock]
 st = _resolve_streamlit_module()
 sys.modules["streamlit"] = st
 _ORIGINAL_STREAMLIT = st
+
+
+@pytest.fixture(autouse=True)
+def _ensure_opportunities_flag_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the opportunities tab feature flag enabled by default in this suite."""
+
+    import shared.config as shared_config
+
+    monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", True)
+    monkeypatch.setenv("FEATURE_OPPORTUNITIES_TAB", "true")
+    monkeypatch.setattr(shared_config.settings, "tokens_key", "dummy", raising=False)
+    monkeypatch.setattr(shared_config.settings, "allow_plain_tokens", True, raising=False)
 
 from shared.version import __version__
 
@@ -132,3 +145,34 @@ def test_fallback_note_is_displayed_when_present() -> None:
     app, _ = _run_app_with_result({"table": df, "notes": [fallback_note]})
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(fallback_note in block for block in markdown_blocks)
+
+
+def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", False)
+    monkeypatch.delenv("FEATURE_OPPORTUNITIES_TAB", raising=False)
+
+    import controllers.portfolio as portfolio_controller
+    import controllers.auth as auth_controller
+    import services.cache as cache_services
+    import ui.actions as actions_module
+    import ui.footer as footer_module
+    import ui.header as header_module
+    import ui.health_sidebar as health_module
+    import ui.login as login_module
+
+    monkeypatch.setattr(portfolio_controller, "render_portfolio_section", lambda *a, **k: None)
+    monkeypatch.setattr(auth_controller, "build_iol_client", lambda: object())
+    monkeypatch.setattr(cache_services, "get_fx_rates_cached", lambda: ({}, None))
+    monkeypatch.setattr(header_module, "render_header", lambda *a, **k: None)
+    monkeypatch.setattr(actions_module, "render_action_menu", lambda *a, **k: None)
+    monkeypatch.setattr(footer_module, "render_footer", lambda *a, **k: None)
+    monkeypatch.setattr(health_module, "render_health_sidebar", lambda *a, **k: None)
+    monkeypatch.setattr(login_module, "render_login_page", lambda *a, **k: None)
+
+    app = AppTest.from_file("app.py")
+    app.session_state["authenticated"] = True
+    app.run()
+
+    assert not app.get("tabs"), "Expected opportunities tabs to be absent when flag is disabled"
+    headers = [element.value for element in app.get("header")]
+    assert all("Empresas con oportunidad" not in header for header in headers)
