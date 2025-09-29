@@ -149,6 +149,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Crecimiento mínimo de EPS (%)": 4.0,
         "Buyback mínimo (%)": 1.5,
         "Incluir Latam": False,
+        "Score mínimo": 7.2,
+        "Máximo de resultados": 15,
         "Sectores": ["Technology"],
     }
     app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
@@ -165,6 +167,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "min_buyback": 1.5,
         "include_latam": False,
         "include_technicals": False,
+        "min_score_threshold": 7.2,
+        "max_results": 15,
         "sectors": ["Technology"],
     }
     dataframes = app.get("arrow_data_frame")
@@ -284,6 +288,33 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
     ), "Expected informational caption to remain visible"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(extra_note in block for block in markdown_blocks)
+
+
+def test_notes_block_highlights_backend_messages() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AMZN"],
+            "price": [140.25],
+            "score_compuesto": [7.8],
+        }
+    )
+    top_note = "Se recortaron los resultados a los 5 mejores según el score compuesto."
+    threshold_note = "No se encontraron candidatos con score >= 7.5 tras aplicar el threshold."
+    regular_note = "Considerar diversificación adicional."
+
+    app, _ = _run_app_with_result(
+        {
+            "table": df,
+            "notes": [top_note, threshold_note, regular_note],
+            "source": "yahoo",
+        }
+    )
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+
+    assert f"- **{top_note}**" in markdown_blocks
+    assert f"- **{threshold_note}**" in markdown_blocks
+    assert f"- {regular_note}" in markdown_blocks
 
 
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
