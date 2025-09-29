@@ -407,6 +407,8 @@ def _apply_filters_and_finalize(
     min_revenue_growth: Optional[float] = None,
     min_eps_growth: Optional[float] = None,
     min_buyback: Optional[float] = None,
+    min_score_threshold: Optional[float] = None,
+    max_results: Optional[int] = None,
     include_latam_flag: bool | None = True,
     include_technicals: bool,
     restrict_to_tickers: Sequence[str] | None = None,
@@ -527,6 +529,13 @@ def _apply_filters_and_finalize(
             mask = series.isna() | mask
         result = result[mask]
 
+    if min_score_threshold is not None and "score_compuesto" in result.columns:
+        series = pd.to_numeric(result["score_compuesto"], errors="coerce")
+        mask = series >= float(min_score_threshold)
+        if allow_na_filters:
+            mask = series.isna() | mask
+        result = result[mask]
+
     if include_latam_flag is False and latam_column in result.columns:
         result = result[~result[latam_column].fillna(False)]
 
@@ -610,7 +619,6 @@ def _apply_filters_and_finalize(
                 ascending=False,
                 na_position="last",
             )
-
     if max_results is not None:
         try:
             limit = int(max_results)
@@ -655,7 +663,6 @@ def _apply_filters_and_finalize(
 
     return result
 
-
 def run_screener_stub(
     *,
     manual_tickers: Optional[Iterable[str]] = None,
@@ -673,6 +680,7 @@ def run_screener_stub(
     sectors: Optional[Iterable[str]] = None,
     min_score_threshold: Optional[float] = None,
     max_results: Optional[int] = None,
+
 ) -> pd.DataFrame | tuple[pd.DataFrame, list[str]]:
     """Return a filtered sample dataset that mimics a screener output.
 
@@ -705,6 +713,11 @@ def run_screener_stub(
     min_buyback:
         Minimum buyback percentage (share reduction) required. ``None`` keeps
         companies regardless of their buyback ratio.
+    min_score_threshold:
+        Minimum composite score required. Rows below the threshold are
+        discarded unless ``allow_na_filters`` is enabled.
+    max_results:
+        Maximum number of rows returned after applying all filters.
     include_latam:
         When ``False`` securities flagged as originating from Latin America are
         excluded from the results.
@@ -739,6 +752,8 @@ def run_screener_stub(
         min_revenue_growth=min_revenue_growth,
         min_eps_growth=min_eps_growth,
         min_buyback=min_buyback,
+        min_score_threshold=min_score_threshold,
+        max_results=max_results,
         include_latam_flag=include_latam,
         include_technicals=include_technicals,
         restrict_to_tickers=manual or None,
@@ -1216,6 +1231,8 @@ def run_screener_yahoo(
         min_revenue_growth=min_revenue_growth,
         min_eps_growth=min_eps_growth,
         min_buyback=min_buyback,
+        min_score_threshold=min_score_threshold,
+        max_results=max_results,
         include_latam_flag=include_latam_flag,
         include_technicals=include_technicals,
         placeholder_tickers=tickers,

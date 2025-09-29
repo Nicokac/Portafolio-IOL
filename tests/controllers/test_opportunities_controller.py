@@ -68,7 +68,7 @@ def _make_sample_row(include_technicals: bool = False) -> Dict[str, Any]:
 def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> None:
     captured_kwargs: Dict[str, Any] = {}
 
-    def fake_yahoo(**kwargs: Any) -> pd.DataFrame:
+    def fake_yahoo(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:
         captured_kwargs.clear()
         captured_kwargs.update(kwargs)
         base = _make_sample_row(include_technicals=True)
@@ -77,7 +77,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         exclude = set(kwargs.get("exclude_tickers") or [])
         if exclude:
             df = df[~df["ticker"].isin(exclude)]
-        return df
+        return df, ["Yahoo note"]
 
     monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
     monkeypatch.setattr(
@@ -100,8 +100,8 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         include_latam=True,
         min_eps_growth=4.5,
         min_buyback=0.5,
-        min_score_threshold=55.5,
-        max_results=10,
+        min_score_threshold=42.5,
+        max_results=15,
     )
 
     assert captured_kwargs == {
@@ -117,13 +117,15 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "include_latam": True,
         "min_eps_growth": pytest.approx(4.5),
         "min_buyback": pytest.approx(0.5),
+        "min_score_threshold": pytest.approx(42.5),
+        "max_results": 15,
         "sectors": ["Technology", "Healthcare"],
         "min_score_threshold": pytest.approx(55.5),
         "max_results": 10,
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert set(df["ticker"]) == {"AAPL"}
-    assert notes == []
+    assert notes == ["Yahoo note"]
     assert source == "yahoo"
 
 
@@ -163,16 +165,14 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     ])
     stub_calls: Dict[str, Any] = {}
 
-    def fake_stub(**kwargs: Any) -> pd.DataFrame | Tuple[pd.DataFrame, List[str]]:
+    def fake_stub(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:
         stub_calls.clear()
         stub_calls.update(kwargs)
         exclude = set(kwargs.get("exclude_tickers") or [])
         if not exclude:
-            filtered = stub_result
-        else:
-            filtered = stub_result[~stub_result["ticker"].isin(exclude)]
-        return filtered, ["Nota generada por el stub"]
-
+            return stub_result, ["Stub note"]
+        filtered = stub_result[~stub_result["ticker"].isin(exclude)]
+        return filtered, ["Stub note"]
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
     df, notes, source = sut.run_opportunities_controller(
@@ -184,8 +184,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         include_technicals=False,
         min_eps_growth=2.0,
         min_buyback=0.0,
-        min_score_threshold=60.0,
-        max_results=1,
+        min_score_threshold=30.0,
+        max_results=2,
     )
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
@@ -196,14 +196,14 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["include_technicals"] is False
     assert stub_calls["min_eps_growth"] == 2.0
     assert stub_calls["min_buyback"] == 0.0
-    assert stub_calls["min_score_threshold"] == 60.0
-    assert stub_calls["max_results"] == 1
+    assert stub_calls["min_score_threshold"] == 30.0
+    assert stub_calls["max_results"] == 2
     assert "sector" in df.columns
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert "MSFT" not in set(df["ticker"])
     assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
-    assert "Nota generada por el stub" in notes[1]
+    assert notes[1] == "Stub note"
     assert "AAPL" in notes[2]
     assert source == "stub"
 
@@ -269,12 +269,19 @@ def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> Non
         assert kwargs["include_technicals"] is True
         assert kwargs.get("sectors") is None
         assert kwargs.get("exclude_tickers") is None
+        assert kwargs["min_score_threshold"] == pytest.approx(35.5)
+        assert kwargs["max_results"] == 25
         return df, ["note"], "stub"
 
     monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
 
     result = sut.generate_opportunities_report(
-        {"manual_tickers": ["abc"], "include_technicals": True}
+        {
+            "manual_tickers": ["abc"],
+            "include_technicals": True,
+            "min_score_threshold": "35.5",
+            "max_results": "25",
+        }
     )
 
     assert result == {"table": df, "notes": ["note"], "source": "stub"}
