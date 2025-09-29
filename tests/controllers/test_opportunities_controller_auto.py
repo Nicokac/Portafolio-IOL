@@ -1,5 +1,3 @@
-import json
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,8 +7,14 @@ from controllers.opportunities import run_opportunities_controller
 
 
 class AutoYahooClient:
-    def __init__(self, data: dict[str, dict[str, object]]) -> None:
+    def __init__(
+        self,
+        data: dict[str, dict[str, object]],
+        *,
+        listings: dict[str, list[dict[str, object] | str]] | None = None,
+    ) -> None:
         self._data = data
+        self._listings = listings or {}
 
     def get_fundamentals(self, ticker: str) -> dict[str, object]:
         return self._data[ticker]["fundamentals"]
@@ -23,6 +27,17 @@ class AutoYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:
         return self._data[ticker]["prices"]
+
+    def list_symbols_by_markets(self, markets: list[str]) -> list[dict[str, object] | str]:
+        results: list[dict[str, object] | str] = []
+        for market in markets:
+            entries = self._listings.get(market, [])
+            for entry in entries:
+                if isinstance(entry, dict):
+                    results.append(dict(entry))
+                else:
+                    results.append(entry)
+        return results
 
 
 @pytest.fixture
@@ -55,6 +70,10 @@ def auto_dataset() -> dict[str, dict[str, object]]:
     base_fundamentals = {
         "dividend_yield": 2.0,
         "payout_ratio": 45.0,
+        "market_cap": 5_000_000_000,
+        "pe_ratio": 20.0,
+        "revenue_growth": 8.0,
+        "country": "United States",
     }
 
     tickers = ["AAA", "BBB", "CCC"]
@@ -64,6 +83,11 @@ def auto_dataset() -> dict[str, dict[str, object]]:
         fundamentals["ticker"] = ticker
         fundamentals["dividend_yield"] += idx
         fundamentals["payout_ratio"] -= idx
+        fundamentals["market_cap"] += idx * 1_500_000_000
+        fundamentals["pe_ratio"] += idx
+        fundamentals["revenue_growth"] += idx * 2
+        if ticker == "BBB":
+            fundamentals["country"] = "Argentina"
         dataset[ticker] = {
             "fundamentals": fundamentals,
             "dividends": dividends,
@@ -74,18 +98,11 @@ def auto_dataset() -> dict[str, dict[str, object]]:
 
 
 def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
-    monkeypatch.setattr(
-        ops,
-        "_get_symbol_pool",
-        lambda: [
-            {"ticker": "AAA", "market_cap": 6_000_000_000, "pe": 18.0, "revenue_growth": 12.0, "region": "US"},
-            {"ticker": "BBB", "market_cap": 3_000_000_000, "pe": 35.0, "revenue_growth": 8.0, "region": "LATAM"},
-            {"ticker": "CCC", "market_cap": 9_000_000_000, "pe": 20.0, "revenue_growth": 15.0, "region": "US"},
-        ],
-    )
+    listings = {"TEST": [{"ticker": "AAA"}, {"ticker": "BBB"}, {"ticker": "CCC"}]}
 
-    client = AutoYahooClient(auto_dataset)
+    client = AutoYahooClient(auto_dataset, listings=listings)
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
 
     df, notes, source = run_opportunities_controller(
         manual_tickers=None,
@@ -96,16 +113,20 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
         include_latam=False,
     )
 
-    assert list(df["ticker"]) == ["CCC"]
-    assert not df.isna().all(axis=None)
+    table = df.set_index("ticker")
+    assert set(table.index) == {"AAA", "BBB", "CCC"}
+    assert table.loc["CCC"].notna().any()
+    assert table.loc["AAA"].isna().all()
+    assert table.loc["BBB"].isna().all()
     assert any("seleccionados automáticamente" in note for note in notes)
     assert any("min_market_cap" in note for note in notes)
     assert source == "yahoo"
 
 
 def test_controller_reports_when_no_candidates(monkeypatch):
-    monkeypatch.setattr(ops, "_get_symbol_pool", lambda: [])
-    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: AutoYahooClient({}))
+    client = AutoYahooClient({}, listings={"TEST": []})
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
 
     df, notes, source = run_opportunities_controller(manual_tickers=None)
 
@@ -114,24 +135,22 @@ def test_controller_reports_when_no_candidates(monkeypatch):
     assert source == "yahoo"
 
 
-def test_controller_uses_env_symbol_pool(monkeypatch, auto_dataset):
-    env_pool = [
-        {"ticker": "BBB", "market_cap": 3_000_000_000, "pe": 35.0, "revenue_growth": 18.0, "region": "LATAM"},
-        {"ticker": "CCC", "market_cap": 9_000_000_000, "pe": 20.0, "revenue_growth": 15.0, "region": "US"},
-        {"ticker": "AAA", "market_cap": 6_000_000_000, "pe": 18.0, "revenue_growth": 12.0, "region": "US"},
-    ]
-    monkeypatch.setenv("OPPORTUNITIES_SYMBOL_POOL", json.dumps(env_pool))
-    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: AutoYahooClient(auto_dataset))
+def test_controller_uses_configured_markets(monkeypatch, auto_dataset):
+    listings = {
+        "US": [{"ticker": "AAA"}, {"ticker": "CCC"}],
+        "LATAM": [{"ticker": "BBB"}],
+    }
+
+    client = AutoYahooClient(auto_dataset, listings=listings)
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["LATAM"])
 
     df, notes, source = run_opportunities_controller(
         manual_tickers=None,
         include_technicals=False,
-        min_market_cap=8_000_000_000,
-        max_pe=25.0,
-        min_revenue_growth=10.0,
-        include_latam=False,
+        include_latam=True,
     )
 
-    assert list(df["ticker"]) == ["CCC"]
+    assert list(df["ticker"]) == ["BBB"]
     assert source == "yahoo"
     assert any("seleccionados automáticamente" in note for note in notes)
