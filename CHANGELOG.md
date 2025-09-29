@@ -17,10 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.14]
 ### Added
-- Universo dinámico de oportunidades que combina emisores definidos en `config.json`, pools externos y el fallback determinista para adaptarse a cada sesión.
-- Filtros curados por Andy que ponderan payout ratio, deuda, crecimiento y momentum para priorizar emisores defensivos con upside.
-- Segmentación por sectores y regiones con etiquetas visibles en la UI para ajustar la composición del screener en tiempo real.
-- Indicadores técnicos configurables (RSI, MACD, medias móviles y Bandas de Bollinger) que se activan desde la barra lateral y alimentan el ranking final.
+- Universo automático de oportunidades generado con `list_symbols_by_markets` y la configuración `OPPORTUNITIES_TARGET_MARKETS` para alinear los emisores con los mercados habilitados en cada sesión.
+- Nuevos filtros en el screener: `min_eps_growth`, `min_buyback`, selector de sectores y un toggle para indicadores técnicos, que permiten ajustar dinámicamente la priorización de emisores.
+- Caption de fuente visible en la UI de oportunidades para dejar claro el origen de los datos mostrados.
 
 ## [0.3.13] - 2025-09-30
 ### Changed
