@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.11] - 2025-10-01
+### Fixed
+- Se repararon los tests de la pestaña beta para alinear las expectativas con el flujo visible en la UI.
+### Changed
+- Toda visualización de versión ahora se alimenta dinámicamente desde `pyproject.toml`, evitando desfasajes entre backend y UI.
+- Se maneja explícitamente el feature flag de la pestaña beta para controlar su activación sin efectos secundarios.
+
 ## [0.3.10] - 2025-09-30
 ### Fixed
 - Se corrigió el `ImportError` que se disparaba al inicializar los módulos de Yahoo Finance en entornos sin dependencias opcionales.
