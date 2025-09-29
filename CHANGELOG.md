@@ -6,14 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Added
-- Se puede definir el universo automático de oportunidades mediante `config.json`, `OPPORTUNITIES_SYMBOL_POOL` o `OPPORTUNITIES_SYMBOL_POOL_FILE`, permitiendo ajustar los filtros sin tocar el código.
+- _No hay cambios destacados por el momento._
 
+## [3.0.1]
 ### Changed
-- Se amplió el conjunto determinista de emisores utilizados como fallback para cubrir más sectores de EE. UU. y LATAM.
+- El `score_compuesto` ahora se normaliza en escala 0-10 y se filtra automáticamente usando el umbral configurable `MIN_SCORE_THRESHOLD` (6.0 por defecto) para reducir ruido en los resultados de la pestaña beta.
+- El listado final de oportunidades respeta el límite configurable `MAX_RESULTS` (20 por defecto), manteniendo la tabla acotada incluso cuando Yahoo Finance devuelve universos extensos.
 
-### Tests
-- Las pruebas del controlador de oportunidades contemplan la parametrización del universo automático y los pools inyectados por entorno.
+### UI
+- La cabecera de "Empresas con oportunidad" indica cuándo se aplican el umbral mínimo y el recorte del top N, explicando al usuario por qué ciertos tickers quedan fuera del informe.
 
 ## [0.3.14]
 ### Added
