@@ -154,6 +154,30 @@ def test_fallback_note_is_displayed_when_present() -> None:
     assert any(fallback_note in block for block in markdown_blocks)
 
 
+def test_stub_source_displays_warning_caption_and_notes() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["PFE"],
+            "price": [35.12],
+            "score_compuesto": [5.4],
+        }
+    )
+    extra_note = "Dato adicional relevante"
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [extra_note], "source": "stub"}
+    )
+    captions = [element.value for element in app.get("caption")]
+    assert "⚠️ Datos simulados (Yahoo no disponible)" in captions
+    assert not any(
+        "Resultados obtenidos de Yahoo Finance" in caption for caption in captions
+    )
+    assert any(
+        "ℹ️ Los filtros avanzados" in caption for caption in captions
+    ), "Expected informational caption to remain visible"
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert any(extra_note in block for block in markdown_blocks)
+
+
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", False)
     monkeypatch.delenv("FEATURE_OPPORTUNITIES_TAB", raising=False)
