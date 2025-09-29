@@ -139,6 +139,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Payout máximo (%)": 65.0,
         "Racha mínima de dividendos (años)": 7,
         "CAGR mínimo de dividendos (%)": 6.5,
+        "Crecimiento mínimo de EPS (%)": 4.0,
+        "Buyback mínimo (%)": 1.5,
         "Incluir Latam": False,
         "Sectores": ["Technology"],
     }
@@ -152,6 +154,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "max_payout": 65.0,
         "min_div_streak": 7,
         "min_cagr": 6.5,
+        "min_eps_growth": 4.0,
+        "min_buyback": 1.5,
         "include_latam": False,
         "include_technicals": False,
         "sectors": ["Technology"],
@@ -161,7 +165,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     captions = [element.value for element in app.get("caption")]
     assert any("Yahoo Finance" in caption for caption in captions)
     assert (
-        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento, payout, racha de dividendos, CAGR e inclusión de Latam requieren datos en vivo de Yahoo."
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
         in captions
     )
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"

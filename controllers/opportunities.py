@@ -104,6 +104,8 @@ def run_opportunities_controller(
     max_pe: Optional[float] = None,
     min_revenue_growth: Optional[float] = None,
     include_latam: Optional[bool] = None,
+    min_eps_growth: Optional[float] = None,
+    min_buyback: Optional[float] = None,
 ) -> Tuple[pd.DataFrame, List[str], str]:
     """Run the opportunities screener and return the results, notes and source."""
 
@@ -129,8 +131,14 @@ def run_opportunities_controller(
         yahoo_kwargs["min_revenue_growth"] = float(min_revenue_growth)
     if include_latam is not None:
         yahoo_kwargs["include_latam"] = bool(include_latam)
+    if min_eps_growth is not None:
+        yahoo_kwargs["min_eps_growth"] = float(min_eps_growth)
+    if min_buyback is not None:
+        yahoo_kwargs["min_buyback"] = float(min_buyback)
+
     if selected_sectors:
         yahoo_kwargs["sectors"] = selected_sectors
+
 
     notes: List[str] = []
     fallback_used = False
@@ -170,7 +178,11 @@ def run_opportunities_controller(
             min_revenue_growth=min_revenue_growth,
             include_latam=True if include_latam is None else include_latam,
             include_technicals=include_technicals,
+            min_eps_growth=min_eps_growth,
+            min_buyback=min_buyback,
+
             sectors=selected_sectors or None,
+
         )
         notes.append("⚠️ Datos simulados (Yahoo no disponible)")
         df = _ensure_columns(df, include_technicals)
@@ -315,6 +327,8 @@ def generate_opportunities_report(
         max_pe=_as_optional_float(filters.get("max_pe")),
         min_revenue_growth=_as_optional_float(filters.get("min_revenue_growth")),
         include_latam=_as_optional_bool(filters.get("include_latam")),
+        min_eps_growth=_as_optional_float(filters.get("min_eps_growth")),
+        min_buyback=_as_optional_float(filters.get("min_buyback")),
     )
 
     return {"table": df, "notes": notes, "source": source}

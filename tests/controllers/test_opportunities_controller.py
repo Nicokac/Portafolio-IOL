@@ -92,6 +92,8 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         max_pe=25,
         min_revenue_growth=7.5,
         include_latam=True,
+        min_eps_growth=4.5,
+        min_buyback=0.5,
     )
 
     assert captured_kwargs == {
@@ -104,6 +106,8 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         "max_pe": pytest.approx(25.0),
         "min_revenue_growth": pytest.approx(7.5),
         "include_latam": True,
+        "min_eps_growth": pytest.approx(4.5),
+        "min_buyback": pytest.approx(0.5),
         "sectors": ["Technology", "Healthcare"],
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
@@ -134,6 +138,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         min_div_streak=8,
         min_cagr=4.2,
         include_technicals=False,
+        min_eps_growth=2.0,
+        min_buyback=0.0,
     )
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
@@ -141,6 +147,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["min_div_streak"] == 8
     assert stub_calls["min_cagr"] == 4.2
     assert stub_calls["include_technicals"] is False
+    assert stub_calls["min_eps_growth"] == 2.0
+    assert stub_calls["min_buyback"] == 0.0
     assert "sector" in df.columns
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS

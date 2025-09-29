@@ -111,7 +111,11 @@ def comprehensive_data() -> dict[str, dict[str, object]]:
         "pe_ratio": 18.0,
         "revenue_growth": 7.5,
         "country": "United States",
+        "trailing_eps": 5.2,
+        "forward_eps": 5.9,
+
         "sector": "Technology",
+
     }
 
     return {
@@ -189,7 +193,11 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
         "pe_ratio": 30.0,
         "revenue_growth": -2.5,
         "country": "Canada",
+        "trailing_eps": -1.0,
+        "forward_eps": -0.5,
+
         "sector": "Industrials",
+
     }
 
     dividends_bad = pd.DataFrame(
@@ -255,7 +263,12 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
         "pe_ratio": 15.0,
         "revenue_growth": 6.0,
         "country": "Brazil",
+
+        "trailing_eps": 3.4,
+        "forward_eps": 3.6,
+
         "sector": "Financial Services",
+
     }
     latam_dividends = comprehensive_data["ABC"]["dividends"].copy()
     latam_shares = comprehensive_data["ABC"]["shares"].copy()
@@ -268,7 +281,11 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
         "pe_ratio": 35.0,
         "revenue_growth": 1.0,
         "country": "United States",
+        "trailing_eps": 1.2,
+        "forward_eps": 1.1,
+
         "sector": "Technology",
+
     }
     small_dividends = comprehensive_data["ABC"]["dividends"].copy()
     small_shares = comprehensive_data["ABC"]["shares"].copy()
@@ -321,6 +338,78 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
     assert df_latam.iloc[0]["payout_ratio"] == 55.0
 
 
+def test_run_screener_yahoo_filters_eps_and_buybacks(
+    comprehensive_data: dict[str, dict[str, object]]
+) -> None:
+    base = comprehensive_data["ABC"]
+    base_fundamentals = base["fundamentals"].copy()
+    base_dividends = base["dividends"].copy()
+    base_prices = base["prices"].copy()
+    base_shares = base["shares"].copy()
+
+    growth_fundamentals = base_fundamentals.copy()
+    growth_fundamentals.update({"ticker": "GRO", "trailing_eps": 4.0, "forward_eps": 4.4})
+
+    flat_fundamentals = base_fundamentals.copy()
+    flat_fundamentals.update({"ticker": "FLT", "trailing_eps": 4.0, "forward_eps": 4.1})
+
+    negative_fundamentals = base_fundamentals.copy()
+    negative_fundamentals.update({"ticker": "NEG", "trailing_eps": -0.5, "forward_eps": 0.2})
+
+    weak_buyback_fundamentals = base_fundamentals.copy()
+    weak_buyback_fundamentals.update({"ticker": "BUY", "trailing_eps": 4.2, "forward_eps": 4.5})
+
+    shares_negative = pd.DataFrame(
+        {
+            "date": base_shares["date"],
+            "shares": [1_000_000, 1_010_000, 1_015_000, 1_020_000, 1_025_000, 1_030_000],
+        }
+    )
+
+    data = {
+        "GRO": {
+            "fundamentals": growth_fundamentals,
+            "dividends": base_dividends,
+            "shares": base_shares,
+            "prices": base_prices,
+        },
+        "FLT": {
+            "fundamentals": flat_fundamentals,
+            "dividends": base_dividends,
+            "shares": base_shares,
+            "prices": base_prices,
+        },
+        "NEG": {
+            "fundamentals": negative_fundamentals,
+            "dividends": base_dividends,
+            "shares": base_shares,
+            "prices": base_prices,
+        },
+        "BUY": {
+            "fundamentals": weak_buyback_fundamentals,
+            "dividends": base_dividends,
+            "shares": shares_negative,
+            "prices": base_prices,
+        },
+    }
+
+    client = FakeYahooClient(data)
+
+    df = ops.run_screener_yahoo(
+        manual_tickers=["GRO", "FLT", "NEG", "BUY"],
+        client=client,
+        include_technicals=False,
+        min_eps_growth=5.0,
+        min_buyback=0.1,
+    )
+
+    assert list(df["ticker"]) == ["GRO", "FLT", "NEG", "BUY"]
+    results = {row["ticker"]: row for _, row in df.iterrows()}
+
+    assert not pd.isna(results["GRO"]["payout_ratio"])
+    assert pd.isna(results["FLT"]["payout_ratio"])
+    assert pd.isna(results["NEG"]["payout_ratio"])
+    assert pd.isna(results["BUY"]["payout_ratio"])
 def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data):
     listings = {"TEST": [{"ticker": "ABC", "market_cap": 1_200_000_000}]}
     client = FakeYahooClient(comprehensive_data, listings=listings)

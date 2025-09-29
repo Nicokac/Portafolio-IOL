@@ -142,6 +142,20 @@ def render_opportunities_tab() -> None:
             step=0.5,
             help="Filtra compañías con crecimiento anual compuesto inferior al valor indicado (predeterminado: 4%).",
         )
+        min_eps_growth = st.number_input(
+            "Crecimiento mínimo de EPS (%)",
+            min_value=-100.0,
+            value=0.0,
+            step=0.5,
+            help="Requiere que el EPS proyectado supere al actual por al menos el porcentaje indicado (predeterminado: 0%).",
+        )
+        min_buyback = st.number_input(
+            "Buyback mínimo (%)",
+            min_value=-100.0,
+            value=0.0,
+            step=0.5,
+            help="Exige una reducción mínima en el flotante. Usa valores positivos para requerir recompras netas.",
+        )
         include_latam = st.checkbox(
             "Incluir Latam",
             value=True,
@@ -185,6 +199,8 @@ def render_opportunities_tab() -> None:
             "max_payout": float(max_payout),
             "min_div_streak": int(min_div_streak),
             "min_cagr": float(min_cagr),
+            "min_eps_growth": float(min_eps_growth),
+            "min_buyback": float(min_buyback),
             "include_latam": bool(include_latam),
             "include_technicals": bool(include_technicals),
         }
@@ -207,7 +223,7 @@ def render_opportunities_tab() -> None:
         else:
             st.caption("Resultados obtenidos de Yahoo Finance")
         st.caption(
-            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento, payout, racha de dividendos, CAGR e inclusión de Latam requieren datos en vivo de Yahoo."
+            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
         )
 
         if notes:
