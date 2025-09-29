@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import importlib
-from types import SimpleNamespace
+from contextlib import contextmanager
+from types import ModuleType, SimpleNamespace
 import sys
 from pathlib import Path
 
@@ -12,8 +13,20 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 import shared.config as config
 
 
-def _fresh_settings(monkeypatch, env: dict[str, str] | None = None) -> config.Settings:
+@contextmanager
+def _fresh_settings(monkeypatch, env: dict[str, str] | None = None):
     """Instantiate ``Settings`` with a clean configuration context."""
+
+    original_settings = config.settings
+
+    pre_existing_modules = {
+        name: sys.modules.get(name)
+        for name in ("shared.settings", "shared.cache", "application.ta_service")
+    }
+
+    shared_settings_module = pre_existing_modules["shared.settings"]
+    if shared_settings_module is None:
+        shared_settings_module = importlib.import_module("shared.settings")
 
     for key in ("YAHOO_FUNDAMENTALS_TTL", "YAHOO_QUOTES_TTL"):
         monkeypatch.delenv(key, raising=False)
@@ -22,29 +35,45 @@ def _fresh_settings(monkeypatch, env: dict[str, str] | None = None) -> config.Se
         for key, value in env.items():
             monkeypatch.setenv(key, value)
 
-    monkeypatch.setattr(config, "st", SimpleNamespace(secrets={}))
-    monkeypatch.setattr(config, "_load_cfg", lambda: {})
-
     importlib.reload(config)
     monkeypatch.setattr(config, "st", SimpleNamespace(secrets={}))
     monkeypatch.setattr(config, "_load_cfg", lambda: {})
 
-    return config.Settings()
+    fresh_settings = config.Settings()
+    config.settings = fresh_settings
+
+    shared_settings_module = importlib.reload(shared_settings_module)
+
+    reloaded_modules: dict[str, ModuleType] = {}
+    for name in ("shared.cache", "application.ta_service"):
+        module = pre_existing_modules[name]
+        if module is not None:
+            reloaded_modules[name] = importlib.reload(module)
+
+    try:
+        yield fresh_settings
+    finally:
+        config.settings = original_settings
+        shared_settings_module = importlib.reload(shared_settings_module)
+
+        for name in reloaded_modules:
+            module = sys.modules.get(name)
+            if module is not None:
+                importlib.reload(module)
 
 
 def test_settings_use_expected_default_ttls(monkeypatch):
     """Defaults should fall back to 3600s (fundamentals) and 300s (quotes)."""
 
-    settings = _fresh_settings(monkeypatch)
-
-    assert settings.YAHOO_FUNDAMENTALS_TTL == 3600
-    assert settings.YAHOO_QUOTES_TTL == 300
+    with _fresh_settings(monkeypatch) as settings:
+        assert settings.YAHOO_FUNDAMENTALS_TTL == 3600
+        assert settings.YAHOO_QUOTES_TTL == 300
 
 
 def test_settings_respect_environment_overrides(monkeypatch):
     """Environment variables should override the default TTL values."""
 
-    settings = _fresh_settings(
+    with _fresh_settings(
         monkeypatch,
         {
             "YAHOO_FUNDAMENTALS_TTL": "42",
@@ -86,3 +115,6 @@ def test_shared_settings_reload_reflects_yahoo_overrides(monkeypatch):
     default_settings = _fresh_settings(monkeypatch)
     monkeypatch.setattr(config, "settings", default_settings)
     importlib.reload(shared_settings)
+    ) as settings:
+        assert settings.YAHOO_FUNDAMENTALS_TTL == 42
+        assert settings.YAHOO_QUOTES_TTL == 99
