@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -74,13 +76,12 @@ def auto_dataset() -> dict[str, dict[str, object]]:
 def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
     monkeypatch.setattr(
         ops,
-        "_DEFAULT_SYMBOL_POOL",
-        [
+        "_get_symbol_pool",
+        lambda: [
             {"ticker": "AAA", "market_cap": 6_000_000_000, "pe": 18.0, "revenue_growth": 12.0, "region": "US"},
             {"ticker": "BBB", "market_cap": 3_000_000_000, "pe": 35.0, "revenue_growth": 8.0, "region": "LATAM"},
             {"ticker": "CCC", "market_cap": 9_000_000_000, "pe": 20.0, "revenue_growth": 15.0, "region": "US"},
         ],
-        raising=False,
     )
 
     client = AutoYahooClient(auto_dataset)
@@ -103,7 +104,7 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
 
 
 def test_controller_reports_when_no_candidates(monkeypatch):
-    monkeypatch.setattr(ops, "_DEFAULT_SYMBOL_POOL", [], raising=False)
+    monkeypatch.setattr(ops, "_get_symbol_pool", lambda: [])
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: AutoYahooClient({}))
 
     df, notes, source = run_opportunities_controller(manual_tickers=None)
@@ -111,3 +112,26 @@ def test_controller_reports_when_no_candidates(monkeypatch):
     assert df.empty
     assert any("No se encontraron símbolos" in note for note in notes)
     assert source == "yahoo"
+
+
+def test_controller_uses_env_symbol_pool(monkeypatch, auto_dataset):
+    env_pool = [
+        {"ticker": "BBB", "market_cap": 3_000_000_000, "pe": 35.0, "revenue_growth": 18.0, "region": "LATAM"},
+        {"ticker": "CCC", "market_cap": 9_000_000_000, "pe": 20.0, "revenue_growth": 15.0, "region": "US"},
+        {"ticker": "AAA", "market_cap": 6_000_000_000, "pe": 18.0, "revenue_growth": 12.0, "region": "US"},
+    ]
+    monkeypatch.setenv("OPPORTUNITIES_SYMBOL_POOL", json.dumps(env_pool))
+    monkeypatch.setattr(ops, "YahooFinanceClient", lambda: AutoYahooClient(auto_dataset))
+
+    df, notes, source = run_opportunities_controller(
+        manual_tickers=None,
+        include_technicals=False,
+        min_market_cap=8_000_000_000,
+        max_pe=25.0,
+        min_revenue_growth=10.0,
+        include_latam=False,
+    )
+
+    assert list(df["ticker"]) == ["CCC"]
+    assert source == "yahoo"
+    assert any("seleccionados automáticamente" in note for note in notes)

@@ -7,12 +7,16 @@ final data provider in place.
 """
 from __future__ import annotations
 
+import json
 import logging
-from typing import Callable, Iterable, List, Optional, Sequence
+import os
+from collections.abc import Mapping, Sequence
+from typing import Callable, Iterable, List, Optional
 
 import pandas as pd
 
 from infrastructure.market import YahooFinanceClient
+from shared import config as shared_config
 from shared.errors import AppError
 
 LOGGER = logging.getLogger(__name__)
@@ -132,6 +136,20 @@ _DEFAULT_SYMBOL_POOL: list[dict[str, object]] = [
         "region": "US",
     },
     {
+        "ticker": "AMZN",
+        "market_cap": 1_350_000_000_000,
+        "pe": 60.1,
+        "revenue_growth": 9.4,
+        "region": "US",
+    },
+    {
+        "ticker": "NVDA",
+        "market_cap": 1_050_000_000_000,
+        "pe": 45.3,
+        "revenue_growth": 34.9,
+        "region": "US",
+    },
+    {
         "ticker": "KO",
         "market_cap": 260_000_000_000,
         "pe": 24.1,
@@ -143,6 +161,20 @@ _DEFAULT_SYMBOL_POOL: list[dict[str, object]] = [
         "market_cap": 420_000_000_000,
         "pe": 15.9,
         "revenue_growth": 3.5,
+        "region": "US",
+    },
+    {
+        "ticker": "PG",
+        "market_cap": 360_000_000_000,
+        "pe": 24.6,
+        "revenue_growth": 5.1,
+        "region": "US",
+    },
+    {
+        "ticker": "V",
+        "market_cap": 510_000_000_000,
+        "pe": 30.5,
+        "revenue_growth": 12.3,
         "region": "US",
     },
     {
@@ -159,7 +191,126 @@ _DEFAULT_SYMBOL_POOL: list[dict[str, object]] = [
         "revenue_growth": 18.2,
         "region": "LATAM",
     },
+    {
+        "ticker": "PAMP",
+        "market_cap": 5_800_000_000,
+        "pe": 10.7,
+        "revenue_growth": 16.4,
+        "region": "LATAM",
+    },
+    {
+        "ticker": "VALE",
+        "market_cap": 61_000_000_000,
+        "pe": 6.8,
+        "revenue_growth": 3.1,
+        "region": "LATAM",
+    },
 ]
+
+_SYMBOL_POOL_ENV_VAR = "OPPORTUNITIES_SYMBOL_POOL"
+_SYMBOL_POOL_FILE_ENV_VAR = "OPPORTUNITIES_SYMBOL_POOL_FILE"
+_SYMBOL_POOL_CONFIG_KEY = "opportunities_symbol_pool"
+
+
+def _normalise_symbol_pool(entries: object) -> list[dict[str, object]]:
+    if not entries:
+        return []
+
+    normalised: list[dict[str, object]] = []
+    seen: set[str] = set()
+
+    if isinstance(entries, Mapping):
+        for key, raw in entries.items():
+            if isinstance(raw, Mapping):
+                record = dict(raw)
+                ticker = record.get("ticker") or key
+            elif isinstance(raw, str):
+                record = {}
+                ticker = raw
+            else:
+                continue
+
+            ticker_str = str(ticker or "").strip().upper()
+            if not ticker_str or ticker_str in seen:
+                continue
+
+            record["ticker"] = ticker_str
+            normalised.append(record)
+            seen.add(ticker_str)
+        return normalised
+
+    for raw in entries:  # type: ignore[arg-type]
+        if isinstance(raw, Mapping):
+            record = dict(raw)
+            ticker = record.get("ticker")
+        elif isinstance(raw, str):
+            record = {}
+            ticker = raw
+        else:
+            continue
+
+        ticker_str = str(ticker or "").strip().upper()
+        if not ticker_str or ticker_str in seen:
+            continue
+
+        record["ticker"] = ticker_str
+        normalised.append(record)
+        seen.add(ticker_str)
+
+    return normalised
+
+
+def _load_symbol_pool_from_env() -> list[dict[str, object]] | None:
+    file_path = os.getenv(_SYMBOL_POOL_FILE_ENV_VAR)
+    if file_path:
+        try:
+            with open(file_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            LOGGER.warning("No se pudo leer %s: %s", file_path, exc)
+        else:
+            pool = _normalise_symbol_pool(data)
+            if pool:
+                return pool
+
+    raw = os.getenv(_SYMBOL_POOL_ENV_VAR)
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            LOGGER.warning(
+                "No se pudo interpretar OPPORTUNITIES_SYMBOL_POOL: %s", exc
+            )
+        else:
+            pool = _normalise_symbol_pool(data)
+            if pool:
+                return pool
+
+    return None
+
+
+def _load_symbol_pool_from_config() -> list[dict[str, object]] | None:
+    try:
+        cfg = shared_config.get_config()
+    except Exception as exc:  # pragma: no cover - defensive
+        LOGGER.warning("No se pudo cargar configuración: %s", exc)
+        return None
+
+    data = cfg.get(_SYMBOL_POOL_CONFIG_KEY)
+    pool = _normalise_symbol_pool(data)
+    return pool or None
+
+
+def _get_symbol_pool() -> list[dict[str, object]]:
+    pool = _load_symbol_pool_from_env()
+    if pool is not None:
+        return pool
+
+    pool = _load_symbol_pool_from_config()
+    if pool is not None:
+        return pool
+
+    return list(_DEFAULT_SYMBOL_POOL)
 
 
 def _normalise_tickers(manual_tickers: Optional[Sequence[str]]) -> List[str]:
@@ -288,13 +439,20 @@ def _load_default_tickers(
     max_pe: Optional[float] = None,
     min_revenue_growth: Optional[float] = None,
     include_latam: Optional[bool] = None,
+    symbol_pool: Optional[Sequence[Mapping[str, object]] | Sequence[str]] = None,
 ) -> List[str]:
     """Return a deterministic list of tickers based on the static pool."""
+
+    entries = (
+        _normalise_symbol_pool(symbol_pool)
+        if symbol_pool is not None
+        else _get_symbol_pool()
+    )
 
     tickers: List[str] = []
     latam_allowed = bool(include_latam) if include_latam is not None else False
 
-    for entry in _DEFAULT_SYMBOL_POOL:
+    for entry in entries:
         ticker = str(entry.get("ticker", "")).strip().upper()
         if not ticker or ticker in tickers:
             continue

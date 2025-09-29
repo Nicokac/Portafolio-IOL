@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Se puede definir el universo automático de oportunidades mediante `config.json`, `OPPORTUNITIES_SYMBOL_POOL` o `OPPORTUNITIES_SYMBOL_POOL_FILE`, permitiendo ajustar los filtros sin tocar el código.
+
+### Changed
+- Se amplió el conjunto determinista de emisores utilizados como fallback para cubrir más sectores de EE. UU. y LATAM.
+
+### Tests
+- Las pruebas del controlador de oportunidades contemplan la parametrización del universo automático y los pools inyectados por entorno.
 
 ## [0.3.13] - 2025-09-30
 ### Changed
