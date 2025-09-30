@@ -8,7 +8,7 @@ import streamlit as st
 
 from services.health import get_health_metrics
 from shared.time_provider import TimeProvider
-from shared.ui.notes import format_note
+from shared.ui import notes as shared_notes
 from shared.version import __version__
 
 
@@ -116,18 +116,22 @@ def render_health_sidebar() -> None:
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
     sidebar.markdown("#### 🔐 Conexión IOL")
-    sidebar.markdown(_format_iol_status(metrics.get("iol_refresh")))
+    sidebar.markdown(
+        shared_notes.format_note(_format_iol_status(metrics.get("iol_refresh")))
+    )
 
     sidebar.markdown("#### 📈 Yahoo Finance")
-    sidebar.markdown(_format_yfinance_status(metrics.get("yfinance")))
+    sidebar.markdown(
+        shared_notes.format_note(_format_yfinance_status(metrics.get("yfinance")))
+    )
 
     sidebar.markdown("#### 💱 FX")
     for line in _format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")):
-        sidebar.markdown(line)
+        sidebar.markdown(shared_notes.format_note(line))
 
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
-        sidebar.markdown(line)
+        sidebar.markdown(shared_notes.format_note(line))
 
 
 __all__ = ["render_health_sidebar"]
