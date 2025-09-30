@@ -255,6 +255,42 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     assert set(df_filtered["sector"].dropna()) == {"Technology"}
 
 
+def test_run_screener_yahoo_auto_universe_drops_filtered(monkeypatch, comprehensive_data):
+    base = comprehensive_data["ABC"]
+    listings = {"TEST": [{"ticker": "ABC"}, {"ticker": "BAD"}]}
+
+    bad_fundamentals = base["fundamentals"].copy()
+    bad_fundamentals.update({"ticker": "BAD", "payout_ratio": 90.0})
+
+    data = {
+        "ABC": base,
+        "BAD": {
+            "fundamentals": bad_fundamentals,
+            "dividends": base["dividends"],
+            "shares": base["shares"],
+            "prices": base["prices"],
+        },
+    }
+
+    client = FakeYahooClient(data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(
+        manual_tickers=None,
+        client=client,
+        include_technicals=False,
+        max_payout=50.0,
+    )
+
+    if isinstance(result, tuple):
+        df, _notes = result
+    else:  # pragma: no cover - defensive guard
+        df = result
+
+    assert list(df["ticker"]) == ["ABC"]
+    assert "BAD" not in set(df["ticker"])
+
+
 def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
     latam_prices = comprehensive_data["ABC"]["prices"].copy()
     latam_fundamentals = {
