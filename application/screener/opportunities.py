@@ -1053,10 +1053,14 @@ def run_screener_yahoo(
         cuando aparezcan en la respuesta del proveedor de datos.
     """
 
-    tickers = _normalise_tickers(manual_tickers)
+    manual_requested = _normalise_tickers(manual_tickers)
+    tickers = list(manual_requested)
     excluded = set(_normalise_tickers(exclude_tickers))
     if excluded:
         tickers = [ticker for ticker in tickers if ticker not in excluded]
+        manual_requested = [
+            ticker for ticker in manual_requested if ticker not in excluded
+        ]
     notes: list[str] = []
     using_default_universe = False
     listings_meta: dict[str, Mapping[str, object]] = {}
@@ -1218,6 +1222,8 @@ def run_screener_yahoo(
 
     include_latam_flag = True if include_latam is None else bool(include_latam)
 
+    manual_placeholders = manual_requested or None
+
     df = _apply_filters_and_finalize(
         df,
         max_payout=max_payout,
@@ -1232,7 +1238,8 @@ def run_screener_yahoo(
         max_results=max_results,
         include_latam_flag=include_latam_flag,
         include_technicals=include_technicals,
-        placeholder_tickers=tickers,
+        restrict_to_tickers=manual_placeholders,
+        placeholder_tickers=manual_placeholders,
         exclude_tickers=sorted(excluded) or None,
         market_cap_column="_meta_market_cap",
         pe_ratio_column="_meta_pe_ratio",
