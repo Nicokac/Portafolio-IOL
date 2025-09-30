@@ -104,10 +104,10 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
 
 def test_stub_dataset_is_diverse_and_complete() -> None:
     base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
-    assert 15 <= len(base) <= 20
-    assert base["sector"].nunique() >= 8
+    assert 25 <= len(base) <= 35
+    assert base["sector"].nunique() >= 10
     latam_rows = base[base["is_latam"]]
-    assert not latam_rows.empty
+    assert len(latam_rows) >= 3
     for column in [
         "market_cap",
         "pe_ratio",

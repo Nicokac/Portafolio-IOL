@@ -34,7 +34,7 @@ La vista beta evoluciona hacia un universo dinámico que se recalcula en cada se
 - Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
 - Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
-El stub local expone un universo determinista de 19 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials y Consumer Cyclical) con métricas fundamentales completas. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
+El stub local expone un universo determinista de 28 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials, Consumer Cyclical y Materials) con métricas fundamentales completas. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
 
 | Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -57,6 +57,16 @@ El stub local expone un universo determinista de 19 emisores que cubre múltiple
 | PLD | Real Estate | 63.5 | 12 | 9.4 | 3.6 | 3.9 | 0.0 | 115,000 | 28.9 | 8.7 |
 | MELI | Consumer Cyclical | 0.0 | 0 | 0.0 | 4.8 | 6.2 | 0.0 | 72,000 | 76.4 | 31.5 |
 | BBD | Financial Services | 28.0 | 6 | 7.1 | 1.6 | 1.8 | 1.0 | 47,000 | 9.5 | 12.4 |
+| MTRL | Materials | 36.5 | 11 | 8.2 | 4.2 | 4.6 | 1.4 | 68,000 | 19.4 | 6.3 |
+| CYCX | Consumer Cyclical | 22.5 | 8 | 13.1 | 4.6 | 5.5 | 2.5 | 78,000 | 27.1 | 15.7 |
+| RSPR | Real Estate | 70.2 | 9 | 7.4 | 2.9 | 3.2 | 0.0 | 32,000 | 18.9 | 5.2 |
+| ENRGX | Energy | 38.7 | 18 | 5.6 | 5.5 | 5.8 | 1.9 | 95,000 | 13.6 | 8.9 |
+| SOLR | Energy | 24.1 | 5 | 16.8 | 1.5 | 2.1 | 0.5 | 26,000 | 35.2 | 22.4 |
+| LATC | Consumer Cyclical | 31.7 | 7 | 9.9 | 2.0 | 2.3 | 1.3 | 18,500 | 17.8 | 12.1 |
+| FNSH | Consumer Defensive | 55.4 | 14 | 6.1 | 3.0 | 3.3 | 0.9 | 54,000 | 20.3 | 4.7 |
+| INFR | Industrials | 29.8 | 11 | 10.4 | 4.9 | 5.4 | 2.2 | 67,000 | 21.7 | 9.5 |
+| DATA | Technology | 15.2 | 4 | 18.7 | 3.8 | 4.9 | 1.6 | 125,000 | 38.1 | 24.6 |
+| HLTH | Healthcare | 34.9 | 9 | 11.4 | 3.9 | 4.4 | 1.1 | 58,000 | 23.4 | 8.8 |
 
 Cada registro respeta principios de la estrategia Andy: payout y P/E en rangos saludables, rachas y CAGR positivos, EPS forward superiores al trailing, buybacks y crecimiento de ingresos presentes cuando corresponde. El dataset se utiliza tanto para fallback como para pruebas end-to-end, garantizando que la aplicación conserve diversidad sectorial, métricas completas y comportamiento determinista durante los failovers.
 
