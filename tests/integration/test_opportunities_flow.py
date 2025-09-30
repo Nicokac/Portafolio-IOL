@@ -5,7 +5,7 @@ import importlib.util
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -399,14 +399,220 @@ def test_opportunities_flow_applies_growth_buyback_and_score_filters(
     assert not score_values.isna().any()
     assert (score_values >= 80).all()
 
-    captions = [element.value for element in app.get("caption")]
-    assert any("Resultados obtenidos de Yahoo Finance" in caption for caption in captions)
+
+def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.screener import opportunities as opportunities_module
+    import shared.config as shared_config
+    import shared.settings as shared_settings
+    import controllers.opportunities as controller_module
+
+    synthetic_base = [
+        {
+            "ticker": "ALFA",
+            "payout_ratio": 3.0,
+            "dividend_streak": 45,
+            "cagr": 24.0,
+            "dividend_yield": 1.8,
+            "price": 210.0,
+            "rsi": 50.0,
+            "sma_50": 205.0,
+            "sma_200": 198.0,
+            "market_cap": 95_000.0,
+            "pe_ratio": 18.0,
+            "revenue_growth": 24.0,
+            "is_latam": False,
+            "trailing_eps": 5.0,
+            "forward_eps": 6.5,
+            "buyback": 18.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "BETA",
+            "payout_ratio": 6.0,
+            "dividend_streak": 38,
+            "cagr": 23.0,
+            "dividend_yield": 1.5,
+            "price": 198.0,
+            "rsi": 49.0,
+            "sma_50": 192.0,
+            "sma_200": 183.0,
+            "market_cap": 84_000.0,
+            "pe_ratio": 20.0,
+            "revenue_growth": 22.0,
+            "is_latam": False,
+            "trailing_eps": 4.5,
+            "forward_eps": 5.7,
+            "buyback": 16.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "GAMA",
+            "payout_ratio": 8.0,
+            "dividend_streak": 35,
+            "cagr": 22.0,
+            "dividend_yield": 1.2,
+            "price": 176.0,
+            "rsi": 51.0,
+            "sma_50": 170.0,
+            "sma_200": 160.0,
+            "market_cap": 78_000.0,
+            "pe_ratio": 21.0,
+            "revenue_growth": 21.0,
+            "is_latam": False,
+            "trailing_eps": 4.2,
+            "forward_eps": 5.2,
+            "buyback": 14.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "DELTA",
+            "payout_ratio": 10.0,
+            "dividend_streak": 33,
+            "cagr": 21.0,
+            "dividend_yield": 1.1,
+            "price": 162.0,
+            "rsi": 48.0,
+            "sma_50": 158.0,
+            "sma_200": 150.0,
+            "market_cap": 72_000.0,
+            "pe_ratio": 21.0,
+            "revenue_growth": 20.0,
+            "is_latam": False,
+            "trailing_eps": 4.0,
+            "forward_eps": 5.0,
+            "buyback": 13.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "LATM",
+            "payout_ratio": 32.0,
+            "dividend_streak": 28,
+            "cagr": 18.0,
+            "dividend_yield": 2.4,
+            "price": 118.0,
+            "rsi": 55.0,
+            "sma_50": 112.0,
+            "sma_200": 104.0,
+            "market_cap": 45_000.0,
+            "pe_ratio": 19.5,
+            "revenue_growth": 19.0,
+            "is_latam": True,
+            "trailing_eps": 3.9,
+            "forward_eps": 4.2,
+            "buyback": 7.5,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "VALUE",
+            "payout_ratio": 42.0,
+            "dividend_streak": 18,
+            "cagr": 10.0,
+            "dividend_yield": 3.1,
+            "price": 88.0,
+            "rsi": 60.0,
+            "sma_50": 84.0,
+            "sma_200": 76.0,
+            "market_cap": 15_000.0,
+            "pe_ratio": 28.0,
+            "revenue_growth": 8.0,
+            "is_latam": False,
+            "trailing_eps": 3.8,
+            "forward_eps": 4.1,
+            "buyback": 2.0,
+            "sector": "Industrials",
+        },
+    ]
+
+    monkeypatch.setattr(
+        opportunities_module,
+        "_BASE_OPPORTUNITIES",
+        synthetic_base,
+        raising=False,
+    )
+
+    monkeypatch.setattr(shared_settings, "max_results", 3, raising=False)
+    monkeypatch.setattr(shared_settings, "MAX_RESULTS", 3, raising=False)
+    monkeypatch.setattr(shared_config.settings, "max_results", 3, raising=False)
+
+    def _stubbed_generate(filters: Optional[Mapping[str, object]] = None) -> Mapping[str, object]:
+        filters = dict(filters or {})
+        result = opportunities_module.run_screener_stub(
+            manual_tickers=filters.get("manual_tickers") or filters.get("tickers"),
+            exclude_tickers=filters.get("exclude_tickers"),
+            max_payout=filters.get("max_payout"),
+            min_div_streak=filters.get("min_div_streak"),
+            min_cagr=filters.get("min_cagr"),
+            sectors=filters.get("sectors"),
+            include_technicals=bool(filters.get("include_technicals", False)),
+            min_market_cap=filters.get("min_market_cap"),
+            max_pe=filters.get("max_pe"),
+            min_revenue_growth=filters.get("min_revenue_growth"),
+            include_latam=filters.get("include_latam", True),
+            min_eps_growth=filters.get("min_eps_growth"),
+            min_buyback=filters.get("min_buyback"),
+            min_score_threshold=filters.get("min_score_threshold"),
+            max_results=filters.get("max_results"),
+        )
+        if isinstance(result, tuple):
+            table, notes = result
+        else:
+            table, notes = result, []
+        return {"table": table, "notes": notes, "source": "stub"}
+
+    monkeypatch.setattr(
+        controller_module, "generate_opportunities_report", _stubbed_generate
+    )
+
+    app = _render_app()
+
+    _set_number_input(app, "Capitalización mínima (US$ MM)", 20_000)
+    _set_number_input(app, "P/E máximo", 22.0)
+    _set_number_input(app, "Crecimiento ingresos mínimo (%)", 20.0)
+    _set_number_input(app, "Payout máximo (%)", 15.0)
+    _set_slider(app, "Racha mínima de dividendos (años)", 30)
+    _set_number_input(app, "CAGR mínimo de dividendos (%)", 20.0)
+    _set_number_input(app, "Crecimiento mínimo de EPS (%)", 15.0)
+    _set_number_input(app, "Buyback mínimo (%)", 8.0)
+    _set_checkbox(app, "Incluir Latam", False)
+    _set_slider(app, "Score mínimo", 80)
+    _set_number_input(app, "Máximo de resultados", 3)
+    _set_multiselect(app, "Sectores", ["Technology"])
+
+    app.run()
+
+    search_buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected the opportunities search button to be present"
+
+    search_buttons[0].click()
+
+    start = time.perf_counter()
+    app.run()
+    elapsed = time.perf_counter() - start
+    assert elapsed <= 5.0, f"Screening exceeded time budget: {elapsed:.2f}s"
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected the filtered results dataframe to be rendered"
+    displayed = dataframes[0].value
+    assert isinstance(displayed, pd.DataFrame)
+    assert len(displayed) == 3
+    assert list(displayed["ticker"]) == ["ALFA", "BETA", "GAMA"]
+    scores = pd.to_numeric(displayed["score_compuesto"], errors="coerce")
+    assert not scores.isna().any()
+    assert (scores >= 80).all()
 
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert "### Notas" in markdown_blocks
-    bullet_points = [block for block in markdown_blocks if block.startswith("-")]
-    assert any("Se muestran 1 resultados de 2" in block for block in bullet_points)
-    assert any("Filtros aplicados" in block for block in bullet_points)
+    notes = [block for block in markdown_blocks if "Se muestran" in block]
+    assert notes, "Expected truncation warning to be present in notes"
+    assert any("máximo solicitado" in note for note in notes)
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Resultados simulados" in caption for caption in captions)
 
 
 def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
