@@ -131,6 +131,17 @@ def test_header_displays_version() -> None:
     assert expected_header in headers
 
 
+def test_glossary_expander_renders_key_metrics() -> None:
+    app = _render_app()
+    expanders = [element.label for element in app.get("expander")]
+    assert "¿Qué significa cada métrica?" in expanders
+    glossary_text = " ".join(element.value for element in app.get("markdown"))
+    for term in ("Payout", "EPS", "CAGR", "Buyback", "Score"):
+        assert (
+            term in glossary_text
+        ), f"Expected glossary to mention '{term}' so users understand the metric"
+
+
 def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     df = pd.DataFrame(
         {
