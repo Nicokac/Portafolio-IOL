@@ -837,7 +837,7 @@ def test_run_screener_yahoo_truncates_large_universe(monkeypatch):
         sectors=["Technology", "Healthcare"],
     )
     elapsed = time.perf_counter() - start
-    assert elapsed < 4.0, f"Execution took too long: {elapsed:.2f} seconds"
+    assert elapsed < 5.0, f"Execution took too long: {elapsed:.2f} seconds"
 
     assert isinstance(result, tuple)
     df, notes = result

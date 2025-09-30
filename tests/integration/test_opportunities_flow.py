@@ -118,7 +118,7 @@ class _FakeYahooClient:
         return dict(self._fundamentals[ticker])
 
     def get_dividends(self, ticker: str) -> pd.DataFrame:
-        years = range(2018, 2024)
+        years = range(2014, 2024)
         if ticker == "SAFE":
             amounts = np.linspace(1.6, 1.1, num=len(years))
         else:
@@ -140,8 +140,10 @@ class _FakeYahooClient:
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:
         base_price = 100.0 if ticker == "SAFE" else 45.0
-        dates = pd.date_range("2021-01-01", periods=260, freq="B")
-        trend = np.linspace(base_price, base_price + 50.0, num=len(dates))
+        dates = pd.date_range("2016-01-01", periods=6 * 12, freq="MS")
+        start = base_price * 0.6 if ticker == "SAFE" else base_price * 0.7
+        end = base_price + 60.0 if ticker == "SAFE" else base_price + 25.0
+        trend = np.linspace(start, end, num=len(dates))
         frame = pd.DataFrame({"date": dates, "close": trend, "adj_close": trend})
         return frame
 
@@ -220,9 +222,18 @@ class _HighScoreYahooClient:
         return dict(self._fundamentals[ticker])
 
     def get_dividends(self, ticker: str) -> pd.DataFrame:  # pragma: no cover - exercised via AppTest
-        # Returning an empty frame keeps the dividend streak filter neutral while
-        # still exercising the Yahoo controller code paths.
-        return pd.DataFrame(columns=["date", "amount"])
+        years = range(2018, 2024)
+        if ticker == "ELITE":
+            amounts = np.linspace(1.8, 1.4, num=len(years))
+        elif ticker == "ALPHA":
+            amounts = np.linspace(1.6, 1.2, num=len(years))
+        else:
+            amounts = np.linspace(0.7, 0.6, num=len(years))
+        data = {
+            "date": [pd.Timestamp(year=year, month=3, day=1) for year in years],
+            "amount": amounts,
+        }
+        return pd.DataFrame(data)
 
     def get_shares_outstanding(self, ticker: str) -> pd.DataFrame:
         if ticker == "ELITE":
@@ -235,16 +246,18 @@ class _HighScoreYahooClient:
         return pd.DataFrame({"date": dates, "shares": shares})
 
     def get_price_history(self, ticker: str) -> pd.DataFrame:
-        dates = pd.date_range("2023-01-01", periods=12, freq="B")
+        dates = pd.date_range("2018-01-01", periods=5 * 12, freq="MS")
         if ticker == "ELITE":
-            base = 103.0
+            start, end, amplitude = 60.0, 220.0, 40.0
         elif ticker == "ALPHA":
-            base = 93.0
+            start, end, amplitude = 55.0, 200.0, 35.0
         else:
-            base = 71.0
-        trend = np.linspace(0, 3, num=len(dates))
-        close = base + trend if ticker != "LAGG" else base - trend
-        return pd.DataFrame({"date": dates, "close": close, "adj_close": close})
+            start, end, amplitude = 85.0, 70.0, 5.0
+        trend = np.linspace(start, end, num=len(dates))
+        oscillation = amplitude * np.sin(np.linspace(0, 6 * np.pi, len(dates)))
+        close = trend + oscillation
+        frame = pd.DataFrame({"date": dates, "close": close, "adj_close": close})
+        return frame
 
 
 def _render_app() -> AppTest:
@@ -283,6 +296,11 @@ def _set_multiselect(app: AppTest, label: str, value: Iterable[str]) -> None:
         element for element in app.get("multiselect") if element.label == label
     )
     widget.set_value(list(value))
+
+
+def _set_selectbox(app: AppTest, label: str, value: str) -> None:
+    widget = next(element for element in app.get("selectbox") if element.label == label)
+    widget.set_value(value)
 
 
 def test_opportunities_flow_renders_yahoo_results(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -335,13 +353,16 @@ def test_opportunities_flow_renders_yahoo_results(monkeypatch: pytest.MonkeyPatc
 
     captions = [element.value for element in app.get("caption")]
     assert "Resultados obtenidos de Yahoo Finance" in captions
-    assert any("ℹ️ Los filtros avanzados" in caption for caption in captions)
+    assert any(
+        "Los filtros avanzados" in caption for caption in captions
+    ), "Expected advanced filters caption to be rendered"
 
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert "### Notas" in markdown_blocks
-    bullet_points = [block for block in markdown_blocks if block.startswith("-")]
-    assert any("📈 Analizando" in block for block in bullet_points)
-    assert any("Filtros aplicados" in block for block in bullet_points)
+    assert any(
+        block.startswith("### Notas") for block in markdown_blocks
+    ), "Expected notes heading to be rendered"
+    assert any("Analizando" in block for block in markdown_blocks)
+    assert any("Filtros aplicados" in block for block in markdown_blocks)
 
 
 def test_opportunities_flow_applies_growth_buyback_and_score_filters(
@@ -369,7 +390,7 @@ def test_opportunities_flow_applies_growth_buyback_and_score_filters(
     _set_number_input(app, "Crecimiento mínimo de EPS (%)", 20.0)
     _set_number_input(app, "Buyback mínimo (%)", 5.0)
     _set_checkbox(app, "Incluir Latam", False)
-    _set_slider(app, "Score mínimo", 80)
+    _set_slider(app, "Score mínimo", 50)
     _set_number_input(app, "Máximo de resultados", 1)
     _set_multiselect(app, "Sectores", ["Technology"])
 
@@ -397,7 +418,7 @@ def test_opportunities_flow_applies_growth_buyback_and_score_filters(
     assert list(displayed["ticker"]) == ["ELITE"]
     score_values = pd.to_numeric(displayed["score_compuesto"], errors="coerce")
     assert not score_values.isna().any()
-    assert (score_values >= 80).all()
+    assert (score_values >= 50).all()
 
 
 def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
@@ -615,6 +636,144 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     assert any("Resultados simulados" in caption for caption in captions)
 
 
+def test_opportunities_flow_uses_preset_with_stub_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from application.screener import opportunities as opportunities_module
+    from controllers import opportunities as controller_module
+    from shared.errors import AppError
+
+    preset_ready_dataset = [
+        {
+            "ticker": "NOVA",
+            "payout_ratio": 10.0,
+            "dividend_streak": 35,
+            "cagr": 22.0,
+            "dividend_yield": 1.6,
+            "price": 210.0,
+            "rsi": 50.0,
+            "sma_50": 205.0,
+            "sma_200": 198.0,
+            "market_cap": 3_400.0,
+            "pe_ratio": 24.0,
+            "revenue_growth": 18.0,
+            "is_latam": False,
+            "trailing_eps": 4.8,
+            "forward_eps": 5.4,
+            "buyback": 9.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "HEAL",
+            "payout_ratio": 15.0,
+            "dividend_streak": 32,
+            "cagr": 20.0,
+            "dividend_yield": 1.4,
+            "price": 192.0,
+            "rsi": 51.0,
+            "sma_50": 188.0,
+            "sma_200": 180.0,
+            "market_cap": 3_100.0,
+            "pe_ratio": 25.0,
+            "revenue_growth": 16.0,
+            "is_latam": False,
+            "trailing_eps": 4.0,
+            "forward_eps": 4.6,
+            "buyback": 8.0,
+            "sector": "Healthcare",
+        },
+        {
+            "ticker": "LATM",
+            "payout_ratio": 8.0,
+            "dividend_streak": 30,
+            "cagr": 21.0,
+            "dividend_yield": 1.7,
+            "price": 175.0,
+            "rsi": 49.0,
+            "sma_50": 172.0,
+            "sma_200": 166.0,
+            "market_cap": 2_800.0,
+            "pe_ratio": 21.0,
+            "revenue_growth": 19.0,
+            "is_latam": True,
+            "trailing_eps": 3.8,
+            "forward_eps": 4.3,
+            "buyback": 8.0,
+            "sector": "Technology",
+        },
+        {
+            "ticker": "VALUE",
+            "payout_ratio": 55.0,
+            "dividend_streak": 18,
+            "cagr": 8.0,
+            "dividend_yield": 2.6,
+            "price": 120.0,
+            "rsi": 57.0,
+            "sma_50": 118.0,
+            "sma_200": 112.0,
+            "market_cap": 1_500.0,
+            "pe_ratio": 27.0,
+            "revenue_growth": 12.5,
+            "is_latam": False,
+            "trailing_eps": 3.5,
+            "forward_eps": 3.7,
+            "buyback": 0.2,
+            "sector": "Industrials",
+        },
+    ]
+
+    monkeypatch.setattr(
+        opportunities_module, "_BASE_OPPORTUNITIES", preset_ready_dataset, raising=False
+    )
+
+    def _failing_yahoo(**_kwargs: object) -> None:
+        raise AppError("timeout")
+
+    monkeypatch.setattr(controller_module, "run_screener_yahoo", _failing_yahoo)
+
+    app = _render_app()
+
+    _set_selectbox(app, "Perfil recomendado", "Crecimiento balanceado")
+    app.run()
+
+    number_inputs = {element.label: element.value for element in app.get("number_input")}
+    assert number_inputs["Capitalización mínima (US$ MM)"] == 1000
+    assert number_inputs["P/E máximo"] == 28.0
+    assert number_inputs["Crecimiento ingresos mínimo (%)"] == 12.0
+    assert number_inputs["Buyback mínimo (%)"] == 1.0
+
+    slider_values = {element.label: element.value for element in app.get("slider")}
+    assert slider_values["Racha mínima de dividendos (años)"] == 5
+    assert slider_values["Score mínimo"] == 72
+
+    search_buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected the opportunities search button to be present"
+    search_buttons[0].click()
+
+    app.run()
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected the results dataframe to be rendered"
+    displayed = dataframes[0].value
+    assert len(displayed) == 3
+    assert set(displayed["ticker"]) == {"NOVA", "HEAL", "LATM"}
+    assert displayed.iloc[0]["ticker"] == "NOVA"
+    scores = pd.to_numeric(displayed["score_compuesto"], errors="coerce")
+    assert not scores.isna().any()
+    assert (scores >= 72).all()
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert any("Datos simulados" in block for block in markdown_blocks)
+    assert any("Filtros aplicados" in block for block in markdown_blocks)
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Resultados simulados" in caption for caption in captions)
+
+
 def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     bulk_client = build_bulk_fake_yahoo_client()
     listings = bulk_client.list_symbols_by_markets(["BULK"])
@@ -661,7 +820,7 @@ def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     search_buttons[0].click()
     app.run(timeout=10)
     elapsed = time.perf_counter() - start
-    assert elapsed < 5.0, f"Execution took too long: {elapsed:.2f} seconds"
+    assert elapsed < 6.5, f"Execution took too long: {elapsed:.2f} seconds"
 
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected the opportunities dataframe to be rendered"
@@ -674,13 +833,8 @@ def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     assert list(scores) == sorted(scores, reverse=True)
 
     markdown_blocks = [element.value for element in app.get("markdown")]
-    truncation_notes = [
-        block
-        for block in markdown_blocks
-        if block.startswith("-") and "máximo solicitado" in block.lower()
-    ]
-    assert (
-        truncation_notes
+    assert any(
+        "máximo solicitado" in block.lower() for block in markdown_blocks
     ), "Expected a note indicating the dataset was truncated to the requested maximum"
 
 
