@@ -181,10 +181,10 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert dataframes, "Expected Streamlit dataframe component after execution"
     captions = [element.value for element in app.get("caption")]
     assert any("Yahoo Finance" in caption for caption in captions)
-    assert (
+    expected_info_caption = shared_notes.format_note(
         "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
-        in captions
     )
+    assert expected_info_caption in captions
     fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert not any(fallback_note in block for block in markdown_blocks)
@@ -289,7 +289,10 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
         {"table": df, "notes": [fallback_note, extra_note], "source": "stub"}
     )
     captions = [element.value for element in app.get("caption")]
-    assert any("Resultados simulados" in caption for caption in captions)
+    expected_stub_caption = shared_notes.format_note(
+        "⚠️ Resultados simulados (Yahoo no disponible)"
+    )
+    assert expected_stub_caption in captions
     markdown_blocks = [element.value for element in app.get("markdown")]
     formatted_fallback = shared_notes.format_note(fallback_note)
     formatted_extra = shared_notes.format_note(extra_note)
@@ -310,12 +313,18 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
         {"table": df, "notes": [extra_note], "source": "stub"}
     )
     captions = [element.value for element in app.get("caption")]
-    assert "⚠️ Resultados simulados (Yahoo no disponible)" in captions
+    expected_stub_caption = shared_notes.format_note(
+        "⚠️ Resultados simulados (Yahoo no disponible)"
+    )
+    expected_info_caption = shared_notes.format_note(
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+    )
+    assert expected_stub_caption in captions
     assert not any(
         "Resultados obtenidos de Yahoo Finance" in caption for caption in captions
     )
-    assert any(
-        "ℹ️ Los filtros avanzados" in caption for caption in captions
+    assert (
+        expected_info_caption in captions
     ), "Expected informational caption to remain visible"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(extra_note in block for block in markdown_blocks)
