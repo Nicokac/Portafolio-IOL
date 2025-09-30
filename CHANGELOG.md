@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - El valor por defecto de `MAX_RESULTS` se consolidó en `shared.config.Settings` (20) y la UI ahora inicializa el selector con ese número para respetar overrides de configuración.
 ### Tests
 - Documentado el procedimiento para habilitar `pytest -m live_yahoo` mediante la variable `RUN_LIVE_YF` y advertir sobre su naturaleza no determinista.
+### Documentation
+- Documentadas las severidades soportadas por `shared.ui.notes.format_note`, sus prefijos (⚠️/ℹ️/✅/❌) y el helper compartido para mantener mensajes consistentes en la UI.
 
 ## [3.0.1]
 ### Changed
