@@ -206,6 +206,62 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert source == "stub"
 
 
+def test_controller_relays_strict_filters_and_minimum_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_kwargs: Dict[str, Any] = {}
+    minimum_message = "Solo se encontraron 1 oportunidades (mínimo esperado: 4)."
+
+    def fake_yahoo(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:
+        captured_kwargs.clear()
+        captured_kwargs.update(kwargs)
+        df = pd.DataFrame(
+            [
+                {
+                    "ticker": "ELITE",
+                    "sector": "Technology",
+                    "payout_ratio": 30.0,
+                    "dividend_streak": 8,
+                    "cagr": 11.0,
+                    "dividend_yield": 1.8,
+                    "price": 120.0,
+                    "score_compuesto": 68.0,
+                }
+            ]
+        )
+        return df, [minimum_message]
+
+    monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
+    monkeypatch.setattr(
+        sut,
+        "run_screener_stub",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("stub fallback not expected")),
+    )
+
+    df, notes, source = sut.run_opportunities_controller(
+        sectors=["technology", "healthcare"],
+        include_technicals=False,
+        min_eps_growth=20.0,
+        min_buyback=10.0,
+        min_score_threshold=60.0,
+        max_results=1,
+    )
+
+    assert captured_kwargs == {
+        "manual_tickers": None,
+        "include_technicals": False,
+        "sectors": ["Technology", "Healthcare"],
+        "min_eps_growth": pytest.approx(20.0),
+        "min_buyback": pytest.approx(10.0),
+        "min_score_threshold": pytest.approx(60.0),
+        "max_results": 1,
+    }
+    assert list(df.columns) == _EXPECTED_COLUMNS
+    assert df.iloc[0]["ticker"] == "ELITE"
+    assert notes == [minimum_message]
+    assert source == "yahoo"
+
+
 def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         sut,
