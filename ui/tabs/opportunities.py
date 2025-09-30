@@ -53,11 +53,13 @@ def _format_note(note: str) -> str:
     highlight_min_expected = any(
         phrase in normalized for phrase in ("mínimo esperado", "minimo esperado")
     )
+    highlight_simulated_data = normalized.startswith("⚠️ datos simulados")
     if (
         highlight_top_results
         or highlight_threshold
         or highlight_scarcity
         or highlight_min_expected
+        or highlight_simulated_data
     ):
         return f"**{note}**"
     return note
