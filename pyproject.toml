@@ -1,3 +1,8 @@
 [project]
 name = "portafolio-iol"
 version = "0.3.14"
+
+[tool.pytest.ini_options]
+markers = [
+    "live_yahoo: Tests that call the live Yahoo Finance API (enable with RUN_LIVE_YF=1)",
+]
