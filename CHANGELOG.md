@@ -6,7 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- _No hay cambios destacados por el momento._
+### Changed
+- El valor por defecto de `MAX_RESULTS` se consolidó en `shared.config.Settings` (20) y la UI ahora inicializa el selector con ese número para respetar overrides de configuración.
 
 ## [3.0.1]
 ### Changed

@@ -6,6 +6,7 @@ from typing import Iterable, Mapping, Sequence
 import pandas as pd
 import streamlit as st
 
+import shared.settings as shared_settings
 from shared.version import __version__
 
 _SECTOR_OPTIONS: Sequence[str] = (
@@ -199,7 +200,7 @@ def render_opportunities_tab() -> None:
         max_results = st.number_input(
             "Máximo de resultados",
             min_value=1,
-            value=25,
+            value=int(shared_settings.max_results),
             step=1,
             help="Limita la cantidad de oportunidades mostradas al tope indicado.",
         )

@@ -45,7 +45,7 @@ Los controles disponibles en la UI permiten ajustar esos filtros sin modificar c
 - Inputs dedicados a crecimiento mínimo de EPS y porcentaje mínimo de recompras (`buybacks`).
 - Sliders y number inputs para capitalización, payout, P/E, crecimiento de ingresos, racha/CAGR de dividendos e inclusión de Latinoamérica.
 
-El umbral mínimo de score y el recorte del **top N** de oportunidades son parametrizables mediante las variables `MIN_SCORE_THRESHOLD` (valor por defecto: `80`) y `MAX_RESULTS` (valor por defecto: `20`). Puedes redefinirlos desde `.env`, `secrets.toml` o `config.json` para adaptar la severidad del filtro o ampliar/restringir el listado mostrado en la UI. La cabecera del listado muestra notas contextuales cuando se aplican estos recortes y sigue diferenciando la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
+El umbral mínimo de score y el recorte del **top N** de oportunidades son parametrizables mediante las variables `MIN_SCORE_THRESHOLD` (valor por defecto: `80`) y `MAX_RESULTS` (valor por defecto: `20`). La interfaz utiliza ese valor centralizado como punto de partida en el selector "Máximo de resultados" para reflejar cualquier override definido en la configuración. Puedes redefinirlos desde `.env`, `secrets.toml` o `config.json` para adaptar la severidad del filtro o ampliar/restringir el listado mostrado en la UI. La cabecera del listado muestra notas contextuales cuando se aplican estos recortes y sigue diferenciando la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
 
 ## Integración con Yahoo Finance
 

@@ -18,6 +18,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from shared.errors import AppError
+import shared.settings as shared_settings
 
 def _resolve_streamlit_module() -> ModuleType:
     """Ensure we use the real Streamlit implementation, not a test stub."""
@@ -150,7 +151,6 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "Buyback mínimo (%)": 1.5,
         "Incluir Latam": False,
         "Score mínimo": 72,
-        "Máximo de resultados": 15,
         "Sectores": ["Technology"],
     }
     app, mock = _run_app_with_result({"table": df, "notes": [], "source": "yahoo"}, overrides)
@@ -168,9 +168,14 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         "include_latam": False,
         "include_technicals": False,
         "min_score_threshold": 72.0,
-        "max_results": 15,
+        "max_results": shared_settings.max_results,
         "sectors": ["Technology"],
     }
+    max_results_inputs = [
+        element for element in app.get("number_input") if element.label == "Máximo de resultados"
+    ]
+    assert max_results_inputs, "Expected to find number input for maximum results"
+    assert int(max_results_inputs[0].value) == shared_settings.max_results
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
     captions = [element.value for element in app.get("caption")]
@@ -299,7 +304,9 @@ def test_notes_block_highlights_backend_messages() -> None:
             "score_compuesto": [78.0],
         }
     )
-    top_note = "Se recortaron los resultados a los 5 mejores según el score compuesto."
+    top_note = (
+        f"Se recortaron los resultados a los {shared_settings.max_results} mejores según el score compuesto."
+    )
     threshold_note = "No se encontraron candidatos con score >= 75 tras aplicar el threshold."
     regular_note = "Considerar diversificación adicional."
 
