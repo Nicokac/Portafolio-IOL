@@ -199,7 +199,8 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert "MSFT" not in set(df["ticker"])
-    assert notes[0] == "⚠️ Datos simulados (Yahoo no disponible)"
+    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
+    assert "boom" in notes[0]
     assert notes[1] == "Stub note"
     assert "AAPL" in notes[2]
     assert source == "stub"
@@ -234,6 +235,30 @@ def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.Monk
     assert any(ticker == "AAPL" for ticker in df["ticker"])
     assert not any("MSFT" in note for note in notes)
     assert source == "stub"
+
+
+def test_fallback_includes_unexpected_error_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sut,
+        "run_screener_yahoo",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("service offline")),
+    )
+
+    def fake_stub(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:  # noqa: ARG001
+        return pd.DataFrame([{"ticker": "AAPL"}]), ["Stub note"]
+
+    monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
+
+    df, notes, source = sut.run_opportunities_controller(
+        manual_tickers=["AAPL"],
+        include_technicals=False,
+    )
+
+    assert "ticker" in df.columns
+    assert source == "stub"
+    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
+    assert "service offline" in notes[0]
+    assert notes[1] == "Stub note"
 
 
 def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) -> None:

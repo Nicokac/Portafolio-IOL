@@ -29,6 +29,28 @@ _EXPECTED_COLUMNS: Sequence[str] = (
 _TECHNICAL_COLUMNS: Sequence[str] = ("rsi", "sma_50", "sma_200")
 
 
+def _summarize_active_filters(filters: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return a compact mapping with the filters that are effectively active."""
+
+    summary: dict[str, Any] = {}
+    for key, value in filters.items():
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, set, frozenset)) and not value:
+            continue
+        if isinstance(value, Mapping) and not value:
+            continue
+        summary[key] = value
+    return summary
+
+
+def _describe_exception(exc: BaseException) -> str:
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__
+
+
 def _clean_manual_tickers(manual_tickers: Optional[Iterable[str]]) -> List[str]:
     """Normalise manual tickers by stripping whitespace and uppercasing."""
 
@@ -169,18 +191,25 @@ def run_opportunities_controller(
     source = "yahoo"
 
     extra_notes: List[str] = []
+    failure_reason: Optional[str] = None
+    active_filters = _summarize_active_filters(yahoo_kwargs)
 
     if callable(run_screener_yahoo):
         try:
             raw_result = run_screener_yahoo(**yahoo_kwargs)
         except AppError as exc:  # pragma: no cover - protective branch
+            failure_reason = _describe_exception(exc)
             logging.getLogger(__name__).warning(
-                "Yahoo screener failed with AppError: %s", exc
+                "Yahoo screener failed with AppError: %s | filtros activos: %s",
+                failure_reason,
+                active_filters,
             )
             fallback_used = True
         except Exception as exc:  # pragma: no cover - unexpected failure
+            failure_reason = _describe_exception(exc)
             logging.getLogger(__name__).exception(
-                "Unexpected error from Yahoo screener"
+                "Unexpected error from Yahoo screener | filtros activos: %s",
+                active_filters,
             )
             fallback_used = True
         else:
@@ -214,7 +243,10 @@ def run_opportunities_controller(
             df, stub_notes = stub_result
         else:
             df = stub_result  # type: ignore[assignment]
-        notes.append("⚠️ Datos simulados (Yahoo no disponible)")
+        fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
+        if failure_reason:
+            fallback_note = f"{fallback_note} — Causa: {failure_reason}"
+        notes.append(fallback_note)
         if stub_notes:
             notes.extend(_normalize_notes(stub_notes))
         df = _ensure_columns(df, include_technicals)
