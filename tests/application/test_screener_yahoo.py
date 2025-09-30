@@ -176,13 +176,50 @@ def test_run_screener_yahoo_computes_metrics(comprehensive_data):
 
 def test_run_screener_yahoo_marks_missing(caplog):
     client = MissingYahooClient()
-    df = ops.run_screener_yahoo(manual_tickers=["zzz"], client=client, include_technicals=True)
+    result = ops.run_screener_yahoo(
+        manual_tickers=["zzz"], client=client, include_technicals=True
+    )
+
+    assert isinstance(result, tuple)
+    df, notes = result
 
     assert df.iloc[0]["ticker"] == "ZZZ"
     assert df.iloc[0]["score_compuesto"] is pd.NA
     assert "sector" in df.columns
     assert pd.isna(df.iloc[0]["sector"])
+    assert any("EPS" in note for note in notes)
     assert any("faltan datos" in record.getMessage().lower() for record in caplog.records)
+
+
+def test_run_screener_yahoo_discards_missing_eps(monkeypatch, comprehensive_data):
+    base = comprehensive_data["ABC"]
+    fundamentals_missing = base["fundamentals"].copy()
+    fundamentals_missing.update({"ticker": "MISS"})
+    fundamentals_missing.pop("trailing_eps", None)
+    fundamentals_missing.pop("forward_eps", None)
+
+    data = {
+        "MISS": {
+            "fundamentals": fundamentals_missing,
+            "dividends": base["dividends"],
+            "shares": base["shares"],
+            "prices": base["prices"],
+        }
+    }
+
+    listings = {"TEST": [{"ticker": "MISS"}]}
+    client = FakeYahooClient(data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(manual_tickers=None, client=client, include_technicals=False)
+
+    assert isinstance(result, tuple)
+    df, notes = result
+
+    assert df.empty
+    assert any("EPS" in note for note in notes)
+    combined = " ".join(notes)
+    assert "MISS" in combined
 
 
 def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
