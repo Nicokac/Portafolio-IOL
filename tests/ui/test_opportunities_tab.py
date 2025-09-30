@@ -290,7 +290,7 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     captions = [element.value for element in app.get("caption")]
     assert any("Resultados simulados" in caption for caption in captions)
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert any(fallback_note in block for block in markdown_blocks)
+    assert any(f"- **{fallback_note}**" in block for block in markdown_blocks)
     assert any(extra_note in block for block in markdown_blocks)
 
 
@@ -316,6 +316,25 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
     ), "Expected informational caption to remain visible"
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any(extra_note in block for block in markdown_blocks)
+
+
+def test_fallback_note_with_cause_highlighted() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["KO"],
+            "price": [58.31],
+            "score_compuesto": [61.0],
+        }
+    )
+    fallback_note = "⚠️ Datos simulados — Causa: Yahoo timeout"
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [fallback_note], "source": "stub"}
+    )
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+
+    assert any(f"- **{fallback_note}**" in block for block in markdown_blocks)
 
 
 def test_notes_block_highlights_backend_messages() -> None:
