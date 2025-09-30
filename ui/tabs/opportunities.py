@@ -35,6 +35,9 @@ def _format_note(note: str) -> str:
             for keyword in ("recort", "limit", "límite", "limite")
         )
     )
+    highlight_truncated_summary = (
+        "se muestran" in normalized and "máximo solicitado" in normalized
+    )
     highlight_threshold = (
         any(keyword in normalized for keyword in ("threshold", "umbral", "score"))
         and any(
@@ -56,6 +59,7 @@ def _format_note(note: str) -> str:
     highlight_simulated_data = normalized.startswith("⚠️ datos simulados")
     if (
         highlight_top_results
+        or highlight_truncated_summary
         or highlight_threshold
         or highlight_scarcity
         or highlight_min_expected
