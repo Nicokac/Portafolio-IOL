@@ -41,7 +41,24 @@ def _format_note(note: str) -> str:
             keyword in normalized for keyword in ("no se encontraron", "sin candidatos")
         )
     )
-    if highlight_top_results or highlight_threshold:
+    highlight_scarcity = any(
+        phrase in normalized
+        for phrase in (
+            "solo se encontraron",
+            "solo se encontro",
+            "solo se encontró",
+            "solo encontramos",
+        )
+    )
+    highlight_min_expected = any(
+        phrase in normalized for phrase in ("mínimo esperado", "minimo esperado")
+    )
+    if (
+        highlight_top_results
+        or highlight_threshold
+        or highlight_scarcity
+        or highlight_min_expected
+    ):
         return f"**{note}**"
     return note
 

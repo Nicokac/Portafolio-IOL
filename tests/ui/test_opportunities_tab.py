@@ -347,6 +347,25 @@ def test_notes_block_highlights_backend_messages() -> None:
     assert f"- {regular_note}" in markdown_blocks
 
 
+def test_notes_block_highlights_scarcity_messages() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["NFLX"],
+            "price": [410.55],
+            "score_compuesto": [71.0],
+        }
+    )
+    scarcity_note = "Solo se encontraron 3 candidatos por debajo del mínimo esperado."
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [scarcity_note], "source": "yahoo"}
+    )
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+
+    assert f"- **{scarcity_note}**" in markdown_blocks
+
+
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", False)
     monkeypatch.delenv("FEATURE_OPPORTUNITIES_TAB", raising=False)
