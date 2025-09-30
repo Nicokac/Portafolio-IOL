@@ -992,6 +992,7 @@ def test_run_opportunities_controller_applies_new_filters(
 _STUB_TICKERS = {"AAPL", "MSFT", "KO", "JNJ", "NUE", "MELI"}
 
 
+# Instrucciones completas en README.md#pruebas para habilitar la marca live_yahoo.
 @pytest.mark.live_yahoo
 @pytest.mark.skipif(
     os.getenv("RUN_LIVE_YF") != "1",

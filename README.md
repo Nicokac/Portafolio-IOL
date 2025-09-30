@@ -250,6 +250,15 @@ Para ejecutar solo un subconjunto por carpeta, indica la ruta deseada:
 pytest application/test
 ```
 
+Para habilitar las pruebas que consultan Yahoo Finance en vivo, exporta la
+variable `RUN_LIVE_YF=1` y ejecuta la etiqueta dedicada. Estas verificaciones
+descargan datos reales y, por tratarse de información del mercado en tiempo
+real, pueden arrojar resultados no deterministas entre corridas.
+
+```bash
+RUN_LIVE_YF=1 pytest -m live_yahoo
+```
+
 Para verificar el estilo del código:
 
 ```bash
