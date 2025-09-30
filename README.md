@@ -34,6 +34,24 @@ La vista beta evoluciona hacia un universo dinámico que se recalcula en cada se
 - Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
 - Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
+El stub local cuenta ahora con un universo de 18 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials y Consumer Cyclical) con métricas fundamentales completas. Esto permite validar escenarios de QA y fallback sin depender de servicios externos y asegura que filtros avanzados como payout, recompras o crecimiento de EPS tengan datos coherentes.
+
+| Sector | Tickers de ejemplo |
+| --- | --- |
+| Technology | AAPL, MSFT |
+| Communication Services | GOOGL |
+| Healthcare | JNJ, ABBV |
+| Financial Services | V, JPM, BBD |
+| Industrials | UNP, HON |
+| Consumer Defensive | KO, PEP |
+| Utilities | NEE, DUK |
+| Energy | XOM, CVX |
+| Real Estate | PLD |
+| Basic Materials | NUE |
+| Consumer Cyclical / LatAm | MELI |
+
+Durante los failovers la UI etiqueta el origen como `stub` y continúa respetando los filtros configurados. Los tests automatizados utilizan este dataset extendido para comprobar diversidad sectorial y completitud de fundamentals, por lo que cualquier ajuste debe mantener la cobertura y las columnas documentadas.
+
 El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
 
 Cada oportunidad obtiene un **score normalizado en escala 0-100** que promedia aportes de payout, racha de dividendos, CAGR, recompras, RSI y MACD. Esta normalización permite comparar emisores de distintas fuentes con un criterio homogéneo. Los resultados que queden por debajo del umbral configurado se descartan automáticamente para reducir ruido.
