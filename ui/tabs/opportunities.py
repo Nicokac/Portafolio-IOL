@@ -256,11 +256,13 @@ def render_opportunities_tab() -> None:
             st.dataframe(table, use_container_width=True)
 
         if source == "stub":
-            st.caption("⚠️ Resultados simulados (Yahoo no disponible)")
+            st.caption(shared_notes.format_note("⚠️ Resultados simulados (Yahoo no disponible)"))
         else:
             st.caption("Resultados obtenidos de Yahoo Finance")
         st.caption(
-            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+            shared_notes.format_note(
+                "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+            )
         )
 
         if notes:

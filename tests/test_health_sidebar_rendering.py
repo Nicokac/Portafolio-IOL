@@ -20,6 +20,7 @@ from shared.time_provider import TIME_FORMAT, TimeProvider
 # <== De tu rama: Se importa TimeSnapshot para el stub.
 from shared.time_provider import TimeSnapshot
 from shared.version import __version__
+from shared.ui import notes as shared_notes
 
 _ORIGINAL_STREAMLIT = st
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -161,12 +162,16 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
     formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
     expected_lines = {
         "#### 🔐 Conexión IOL",
-        f"✅ Refresh correcto • {formatted[0]} — OK",
+        shared_notes.format_note(f"✅ Refresh correcto • {formatted[0]} — OK"),
         "#### 📈 Yahoo Finance",
-        f"♻️ Fallback local • {formatted[1]} — respaldo",
+        shared_notes.format_note(f"ℹ️ Fallback local • {formatted[1]} — respaldo"),
         "#### 💱 FX",
-        f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom",
-        f"♻️ Uso de caché • {formatted[3]} (edad 46s)",
+        shared_notes.format_note(
+            f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom"
+        ),
+        shared_notes.format_note(
+            f"✅ Uso de caché • {formatted[3]} (edad 46s)"
+        ),
         "#### ⏱️ Latencias",
         f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[4]}",
         f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[5]}",

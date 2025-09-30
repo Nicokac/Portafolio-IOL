@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +11,7 @@ if str(ROOT) not in sys.path:
 
 import services.health as health_service
 import ui.health_sidebar as health_sidebar
+from shared.ui import notes as shared_notes
 from shared.version import __version__
 
 
@@ -32,6 +35,14 @@ def _collect_markdown(sidebar):
 
 
 def test_render_health_sidebar_with_success_metrics(monkeypatch):
+    calls: list[str] = []
+
+    def _spy(note: str) -> str:
+        calls.append(note)
+        return shared_notes.format_note(note)
+
+    monkeypatch.setattr(health_sidebar, "format_note", _spy)
+
     metrics = {
         "iol_refresh": {"status": "success", "detail": "Tokens OK", "ts": 1},
         "yfinance": {"source": "fallback", "detail": "AAPL", "ts": 2},
@@ -62,15 +73,33 @@ def test_render_health_sidebar_with_success_metrics(monkeypatch):
 
     md_calls = _collect_markdown(sidebar)
     assert any("#### 🔐 Conexión IOL" in text for text in md_calls)
-    assert any("✅ Refresh correcto" in text and "Tokens OK" in text for text in md_calls)
-    assert any("♻️ Fallback local" in text and "AAPL" in text for text in md_calls)
-    assert any("API FX OK" in text and "123" in text for text in md_calls)
-    assert any("Uso de caché" in text and "edad" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "Tokens OK" in text for text in md_calls)
+    assert any(":information_source:" in text and "Fallback local" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "API FX OK" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "Uso de caché" in text for text in md_calls)
     assert any("- Portafolio: 200 ms" in text for text in md_calls)
     assert any("- Cotizaciones: 350 ms" in text and "items: 3" in text for text in md_calls)
 
+    assert len(calls) == 4
+    assert calls[0].startswith("✅ Refresh correcto •")
+    assert calls[0].endswith("Tokens OK")
+    assert calls[1].startswith("ℹ️ Fallback local •")
+    assert calls[1].endswith("AAPL")
+    assert calls[2].startswith("✅ API FX OK •")
+    assert "(123 ms)" in calls[2]
+    assert calls[3].startswith("✅ Uso de caché •")
+    assert calls[3].endswith("(edad 5s)")
+
 
 def test_render_health_sidebar_with_missing_metrics(monkeypatch):
+    calls: list[str] = []
+
+    def _spy(note: str) -> str:
+        calls.append(note)
+        return shared_notes.format_note(note)
+
+    monkeypatch.setattr(health_sidebar, "format_note", _spy)
+
     metrics = {
         "iol_refresh": {"status": "error", "detail": "Token inválido", "ts": 10},
         "yfinance": None,
@@ -99,9 +128,15 @@ def test_render_health_sidebar_with_missing_metrics(monkeypatch):
     )
 
     md_calls = _collect_markdown(sidebar)
-    assert any("⚠️ Error al refrescar" in text and "Token inválido" in text for text in md_calls)
+    assert any(":warning:" in text and "Error al refrescar" in text for text in md_calls)
     assert "_Sin consultas registradas._" in md_calls
-    assert any("⚠️ API FX con errores" in text and "timeout" in text for text in md_calls)
+    assert any(":warning:" in text and "API FX con errores" in text for text in md_calls)
     assert "_Sin uso de caché registrado._" in md_calls
     assert any(text.startswith("- Portafolio: sin registro") for text in md_calls)
     assert any("- Cotizaciones: s/d" in text and "sin datos" in text for text in md_calls)
+
+    assert len(calls) == 2
+    assert calls[0].startswith("⚠️ Error al refrescar •")
+    assert calls[0].endswith("Token inválido")
+    assert calls[1].startswith("⚠️ API FX con errores •")
+    assert calls[1].endswith("timeout")
