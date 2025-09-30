@@ -391,8 +391,31 @@ def test_notes_block_highlights_scarcity_messages() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert (
+    formatted_note = (
         "- :information_source: Solo se encontraron 3 candidatos por debajo del mínimo esperado."
+    )
+    assert formatted_note in markdown_blocks
+    assert "**" not in formatted_note
+
+
+def test_notes_block_formats_success_messages() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["NFLX"],
+            "price": [410.55],
+            "score_compuesto": [71.0],
+        }
+    )
+    success_note = "✅ Screening completado sin restricciones."
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [success_note], "source": "yahoo"}
+    )
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+
+    assert (
+        "- :white_check_mark: **Screening completado sin restricciones.**"
         in markdown_blocks
     )
 

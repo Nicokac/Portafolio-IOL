@@ -22,64 +22,110 @@ _SECTOR_OPTIONS: Sequence[str] = (
     "Technology",
     "Utilities",
 )
+NOTE_SEVERITIES: Mapping[str, Mapping[str, Sequence[str]]] = {
+    "warning": {
+        "prefixes": ("⚠️",),
+        "keywords": (
+            "recortaron los resultados",
+            "mejores",
+            "máximo solicitado",
+            "maximo solicitado",
+            "no se encontraron candidatos",
+            "sin candidatos",
+            "solo se encontraron",
+            "solo se encontro",
+            "solo encontramos",
+            "mínimo esperado",
+            "minimo esperado",
+            "datos simulados",
+        ),
+    },
+    "info": {
+        "prefixes": ("ℹ️",),
+    },
+    "success": {
+        "prefixes": ("✅", "✔️"),
+    },
+    "error": {
+        "prefixes": ("❌", "🚫"),
+    },
+}
+
+_SEVERITY_RENDERING: Mapping[str, Mapping[str, object]] = {
+    "warning": {"icon": ":warning:", "emphasize": True},
+    "info": {"icon": ":information_source:", "emphasize": False},
+    "success": {"icon": ":white_check_mark:", "emphasize": True},
+    "error": {"icon": ":x:", "emphasize": True},
+}
 
 
 def _format_note(note: str) -> str:
-    """Return a formatted representation for notes that need emphasis."""
+    """Format backend notes based on their severity category.
+
+    Las categorías disponibles son:
+
+    * ``warning`` → mensajes relevantes que requieren atención inmediata.
+    * ``info`` → notas informativas sin énfasis.
+    * ``success`` → confirmaciones o resultados positivos destacados.
+    * ``error`` → fallas o interrupciones reportadas por el backend.
+
+    Cada categoría define iconografía y énfasis para reutilizar el mismo
+    comportamiento en otras pestañas que consuman el helper.
+    """
 
     stripped = note.strip()
-    for prefix, icon, emphasize in (
-        ("⚠️", ":warning:", True),
-        ("ℹ️", ":information_source:", False),
-    ):
-        if stripped.startswith(prefix):
-            content = stripped[len(prefix) :].lstrip()
-            if not content:
-                return icon
-            if emphasize:
-                return f"{icon} **{content}**"
-            return f"{icon} {content}"
+    if not stripped:
+        return ""
 
-    normalized = stripped.casefold()
-    highlight_top_results = (
-        any(keyword in normalized for keyword in ("top", "mejores"))
-        and any(
-            keyword in normalized
-            for keyword in ("recort", "limit", "límite", "limite")
-        )
-    )
-    highlight_truncated_summary = (
-        "se muestran" in normalized and "máximo solicitado" in normalized
-    )
-    highlight_threshold = (
-        any(keyword in normalized for keyword in ("threshold", "umbral", "score"))
-        and any(
-            keyword in normalized for keyword in ("no se encontraron", "sin candidatos")
-        )
-    )
-    highlight_scarcity = any(
-        phrase in normalized
-        for phrase in (
-            "solo se encontraron",
-            "solo se encontro",
-            "solo se encontró",
-            "solo encontramos",
-        )
-    )
-    highlight_min_expected = any(
-        phrase in normalized for phrase in ("mínimo esperado", "minimo esperado")
-    )
-    highlight_simulated_data = normalized.startswith("⚠️ datos simulados")
-    if (
-        highlight_top_results
-        or highlight_truncated_summary
-        or highlight_threshold
-        or highlight_scarcity
-        or highlight_min_expected
-        or highlight_simulated_data
-    ):
-        return f"**{stripped}**"
-    return stripped
+    severity = None
+    content = stripped
+    matched_by_prefix = False
+
+    for candidate, metadata in NOTE_SEVERITIES.items():
+        prefixes = metadata.get("prefixes")
+        if not prefixes:
+            continue
+        for prefix in prefixes:
+            if content.startswith(prefix):
+                matched_by_prefix = True
+                severity = candidate
+                content = content[len(prefix) :].lstrip()
+                break
+        if matched_by_prefix:
+            break
+
+    normalized = content.casefold()
+    if severity is None and normalized:
+        for candidate, metadata in NOTE_SEVERITIES.items():
+            keywords = metadata.get("keywords")
+            if not keywords:
+                continue
+            for keyword in keywords:
+                if keyword in normalized:
+                    severity = candidate
+                    break
+            if severity is not None:
+                break
+
+    if severity is None:
+        return stripped
+
+    rendering = _SEVERITY_RENDERING.get(severity, {"icon": "", "emphasize": False})
+    icon = rendering.get("icon", "") or ""
+    emphasize = bool(rendering.get("emphasize"))
+
+    if not content:
+        return icon if matched_by_prefix else stripped
+
+    formatted = f"**{content}**" if emphasize else content
+
+    if matched_by_prefix and icon:
+        return f"{icon} {formatted}" if content else icon
+
+    if matched_by_prefix:
+        return formatted
+
+    return formatted
 
 
 def _normalize_notes(notes: object) -> list[str]:
