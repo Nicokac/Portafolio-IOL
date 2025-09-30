@@ -241,12 +241,18 @@ def _apply_filters_and_finalize(
     sector_column: str = "sector",
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
+    missing_optional_labels: Mapping[str, bool] | None = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
     result = df.copy()
     notes: list[str] = []
     critical_missing: dict[str, set[str]] = {}
+    optional_missing: dict[str, set[str]] = {}
+    optional_lookup = {
+        str(label): bool(flag)
+        for label, flag in (missing_optional_labels or {}).items()
+    }
 
     def register_missing(mask: pd.Series, label: str) -> None:
         """Record tickers with missing critical data when NA filters are allowed."""
@@ -262,7 +268,10 @@ def _apply_filters_and_finalize(
         tickers = [ticker for ticker in tickers_series if ticker]
         if not tickers:
             return
-        critical_missing.setdefault(label, set()).update(tickers)
+        if optional_lookup.get(label, False):
+            optional_missing.setdefault(label, set()).update(tickers)
+        else:
+            critical_missing.setdefault(label, set()).update(tickers)
     exclude_set: set[str] | None = None
     if exclude_tickers:
         exclude_set = {
@@ -283,24 +292,24 @@ def _apply_filters_and_finalize(
         )
 
     if max_payout is not None and "payout_ratio" in result.columns:
-        series = result["payout_ratio"]
-        mask = series <= max_payout
+        series = pd.to_numeric(result["payout_ratio"], errors="coerce")
         if allow_na_filters:
-            mask = series.isna() | mask
+            register_missing(series.isna(), "ratio de payout")
+        mask = series.notna() & (series <= max_payout)
         result = result[mask]
 
     if min_div_streak is not None and "dividend_streak" in result.columns:
-        series = result["dividend_streak"]
-        mask = series >= min_div_streak
+        series = pd.to_numeric(result["dividend_streak"], errors="coerce")
         if allow_na_filters:
-            mask = series.isna() | mask
+            register_missing(series.isna(), "racha de dividendos")
+        mask = series.notna() & (series >= min_div_streak)
         result = result[mask]
 
     if min_cagr is not None and "cagr" in result.columns:
-        series = result["cagr"]
-        mask = series >= min_cagr
+        series = pd.to_numeric(result["cagr"], errors="coerce")
         if allow_na_filters:
-            mask = series.isna() | mask
+            register_missing(series.isna(), "CAGR")
+        mask = series.notna() & (series >= min_cagr)
         result = result[mask]
 
     if min_market_cap is not None and market_cap_column in result.columns:
@@ -353,9 +362,9 @@ def _apply_filters_and_finalize(
 
     if min_buyback is not None and buyback_column in result.columns:
         series = pd.to_numeric(result[buyback_column], errors="coerce")
-        mask = series >= float(min_buyback)
         if allow_na_filters:
-            mask = series.isna() | mask
+            register_missing(series.isna(), "recompras")
+        mask = series.notna() & (series >= float(min_buyback))
         result = result[mask]
 
     if min_score_threshold is not None and "score_compuesto" in result.columns:
@@ -483,6 +492,25 @@ def _apply_filters_and_finalize(
                 )
             else:
                 message = f"{verb} {noun} por falta de datos críticos de {label}."
+            notes.append(message)
+
+    if optional_missing:
+        for label, tickers in optional_missing.items():
+            ordered = sorted(tickers)
+            if not ordered:
+                continue
+            count = len(ordered)
+            preview_list = ordered[:5]
+            preview = ", ".join(preview_list)
+            if count > len(preview_list):
+                preview += f", … (+{count - len(preview_list)} más)"
+            noun = "el ticker" if count == 1 else "los tickers"
+            if preview:
+                message = (
+                    f"Faltan datos opcionales de {label} para {noun} {preview}."
+                )
+            else:
+                message = f"Faltan datos opcionales de {label}."
             notes.append(message)
 
     result = result.reset_index(drop=True)
@@ -947,7 +975,8 @@ def run_screener_yahoo(
         shares = _fetch_with_warning(client.get_shares_outstanding, ticker, "acciones")
         prices = _fetch_with_warning(client.get_price_history, ticker, "precios")
 
-        payout = _safe_round(fundamentals["payout_ratio"] if fundamentals else pd.NA)
+        payout_raw = fundamentals.get("payout_ratio") if fundamentals else pd.NA
+        payout = _safe_round(payout_raw)
         dividend_yield = _safe_round(
             fundamentals["dividend_yield"] if fundamentals else pd.NA
         )
@@ -1058,6 +1087,16 @@ def run_screener_yahoo(
 
     manual_placeholders = manual_requested or None
 
+    missing_optional_labels = {
+        "ratio de payout": max_payout is None,
+        "racha de dividendos": min_div_streak is None,
+        "CAGR": min_cagr is None,
+        "recompras": min_buyback is None,
+        "EPS trailing": False,
+        "EPS forward": False,
+        "crecimiento de EPS": min_eps_growth is None,
+    }
+
     df = _apply_filters_and_finalize(
         df,
         max_payout=max_payout,
@@ -1093,6 +1132,7 @@ def run_screener_yahoo(
             "_meta_forward_eps",
             "_meta_buyback",
         ),
+        missing_optional_labels=missing_optional_labels,
     )
 
     filter_notes = list(df.attrs.pop("_notes", []))

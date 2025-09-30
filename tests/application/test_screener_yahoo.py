@@ -343,7 +343,7 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
         manual_tickers=["ABC", "BAD"],
         client=client,
         max_payout=50,
-        min_div_streak=3,
+        min_div_streak=1,
         min_cagr=5,
         include_technicals=False,
     )
@@ -407,6 +407,67 @@ def test_run_screener_yahoo_auto_universe_drops_filtered(monkeypatch, comprehens
 
     assert list(df["ticker"]) == ["ABC"]
     assert "BAD" not in set(df["ticker"])
+
+
+def test_run_screener_yahoo_excludes_missing_dividend_metrics(monkeypatch, comprehensive_data):
+    base = comprehensive_data["ABC"]
+    listings = {
+        "TEST": [
+            {"ticker": "ABC"},
+            {"ticker": "NOPAY"},
+            {"ticker": "NOSTREAK"},
+        ]
+    }
+
+    missing_payout = base["fundamentals"].copy()
+    missing_payout.update({"ticker": "NOPAY"})
+    missing_payout.pop("payout_ratio", None)
+
+    missing_streak = base["fundamentals"].copy()
+    missing_streak.update({"ticker": "NOSTREAK"})
+
+    empty_dividends = pd.DataFrame({
+        "date": pd.Series(dtype="datetime64[ns, UTC]"),
+        "amount": pd.Series(dtype="float64"),
+    })
+
+    data = {
+        "ABC": base,
+        "NOPAY": {
+            "fundamentals": missing_payout,
+            "dividends": base["dividends"],
+            "shares": base["shares"],
+            "prices": base["prices"],
+        },
+        "NOSTREAK": {
+            "fundamentals": missing_streak,
+            "dividends": empty_dividends,
+            "shares": base["shares"],
+            "prices": base["prices"],
+        },
+    }
+
+    client = FakeYahooClient(data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(
+        manual_tickers=None,
+        client=client,
+        include_technicals=False,
+        max_payout=60.0,
+        min_div_streak=1,
+    )
+
+    assert isinstance(result, tuple)
+    df, notes = result
+
+    assert list(df["ticker"]) == ["ABC"]
+    assert "NOPAY" not in set(df["ticker"])
+    assert "NOSTREAK" not in set(df["ticker"])
+
+    combined_notes = " ".join(notes).lower()
+    assert "payout" in combined_notes
+    assert "racha de dividendos" in combined_notes
 
 
 def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
