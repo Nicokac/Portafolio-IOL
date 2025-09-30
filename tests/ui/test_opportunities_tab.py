@@ -4,7 +4,7 @@ from pathlib import Path
 from types import ModuleType
 import sys
 import textwrap
-from typing import Callable, Mapping
+from typing import Callable, Mapping, Sequence
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -20,6 +20,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from shared.errors import AppError
 import shared.settings as shared_settings
 from shared.ui import notes as shared_notes
+from ui.tabs.opportunities import PRESET_FILTERS
 
 def _resolve_streamlit_module() -> ModuleType:
     """Ensure we use the real Streamlit implementation, not a test stub."""
@@ -43,6 +44,8 @@ def _normalize_streamlit_module() -> None:
         sys.modules["streamlit"] = _ORIGINAL_STREAMLIT
     if st is not _ORIGINAL_STREAMLIT:
         st = _ORIGINAL_STREAMLIT
+    if hasattr(st, "session_state"):
+        st.session_state.clear()
     ui_settings_mod = sys.modules.get("ui.ui_settings")
     if ui_settings_mod is not None:
         setattr(ui_settings_mod, "st", _ORIGINAL_STREAMLIT)
@@ -61,6 +64,7 @@ def _run_app_with_result(
     result: Mapping[str, object]
     | Callable[[Mapping[str, object]], Mapping[str, object]],
     overrides: Mapping[str, object] | None = None,
+    override_steps: Sequence[Mapping[str, object]] | None = None,
 ) -> tuple[AppTest, MagicMock]:
     _normalize_streamlit_module()
     if not hasattr(st, "secrets"):
@@ -73,17 +77,26 @@ def _run_app_with_result(
         else:
             mock.return_value = result
         app.run()
-        if overrides:
+
+        def _apply_overrides(values: Mapping[str, object]) -> None:
             elements = (
                 list(app.get("number_input"))
                 + list(app.get("slider"))
                 + list(app.get("checkbox"))
                 + list(app.get("multiselect"))
+                + list(app.get("selectbox"))
             )
             for element in elements:
                 label = getattr(element, "label", None)
-                if label and label in overrides:
-                    element.set_value(overrides[label])
+                if label and label in values:
+                    element.set_value(values[label])
+
+        if override_steps:
+            for step in override_steps:
+                _apply_overrides(step)
+                app.run()
+        elif overrides:
+            _apply_overrides(overrides)
             app.run()
         buttons = [
             button for button in app.get("button") if getattr(button, "key", None) == "search_opportunities"
@@ -209,6 +222,52 @@ def test_checkbox_include_technicals_updates_params() -> None:
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
 
+
+def test_selectbox_preset_applies_recommended_values_and_allows_manual_override() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "price": [180.12],
+            "score_compuesto": [85.0],
+        }
+    )
+    preset_name = "Dividendos defensivos"
+    preset_values = PRESET_FILTERS[preset_name]
+    app, mock = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo"},
+        override_steps=[
+            {"Perfil recomendado": preset_name},
+            {"Payout máximo (%)": 55.0, "Score mínimo": 88},
+        ],
+    )
+
+    assert mock.call_count == 1
+    called_with = mock.call_args.args[0]
+
+    assert called_with["max_payout"] == pytest.approx(55.0)
+    assert called_with["max_payout"] != pytest.approx(float(preset_values["max_payout"]))
+    assert called_with["min_score_threshold"] == pytest.approx(88.0)
+    assert called_with["min_score_threshold"] != pytest.approx(float(preset_values["min_score_threshold"]))
+
+    expected_numeric = {
+        "min_market_cap": float(preset_values["min_market_cap"]),
+        "max_pe": float(preset_values["max_pe"]),
+        "min_revenue_growth": float(preset_values["min_revenue_growth"]),
+        "min_cagr": float(preset_values["min_cagr"]),
+        "min_eps_growth": float(preset_values["min_eps_growth"]),
+        "min_buyback": float(preset_values["min_buyback"]),
+    }
+    for field, expected in expected_numeric.items():
+        assert called_with[field] == pytest.approx(expected)
+
+    assert called_with["min_div_streak"] == int(preset_values["min_div_streak"])
+    assert called_with["include_latam"] == bool(preset_values["include_latam"])
+    assert called_with["include_technicals"] == bool(preset_values["include_technicals"])
+    assert called_with["max_results"] == int(preset_values["max_results"])
+
+    sectors = preset_values.get("sectors")
+    if sectors:
+        assert called_with["sectors"] == list(sectors)
 
 def test_min_score_slider_uses_settings_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(shared_settings, "min_score_threshold", 67)
