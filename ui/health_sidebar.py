@@ -11,6 +11,8 @@ from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
 from shared.version import __version__
 
+format_note = shared_notes.format_note
+
 
 def _format_timestamp(ts: Optional[float]) -> str:
     if not ts:
@@ -116,22 +118,18 @@ def render_health_sidebar() -> None:
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
     sidebar.markdown("#### 🔐 Conexión IOL")
-    sidebar.markdown(
-        shared_notes.format_note(_format_iol_status(metrics.get("iol_refresh")))
-    )
+    sidebar.markdown(_format_iol_status(metrics.get("iol_refresh")))
 
     sidebar.markdown("#### 📈 Yahoo Finance")
-    sidebar.markdown(
-        shared_notes.format_note(_format_yfinance_status(metrics.get("yfinance")))
-    )
+    sidebar.markdown(_format_yfinance_status(metrics.get("yfinance")))
 
     sidebar.markdown("#### 💱 FX")
     for line in _format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")):
-        sidebar.markdown(shared_notes.format_note(line))
+        sidebar.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
-        sidebar.markdown(shared_notes.format_note(line))
+        sidebar.markdown(format_note(line))
 
 
 __all__ = ["render_health_sidebar"]

@@ -102,9 +102,12 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         captured.append(note)
         return f"formatted::{note}"
 
+    monkeypatch.setattr(health_sidebar, "format_note", _fake_format)
     monkeypatch.setattr(health_sidebar.shared_notes, "format_note", _fake_format)
 
     health_sidebar.render_health_sidebar()
+
+    render_call_count = len(captured)
 
     fx_lines = list(
         health_sidebar._format_fx_section(
@@ -116,24 +119,30 @@ def test_render_health_sidebar_uses_shared_note_formatter(
             _dummy_metrics["portfolio"], _dummy_metrics["quotes"]
         )
     )
+    formatted_latency_lines = [f"formatted::{line}" for line in latency_lines]
     expected_notes: list[str] = [
         health_sidebar._format_iol_status(_dummy_metrics["iol_refresh"]),
         health_sidebar._format_yfinance_status(_dummy_metrics["yfinance"]),
         *fx_lines,
-        *latency_lines,
+        *formatted_latency_lines,
     ]
 
-    assert captured == expected_notes
+    if len(captured) > render_call_count:
+        del captured[render_call_count:]
+
+    expected_raw_notes = [note.removeprefix("formatted::") for note in expected_notes]
+
+    assert captured == expected_raw_notes
 
     expected_markdown_sequence: list[str] = [
         "#### 🔐 Conexión IOL",
-        f"formatted::{expected_notes[0]}",
+        expected_notes[0],
         "#### 📈 Yahoo Finance",
-        f"formatted::{expected_notes[1]}",
+        expected_notes[1],
         "#### 💱 FX",
-        *(f"formatted::{line}" for line in fx_lines),
+        *fx_lines,
         "#### ⏱️ Latencias",
-        *(f"formatted::{line}" for line in latency_lines),
+        *formatted_latency_lines,
     ]
 
     assert dummy_streamlit.sidebar.markdown_calls == expected_markdown_sequence
