@@ -1,14 +1,13 @@
-"""Stub implementation for the opportunities screener.
+"""Opportunities screener helpers for both stub data and Yahoo integration.
 
-This module provides a small, deterministic dataset that emulates the
-structure returned by a future screener implementation. The goal is to
-allow UI components and controllers to be developed and tested without the
-final data provider in place.
+The module exposes a deterministic dataset used for local development as
+well as the functions that orchestrate the Yahoo Finance client, allowing UI
+components and controllers to rely on a single entry point regardless of the
+backing data source.
 """
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Mapping, Sequence
 from typing import Callable, Iterable, List, Optional
 
