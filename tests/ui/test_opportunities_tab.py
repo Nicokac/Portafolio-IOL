@@ -209,6 +209,16 @@ def test_checkbox_include_technicals_updates_params() -> None:
     assert dataframes, "Expected Streamlit dataframe component after execution"
 
 
+def test_min_score_slider_uses_settings_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shared_settings, "min_score_threshold", 67)
+
+    app = _render_app()
+
+    sliders = [element for element in app.get("slider") if element.label == "Score mínimo"]
+    assert sliders, "Expected to find slider for minimum score"
+    assert int(sliders[0].value) == int(shared_settings.min_score_threshold)
+
+
 def test_excluded_tickers_not_displayed_even_when_relaxing_filters(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
