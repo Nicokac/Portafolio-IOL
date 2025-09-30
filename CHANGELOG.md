@@ -6,8 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Changed
-- El valor por defecto de `MAX_RESULTS` se consolidó en `shared.config.Settings` (20) y la UI ahora inicializa el selector con ese número para respetar overrides de configuración.
+
+## [0.3.15] - 2025-09-30
+### Fixed
+- El healthcheck del sidebar ahora respeta el valor por defecto de `MAX_RESULTS` consolidado en `shared.config.Settings` (20) y la UI inicializa el selector con ese número para mantener cualquier override de configuración.
 ### Tests
 - Documentado el procedimiento para habilitar `pytest -m live_yahoo` mediante la variable `RUN_LIVE_YF` y advertir sobre su naturaleza no determinista.
 ### Documentation
