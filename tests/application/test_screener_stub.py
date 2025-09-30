@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -19,13 +19,29 @@ def _tickers(df: pd.DataFrame) -> set[str]:
     return set(df["ticker"].dropna().astype(str))
 
 
+def _run_stub_with_notes(**kwargs: object) -> tuple[pd.DataFrame, list[str]]:
+    result = run_screener_stub(**kwargs)
+    if isinstance(result, tuple):
+        df, notes = result
+    else:
+        df, notes = result, []
+    return df, notes
+
+
+def _assert_has_stub_note(notes: list[str]) -> None:
+    assert any(
+        note.startswith("ℹ️ Stub procesó ") and " segundos" in note for note in notes
+    ), "Se esperaba una nota de telemetría del stub"
+
+
 def test_filters_apply_to_base_dataset() -> None:
-    df = run_screener_stub(
+    df, notes = _run_stub_with_notes(
         min_market_cap=100_000,
         max_pe=35.0,
         min_revenue_growth=5.0,
         include_latam=False,
     )
+    _assert_has_stub_note(notes)
     base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
     base_filtered = base[
         (base["market_cap"] >= 100_000)
@@ -57,7 +73,8 @@ def test_filters_apply_to_base_dataset() -> None:
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
-    df = run_screener_stub(include_latam=True, include_technicals=True)
+    df, notes = _run_stub_with_notes(include_latam=True, include_technicals=True)
+    _assert_has_stub_note(notes)
     latam_tickers = {
         row["ticker"]
         for row in opportunities_module._BASE_OPPORTUNITIES
@@ -70,11 +87,12 @@ def test_include_latam_flag_keeps_companies_when_enabled() -> None:
 
 
 def test_manual_tickers_return_placeholder_after_filters() -> None:
-    df = run_screener_stub(
+    df, notes = _run_stub_with_notes(
         manual_tickers=["MELI"],
         include_latam=False,
         max_pe=20.0,
     )
+    _assert_has_stub_note(notes)
     assert "MELI" in _tickers(df)
     # MELI is excluded by filters, so its numeric fields should be NaN after placeholder padding.
     row = df.loc[df["ticker"] == "MELI"].iloc[0]
@@ -83,7 +101,8 @@ def test_manual_tickers_return_placeholder_after_filters() -> None:
 
 
 def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
-    baseline = run_screener_stub(include_technicals=False)
+    baseline, baseline_notes = _run_stub_with_notes(include_technicals=False)
+    _assert_has_stub_note(baseline_notes)
     ordered = baseline.sort_values("score_compuesto", ascending=True).reset_index(drop=True)
 
     below_row = ordered.iloc[0]
@@ -92,10 +111,11 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
 
     assert threshold_value > float(below_row["score_compuesto"])
 
-    filtered = run_screener_stub(
+    filtered, filtered_notes = _run_stub_with_notes(
         include_technicals=False,
         min_score_threshold=threshold_value,
     )
+    _assert_has_stub_note(filtered_notes)
 
     assert threshold_row["ticker"] in _tickers(filtered)
     assert below_row["ticker"] not in _tickers(filtered)
@@ -157,7 +177,7 @@ def test_run_screener_stub_truncates_large_universe(monkeypatch: pytest.MonkeyPa
     max_results = 5
 
     start = time.perf_counter()
-    output = run_screener_stub(
+    result, notes = _run_stub_with_notes(
         exclude_tickers=excluded,
         include_latam=False,
         min_market_cap=1_000,
@@ -166,11 +186,6 @@ def test_run_screener_stub_truncates_large_universe(monkeypatch: pytest.MonkeyPa
         max_results=max_results,
     )
     duration = time.perf_counter() - start
-
-    if isinstance(output, tuple):
-        result, notes = output
-    else:
-        result, notes = output, []
 
     assert duration < 1.0, "El screener stub debería manejar universos grandes rápidamente"
 
@@ -183,3 +198,9 @@ def test_run_screener_stub_truncates_large_universe(monkeypatch: pytest.MonkeyPa
     truncation_notes = [note for note in notes if "Se muestran" in note]
     assert truncation_notes, "Debe informarse cuando el resultado se trunca"
     assert str(max_results) in truncation_notes[0]
+    _assert_has_stub_note(notes)
+
+
+def test_run_screener_stub_emits_telemetry_note() -> None:
+    _df, notes = _run_stub_with_notes()
+    _assert_has_stub_note(notes)
