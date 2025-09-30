@@ -3,6 +3,12 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run-live-yahoo:
+        description: 'Run live Yahoo Finance smoke-test (uses RUN_LIVE_YF=1)'
+        type: boolean
+        default: false
 
 jobs:
   test:
@@ -35,3 +41,21 @@ jobs:
         with:
           name: coverage-report
           path: coverage.xml
+
+  live-yahoo-smoke:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run-live-yahoo == 'true'
+    runs-on: ubuntu-latest
+    env:
+      RUN_LIVE_YF: '1' # QA: smoke-test consumes datos en vivo y puede ser no determinista; activar sólo cuando se requiera validar Yahoo Finance.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+      - name: Run live Yahoo Finance smoke-test
+        run: pytest -m live_yahoo

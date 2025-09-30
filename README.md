@@ -272,6 +272,21 @@ Para verificar el estilo del código:
 flake8
 ```
 
+### Job opcional de Yahoo Finance en CI
+
+El workflow `CI` incluye un job opcional que ejecuta `pytest -m live_yahoo`
+con `RUN_LIVE_YF=1` para validar la integración real con Yahoo Finance.
+Este smoke-test **no se ejecuta automáticamente** porque consume datos en
+tiempo real y los resultados pueden variar entre corridas. Para activarlo:
+
+1. Ingresa a **Actions → CI → Run workflow**.
+2. Habilita el toggle **Run live Yahoo Finance smoke-test**.
+3. Ejecuta el workflow manualmente.
+
+Al hacerlo, GitHub Actions exportará `RUN_LIVE_YF=1` antes de invocar el
+marcador `live_yahoo`. Usa este job sólo cuando necesites verificar la
+integración en vivo o validar incidentes relacionados con Yahoo Finance.
+
 ## Tiempos de referencia
 
 Los siguientes tiempos se observan en condiciones normales (aprox. 20 posiciones):
