@@ -34,7 +34,7 @@ La vista beta evoluciona hacia un universo dinámico que se recalcula en cada se
 - Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
 - Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
-El stub local expone un universo determinista de 28 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials, Consumer Cyclical y Materials) con métricas fundamentales completas. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
+El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
 
 | Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -45,24 +45,32 @@ El stub local expone un universo determinista de 28 emisores que cubre múltiple
 | PEP | Consumer Defensive | 68.5 | 51 | 8.9 | 6.9 | 7.3 | 1.5 | 250,000 | 25.4 | 6.2 |
 | JNJ | Healthcare | 51.2 | 59 | 6.9 | 8.5 | 8.7 | 0.6 | 415,000 | 21.4 | 3.1 |
 | ABBV | Healthcare | 42.3 | 10 | 12.4 | 6.8 | 7.4 | 1.2 | 262,000 | 21.1 | 5.6 |
-| NUE | Basic Materials | 33.4 | 49 | 9.8 | 18.4 | 18.6 | 0.0 | 42,000 | 8.9 | -6.2 |
+| NUE | Materials | 33.4 | 49 | 9.8 | 18.4 | 18.6 | 0.0 | 42,000 | 8.9 | -6.2 |
 | UNP | Industrials | 45.1 | 16 | 12.2 | 10.5 | 11.2 | 2.9 | 130,000 | 22.5 | 5.1 |
 | HON | Industrials | 41.4 | 12 | 9.1 | 8.0 | 8.8 | 1.7 | 130,000 | 24.8 | 3.9 |
 | V | Financial Services | 21.6 | 14 | 17.3 | 8.7 | 9.6 | 2.8 | 495,000 | 29.5 | 11.2 |
 | JPM | Financial Services | 32.5 | 13 | 9.9 | 13.9 | 14.3 | 1.9 | 440,000 | 10.9 | 8.4 |
 | NEE | Utilities | 56.2 | 28 | 10.8 | 3.1 | 3.5 | 0.0 | 160,000 | 25.7 | 7.1 |
 | DUK | Utilities | 73.4 | 16 | 5.8 | 5.1 | 5.4 | 0.0 | 73,000 | 18.6 | 2.9 |
+| UTLX | Utilities | 61.5 | 19 | 6.7 | 3.1 | 3.3 | 0.0 | 58,600 | 19.2 | 4.6 |
 | XOM | Energy | 41.8 | 40 | 4.4 | 10.1 | 9.7 | 3.4 | 460,000 | 11.4 | 9.6 |
 | CVX | Energy | 37.2 | 35 | 6.4 | 12.2 | 11.9 | 2.7 | 300,000 | 12.8 | 11.5 |
 | PLD | Real Estate | 63.5 | 12 | 9.4 | 3.6 | 3.9 | 0.0 | 115,000 | 28.9 | 8.7 |
 | MELI | Consumer Cyclical | 0.0 | 0 | 0.0 | 4.8 | 6.2 | 0.0 | 72,000 | 76.4 | 31.5 |
 | BBD | Financial Services | 28.0 | 6 | 7.1 | 1.6 | 1.8 | 1.0 | 47,000 | 9.5 | 12.4 |
+| FNCL1 | Financials | 29.4 | 16 | 10.8 | 4.8 | 5.2 | 2.4 | 96,500 | 17.6 | 9.4 |
+| FNCL2 | Financials | 34.1 | 12 | 8.7 | 3.5 | 3.8 | 1.6 | 73,400 | 15.8 | 6.3 |
+| FNCL3 | Financials | 26.7 | 9 | 11.5 | 5.6 | 6.0 | 2.9 | 128,900 | 18.9 | 11.1 |
 | MTRL | Materials | 36.5 | 11 | 8.2 | 4.2 | 4.6 | 1.4 | 68,000 | 19.4 | 6.3 |
+| MATX | Materials | 31.8 | 14 | 10.1 | 4.9 | 5.3 | 1.9 | 52,300 | 17.2 | 9.1 |
 | CYCX | Consumer Cyclical | 22.5 | 8 | 13.1 | 4.6 | 5.5 | 2.5 | 78,000 | 27.1 | 15.7 |
 | RSPR | Real Estate | 70.2 | 9 | 7.4 | 2.9 | 3.2 | 0.0 | 32,000 | 18.9 | 5.2 |
 | ENRGX | Energy | 38.7 | 18 | 5.6 | 5.5 | 5.8 | 1.9 | 95,000 | 13.6 | 8.9 |
 | SOLR | Energy | 24.1 | 5 | 16.8 | 1.5 | 2.1 | 0.5 | 26,000 | 35.2 | 22.4 |
 | LATC | Consumer Cyclical | 31.7 | 7 | 9.9 | 2.0 | 2.3 | 1.3 | 18,500 | 17.8 | 12.1 |
+| CNMR1 | Consumer | 48.6 | 15 | 10.2 | 3.1 | 3.4 | 0.9 | 42,500 | 19.6 | 7.9 |
+| CNMR2 | Consumer | 36.9 | 11 | 12.6 | 3.9 | 4.4 | 1.7 | 58,200 | 22.4 | 10.5 |
+| CNMR3 | Consumer | 41.2 | 13 | 9.4 | 2.8 | 3.1 | 1.0 | 37,800 | 18.9 | 6.7 |
 | FNSH | Consumer Defensive | 55.4 | 14 | 6.1 | 3.0 | 3.3 | 0.9 | 54,000 | 20.3 | 4.7 |
 | INFR | Industrials | 29.8 | 11 | 10.4 | 4.9 | 5.4 | 2.2 | 67,000 | 21.7 | 9.5 |
 | DATA | Technology | 15.2 | 4 | 18.7 | 3.8 | 4.9 | 1.6 | 125,000 | 38.1 | 24.6 |

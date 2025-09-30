@@ -15,6 +15,18 @@ from application.screener.opportunities import run_screener_stub
 import application.screener.opportunities as opportunities_module
 
 
+_CRITICAL_SECTORS = (
+    "Technology",
+    "Energy",
+    "Industrials",
+    "Consumer",
+    "Healthcare",
+    "Financials",
+    "Utilities",
+    "Materials",
+)
+
+
 def _tickers(df: pd.DataFrame) -> set[str]:
     return set(df["ticker"].dropna().astype(str))
 
@@ -124,8 +136,14 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
 
 def test_stub_dataset_is_diverse_and_complete() -> None:
     base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
-    assert 25 <= len(base) <= 35
+    assert len(base) >= len(_CRITICAL_SECTORS) * 3
+    assert len(base) <= 45
     assert base["sector"].nunique() >= 10
+    sector_counts = base["sector"].value_counts()
+    for sector in _CRITICAL_SECTORS:
+        count = int(sector_counts.get(sector, 0))
+        assert count >= 3, f"El sector crítico '{sector}' debería tener al menos 3 emisores"
+        assert count <= 5, f"El sector crítico '{sector}' debería mantenerse acotado para el QA"
     latam_rows = base[base["is_latam"]]
     assert len(latam_rows) >= 3
     for column in [
