@@ -23,6 +23,8 @@ from shared.version import __version__
 
 _ORIGINAL_STREAMLIT = st
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 _SCRIPT = textwrap.dedent(
     f"""
     import sys
@@ -161,11 +163,11 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
     formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
     expected_lines = {
         "#### 🔐 Conexión IOL",
-        f"✅ Refresh correcto • {formatted[0]} — OK",
+        f":white_check_mark: **Refresh correcto • {formatted[0]} — OK**",
         "#### 📈 Yahoo Finance",
         f"♻️ Fallback local • {formatted[1]} — respaldo",
         "#### 💱 FX",
-        f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom",
+        f":warning: **API FX con errores • {formatted[2]} (123 ms) — boom**",
         f"♻️ Uso de caché • {formatted[3]} (edad 46s)",
         "#### ⏱️ Latencias",
         f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[4]}",
