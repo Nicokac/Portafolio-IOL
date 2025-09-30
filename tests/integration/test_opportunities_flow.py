@@ -476,3 +476,76 @@ def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (
         truncation_notes
     ), "Expected a note indicating the dataset was truncated to the requested maximum"
+
+
+def test_yahoo_large_universe_emits_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    bulk_client = build_bulk_fake_yahoo_client()
+    monkeypatch.setattr(
+        "application.screener.opportunities._get_target_markets",
+        lambda: ["BULK"],
+    )
+    monkeypatch.setattr(
+        "application.screener.opportunities.YahooFinanceClient",
+        lambda: bulk_client,
+    )
+
+    class _TelemetryLogger:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        def info(self, message: str, *args, **kwargs) -> None:  # pragma: no cover - formatting helper
+            formatted = message % args if args else message
+            self.messages.append(formatted)
+
+        def __getattr__(self, name: str):  # pragma: no cover - passthrough for unused levels
+            def _noop(*_args, **_kwargs) -> None:
+                return None
+
+            return _noop
+
+    telemetry_logger = _TelemetryLogger()
+    monkeypatch.setattr(
+        "application.screener.opportunities.LOGGER", telemetry_logger
+    )
+
+    app = _render_app()
+
+    _set_number_input(app, "Capitalización mínima (US$ MM)", 0)
+    _set_number_input(app, "P/E máximo", 40.0)
+    _set_number_input(app, "Crecimiento ingresos mínimo (%)", 0.0)
+    _set_number_input(app, "Payout máximo (%)", 80.0)
+    _set_slider(app, "Racha mínima de dividendos (años)", 0)
+    _set_number_input(app, "CAGR mínimo de dividendos (%)", 0.0)
+    _set_number_input(app, "Crecimiento mínimo de EPS (%)", 0.0)
+    _set_number_input(app, "Buyback mínimo (%)", 0.0)
+    _set_checkbox(app, "Incluir Latam", False)
+    _set_slider(app, "Score mínimo", 0)
+    _set_number_input(app, "Máximo de resultados", 10)
+    _set_multiselect(
+        app,
+        "Sectores",
+        ["Technology", "Healthcare", "Industrials"],
+    )
+
+    app.run()
+
+    search_buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected search button to be present"
+    search_buttons[0].click()
+
+    app.run(timeout=10)
+
+    assert telemetry_logger.messages, "Expected telemetry info log to be emitted"
+    assert any(
+        "Yahoo screener processed" in message
+        for message in telemetry_logger.messages
+    ), "Expected Yahoo telemetry log entry"
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert any(
+        "Yahoo procesó" in block for block in markdown_blocks
+    ), "Expected telemetry note to be propagated to the UI"
