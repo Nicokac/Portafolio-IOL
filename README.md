@@ -34,21 +34,31 @@ La vista beta evoluciona hacia un universo dinámico que se recalcula en cada se
 - Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
 - Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
-El stub local cuenta ahora con un universo de 18 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials y Consumer Cyclical) con métricas fundamentales completas. Esto permite validar escenarios de QA y fallback sin depender de servicios externos y asegura que filtros avanzados como payout, recompras o crecimiento de EPS tengan datos coherentes.
+El stub local expone un universo determinista de 19 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Utilities, Energy, Real Estate, Communication Services, Basic Materials y Consumer Cyclical) con métricas fundamentales completas. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
 
-| Sector | Tickers de ejemplo |
-| --- | --- |
-| Technology | AAPL, MSFT |
-| Communication Services | GOOGL |
-| Healthcare | JNJ, ABBV |
-| Financial Services | V, JPM, BBD |
-| Industrials | UNP, HON |
-| Consumer Defensive | KO, PEP |
-| Utilities | NEE, DUK |
-| Energy | XOM, CVX |
-| Real Estate | PLD |
-| Basic Materials | NUE |
-| Consumer Cyclical / LatAm | MELI |
+| Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AAPL | Technology | 18.5 | 12 | 14.2 | 6.1 | 6.6 | 1.8 | 2,800,000 | 30.2 | 7.4 |
+| MSFT | Technology | 28.3 | 20 | 11.7 | 9.2 | 9.8 | 1.1 | 2,450,000 | 33.5 | 14.8 |
+| GOOGL | Communication Services | 0.0 | 0 | 0.0 | 5.2 | 6.1 | 2.3 | 1,750,000 | 27.6 | 9.8 |
+| KO | Consumer Defensive | 73.0 | 61 | 7.5 | 2.3 | 2.4 | 0.3 | 260,000 | 24.7 | 4.3 |
+| PEP | Consumer Defensive | 68.5 | 51 | 8.9 | 6.9 | 7.3 | 1.5 | 250,000 | 25.4 | 6.2 |
+| JNJ | Healthcare | 51.2 | 59 | 6.9 | 8.5 | 8.7 | 0.6 | 415,000 | 21.4 | 3.1 |
+| ABBV | Healthcare | 42.3 | 10 | 12.4 | 6.8 | 7.4 | 1.2 | 262,000 | 21.1 | 5.6 |
+| NUE | Basic Materials | 33.4 | 49 | 9.8 | 18.4 | 18.6 | 0.0 | 42,000 | 8.9 | -6.2 |
+| UNP | Industrials | 45.1 | 16 | 12.2 | 10.5 | 11.2 | 2.9 | 130,000 | 22.5 | 5.1 |
+| HON | Industrials | 41.4 | 12 | 9.1 | 8.0 | 8.8 | 1.7 | 130,000 | 24.8 | 3.9 |
+| V | Financial Services | 21.6 | 14 | 17.3 | 8.7 | 9.6 | 2.8 | 495,000 | 29.5 | 11.2 |
+| JPM | Financial Services | 32.5 | 13 | 9.9 | 13.9 | 14.3 | 1.9 | 440,000 | 10.9 | 8.4 |
+| NEE | Utilities | 56.2 | 28 | 10.8 | 3.1 | 3.5 | 0.0 | 160,000 | 25.7 | 7.1 |
+| DUK | Utilities | 73.4 | 16 | 5.8 | 5.1 | 5.4 | 0.0 | 73,000 | 18.6 | 2.9 |
+| XOM | Energy | 41.8 | 40 | 4.4 | 10.1 | 9.7 | 3.4 | 460,000 | 11.4 | 9.6 |
+| CVX | Energy | 37.2 | 35 | 6.4 | 12.2 | 11.9 | 2.7 | 300,000 | 12.8 | 11.5 |
+| PLD | Real Estate | 63.5 | 12 | 9.4 | 3.6 | 3.9 | 0.0 | 115,000 | 28.9 | 8.7 |
+| MELI | Consumer Cyclical | 0.0 | 0 | 0.0 | 4.8 | 6.2 | 0.0 | 72,000 | 76.4 | 31.5 |
+| BBD | Financial Services | 28.0 | 6 | 7.1 | 1.6 | 1.8 | 1.0 | 47,000 | 9.5 | 12.4 |
+
+Cada registro respeta principios de la estrategia Andy: payout y P/E en rangos saludables, rachas y CAGR positivos, EPS forward superiores al trailing, buybacks y crecimiento de ingresos presentes cuando corresponde. El dataset se utiliza tanto para fallback como para pruebas end-to-end, garantizando que la aplicación conserve diversidad sectorial, métricas completas y comportamiento determinista durante los failovers.
 
 Durante los failovers la UI etiqueta el origen como `stub` y continúa respetando los filtros configurados. Los tests automatizados utilizan este dataset extendido para comprobar diversidad sectorial y completitud de fundamentals, por lo que cualquier ajuste debe mantener la cobertura y las columnas documentadas.
 
