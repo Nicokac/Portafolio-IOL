@@ -1,7 +1,9 @@
 """Integration test that exercises the opportunities tab end-to-end."""
 from __future__ import annotations
 
+import importlib.util
 import sys
+import time
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -15,6 +17,16 @@ from streamlit.testing.v1 import AppTest
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+_YAHOO_TEST_MODULE = PROJECT_ROOT / "tests" / "application" / "test_screener_yahoo.py"
+_YAHOO_SPEC = importlib.util.spec_from_file_location(
+    "tests.application.test_screener_yahoo",
+    _YAHOO_TEST_MODULE,
+)
+assert _YAHOO_SPEC and _YAHOO_SPEC.loader is not None
+_YAHOO_MODULE = importlib.util.module_from_spec(_YAHOO_SPEC)
+_YAHOO_SPEC.loader.exec_module(_YAHOO_MODULE)
+build_bulk_fake_yahoo_client = _YAHOO_MODULE.build_bulk_fake_yahoo_client
 
 
 def _resolve_streamlit_module():
@@ -247,7 +259,7 @@ def _render_app() -> AppTest:
         ]
     )
     app = AppTest.from_string(script)
-    app.run()
+    app.run(timeout=10)
     return app
 
 
@@ -395,3 +407,72 @@ def test_opportunities_flow_applies_growth_buyback_and_score_filters(
     bullet_points = [block for block in markdown_blocks if block.startswith("-")]
     assert any("Se muestran 1 resultados de 2" in block for block in bullet_points)
     assert any("Filtros aplicados" in block for block in bullet_points)
+
+
+def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
+    bulk_client = build_bulk_fake_yahoo_client()
+    listings = bulk_client.list_symbols_by_markets(["BULK"])
+    assert len(listings) >= 500
+
+    monkeypatch.setattr(
+        "application.screener.opportunities._get_target_markets",
+        lambda: ["BULK"],
+    )
+    monkeypatch.setattr(
+        "application.screener.opportunities.YahooFinanceClient",
+        lambda: bulk_client,
+    )
+
+    app = _render_app()
+
+    _set_number_input(app, "Capitalización mínima (US$ MM)", 0)
+    _set_number_input(app, "P/E máximo", 40.0)
+    _set_number_input(app, "Crecimiento ingresos mínimo (%)", 0.0)
+    _set_number_input(app, "Payout máximo (%)", 80.0)
+    _set_slider(app, "Racha mínima de dividendos (años)", 0)
+    _set_number_input(app, "CAGR mínimo de dividendos (%)", 0.0)
+    _set_number_input(app, "Crecimiento mínimo de EPS (%)", 0.0)
+    _set_number_input(app, "Buyback mínimo (%)", 0.0)
+    _set_checkbox(app, "Incluir Latam", False)
+    _set_slider(app, "Score mínimo", 0)
+    _set_number_input(app, "Máximo de resultados", 10)
+    _set_multiselect(
+        app,
+        "Sectores",
+        ["Technology", "Healthcare", "Industrials"],
+    )
+
+    app.run()
+
+    search_buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected search button to be present"
+
+    start = time.perf_counter()
+    search_buttons[0].click()
+    app.run(timeout=10)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 5.0, f"Execution took too long: {elapsed:.2f} seconds"
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected the opportunities dataframe to be rendered"
+    displayed = dataframes[0].value
+    assert isinstance(displayed, pd.DataFrame)
+    assert len(displayed) == 10, "Expected the table to be truncated to 10 rows"
+    assert displayed["ticker"].str.startswith("BULK").all()
+    scores = pd.to_numeric(displayed["score_compuesto"], errors="coerce").dropna()
+    assert len(scores) == len(displayed)
+    assert list(scores) == sorted(scores, reverse=True)
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    truncation_notes = [
+        block
+        for block in markdown_blocks
+        if block.startswith("-") and "máximo solicitado" in block.lower()
+    ]
+    assert (
+        truncation_notes
+    ), "Expected a note indicating the dataset was truncated to the requested maximum"
