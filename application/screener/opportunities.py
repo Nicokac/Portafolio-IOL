@@ -246,6 +246,23 @@ def _apply_filters_and_finalize(
 
     result = df.copy()
     notes: list[str] = []
+    critical_missing: dict[str, set[str]] = {}
+
+    def register_missing(mask: pd.Series, label: str) -> None:
+        """Record tickers with missing critical data when NA filters are allowed."""
+
+        if not allow_na_filters or "ticker" not in result.columns:
+            return
+        normalized_mask = mask.fillna(False)
+        if not normalized_mask.any():
+            return
+        tickers_series = (
+            result.loc[normalized_mask, "ticker"].astype("string").str.strip().str.upper()
+        )
+        tickers = [ticker for ticker in tickers_series if ticker]
+        if not tickers:
+            return
+        critical_missing.setdefault(label, set()).update(tickers)
     exclude_set: set[str] | None = None
     if exclude_tickers:
         exclude_set = {
@@ -309,16 +326,14 @@ def _apply_filters_and_finalize(
 
     if trailing_eps_column in result.columns:
         series = pd.to_numeric(result[trailing_eps_column], errors="coerce")
-        mask = series > 0
-        if allow_na_filters:
-            mask = series.isna() | mask
+        register_missing(series.isna(), "EPS trailing")
+        mask = (series > 0) & series.notna()
         result = result[mask]
 
     if forward_eps_column in result.columns:
         series = pd.to_numeric(result[forward_eps_column], errors="coerce")
-        mask = series > 0
-        if allow_na_filters:
-            mask = series.isna() | mask
+        register_missing(series.isna(), "EPS forward")
+        mask = (series > 0) & series.notna()
         result = result[mask]
 
     if (
@@ -332,8 +347,8 @@ def _apply_filters_and_finalize(
         growth = (forward - trailing) / denominator
         growth = growth.replace([np.inf, -np.inf], pd.NA) * 100.0
         mask = (trailing > 0) & (forward > 0) & (growth >= float(min_eps_growth))
-        if allow_na_filters:
-            mask = trailing.isna() | forward.isna() | growth.isna() | mask
+        mask = mask.fillna(False)
+        register_missing(growth.isna(), "crecimiento de EPS")
         result = result[mask]
 
     if min_buyback is not None and buyback_column in result.columns:
@@ -449,6 +464,26 @@ def _apply_filters_and_finalize(
             "Solo se encontraron "
             f"{len(result)} oportunidades (mínimo esperado: {target_min_results})."
         )
+
+    if critical_missing:
+        for label, tickers in critical_missing.items():
+            ordered = sorted(tickers)
+            if not ordered:
+                continue
+            count = len(ordered)
+            preview_list = ordered[:5]
+            preview = ", ".join(preview_list)
+            if count > len(preview_list):
+                preview += f", … (+{count - len(preview_list)} más)"
+            verb = "Se descartó" if count == 1 else "Se descartaron"
+            noun = "el ticker" if count == 1 else "los tickers"
+            if preview:
+                message = (
+                    f"{verb} {noun} {preview} por falta de datos críticos de {label}."
+                )
+            else:
+                message = f"{verb} {noun} por falta de datos críticos de {label}."
+            notes.append(message)
 
     result = result.reset_index(drop=True)
 
