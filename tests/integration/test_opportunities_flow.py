@@ -134,6 +134,107 @@ class _FakeYahooClient:
         return frame
 
 
+class _HighScoreYahooClient:
+    """Yahoo client tailored to exercise advanced filters simultaneously."""
+
+    def __init__(self) -> None:
+        self.market_calls: list[tuple[str, ...]] = []
+        self._fundamentals: Mapping[str, Mapping[str, object]] = {
+            "ELITE": {
+                "payout_ratio": 0.0,
+                "dividend_yield": 1.8,
+                "market_cap": 1_800.0,
+                "pe_ratio": 18.0,
+                "revenue_growth": 24.0,
+                "country": "United States",
+                "sector": "Technology",
+                "trailing_eps": 4.0,
+                "forward_eps": 5.6,
+            },
+            "ALPHA": {
+                "payout_ratio": 2.0,
+                "dividend_yield": 1.5,
+                "market_cap": 1_650.0,
+                "pe_ratio": 19.0,
+                "revenue_growth": 20.0,
+                "country": "United States",
+                "sector": "Technology",
+                "trailing_eps": 3.5,
+                "forward_eps": 4.6,
+            },
+            "LAGG": {
+                "payout_ratio": 55.0,
+                "dividend_yield": 0.8,
+                "market_cap": 1_200.0,
+                "pe_ratio": 24.0,
+                "revenue_growth": 5.0,
+                "country": "United States",
+                "sector": "Technology",
+                "trailing_eps": 2.0,
+                "forward_eps": 2.1,
+            },
+        }
+
+    def list_symbols_by_markets(self, markets: Iterable[str]) -> list[Mapping[str, object]]:
+        self.market_calls.append(tuple(markets))
+        return [
+            {
+                "ticker": "ELITE",
+                "market_cap": 1_800.0,
+                "pe_ratio": 18.0,
+                "revenue_growth": 24.0,
+                "country": "United States",
+                "sector": "Technology",
+            },
+            {
+                "ticker": "ALPHA",
+                "market_cap": 1_650.0,
+                "pe_ratio": 19.0,
+                "revenue_growth": 20.0,
+                "country": "United States",
+                "sector": "Technology",
+            },
+            {
+                "ticker": "LAGG",
+                "market_cap": 1_200.0,
+                "pe_ratio": 24.0,
+                "revenue_growth": 5.0,
+                "country": "United States",
+                "sector": "Technology",
+            },
+        ]
+
+    def get_fundamentals(self, ticker: str) -> Mapping[str, object]:
+        return dict(self._fundamentals[ticker])
+
+    def get_dividends(self, ticker: str) -> pd.DataFrame:  # pragma: no cover - exercised via AppTest
+        # Returning an empty frame keeps the dividend streak filter neutral while
+        # still exercising the Yahoo controller code paths.
+        return pd.DataFrame(columns=["date", "amount"])
+
+    def get_shares_outstanding(self, ticker: str) -> pd.DataFrame:
+        if ticker == "ELITE":
+            shares = [220_000_000, 200_000_000, 176_000_000]
+        elif ticker == "ALPHA":
+            shares = [180_000_000, 168_000_000, 150_000_000]
+        else:
+            shares = [120_000_000, 122_000_000, 125_000_000]
+        dates = pd.date_range("2021-01-01", periods=len(shares), freq="YS")
+        return pd.DataFrame({"date": dates, "shares": shares})
+
+    def get_price_history(self, ticker: str) -> pd.DataFrame:
+        dates = pd.date_range("2023-01-01", periods=12, freq="B")
+        if ticker == "ELITE":
+            base = 103.0
+        elif ticker == "ALPHA":
+            base = 93.0
+        else:
+            base = 71.0
+        trend = np.linspace(0, 3, num=len(dates))
+        close = base + trend if ticker != "LAGG" else base - trend
+        return pd.DataFrame({"date": dates, "close": close, "adj_close": close})
+
+
 def _render_app() -> AppTest:
     if not hasattr(st, "secrets"):
         st.secrets = Secrets({})
@@ -228,4 +329,69 @@ def test_opportunities_flow_renders_yahoo_results(monkeypatch: pytest.MonkeyPatc
     assert "### Notas" in markdown_blocks
     bullet_points = [block for block in markdown_blocks if block.startswith("-")]
     assert any("📈 Analizando" in block for block in bullet_points)
+    assert any("Filtros aplicados" in block for block in bullet_points)
+
+
+def test_opportunities_flow_applies_growth_buyback_and_score_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_clients: list[_HighScoreYahooClient] = []
+
+    def _factory() -> _HighScoreYahooClient:
+        client = _HighScoreYahooClient()
+        created_clients.append(client)
+        return client
+
+    monkeypatch.setattr(
+        "application.screener.opportunities.YahooFinanceClient", _factory
+    )
+
+    app = _render_app()
+
+    _set_number_input(app, "Capitalización mínima (US$ MM)", 1_500)
+    _set_number_input(app, "P/E máximo", 20.0)
+    _set_number_input(app, "Crecimiento ingresos mínimo (%)", 18.0)
+    _set_number_input(app, "Payout máximo (%)", 100.0)
+    _set_slider(app, "Racha mínima de dividendos (años)", 0)
+    _set_number_input(app, "CAGR mínimo de dividendos (%)", 0.0)
+    _set_number_input(app, "Crecimiento mínimo de EPS (%)", 20.0)
+    _set_number_input(app, "Buyback mínimo (%)", 5.0)
+    _set_checkbox(app, "Incluir Latam", False)
+    _set_slider(app, "Score mínimo", 80)
+    _set_number_input(app, "Máximo de resultados", 1)
+    _set_multiselect(app, "Sectores", ["Technology"])
+
+    app.run()
+
+    search_buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected the opportunities search button to be present"
+    search_buttons[0].click()
+
+    app.run()
+
+    assert created_clients, "Expected the high-score Yahoo client to be instantiated"
+    fake_client = created_clients[0]
+    assert fake_client.market_calls, "Expected markets to be requested from Yahoo client"
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected the filtered results dataframe to be rendered"
+    displayed = dataframes[0].value
+    assert isinstance(displayed, pd.DataFrame)
+    assert len(displayed) == 1
+    assert list(displayed["ticker"]) == ["ELITE"]
+    score_values = pd.to_numeric(displayed["score_compuesto"], errors="coerce")
+    assert not score_values.isna().any()
+    assert (score_values >= 80).all()
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Resultados obtenidos de Yahoo Finance" in caption for caption in captions)
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert "### Notas" in markdown_blocks
+    bullet_points = [block for block in markdown_blocks if block.startswith("-")]
+    assert any("Se muestran 1 resultados de 2" in block for block in bullet_points)
     assert any("Filtros aplicados" in block for block in bullet_points)
