@@ -290,8 +290,14 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     captions = [element.value for element in app.get("caption")]
     assert any("Resultados simulados" in caption for caption in captions)
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert any(f"- **{fallback_note}**" in block for block in markdown_blocks)
-    assert any(extra_note in block for block in markdown_blocks)
+    assert any(
+        "- :warning: **Datos simulados (Yahoo no disponible)**" in block
+        for block in markdown_blocks
+    )
+    assert any(
+        "- :information_source: Recuerda validar con fuentes oficiales" in block
+        for block in markdown_blocks
+    )
 
 
 def test_stub_source_displays_warning_caption_and_notes() -> None:
@@ -334,7 +340,10 @@ def test_fallback_note_with_cause_highlighted() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert any(f"- **{fallback_note}**" in block for block in markdown_blocks)
+    assert any(
+        "- :warning: **Datos simulados — Causa: Yahoo timeout**" in block
+        for block in markdown_blocks
+    )
 
 
 def test_notes_block_highlights_backend_messages() -> None:
@@ -374,7 +383,7 @@ def test_notes_block_highlights_scarcity_messages() -> None:
             "score_compuesto": [71.0],
         }
     )
-    scarcity_note = "Solo se encontraron 3 candidatos por debajo del mínimo esperado."
+    scarcity_note = "ℹ️ Solo se encontraron 3 candidatos por debajo del mínimo esperado."
 
     app, _ = _run_app_with_result(
         {"table": df, "notes": [scarcity_note], "source": "yahoo"}
@@ -382,7 +391,10 @@ def test_notes_block_highlights_scarcity_messages() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert f"- **{scarcity_note}**" in markdown_blocks
+    assert (
+        "- :information_source: Solo se encontraron 3 candidatos por debajo del mínimo esperado."
+        in markdown_blocks
+    )
 
 
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

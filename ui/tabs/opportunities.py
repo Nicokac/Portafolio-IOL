@@ -27,7 +27,20 @@ _SECTOR_OPTIONS: Sequence[str] = (
 def _format_note(note: str) -> str:
     """Return a formatted representation for notes that need emphasis."""
 
-    normalized = note.casefold()
+    stripped = note.strip()
+    for prefix, icon, emphasize in (
+        ("⚠️", ":warning:", True),
+        ("ℹ️", ":information_source:", False),
+    ):
+        if stripped.startswith(prefix):
+            content = stripped[len(prefix) :].lstrip()
+            if not content:
+                return icon
+            if emphasize:
+                return f"{icon} **{content}**"
+            return f"{icon} {content}"
+
+    normalized = stripped.casefold()
     highlight_top_results = (
         any(keyword in normalized for keyword in ("top", "mejores"))
         and any(
@@ -61,8 +74,8 @@ def _format_note(note: str) -> str:
         or highlight_min_expected
         or highlight_simulated_data
     ):
-        return f"**{note}**"
-    return note
+        return f"**{stripped}**"
+    return stripped
 
 
 def _normalize_notes(notes: object) -> list[str]:
