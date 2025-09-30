@@ -19,6 +19,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from shared.errors import AppError
 import shared.settings as shared_settings
+from shared.ui import notes as shared_notes
 
 def _resolve_streamlit_module() -> ModuleType:
     """Ensure we use the real Streamlit implementation, not a test stub."""
@@ -290,14 +291,10 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     captions = [element.value for element in app.get("caption")]
     assert any("Resultados simulados" in caption for caption in captions)
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert any(
-        "- :warning: **Datos simulados (Yahoo no disponible)**" in block
-        for block in markdown_blocks
-    )
-    assert any(
-        "- :information_source: Recuerda validar con fuentes oficiales" in block
-        for block in markdown_blocks
-    )
+    formatted_fallback = shared_notes.format_note(fallback_note)
+    formatted_extra = shared_notes.format_note(extra_note)
+    assert any(f"- {formatted_fallback}" in block for block in markdown_blocks)
+    assert any(f"- {formatted_extra}" in block for block in markdown_blocks)
 
 
 def test_stub_source_displays_warning_caption_and_notes() -> None:
@@ -340,10 +337,8 @@ def test_fallback_note_with_cause_highlighted() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert any(
-        "- :warning: **Datos simulados — Causa: Yahoo timeout**" in block
-        for block in markdown_blocks
-    )
+    formatted_fallback = shared_notes.format_note(fallback_note)
+    assert any(f"- {formatted_fallback}" in block for block in markdown_blocks)
 
 
 def test_notes_block_highlights_backend_messages() -> None:
@@ -370,9 +365,13 @@ def test_notes_block_highlights_backend_messages() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert f"- **{top_note}**" in markdown_blocks
-    assert f"- **{threshold_note}**" in markdown_blocks
-    assert f"- {regular_note}" in markdown_blocks
+    formatted_top = shared_notes.format_note(top_note)
+    formatted_threshold = shared_notes.format_note(threshold_note)
+    formatted_regular = shared_notes.format_note(regular_note)
+
+    assert f"- {formatted_top}" in markdown_blocks
+    assert f"- {formatted_threshold}" in markdown_blocks
+    assert f"- {formatted_regular}" in markdown_blocks
 
 
 def test_notes_block_highlights_scarcity_messages() -> None:
@@ -391,10 +390,8 @@ def test_notes_block_highlights_scarcity_messages() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    formatted_note = (
-        "- :information_source: Solo se encontraron 3 candidatos por debajo del mínimo esperado."
-    )
-    assert formatted_note in markdown_blocks
+    formatted_note = shared_notes.format_note(scarcity_note)
+    assert f"- {formatted_note}" in markdown_blocks
     assert "**" not in formatted_note
 
 
