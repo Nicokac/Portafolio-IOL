@@ -8,6 +8,7 @@ backing data source.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Mapping, Sequence
 from typing import Callable, Iterable, List, Optional
 
@@ -941,6 +942,7 @@ def run_screener_yahoo(
     rows: list[dict[str, object]] = []
     sector_filters = _normalize_sector_filters(sectors)
 
+    loop_start = time.perf_counter()
     for ticker in tickers:
         fundamentals = _fetch_with_warning(client.get_fundamentals, ticker, "fundamentals")
         dividends = _fetch_with_warning(client.get_dividends, ticker, "dividendos")
@@ -1052,6 +1054,16 @@ def run_screener_yahoo(
 
         rows.append(row)
 
+    elapsed = time.perf_counter() - loop_start
+    universe_size = len(tickers)
+    LOGGER.info(
+        "Yahoo screener processed %s tickers in %.3f seconds",
+        universe_size,
+        elapsed,
+    )
+
+    telemetry_note = f"ℹ️ Yahoo procesó {universe_size} tickers en {elapsed:.2f} segundos"
+
     df = pd.DataFrame(rows).convert_dtypes()
 
     include_latam_flag = True if include_latam is None else bool(include_latam)
@@ -1098,6 +1110,8 @@ def run_screener_yahoo(
     filter_notes = list(df.attrs.pop("_notes", []))
     if filter_notes:
         notes.extend(filter_notes)
+
+    notes.append(telemetry_note)
 
     if using_default_universe and tickers:
         filters_applied: list[str] = []
