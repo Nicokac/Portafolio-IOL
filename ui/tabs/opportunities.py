@@ -23,6 +23,122 @@ _SECTOR_OPTIONS: Sequence[str] = (
     "Technology",
     "Utilities",
 )
+
+
+PRESET_FILTERS: Mapping[str, Mapping[str, object]] = {
+    "Dividendos defensivos": {
+        "min_market_cap": 1500,
+        "max_pe": 22.0,
+        "min_revenue_growth": 0.0,
+        "max_payout": 70.0,
+        "min_div_streak": 10,
+        "min_cagr": 5.0,
+        "min_eps_growth": 2.0,
+        "min_buyback": 0.0,
+        "include_latam": False,
+        "include_technicals": False,
+        "min_score_threshold": 65,
+        "max_results": int(shared_settings.max_results),
+        "sectors": ["Consumer Defensive", "Utilities"],
+    },
+    "Crecimiento balanceado": {
+        "min_market_cap": 1000,
+        "max_pe": 28.0,
+        "min_revenue_growth": 12.0,
+        "max_payout": 60.0,
+        "min_div_streak": 5,
+        "min_cagr": 6.0,
+        "min_eps_growth": 8.0,
+        "min_buyback": 1.0,
+        "include_latam": True,
+        "include_technicals": False,
+        "min_score_threshold": 72,
+        "max_results": int(shared_settings.max_results),
+        "sectors": ["Technology", "Healthcare"],
+    },
+    "Recompras agresivas": {
+        "min_market_cap": 500,
+        "max_pe": 25.0,
+        "min_revenue_growth": 5.0,
+        "max_payout": 50.0,
+        "min_div_streak": 3,
+        "min_cagr": 4.0,
+        "min_eps_growth": 6.0,
+        "min_buyback": 3.0,
+        "include_latam": True,
+        "include_technicals": True,
+        "min_score_threshold": 68,
+        "max_results": int(shared_settings.max_results),
+        "sectors": ["Financial Services", "Technology", "Industrials"],
+    },
+}
+
+
+_INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
+_FLOAT_STATE_KEYS = {
+    "max_pe",
+    "min_revenue_growth",
+    "max_payout",
+    "min_cagr",
+    "min_eps_growth",
+    "min_buyback",
+}
+_BOOL_STATE_KEYS = {"include_latam", "include_technicals"}
+
+
+def _compute_default_widget_values() -> dict[str, object]:
+    default_score = shared_settings.min_score_threshold
+    normalized_default_score = max(0, min(100, int(default_score)))
+    return {
+        "min_market_cap": 500,
+        "max_pe": 25.0,
+        "min_revenue_growth": 5.0,
+        "max_payout": 80.0,
+        "min_div_streak": 5,
+        "min_cagr": 4.0,
+        "min_eps_growth": 0.0,
+        "min_buyback": 0.0,
+        "include_latam": True,
+        "include_technicals": False,
+        "min_score_threshold": normalized_default_score,
+        "max_results": int(shared_settings.max_results),
+        "sectors": [],
+    }
+
+
+def _apply_preset(preset_name: str | None) -> None:
+    if not preset_name:
+        return
+    preset = PRESET_FILTERS.get(preset_name)
+    if not preset:
+        return
+    defaults = _compute_default_widget_values()
+    for key, default_value in defaults.items():
+        value = preset.get(key, default_value)
+        if key in _INT_STATE_KEYS:
+            if key == "min_score_threshold":
+                normalized_value = max(0, min(100, int(value)))
+                st.session_state[key] = normalized_value
+            else:
+                st.session_state[key] = int(value)
+        elif key in _FLOAT_STATE_KEYS:
+            st.session_state[key] = float(value)
+        elif key in _BOOL_STATE_KEYS:
+            st.session_state[key] = bool(value)
+        elif key == "sectors":
+            sectors = [
+                sector
+                for sector in value
+                if sector in _SECTOR_OPTIONS
+            ]
+            st.session_state[key] = sectors
+        else:
+            st.session_state[key] = value
+
+
+def _handle_preset_change() -> None:
+    preset_name = st.session_state.get("opportunities_preset")
+    _apply_preset(preset_name)
 def _format_note(note: str) -> str:
     """Format backend notes based on their severity category.
 
@@ -115,95 +231,120 @@ def render_opportunities_tab() -> None:
         "que podrían presentar oportunidades de inversión."
     )
 
+    defaults = _compute_default_widget_values()
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+    st.session_state.setdefault("opportunities_preset", "Personalizado")
+
+    st.selectbox(
+        "Perfil recomendado",
+        options=["Personalizado", *PRESET_FILTERS.keys()],
+        key="opportunities_preset",
+        on_change=_handle_preset_change,
+        help="Aplicá perfiles sugeridos con criterios preconfigurados para iniciar el screening.",
+    )
+
     with st.expander("Parámetros del screening", expanded=True):
         min_market_cap = st.number_input(
             "Capitalización mínima (US$ MM)",
             min_value=0,
-            value=500,
+            value=int(st.session_state["min_market_cap"]),
             step=50,
             help="Filtra empresas con capitalización menor al umbral indicado.",
+            key="min_market_cap",
         )
         max_pe = st.number_input(
             "P/E máximo",
             min_value=0.0,
-            value=25.0,
+            value=float(st.session_state["max_pe"]),
             step=0.5,
             help="Limita el ratio precio/ganancias máximo permitido.",
+            key="max_pe",
         )
         min_growth = st.number_input(
             "Crecimiento ingresos mínimo (%)",
             min_value=-100.0,
-            value=5.0,
+            value=float(st.session_state["min_revenue_growth"]),
             step=1.0,
             help="Requiere un crecimiento anual de ingresos superior al valor indicado.",
+            key="min_revenue_growth",
         )
         max_payout = st.number_input(
             "Payout máximo (%)",
             min_value=0.0,
             max_value=200.0,
-            value=80.0,
+            value=float(st.session_state["max_payout"]),
             step=1.0,
             help="Descarta empresas con payout ratio superior al valor indicado (predeterminado: 80%).",
+            key="max_payout",
         )
         min_div_streak = st.slider(
             "Racha mínima de dividendos (años)",
             min_value=0,
             max_value=30,
-            value=5,
+            value=int(st.session_state["min_div_streak"]),
             help="Exige al menos la cantidad seleccionada de años consecutivos pagando dividendos (predeterminado: 5 años).",
+            key="min_div_streak",
         )
         min_cagr = st.number_input(
             "CAGR mínimo de dividendos (%)",
             min_value=-50.0,
-            value=4.0,
+            value=float(st.session_state["min_cagr"]),
             step=0.5,
             help="Filtra compañías con crecimiento anual compuesto inferior al valor indicado (predeterminado: 4%).",
+            key="min_cagr",
         )
         min_eps_growth = st.number_input(
             "Crecimiento mínimo de EPS (%)",
             min_value=-100.0,
-            value=0.0,
+            value=float(st.session_state["min_eps_growth"]),
             step=0.5,
             help="Requiere que el EPS proyectado supere al actual por al menos el porcentaje indicado (predeterminado: 0%).",
+            key="min_eps_growth",
         )
         min_buyback = st.number_input(
             "Buyback mínimo (%)",
             min_value=-100.0,
-            value=0.0,
+            value=float(st.session_state["min_buyback"]),
             step=0.5,
             help="Exige una reducción mínima en el flotante. Usa valores positivos para requerir recompras netas.",
+            key="min_buyback",
         )
         include_latam = st.checkbox(
             "Incluir Latam",
-            value=True,
+            value=bool(st.session_state["include_latam"]),
             help="Extiende el screening a emisores listados en Latinoamérica.",
+            key="include_latam",
         )
         include_technicals = st.checkbox(
             "Incluir indicadores técnicos",
-            value=False,
+            value=bool(st.session_state["include_technicals"]),
             help="Agrega columnas con RSI y medias móviles de 50 y 200 ruedas.",
+            key="include_technicals",
         )
-        default_score = shared_settings.min_score_threshold
-        normalized_default_score = max(0, min(100, int(default_score)))
         min_score_threshold = st.slider(
             "Score mínimo",
             min_value=0,
             max_value=100,
-            value=normalized_default_score,
+            value=int(st.session_state["min_score_threshold"]),
             step=1,
             help="Define el puntaje mínimo requerido para considerar un candidato.",
+            key="min_score_threshold",
         )
         max_results = st.number_input(
             "Máximo de resultados",
             min_value=1,
-            value=int(shared_settings.max_results),
+            value=int(st.session_state["max_results"]),
             step=1,
             help="Limita la cantidad de oportunidades mostradas al tope indicado.",
+            key="max_results",
         )
         sectors = st.multiselect(
             "Sectores",
             options=_SECTOR_OPTIONS,
+            default=st.session_state.get("sectors", []),
             help="Limitá los resultados a los sectores seleccionados.",
+            key="sectors",
         )
 
     st.markdown(
