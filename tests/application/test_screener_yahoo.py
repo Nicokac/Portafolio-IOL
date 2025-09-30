@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import sys
 
@@ -11,6 +12,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from application.screener import opportunities as ops
 from controllers import opportunities as ctrl
+from infrastructure.market import YahooFinanceClient
 from shared.errors import AppError
 
 
@@ -985,3 +987,37 @@ def test_run_opportunities_controller_applies_new_filters(
 
     assert notes == ["No se encontraron datos para: CGR, PAY, STK"]
     assert source == "yahoo"
+
+
+_STUB_TICKERS = {"AAPL", "MSFT", "KO", "JNJ", "NUE", "MELI"}
+
+
+@pytest.mark.live_yahoo
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_YF") != "1",
+    reason="Set RUN_LIVE_YF=1 to enable live Yahoo Finance checks.",
+)
+def test_run_screener_yahoo_live_integration_returns_real_symbols() -> None:
+    """Prueba contra datos reales de Yahoo Finance (habilitar con RUN_LIVE_YF=1)."""
+
+    client = YahooFinanceClient()
+    result = ops.run_screener_yahoo(
+        client=client,
+        include_technicals=False,
+        min_market_cap=5_000_000_000,
+        max_pe=40.0,
+        min_revenue_growth=0.0,
+        max_results=30,
+    )
+
+    df = result[0] if isinstance(result, tuple) else result
+
+    assert not df.empty, "Expected live screener to return at least one ticker"
+
+    tickers = {str(ticker).strip().upper() for ticker in df["ticker"].dropna()}
+    non_stub_tickers = {ticker for ticker in tickers if ticker not in _STUB_TICKERS}
+
+    assert len(non_stub_tickers) >= 5, (
+        "Expected at least five tickers absent from the fictitious portfolio; "
+        f"got {sorted(non_stub_tickers)} from {sorted(tickers)}"
+    )
