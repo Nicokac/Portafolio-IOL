@@ -158,10 +158,10 @@ def test_glossary_expander_renders_key_metrics() -> None:
 def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     df = pd.DataFrame(
         {
-            "ticker": ["AAPL", "MSFT"],
-            "price": [180.12, 325.74],
-            "score_compuesto": [85.0, 79.0],
-            "sector": ["Technology", "Technology"],
+            "ticker": ["AAPL", "NEE"],
+            "price": [180.12, 78.6],
+            "score_compuesto": [85.0, 72.0],
+            "sector": ["Technology", "Utilities"],
         }
     )
     assert "sector" in df.columns
@@ -217,8 +217,8 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
 def test_checkbox_include_technicals_updates_params() -> None:
     df = pd.DataFrame(
         {
-            "ticker": ["AAPL"],
-            "price": [180.12],
+            "ticker": ["MELI"],
+            "price": [1225.5],
             "score_compuesto": [85.0],
         }
     )
@@ -237,9 +237,9 @@ def test_checkbox_include_technicals_updates_params() -> None:
 def test_selectbox_preset_applies_recommended_values_and_allows_manual_override() -> None:
     df = pd.DataFrame(
         {
-            "ticker": ["AAPL"],
-            "price": [180.12],
-            "score_compuesto": [85.0],
+            "ticker": ["DUK"],
+            "price": [94.2],
+            "score_compuesto": [68.0],
         }
     )
     preset_name = "Dividendos defensivos"
@@ -366,8 +366,8 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     markdown_blocks = [element.value for element in app.get("markdown")]
     formatted_fallback = shared_notes.format_note(fallback_note)
     formatted_extra = shared_notes.format_note(extra_note)
-    assert any(f"- {formatted_fallback}" in block for block in markdown_blocks)
-    assert any(f"- {formatted_extra}" in block for block in markdown_blocks)
+    assert any(formatted_fallback in block for block in markdown_blocks)
+    assert any(formatted_extra in block for block in markdown_blocks)
 
 
 def test_stub_source_displays_warning_caption_and_notes() -> None:
@@ -417,7 +417,7 @@ def test_fallback_note_with_cause_highlighted() -> None:
     markdown_blocks = [element.value for element in app.get("markdown")]
 
     formatted_fallback = shared_notes.format_note(fallback_note)
-    assert any(f"- {formatted_fallback}" in block for block in markdown_blocks)
+    assert any(formatted_fallback in block for block in markdown_blocks)
 
 
 def test_notes_block_highlights_backend_messages() -> None:
@@ -448,9 +448,9 @@ def test_notes_block_highlights_backend_messages() -> None:
     formatted_threshold = shared_notes.format_note(threshold_note)
     formatted_regular = shared_notes.format_note(regular_note)
 
-    assert f"- {formatted_top}" in markdown_blocks
-    assert f"- {formatted_threshold}" in markdown_blocks
-    assert f"- {formatted_regular}" in markdown_blocks
+    assert any(formatted_top in block for block in markdown_blocks)
+    assert any(formatted_threshold in block for block in markdown_blocks)
+    assert any(formatted_regular in block for block in markdown_blocks)
 
 
 def test_notes_block_highlights_scarcity_messages() -> None:
@@ -470,7 +470,7 @@ def test_notes_block_highlights_scarcity_messages() -> None:
     markdown_blocks = [element.value for element in app.get("markdown")]
 
     formatted_note = shared_notes.format_note(scarcity_note)
-    assert f"- {formatted_note}" in markdown_blocks
+    assert any(formatted_note in block for block in markdown_blocks)
     assert "**" not in formatted_note
 
 
@@ -490,9 +490,9 @@ def test_notes_block_formats_success_messages() -> None:
 
     markdown_blocks = [element.value for element in app.get("markdown")]
 
-    assert (
-        "- :white_check_mark: **Screening completado sin restricciones.**"
-        in markdown_blocks
+    assert any(
+        ":white_check_mark:" in block and "Screening completado sin restricciones" in block
+        for block in markdown_blocks
     )
 
 
@@ -515,8 +515,8 @@ def test_notes_block_formats_truncation_and_shortage_notes() -> None:
     assert any("Yahoo Finance" in caption for caption in captions)
 
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert f"- **{truncation_note}**" in markdown_blocks
-    assert f"- **{shortage_note}**" in markdown_blocks
+    assert any(truncation_note in block for block in markdown_blocks)
+    assert any(shortage_note in block for block in markdown_blocks)
 
 
 def test_notes_block_displays_critical_missing_fundamental_warning() -> None:

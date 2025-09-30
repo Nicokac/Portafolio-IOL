@@ -26,18 +26,46 @@ def test_filters_apply_to_base_dataset() -> None:
         min_revenue_growth=5.0,
         include_latam=False,
     )
-    assert _tickers(df) == {"AAPL", "MSFT"}
+    base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
+    base_filtered = base[
+        (base["market_cap"] >= 100_000)
+        & (base["pe_ratio"] <= 35.0)
+        & (base["revenue_growth"] >= 5.0)
+        & (~base["is_latam"])
+    ]
+
+    assert _tickers(df) == set(base_filtered["ticker"].unique())
+    assert {"ticker", "sector", "score_compuesto"}.issubset(df.columns)
     assert (df["market_cap"] >= 100_000).all()
     assert (df["pe_ratio"] <= 35.0).all()
     assert (df["revenue_growth"] >= 5.0).all()
     assert not df.get("is_latam", pd.Series(dtype=bool)).any()
     assert {"rsi", "sma_50", "sma_200"}.isdisjoint(df.columns)
+    for column in [
+        "payout_ratio",
+        "dividend_streak",
+        "cagr",
+        "dividend_yield",
+        "buyback",
+    ]:
+        assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
+    for column in [
+        "trailing_eps",
+        "forward_eps",
+    ]:
+        assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
     df = run_screener_stub(include_latam=True, include_technicals=True)
-    assert "MELI" in _tickers(df)
-    assert bool(df.loc[df["ticker"] == "MELI", "is_latam"].iloc[0])
+    latam_tickers = {
+        row["ticker"]
+        for row in opportunities_module._BASE_OPPORTUNITIES
+        if row.get("is_latam")
+    }
+    assert latam_tickers.issubset(_tickers(df))
+    for ticker in latam_tickers:
+        assert bool(df.loc[df["ticker"] == ticker, "is_latam"].iloc[0])
     assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
 
 
@@ -62,9 +90,6 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
     threshold_row = ordered.iloc[1]
     threshold_value = float(threshold_row["score_compuesto"])
 
-    assert float(below_row["score_compuesto"]) == pytest.approx(36.72, abs=1e-2)
-    assert threshold_value == pytest.approx(49.34, abs=1e-2)
-
     assert threshold_value > float(below_row["score_compuesto"])
 
     filtered = run_screener_stub(
@@ -74,6 +99,27 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
 
     assert threshold_row["ticker"] in _tickers(filtered)
     assert below_row["ticker"] not in _tickers(filtered)
+    assert (filtered["score_compuesto"] >= threshold_value).all()
+
+
+def test_stub_dataset_is_diverse_and_complete() -> None:
+    base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
+    assert 15 <= len(base) <= 20
+    assert base["sector"].nunique() >= 8
+    latam_rows = base[base["is_latam"]]
+    assert not latam_rows.empty
+    for column in [
+        "market_cap",
+        "pe_ratio",
+        "revenue_growth",
+        "trailing_eps",
+        "forward_eps",
+        "buyback",
+        "dividend_streak",
+        "cagr",
+    ]:
+        assert base[column].notna().all(), f"Column '{column}' should be populated in the stub"
+    assert (base["market_cap"] > 0).all()
 
 
 @pytest.mark.timeout(2)

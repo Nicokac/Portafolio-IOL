@@ -11,6 +11,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
+import application.screener.opportunities as opportunities_module
 from application.screener import opportunities as ops
 from controllers import opportunities as ctrl
 from infrastructure.market import YahooFinanceClient
@@ -49,6 +50,14 @@ class FakeYahooClient:
                 else:
                     results.append(entry)
         return results
+
+
+def _unwrap_result(
+    result: pd.DataFrame | tuple[pd.DataFrame, list[str]]
+) -> tuple[pd.DataFrame, list[str]]:
+    if isinstance(result, tuple):
+        return result
+    return result, []
 
 
 def build_bulk_fake_yahoo_client(
@@ -211,11 +220,14 @@ def comprehensive_data() -> dict[str, dict[str, object]]:
 
 def test_run_screener_yahoo_computes_metrics(comprehensive_data):
     client = FakeYahooClient(comprehensive_data)
-    df = ops.run_screener_yahoo(
-        manual_tickers=["abc"], client=client, include_technicals=True
+    df, notes = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["abc"], client=client, include_technicals=True
+        )
     )
 
     assert df.shape[0] == 1
+    assert any("Yahoo procesó" in note for note in notes)
     assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
     row = df.iloc[0]
 
@@ -339,13 +351,15 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     }
     client = FakeYahooClient(data)
 
-    df = ops.run_screener_yahoo(
-        manual_tickers=["ABC", "BAD"],
-        client=client,
-        max_payout=50,
-        min_div_streak=1,
-        min_cagr=5,
-        include_technicals=False,
+    df, notes = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["ABC", "BAD"],
+            client=client,
+            max_payout=50,
+            min_div_streak=1,
+            min_cagr=5,
+            include_technicals=False,
+        )
     )
 
     assert list(df.columns) == [
@@ -362,15 +376,20 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
     assert df.iloc[0]["ticker"] == "ABC"
     assert pd.isna(df.iloc[1]["payout_ratio"])
 
-    df_filtered = ops.run_screener_yahoo(
-        manual_tickers=["ABC", "BAD"],
-        client=client,
-        include_technicals=False,
-        sectors=["technology"],
+    assert any("Yahoo procesó" in note for note in notes)
+
+    df_filtered, notes_filtered = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["ABC", "BAD"],
+            client=client,
+            include_technicals=False,
+            sectors=["technology"],
+        )
     )
 
     assert list(df_filtered["ticker"]) == ["ABC"]
     assert set(df_filtered["sector"].dropna()) == {"Technology"}
+    assert any("Yahoo procesó" in note for note in notes_filtered)
 
 
 def test_run_screener_yahoo_auto_universe_drops_filtered(monkeypatch, comprehensive_data):
@@ -526,14 +545,16 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
 
     client = FakeYahooClient(data)
 
-    df = ops.run_screener_yahoo(
-        manual_tickers=["ABC", "LAT", "SMALL"],
-        client=client,
-        include_technicals=False,
-        min_market_cap=500_000_000,
-        max_pe=20.0,
-        min_revenue_growth=5.0,
-        include_latam=False,
+    df, notes = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["ABC", "LAT", "SMALL"],
+            client=client,
+            include_technicals=False,
+            min_market_cap=500_000_000,
+            max_pe=20.0,
+            min_revenue_growth=5.0,
+            include_latam=False,
+        )
     )
 
     assert "sector" in df.columns
@@ -543,16 +564,21 @@ def test_run_screener_yahoo_applies_extended_filters(comprehensive_data):
     assert pd.isna(results["LAT"]["payout_ratio"])
     assert pd.isna(results["SMALL"]["payout_ratio"])
 
-    df_latam = ops.run_screener_yahoo(
-        manual_tickers=["LAT"],
-        client=client,
-        include_technicals=False,
-        include_latam=True,
+    assert any("Yahoo procesó" in note for note in notes)
+
+    df_latam, notes_latam = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["LAT"],
+            client=client,
+            include_technicals=False,
+            include_latam=True,
+        )
     )
 
     assert df_latam.shape[0] == 1
     assert df_latam.iloc[0]["ticker"] == "LAT"
     assert df_latam.iloc[0]["payout_ratio"] == 55.0
+    assert any("Yahoo procesó" in note for note in notes_latam)
 
 
 def test_run_screener_yahoo_filters_eps_and_buybacks(
@@ -612,12 +638,14 @@ def test_run_screener_yahoo_filters_eps_and_buybacks(
 
     client = FakeYahooClient(data)
 
-    df = ops.run_screener_yahoo(
-        manual_tickers=["GRO", "FLT", "NEG", "BUY"],
-        client=client,
-        include_technicals=False,
-        min_eps_growth=5.0,
-        min_buyback=0.1,
+    df, notes = _unwrap_result(
+        ops.run_screener_yahoo(
+            manual_tickers=["GRO", "FLT", "NEG", "BUY"],
+            client=client,
+            include_technicals=False,
+            min_eps_growth=5.0,
+            min_buyback=0.1,
+        )
     )
 
     assert list(df["ticker"]) == ["GRO", "FLT", "NEG", "BUY"]
@@ -627,6 +655,7 @@ def test_run_screener_yahoo_filters_eps_and_buybacks(
     assert pd.isna(results["FLT"]["payout_ratio"])
     assert pd.isna(results["NEG"]["payout_ratio"])
     assert pd.isna(results["BUY"]["payout_ratio"])
+    assert any("Yahoo procesó" in note for note in notes)
 
 
 def test_run_screener_yahoo_strict_growth_buyback_sector_and_score_filters(
@@ -1130,7 +1159,8 @@ def test_run_opportunities_controller_exposes_technicals(monkeypatch, comprehens
         include_technicals=True,
     )
 
-    assert not notes
+    assert notes[0].startswith("ℹ️ Filtros aplicados:")
+    assert any("Yahoo procesó" in note for note in notes)
     assert source == "yahoo"
     assert {"rsi", "sma_50", "sma_200"}.issubset(df.columns)
 
@@ -1228,11 +1258,13 @@ def test_run_opportunities_controller_applies_new_filters(
     assert pd.isna(results["STK"]["dividend_streak"])
     assert pd.isna(results["CGR"]["cagr"])
 
-    assert notes == ["No se encontraron datos para: CGR, PAY, STK"]
+    assert notes[0].startswith("ℹ️ Filtros aplicados:")
+    assert any("Yahoo procesó" in note for note in notes)
+    assert any("No se encontraron datos" in note for note in notes)
     assert source == "yahoo"
 
 
-_STUB_TICKERS = {"AAPL", "MSFT", "KO", "JNJ", "NUE", "MELI"}
+_STUB_TICKERS = {row["ticker"] for row in opportunities_module._BASE_OPPORTUNITIES}
 
 
 # Instrucciones completas en README.md#pruebas para habilitar la marca live_yahoo.
