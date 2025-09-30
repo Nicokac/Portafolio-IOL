@@ -408,6 +408,11 @@ def render_opportunities_tab() -> None:
             st.subheader("Resultados del screening")
             st.dataframe(table, use_container_width=True)
 
+        if notes:
+            st.markdown("### Notas del screening")
+            for note in notes:
+                st.markdown(_format_note(note))
+
         if source == "stub":
             st.caption(shared_notes.format_note("⚠️ Resultados simulados (Yahoo no disponible)"))
         else:
@@ -417,10 +422,5 @@ def render_opportunities_tab() -> None:
                 "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
             )
         )
-
-        if notes:
-            st.markdown("### Notas")
-            for note in notes:
-                st.markdown(f"- {_format_note(note)}")
     else:
         st.info("El screening se ejecuta manualmente para evitar demoras innecesarias.")

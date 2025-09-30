@@ -122,7 +122,11 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
     }
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     assert set(df["ticker"]) == {"AAPL"}
-    assert notes == ["Yahoo note"]
+    assert notes[0].startswith("ℹ️ Filtros aplicados:")
+    assert "score ≥42.5" in notes[0]
+    assert "payout ≤70" in notes[0]
+    assert "buyback ≥0.5" in notes[0]
+    assert notes[1:] == ["Yahoo note"]
     assert source == "yahoo"
 
 
@@ -145,7 +149,9 @@ def test_controller_propagates_yahoo_notes(monkeypatch: pytest.MonkeyPatch) -> N
     )
 
     assert df.equals(payload[_EXPECTED_COLUMNS])
-    assert notes == ["Nota desde Yahoo"]
+    assert notes[0].startswith("ℹ️ Filtros aplicados:")
+    assert "tickers" in notes[0]
+    assert notes[1:] == ["Nota desde Yahoo"]
     assert source == "yahoo"
 
 
@@ -201,8 +207,10 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert "MSFT" not in set(df["ticker"])
     assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
     assert "boom" in notes[0]
-    assert notes[1] == "Stub note"
-    assert "AAPL" in notes[2]
+    assert notes[1].startswith("ℹ️ Filtros aplicados:")
+    assert "score ≥30" in notes[1]
+    assert notes[2] == "Stub note"
+    assert "AAPL" in notes[3]
     assert source == "stub"
 
 
@@ -258,7 +266,10 @@ def test_controller_relays_strict_filters_and_minimum_notes(
     }
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert df.iloc[0]["ticker"] == "ELITE"
-    assert notes == [minimum_message]
+    assert notes[0].startswith("ℹ️ Filtros aplicados:")
+    assert "score ≥60" in notes[0]
+    assert "máx resultados ≤1" in notes[0]
+    assert notes[1:] == [minimum_message]
     assert source == "yahoo"
 
 
@@ -289,7 +300,9 @@ def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.Monk
 
     assert "MSFT" not in set(df["ticker"])
     assert any(ticker == "AAPL" for ticker in df["ticker"])
-    assert not any("MSFT" in note for note in notes)
+    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
+    assert notes[1].startswith("ℹ️ Filtros aplicados:")
+    assert "excluye" in notes[1]
     assert source == "stub"
 
 
@@ -314,7 +327,8 @@ def test_fallback_includes_unexpected_error_reason(monkeypatch: pytest.MonkeyPat
     assert source == "stub"
     assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
     assert "service offline" in notes[0]
-    assert notes[1] == "Stub note"
+    assert notes[1].startswith("ℹ️ Filtros aplicados:")
+    assert notes[2] == "Stub note"
 
 
 def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) -> None:
