@@ -102,7 +102,7 @@ def test_settings_score_parameters_defaults(monkeypatch):
 
     with _fresh_settings(monkeypatch) as settings:
         assert settings.min_score_threshold == 80
-        assert settings.max_results == 5
+        assert settings.max_results == 20
 
 
 def test_settings_score_parameters_from_environment(monkeypatch):

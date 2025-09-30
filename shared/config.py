@@ -108,7 +108,7 @@ class Settings:
         self.min_score_threshold: int = int(
             os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80))
         )
-        self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 5)))
+        self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 20)))
 
         flag_value = os.getenv(
             "FEATURE_OPPORTUNITIES_TAB",
