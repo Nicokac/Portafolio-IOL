@@ -448,6 +448,140 @@ def test_run_screener_yahoo_filters_eps_and_buybacks(
     assert pd.isna(results["FLT"]["payout_ratio"])
     assert pd.isna(results["NEG"]["payout_ratio"])
     assert pd.isna(results["BUY"]["payout_ratio"])
+
+
+def test_run_screener_yahoo_strict_growth_buyback_sector_and_score_filters(
+    comprehensive_data: dict[str, dict[str, object]]
+) -> None:
+    base = comprehensive_data["ABC"]
+    base_prices = base["prices"].copy()
+    base_dividends = base["dividends"].copy()
+    base_shares = base["shares"].copy()
+
+    def make_shares(values: list[int]) -> pd.DataFrame:
+        return pd.DataFrame({"date": base_shares["date"], "shares": values})
+
+    def make_entry(
+        ticker: str,
+        *,
+        sector: str,
+        trailing_eps: float,
+        forward_eps: float,
+        shares: pd.DataFrame,
+        payout_ratio: float | None = None,
+        dividends: pd.DataFrame | None = None,
+        prices: pd.DataFrame | None = None,
+    ) -> dict[str, object]:
+        fundamentals = base["fundamentals"].copy()
+        fundamentals.update(
+            {
+                "ticker": ticker,
+                "sector": sector,
+                "trailing_eps": trailing_eps,
+                "forward_eps": forward_eps,
+            }
+        )
+        if payout_ratio is not None:
+            fundamentals["payout_ratio"] = payout_ratio
+        dividend_data = dividends.copy() if dividends is not None else base_dividends.copy()
+        price_data = prices.copy() if prices is not None else base_prices.copy()
+        return {
+            "fundamentals": fundamentals,
+            "dividends": dividend_data,
+            "shares": shares,
+            "prices": price_data,
+        }
+
+    elite_shares = make_shares([1_000_000, 960_000, 920_000, 880_000, 840_000, 800_000])
+    medic_shares = make_shares([1_000_000, 955_000, 910_000, 870_000, 835_000, 800_000])
+    weak_buyback_shares = make_shares([1_000_000, 995_000, 990_000, 985_000, 980_000, 975_000])
+    strong_dividends = pd.DataFrame(
+        {
+            "date": base_dividends["date"],
+            "amount": [1.5, 1.5, 1.4, 1.4, 1.3, 1.3],
+        }
+    )
+    momentum_prices = base_prices.copy()
+    growth_curve = 1.15 ** (np.arange(len(momentum_prices)) / 365)
+    momentum_prices["close"] = 100.0 * growth_curve
+    momentum_prices["adj_close"] = 100.0 * growth_curve
+    consistent_prices = base_prices.copy()
+    consistent_prices["close"] = 100.0
+    consistent_prices["adj_close"] = 100.0
+
+    data = {
+        "ELITE": make_entry(
+            "ELITE",
+            sector="Technology",
+            trailing_eps=4.0,
+            forward_eps=5.2,
+            shares=elite_shares,
+            payout_ratio=32.0,
+            dividends=strong_dividends,
+            prices=momentum_prices,
+        ),
+        "MEDIC": make_entry(
+            "MEDIC",
+            sector="Healthcare",
+            trailing_eps=3.8,
+            forward_eps=4.9,
+            shares=medic_shares,
+            payout_ratio=30.0,
+            dividends=strong_dividends,
+            prices=momentum_prices,
+        ),
+        "SLOWBUY": make_entry(
+            "SLOWBUY",
+            sector="Technology",
+            trailing_eps=4.1,
+            forward_eps=5.3,
+            shares=weak_buyback_shares,
+            dividends=strong_dividends,
+            prices=momentum_prices,
+        ),
+        "OFFSECTOR": make_entry(
+            "OFFSECTOR",
+            sector="Utilities",
+            trailing_eps=4.0,
+            forward_eps=5.1,
+            shares=elite_shares,
+            dividends=strong_dividends,
+            prices=momentum_prices,
+        ),
+        "LOWSCORE": make_entry(
+            "LOWSCORE",
+            sector="Healthcare",
+            trailing_eps=3.9,
+            forward_eps=4.8,
+            shares=elite_shares,
+            payout_ratio=78.0,
+            dividends=strong_dividends,
+            prices=consistent_prices,
+        ),
+    }
+
+    listings = {"NASDAQ": [{"ticker": symbol} for symbol in data]}
+    client = FakeYahooClient(data, listings=listings)
+
+    result = ops.run_screener_yahoo(
+        client=client,
+        include_technicals=False,
+        min_eps_growth=20.0,
+        min_buyback=10.0,
+        sectors=["technology", "healthcare"],
+        min_score_threshold=48.0,
+    )
+
+    if isinstance(result, tuple):
+        df, notes = result
+    else:  # pragma: no cover - defensive guard
+        df, notes = result, []
+
+    assert set(df["ticker"]) == {"ELITE", "MEDIC"}
+    assert {"SLOWBUY", "OFFSECTOR", "LOWSCORE"}.isdisjoint(set(df["ticker"]))
+    assert all("Ningún ticker" not in note for note in notes)
+    assert any("Analizando" in note for note in notes)
+    assert pd.to_numeric(df["score_compuesto"], errors="coerce").min() >= 48.0
 def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data):
     listings = {"TEST": [{"ticker": "ABC", "market_cap": 1_200_000_000}]}
     client = FakeYahooClient(comprehensive_data, listings=listings)
