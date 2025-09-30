@@ -44,6 +44,114 @@ def _summarize_active_filters(filters: Mapping[str, Any]) -> Mapping[str, Any]:
     return summary
 
 
+def _format_filter_value(key: str, value: Any) -> Optional[str]:
+    """Format a single filter value into a human readable fragment."""
+
+    def _format_percentage(raw: Any) -> Optional[str]:
+        try:
+            numeric = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return f"{numeric:g}%"
+
+    def _format_number(raw: Any) -> Optional[str]:
+        try:
+            numeric = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if numeric.is_integer():
+            return f"{int(numeric)}"
+        return f"{numeric:g}"
+
+    if key in {"manual_tickers", "exclude_tickers", "sectors"}:
+        if isinstance(value, Iterable) and not isinstance(value, (str, bytes, bytearray)):
+            items = [str(item) for item in value if item]
+            if not items:
+                return None
+            label = {
+                "manual_tickers": "tickers",
+                "exclude_tickers": "excluye",
+                "sectors": "sectores",
+            }[key]
+            return f"{label}: {', '.join(items)}"
+        return None
+    if key == "include_technicals":
+        if bool(value):
+            return "indicadores técnicos"
+        return None
+    if key == "include_latam":
+        if value is True:
+            return "incluye Latam"
+        if value is False:
+            return "excluye Latam"
+        return None
+    if key == "max_results":
+        number = _format_number(value)
+        if number is None:
+            return None
+        return f"máx resultados ≤{number}"
+    if key == "max_payout":
+        percentage = _format_percentage(value)
+        if percentage is None:
+            return None
+        return f"payout ≤{percentage}"
+    if key == "min_div_streak":
+        try:
+            years = int(value)
+        except (TypeError, ValueError):
+            return None
+        return f"racha dividendos ≥{years} años"
+    if key == "min_cagr":
+        percentage = _format_percentage(value)
+        if percentage is None:
+            return None
+        return f"CAGR dividendos ≥{percentage}"
+    if key == "min_market_cap":
+        number = _format_number(value)
+        if number is None:
+            return None
+        return f"market cap ≥{number}"
+    if key == "max_pe":
+        number = _format_number(value)
+        if number is None:
+            return None
+        return f"P/E ≤{number}"
+    if key == "min_revenue_growth":
+        percentage = _format_percentage(value)
+        if percentage is None:
+            return None
+        return f"crecimiento ingresos ≥{percentage}"
+    if key == "min_eps_growth":
+        percentage = _format_percentage(value)
+        if percentage is None:
+            return None
+        return f"crecimiento EPS ≥{percentage}"
+    if key == "min_buyback":
+        percentage = _format_percentage(value)
+        if percentage is None:
+            return None
+        return f"buyback ≥{percentage}"
+    if key == "min_score_threshold":
+        number = _format_number(value)
+        if number is None:
+            return None
+        return f"score ≥{number}"
+    return None
+
+
+def _build_filters_note(filters: Mapping[str, Any]) -> Optional[str]:
+    """Convert active filters into a readable summary note."""
+
+    fragments: List[str] = []
+    for key, value in filters.items():
+        formatted = _format_filter_value(key, value)
+        if formatted:
+            fragments.append(formatted)
+    if not fragments:
+        return None
+    return "ℹ️ Filtros aplicados: " + ", ".join(fragments)
+
+
 def _describe_exception(exc: BaseException) -> str:
     message = str(exc).strip()
     if message:
@@ -193,6 +301,7 @@ def run_opportunities_controller(
     extra_notes: List[str] = []
     failure_reason: Optional[str] = None
     active_filters = _summarize_active_filters(yahoo_kwargs)
+    filters_note = _build_filters_note(active_filters)
 
     if callable(run_screener_yahoo):
         try:
@@ -247,10 +356,14 @@ def run_opportunities_controller(
         if failure_reason:
             fallback_note = f"{fallback_note} — Causa: {failure_reason}"
         notes.append(fallback_note)
+        if filters_note:
+            notes.append(filters_note)
         if stub_notes:
             notes.extend(_normalize_notes(stub_notes))
         df = _ensure_columns(df, include_technicals)
     else:
+        if filters_note:
+            notes.append(filters_note)
         notes.extend(extra_notes)
 
     if tickers:
