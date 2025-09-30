@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import time
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from application.screener.opportunities import run_screener_stub
+import application.screener.opportunities as opportunities_module
 
 
 def _tickers(df: pd.DataFrame) -> set[str]:
@@ -72,3 +74,66 @@ def test_run_screener_stub_applies_score_threshold_inclusively() -> None:
 
     assert threshold_row["ticker"] in _tickers(filtered)
     assert below_row["ticker"] not in _tickers(filtered)
+
+
+@pytest.mark.timeout(2)
+def test_run_screener_stub_truncates_large_universe(monkeypatch: pytest.MonkeyPatch) -> None:
+    synthetic_universe: list[dict[str, object]] = []
+    for index in range(240):
+        tier = index % 3
+        ticker = f"SYN{index:03d}"
+        synthetic_universe.append(
+            {
+                "ticker": ticker,
+                "payout_ratio": 20.0 if tier == 0 else 40.0 if tier == 1 else 70.0,
+                "dividend_streak": 30 if tier == 0 else 15 if tier == 1 else 5,
+                "cagr": 20.0 if tier == 0 else 10.0 if tier == 1 else 5.0,
+                "dividend_yield": 1.5 + tier,
+                "price": 100.0 + index,
+                "rsi": 50.0 if tier == 0 else 60.0 if tier == 1 else 80.0,
+                "sma_50": 95.0 + index,
+                "sma_200": 90.0 + index,
+                "market_cap": 1_000 + index * 5,
+                "pe_ratio": 15.0 if tier == 0 else 25.0 if tier == 1 else 35.0,
+                "revenue_growth": 15.0 if tier == 0 else 8.0 if tier == 1 else -2.0,
+                "is_latam": bool(index % 10 == 0),
+                "trailing_eps": 5.0,
+                "forward_eps": 5.5,
+                "buyback": 10.0 if tier == 0 else 5.0 if tier == 1 else 1.0,
+                "sector": "Synthetic",
+            }
+        )
+
+    monkeypatch.setattr(opportunities_module, "_BASE_OPPORTUNITIES", synthetic_universe)
+
+    excluded = {"SYN030", "SYN060"}
+    threshold = 60.0
+    max_results = 5
+
+    start = time.perf_counter()
+    output = run_screener_stub(
+        exclude_tickers=excluded,
+        include_latam=False,
+        min_market_cap=1_000,
+        max_pe=25.0,
+        min_score_threshold=threshold,
+        max_results=max_results,
+    )
+    duration = time.perf_counter() - start
+
+    if isinstance(output, tuple):
+        result, notes = output
+    else:
+        result, notes = output, []
+
+    assert duration < 1.0, "El screener stub debería manejar universos grandes rápidamente"
+
+    assert len(result) == max_results
+    assert (result["score_compuesto"] >= threshold).all()
+    assert not result["ticker"].isin(excluded).any()
+    assert not result["is_latam"].any()
+
+    assert notes, "Se esperaban notas informativas tras el truncado"
+    truncation_notes = [note for note in notes if "Se muestran" in note]
+    assert truncation_notes, "Debe informarse cuando el resultado se trunca"
+    assert str(max_results) in truncation_notes[0]
