@@ -314,24 +314,21 @@ def _apply_filters_and_finalize(
         result = result[mask]
 
     if min_market_cap is not None and market_cap_column in result.columns:
-        series = result[market_cap_column]
-        mask = series >= float(min_market_cap)
-        if allow_na_filters:
-            mask = series.isna() | mask
+        series = pd.to_numeric(result[market_cap_column], errors="coerce")
+        register_missing(series.isna(), "capitalización bursátil")
+        mask = series.notna() & (series >= float(min_market_cap))
         result = result[mask]
 
     if max_pe is not None and pe_ratio_column in result.columns:
-        series = result[pe_ratio_column]
-        mask = series <= float(max_pe)
-        if allow_na_filters:
-            mask = series.isna() | mask
+        series = pd.to_numeric(result[pe_ratio_column], errors="coerce")
+        register_missing(series.isna(), "P/E")
+        mask = series.notna() & (series <= float(max_pe))
         result = result[mask]
 
     if min_revenue_growth is not None and revenue_growth_column in result.columns:
-        series = result[revenue_growth_column]
-        mask = series >= float(min_revenue_growth)
-        if allow_na_filters:
-            mask = series.isna() | mask
+        series = pd.to_numeric(result[revenue_growth_column], errors="coerce")
+        register_missing(series.isna(), "crecimiento de ingresos")
+        mask = series.notna() & (series >= float(min_revenue_growth))
         result = result[mask]
 
     if trailing_eps_column in result.columns:
