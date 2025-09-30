@@ -631,6 +631,7 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     notes = [block for block in markdown_blocks if "Se muestran" in block]
     assert notes, "Expected truncation warning to be present in notes"
     assert any("máximo solicitado" in note for note in notes)
+    assert any("Stub procesó" in block for block in markdown_blocks)
 
     captions = [element.value for element in app.get("caption")]
     assert any("Resultados simulados" in caption for caption in captions)
@@ -769,6 +770,7 @@ def test_opportunities_flow_uses_preset_with_stub_fallback(
     markdown_blocks = [element.value for element in app.get("markdown")]
     assert any("Datos simulados" in block for block in markdown_blocks)
     assert any("Filtros aplicados" in block for block in markdown_blocks)
+    assert any("Stub procesó" in block for block in markdown_blocks)
 
     captions = [element.value for element in app.get("caption")]
     assert any("Resultados simulados" in caption for caption in captions)

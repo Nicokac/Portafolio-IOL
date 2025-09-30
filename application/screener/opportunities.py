@@ -828,6 +828,8 @@ def run_screener_stub(
         DataFrame. When ``False`` those columns are omitted.
     """
 
+    loop_start = time.perf_counter()
+
     df = pd.DataFrame(_BASE_OPPORTUNITIES)
     manual = _normalise_tickers(manual_tickers)
     excluded = set(_normalise_tickers(exclude_tickers))
@@ -879,8 +881,23 @@ def run_screener_stub(
         allowed_sectors=_normalize_sector_filters(sectors),
     )
 
+    elapsed = time.perf_counter() - loop_start
+    processed_count = int(len(result.index))
+
+    LOGGER.info(
+        "Stub screener processed %s tickers in %.3f seconds",
+        processed_count,
+        elapsed,
+    )
+
+    telemetry_note = (
+        f"ℹ️ Stub procesó {processed_count} tickers en {elapsed:.2f} segundos"
+    )
+
     notes = list(result.attrs.pop("_notes", []))
-    return (result, notes) if notes else result
+    notes.append(telemetry_note)
+
+    return result, notes
 
 
 def _is_valid_number(value: float | int | pd.NA | None) -> bool:
