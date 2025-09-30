@@ -519,6 +519,27 @@ def test_notes_block_formats_truncation_and_shortage_notes() -> None:
     assert f"- **{shortage_note}**" in markdown_blocks
 
 
+def test_notes_block_displays_critical_missing_fundamental_warning() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "price": [180.0],
+            "score_compuesto": [75.0],
+        }
+    )
+    critical_note = (
+        "Se descartó el ticker MISS por falta de datos críticos de capitalización bursátil."
+    )
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [critical_note], "source": "yahoo"}
+    )
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    formatted_note = shared_notes.format_note(critical_note)
+    assert formatted_note in markdown_blocks
+
+
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", False)
     monkeypatch.delenv("FEATURE_OPPORTUNITIES_TAB", raising=False)

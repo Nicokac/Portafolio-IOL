@@ -824,6 +824,63 @@ def test_run_screener_yahoo_truncates_large_universe(monkeypatch):
     assert any("Filtros aplicados" in note for note in notes)
 
 
+def test_run_screener_yahoo_discards_rows_missing_critical_fundamentals(monkeypatch, comprehensive_data):
+    base = comprehensive_data["ABC"]
+    base_fundamentals = base["fundamentals"].copy()
+
+    def _entry(ticker: str, **overrides: object) -> dict[str, object]:
+        fundamentals = base_fundamentals.copy()
+        fundamentals.update(
+            {
+                "ticker": ticker,
+                "market_cap": 800_000_000,
+                "pe_ratio": 20.0,
+                "revenue_growth": 8.0,
+            }
+        )
+        fundamentals.update(overrides)
+        return {
+            "fundamentals": fundamentals,
+            "dividends": base["dividends"],
+            "shares": base["shares"],
+            "prices": base["prices"],
+        }
+
+    data = {
+        "MCNA": _entry("MCNA", market_cap=None),
+        "PENA": _entry("PENA", pe_ratio=None),
+        "RGNA": _entry("RGNA", revenue_growth=None),
+    }
+
+    listings = {
+        "TEST": [
+            {"ticker": "MCNA"},
+            {"ticker": "PENA"},
+            {"ticker": "RGNA"},
+        ]
+    }
+
+    client = FakeYahooClient(data, listings=listings)
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
+
+    result = ops.run_screener_yahoo(
+        manual_tickers=None,
+        client=client,
+        include_technicals=False,
+        min_market_cap=500_000_000,
+        max_pe=25.0,
+        min_revenue_growth=5.0,
+    )
+
+    assert isinstance(result, tuple)
+    df, notes = result
+
+    assert df.empty
+    assert any("datos críticos de capitalización bursátil" in note for note in notes)
+    assert any("datos críticos de P/E" in note for note in notes)
+    assert any("datos críticos de crecimiento de ingresos" in note for note in notes)
+
+
 def test_apply_filters_clamps_scores_and_limits_results(monkeypatch):
     base = pd.DataFrame(
         {
