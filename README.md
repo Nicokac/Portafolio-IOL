@@ -128,9 +128,9 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.15".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.16".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.15)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.16)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
 
 ## Requisitos de sistema
 
