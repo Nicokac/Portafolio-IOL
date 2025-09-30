@@ -385,6 +385,29 @@ def test_notes_block_highlights_scarcity_messages() -> None:
     assert f"- **{scarcity_note}**" in markdown_blocks
 
 
+def test_notes_block_formats_truncation_and_shortage_notes() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["META", "GOOGL"],
+            "price": [295.12, 138.45],
+            "score_compuesto": [83.5, 79.2],
+        }
+    )
+    truncation_note = "Se muestran 10 resultados de 240 tras aplicar el máximo solicitado (10)."
+    shortage_note = "Solo se encontraron 10 oportunidades (mínimo esperado: 25)."
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [truncation_note, shortage_note], "source": "yahoo"}
+    )
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Yahoo Finance" in caption for caption in captions)
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    assert f"- **{truncation_note}**" in markdown_blocks
+    assert f"- **{shortage_note}**" in markdown_blocks
+
+
 def test_opportunities_tab_not_rendered_when_flag_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("shared.settings.FEATURE_OPPORTUNITIES_TAB", False)
     monkeypatch.delenv("FEATURE_OPPORTUNITIES_TAB", raising=False)

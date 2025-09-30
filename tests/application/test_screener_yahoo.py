@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import sys
+import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -48,6 +49,84 @@ class FakeYahooClient:
                 else:
                     results.append(entry)
         return results
+
+
+def build_bulk_fake_yahoo_client(
+    count: int = 520,
+) -> FakeYahooClient:
+    """Return a fake Yahoo client seeded with hundreds of synthetic tickers."""
+
+    price_dates = pd.date_range("2015-01-01", periods=84, freq="MS", tz="UTC")
+    dividend_dates = pd.date_range("2014-01-01", periods=8, freq="YS", tz="UTC")
+    share_dates = dividend_dates
+
+    data: dict[str, dict[str, object]] = {}
+    listings: dict[str, list[dict[str, object]]] = {"BULK": []}
+
+    sectors = ("Technology", "Healthcare", "Industrials")
+
+    for index in range(count):
+        ticker = f"BULK{index:04d}"
+        base_price = 45.0 + (index % 25)
+        growth_rate = 0.05 + (index % 12) * 0.004
+        price_trend = np.power(1.0 + growth_rate, np.arange(len(price_dates)))
+        closes = base_price * price_trend
+
+        dividends = 1.6 + (index % 5) * 0.05 - np.linspace(0.0, 0.6, len(dividend_dates))
+        shares_start = 4_000_000 + index * 2_500
+        shares_trend = shares_start * np.power(0.985, np.arange(len(share_dates)))
+
+        sector = sectors[index % len(sectors)]
+        payout_ratio = 35.0 + (index % 40)
+        revenue_growth = 4.0 + (index % 7)
+        market_cap = 450_000_000 + index * 4_500_000
+        pe_ratio = 18.0 + (index % 12)
+        trailing_eps = 2.5 + (index % 8) * 0.35
+        forward_eps = trailing_eps * (1.12 + (index % 4) * 0.03)
+
+        fundamentals = {
+            "ticker": ticker,
+            "dividend_yield": 2.0 + (index % 6) * 0.25,
+            "payout_ratio": payout_ratio,
+            "market_cap": market_cap,
+            "pe_ratio": pe_ratio,
+            "revenue_growth": revenue_growth,
+            "country": "United States",
+            "trailing_eps": trailing_eps,
+            "forward_eps": forward_eps,
+            "sector": sector,
+        }
+
+        data[ticker] = {
+            "fundamentals": fundamentals,
+            "dividends": pd.DataFrame({
+                "date": dividend_dates,
+                "amount": dividends,
+            }),
+            "shares": pd.DataFrame({
+                "date": share_dates,
+                "shares": shares_trend,
+            }),
+            "prices": pd.DataFrame(
+                {
+                    "date": price_dates,
+                    "close": closes,
+                    "adj_close": closes,
+                    "volume": np.linspace(1_000, 5_000, len(price_dates)),
+                }
+            ),
+        }
+
+        listings["BULK"].append(
+            {
+                "ticker": ticker,
+                "market_cap": market_cap,
+                "pe_ratio": pe_ratio,
+                "revenue_growth": revenue_growth,
+            }
+        )
+
+    return FakeYahooClient(data, listings=listings)
 
 
 class MissingYahooClient:
@@ -636,6 +715,52 @@ def test_run_screener_yahoo_uses_market_listings(monkeypatch, comprehensive_data
     assert list(df["ticker"]) == ["ABC"]
     assert any("seleccionados automáticamente" in note for note in notes)
     assert any("TEST" in note for note in notes)
+
+
+def test_run_screener_yahoo_truncates_large_universe(monkeypatch):
+    client = build_bulk_fake_yahoo_client()
+    listings = client.list_symbols_by_markets(["BULK"])
+    assert len(listings) >= 500
+
+    monkeypatch.setattr(ops, "_get_target_markets", lambda: ["BULK"])
+    monkeypatch.setattr(
+        ops.shared_settings,
+        "OPPORTUNITIES_MIN_RESULTS",
+        25,
+        raising=False,
+    )
+
+    start = time.perf_counter()
+    result = ops.run_screener_yahoo(
+        manual_tickers=None,
+        client=client,
+        include_technicals=False,
+        max_results=10,
+        max_payout=60.0,
+        min_div_streak=4,
+        min_cagr=4.0,
+        min_market_cap=200_000_000,
+        max_pe=25.0,
+        min_revenue_growth=3.0,
+        min_eps_growth=5.0,
+        min_buyback=1.0,
+        sectors=["Technology", "Healthcare"],
+    )
+    elapsed = time.perf_counter() - start
+    assert elapsed < 4.0, f"Execution took too long: {elapsed:.2f} seconds"
+
+    assert isinstance(result, tuple)
+    df, notes = result
+
+    assert len(df) == 10
+    assert df["ticker"].str.startswith("BULK").all()
+    scores = pd.to_numeric(df["score_compuesto"], errors="coerce").dropna()
+    assert list(scores) == sorted(scores, reverse=True)
+
+    assert any("máximo solicitado" in note for note in notes)
+    assert any("Solo se encontraron" in note for note in notes)
+    assert any("Analizando" in note for note in notes)
+    assert any("Filtros aplicados" in note for note in notes)
 
 
 def test_apply_filters_clamps_scores_and_limits_results(monkeypatch):
