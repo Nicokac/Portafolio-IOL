@@ -48,11 +48,25 @@ Los controles disponibles en la UI permiten ajustar esos filtros sin modificar c
 El umbral mínimo de score y el recorte del **top N** de oportunidades son parametrizables mediante las variables `MIN_SCORE_THRESHOLD` (valor por defecto: `80`) y `MAX_RESULTS` (valor por defecto: `20`). La interfaz utiliza ese valor centralizado como punto de partida en el selector "Máximo de resultados" para reflejar cualquier override definido en la configuración. Puedes redefinirlos desde `.env`, `secrets.toml` o `config.json` para adaptar la severidad del filtro o ampliar/restringir el listado mostrado en la UI. La cabecera del listado muestra notas contextuales cuando se aplican estos recortes y sigue diferenciando la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
 
 
-Las notas del listado utilizan iconos para indicar la severidad del mensaje:
+### Notas del listado y severidades
 
-- `:warning:` señala datos simulados o problemas de disponibilidad remota.
-- `:information_source:` destaca mensajes de escasez o recordatorios operativos.
-- Las notas sin prefijo se muestran con formato neutro.
+Las notas del listado utilizan una clasificación estandarizada para transmitir la severidad del mensaje. Cada nivel comparte prefijos visibles en el texto bruto (útiles en pruebas o fixtures) y un icono renderizado al pasar por `shared.ui.notes.format_note`:
+
+| Severidad | Prefijos esperados | Icono renderizado | Uso típico |
+| --- | --- | --- | --- |
+| `warning` | `⚠️` | `:warning:` | Avisar que los datos provienen de un stub, que el universo está recortado o que hubo fallbacks. |
+| `info` | `ℹ️` | `:information_source:` | Recordatorios operativos o mensajes neutrales relacionados con disponibilidad de datos. |
+| `success` | `✅` | `:white_check_mark:` | Confirmar procesos completados o resultados satisfactorios. |
+| `error` | `❌` | `:x:` | Indicar fallas irrecuperables que el usuario debe revisar. |
+
+Siempre que sea posible prefija el contenido con el emoji correspondiente para que el helper lo clasifique correctamente. El siguiente ejemplo mínimo muestra cómo centralizar el formato en la UI:
+
+```python
+from shared.ui.notes import format_note
+
+format_note("⚠️ Solo se encontraron 3 tickers con datos recientes.")
+# ":warning: **Solo se encontraron 3 tickers con datos recientes.**"
+```
 
 ## Integración con Yahoo Finance
 
