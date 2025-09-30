@@ -193,7 +193,7 @@ def render_opportunities_tab() -> None:
             "Score mínimo",
             min_value=0,
             max_value=100,
-            value=80,
+            value=int(shared_settings.min_score_threshold),
             step=1,
             help="Define el puntaje mínimo requerido para considerar un candidato.",
         )
