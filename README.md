@@ -82,26 +82,37 @@ Durante los failovers la UI etiqueta el origen como `stub` y continúa respetand
 
 #### Telemetría del barrido
 
-Además de la etiqueta, la UI muestra una nota informativa con la telemetría del barrido cuando se usa el stub o Yahoo Finance. El helper `shared.ui.notes.format_note` renderiza este mensaje con severidad `ℹ️` para que destaque sin generar alertas falsas mientras todo se encuentre dentro de los parámetros esperados. Ejemplos típicos:
+El panel muestra una nota de telemetría por cada barrido, tanto si la corrida proviene de Yahoo Finance como del stub local. El helper `shared.ui.notes.format_note` arma el texto en base a los campos reportados por cada origen y selecciona la severidad adecuada (`ℹ️` o `⚠️`) según los umbrales definidos.
+
+**Campos reportados**
+
+- **Runtime (`elapsed` / `elapsed time`)**: segundos invertidos en la corrida completa, medidos desde la descarga hasta el post-procesamiento. Es el primer indicador para detectar degradaciones.
+- **Universo inicial (`universe initial`)**: cantidad de símbolos recibidos antes de aplicar filtros; Yahoo lo informa con el universo crudo según los mercados solicitados, mientras que el stub siempre expone 37 emisores determinísticos.
+- **Universo final (`universe` / `universe size`)**: tickers que sobreviven al filtrado; permite visualizar el recorte efectivo.
+- **Ratios de descarte (`discarded`)**: descomposición porcentual entre descartes por fundamentals y por técnicos, útil para saber qué bloque necesita ajustes.
+- **Fuente (`origin`)**: etiqueta visible (`yahoo` / `stub`) que coincide con el caption del listado para asegurar trazabilidad.
+
+**Ejemplos reales**
 
 ```
-ℹ️ Yahoo procesó 128 símbolos • elapsed: 5.8 s • discarded: 12% fundamentals / 6% técnicos
-ℹ️ Stub sweep • elapsed: 2.4 s • universe: 37 tickers • discarded: 18% fundamentals / 10% técnicos
+ℹ️ Yahoo • runtime: 5.8 s • universe initial: 142 • universe final: 128 • discarded: 8% fundamentals / 2% técnicos
+ℹ️ Stub • runtime: 2.4 s • universe initial: 37 • universe final: 37 • discarded: 18% fundamentals / 10% técnicos
+⚠️ Yahoo • runtime: 11.6 s • universe initial: 142 • universe final: 9 • discarded: 54% fundamentals / 34% técnicos
+⚠️ Stub • runtime: 6.1 s • universe initial: 37 • universe final: 12 • discarded: 51% fundamentals / 17% técnicos
 ```
 
-Cuando el sistema detecta anomalías (por ejemplo, universo < 10 o ratios > 35 % durante varias corridas), la misma nota escala a severidad `⚠️` para llamar la atención del operador.
+En condiciones saludables la nota se mantiene en severidad `ℹ️`. Cuando el runtime supera los límites esperados (≈3 s para el stub, 8–9 s para Yahoo), el universo final cae por debajo del umbral mínimo configurado o los ratios de descarte exceden el 35 % de manera sostenida, la severidad escala automáticamente a `⚠️` y se resalta en la UI.
 
-- **Elapsed/elapsed time:** duración total del barrido, útil para detectar degradaciones repentinas (si sube por encima de ~3 s en el stub o supera los 8-9 s en Yahoo, suele indicar latencias externas o tareas adicionales).
-- **Universe/universe size:** cantidad de símbolos analizados en la corrida actual; cambios abruptos respecto al universo habitual (37 para el stub o el número que devuelva Yahoo según `OPPORTUNITIES_TARGET_MARKETS`) señalan filtros mal configurados o fallos de descarga.
-- **Discarded/discard ratios:** porcentaje de candidatos eliminados por falta de fundamentals o de señales técnicas; valores sostenidos por encima del 25 % ameritan revisar la fuente de datos o los umbrales configurados.
+**Guía rápida para QA y usuarios**
 
-| Métrica | Cómo interpretarla | Severidades posibles |
+| Señal | Qué revisar | Acción sugerida |
 | --- | --- | --- |
-| `elapsed` / `elapsed time` | Duración del barrido. Valores estables indican salud; picos puntuales pueden deberse a IO o throttling. | `ℹ️` cuando está dentro de los rangos esperados; `⚠️` si excede los umbrales configurados (p. ej., >3 s en stub o >9 s en Yahoo).
-| `universe` / `symbols processed` | Cantidad de tickers evaluados en la corrida. Debe mantenerse alineada con el origen (37 en stub, `YahooFinanceClient` o input manual). | `ℹ️` mientras se mantenga estable; `⚠️` si cae de forma abrupta (universo < 10, vacíos inesperados).
-| `discarded fundamentals/tech` | Ratios de descarte por falta de fundamentals o señales técnicas. | `ℹ️` cuando los descartes se mantienen <25 %; `⚠️` si superan ese valor de forma consistente.
+| `runtime > 3 s` (stub) o `> 9 s` (Yahoo) | Posibles problemas de IO, throttling o jobs en segundo plano. | Revisar logs y latencias externas antes de reintentar. |
+| `universe final < 10` | Filtros demasiado agresivos o caída de datos en la fuente. | Relajar filtros temporalmente y validar la disponibilidad de Yahoo/stub. |
+| `discarded fundamentals > 35 %` | Fundamentales incompletos para gran parte del universo. | Revisar los símbolos afectados; puede requerir recalibrar la caché o invalidar datos corruptos. |
+| `discarded técnicos > 35 %` | Indicadores técnicos no disponibles. | Confirmar que el toggle de indicadores esté activo y que las series históricas se descarguen correctamente. |
 
-Las notas siempre incluyen tanto los porcentajes de descarte fundamental como técnico; cuando alguno de los dos no aplica, el stub reporta explícitamente `0%` para preservar la consistencia del formato y evitar falsos positivos en los tests automatizados.
+Las notas siempre incluyen los porcentajes de descarte fundamental y técnico. Cuando alguno de los dos no aplica, el stub reporta explícitamente `0%` para preservar la consistencia del formato y evitar falsos positivos en los tests automatizados. Los equipos de QA pueden apoyarse en estos indicadores para automatizar aserciones: por ejemplo, validar que en modo stub el universo final se mantenga en 37 con severidad `ℹ️` o que en pruebas de resiliencia la degradación quede marcada con `⚠️`.
 
 El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
 
@@ -402,7 +413,7 @@ Para detonarlo manualmente:
 
 Al finalizar, revisa el resumen del job en GitHub Actions o descarga el
 artefacto `stub-sweep-logs`, que incluye `stub_sweep.log` y
-`stub_sweep_metrics.json` con las métricas necesarias para seguimiento de QA. Allí se registran el `elapsed_time`, el tamaño del universo evaluado y los porcentajes de descartes de fundamentals/técnicos que muestra la nota de telemetría (ver [guía de interpretación](#telemetria-del-barrido) para detalles). En los monitoreos nocturnos consideramos saludable que el stub termine en menos de 3 segundos, que el universo se mantenga estable (37 símbolos) y que las tasas de descarte se mantengan por debajo del 25 %; desvíos persistentes disparan revisiones manuales o ajustes en los presets.
+`stub_sweep_metrics.json` con las métricas necesarias para seguimiento de QA. Allí se registran el `elapsed_time`, el `universe_initial`, el universo final y los porcentajes de descartes de fundamentals/técnicos que muestra la nota de telemetría (ver [guía de interpretación](#telemetría-del-barrido) para detalles). En los monitoreos nocturnos consideramos saludable que el stub termine en menos de 3 segundos, que el universo se mantenga estable (37 símbolos) y que las tasas de descarte se mantengan por debajo del 25 %; desvíos persistentes disparan revisiones manuales o ajustes en los presets.
 
 ## Tiempos de referencia
 
