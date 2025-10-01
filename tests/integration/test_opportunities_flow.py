@@ -637,6 +637,82 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     assert any("Resultados simulados" in caption for caption in captions)
 
 
+def test_fallback_stub_emits_runtime_severity_notes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from controllers import opportunities as controller_module
+    import application.screener.opportunities as opportunities_module
+    import shared.settings as shared_settings
+
+    monkeypatch.setattr(controller_module, "run_screener_yahoo", None, raising=False)
+    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.2, raising=False)
+
+    def _configure_perf_counter(values: Iterable[float]) -> None:
+        sequence = list(values)
+        calls = iter(sequence)
+
+        def _fake_perf_counter() -> float:
+            try:
+                return next(calls)
+            except StopIteration:
+                return sequence[-1]
+
+        monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
+
+    def _extract_stub_note(notes: Iterable[str]) -> str:
+        for note in notes:
+            if note.startswith("ℹ️ Stub procesó") or note.startswith("⚠️ Stub procesó"):
+                return note
+        raise AssertionError("Se esperaba una nota del stub")
+
+    _configure_perf_counter([10.0, 10.05])
+    df_fast, notes_fast, source_fast = controller_module.run_opportunities_controller(
+        manual_tickers=None,
+        exclude_tickers=None,
+        max_payout=None,
+        min_div_streak=None,
+        min_cagr=None,
+        min_market_cap=None,
+        max_pe=None,
+        min_revenue_growth=None,
+        include_latam=None,
+        include_technicals=False,
+        min_eps_growth=None,
+        min_buyback=None,
+        min_score_threshold=None,
+        max_results=None,
+        sectors=None,
+    )
+
+    fast_note = _extract_stub_note(notes_fast)
+    assert source_fast == "stub"
+    assert fast_note.startswith("ℹ️ ")
+    assert df_fast.attrs["_notes"][-1] == fast_note
+
+    _configure_perf_counter([20.0, 20.5])
+    df_slow, notes_slow, _ = controller_module.run_opportunities_controller(
+        manual_tickers=None,
+        exclude_tickers=None,
+        max_payout=None,
+        min_div_streak=None,
+        min_cagr=None,
+        min_market_cap=None,
+        max_pe=None,
+        min_revenue_growth=None,
+        include_latam=None,
+        include_technicals=False,
+        min_eps_growth=None,
+        min_buyback=None,
+        min_score_threshold=None,
+        max_results=None,
+        sectors=None,
+    )
+
+    slow_note = _extract_stub_note(notes_slow)
+    assert slow_note.startswith("⚠️ ")
+    assert df_slow.attrs["_notes"][-1] == slow_note
+
+
 def test_opportunities_flow_uses_preset_with_stub_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
