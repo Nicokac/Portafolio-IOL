@@ -9,11 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.17] - 2025-10-01
 ### Changed
-- El universo determinista del screener stub ahora incluye 37 emisores con al menos tres representantes en cada sector crítico (Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials) para garantizar escenarios de QA más exigentes.
-### Tests
-- Los tests del stub y los flujos de integración validan la nueva cobertura sectorial en lugar de listas cerradas de tickers.
+- El stub de oportunidades ahora genera notas de telemetría con severidades `ℹ️/⚠️` según el tiempo de ejecución y deja trazabilidad de los descartes aplicados para facilitar la observabilidad durante los failovers. ([`application/screener/opportunities.py`](application/screener/opportunities.py))
+- La UI y el backend leen la versión desde `pyproject.toml` mediante `shared.version.__version__`, evitando desfasajes entre las superficies y simplificando la sincronización de releases. ([`shared/version.py`](shared/version.py), [`ui/footer.py`](ui/footer.py))
 ### Documentation
-- README actualizado con la distribución sectorial revisada y los nuevos emisores ficticios añadidos al stub.
+- Se incorporó una guía de interpretación para la telemetría del barrido, con ejemplos de severidades y métricas monitoreadas tanto en el stub como en Yahoo. ([`README.md`](README.md#telemetría-del-barrido))
 
 ## [0.3.16] - 2025-09-30
 ### Added
