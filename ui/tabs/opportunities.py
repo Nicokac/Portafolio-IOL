@@ -361,7 +361,7 @@ def render_opportunities_tab() -> None:
 
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
-        "el análisis en modo beta."
+        "el análisis con la configuración estable."
     )
 
     if st.button(
