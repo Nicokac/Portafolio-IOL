@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: '0 3 * * *' # Ejecuta el barrido prolongado del stub diariamente a las 03:00 UTC.
+    - cron: '30 2 * * *' # Programa el smoke-test nocturno de Yahoo Finance (02:30 UTC).
   workflow_dispatch:
     inputs:
       run-live-yahoo:
@@ -49,21 +50,68 @@ jobs:
           path: coverage.xml
 
   live-yahoo-smoke:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run-live-yahoo == 'true'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-live-yahoo == 'true') ||
+      (github.event_name == 'schedule' && (vars.LIVE_YAHOO_SMOKE_SCHEDULE_MODE || 'nightly') != 'manual')
     runs-on: ubuntu-latest
     env:
       RUN_LIVE_YF: '1' # QA: smoke-test consumes datos en vivo y puede ser no determinista; activar sólo cuando se requiera validar Yahoo Finance.
+      LIVE_YAHOO_SMOKE_SCHEDULE_MODE: ${{ vars.LIVE_YAHOO_SMOKE_SCHEDULE_MODE || 'nightly' }}
+      LIVE_YAHOO_SMOKE_ALLOWED_DAYS: ${{ vars.LIVE_YAHOO_SMOKE_ALLOWED_DAYS || 'mon,tue,wed,thu,fri' }}
     steps:
+      - name: Evaluar ventana de ejecución programada
+        id: schedule_guard
+        if: github.event_name == 'schedule'
+        run: |
+          python - <<'PY'
+import datetime
+import os
+
+mode = os.getenv('LIVE_YAHOO_SMOKE_SCHEDULE_MODE', 'nightly').lower()
+allowed_days = [day.strip() for day in os.getenv('LIVE_YAHOO_SMOKE_ALLOWED_DAYS', '').lower().split(',') if day.strip()]
+weekday = datetime.datetime.utcnow().strftime('%a').lower()
+
+should_run = True
+reason = ''
+
+if mode in ('manual', 'disabled'):
+    should_run = False
+    reason = 'scheduled runs disabled (manual/disabled mode)'
+elif mode == 'weekdays':
+    should_run = weekday in ('mon', 'tue', 'wed', 'thu', 'fri')
+    reason = f'weekdays mode requires business day, today={weekday}'
+elif mode == 'custom':
+    if not allowed_days:
+        should_run = False
+        reason = 'custom mode without allowed days configured'
+    else:
+        should_run = weekday in allowed_days
+        reason = f'custom allowlist {allowed_days}, today={weekday}'
+else:
+    reason = f'default nightly mode, today={weekday}'
+
+with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+    fh.write(f"should-run={'true' if should_run else 'false'}\n")
+    fh.write(f"reason={reason}\n")
+
+print(f"should-run={'true' if should_run else 'false'} ({reason or 'no restrictions'})")
+if not should_run:
+    print('Skipping live Yahoo Finance smoke-test for this schedule window.')
+PY
       - uses: actions/checkout@v4
+        if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
       - uses: actions/setup-python@v4
+        if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         with:
           python-version: '3.x'
       - name: Install dependencies
+        if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
       - name: Run live Yahoo Finance smoke-test
+        if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         run: pytest -m live_yahoo
 
   stub-fallback-sweep:
