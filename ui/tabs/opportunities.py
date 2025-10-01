@@ -407,6 +407,14 @@ def render_opportunities_tab() -> None:
         else:
             st.subheader("Resultados del screening")
             st.dataframe(table, use_container_width=True)
+            csv_payload = table.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "Descargar resultados (.csv)",
+                data=csv_payload,
+                file_name="oportunidades.csv",
+                mime="text/csv",
+                key="download_opportunities_csv",
+            )
 
         if notes:
             st.markdown("### Notas del screening")

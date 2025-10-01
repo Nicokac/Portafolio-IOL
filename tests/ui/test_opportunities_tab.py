@@ -218,6 +218,47 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert not any(fallback_note in block for block in markdown_blocks)
 
 
+def test_download_button_exports_screening_results_csv() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL", "NEE"],
+            "score_compuesto": [85.0, 72.0],
+            "Yahoo Finance Link": [
+                "https://finance.yahoo.com/quote/AAPL",
+                "https://finance.yahoo.com/quote/NEE",
+            ],
+            "payout": [18.5, 64.2],
+            "rsi": [55.1, 48.3],
+        }
+    )
+
+    import ui.tabs.opportunities as opportunities_tab
+
+    original_download = opportunities_tab.st.download_button
+    with patch(
+        "ui.tabs.opportunities.st.download_button",
+        wraps=original_download,
+    ) as mock_download:
+        _run_app_with_result({"table": df, "notes": [], "source": "yahoo"})
+
+    assert mock_download.call_count >= 1
+    args, kwargs = mock_download.call_args
+    label = args[0] if args else kwargs.get("label")
+    assert label == "Descargar resultados (.csv)"
+
+    data_arg = kwargs.get("data")
+    if data_arg is None and len(args) > 1:
+        data_arg = args[1]
+    assert isinstance(data_arg, (bytes, bytearray))
+
+    csv_text = data_arg.decode("utf-8")
+    header_line = csv_text.splitlines()[0]
+    assert "ticker" in header_line
+    assert "score_compuesto" in header_line
+    assert "Yahoo Finance Link" in header_line
+    assert "Yahoo Finance Link" in csv_text
+
+
 def test_checkbox_include_technicals_updates_params() -> None:
     df = pd.DataFrame(
         {
