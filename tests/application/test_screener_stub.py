@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 import time
 from pathlib import Path
@@ -61,6 +62,7 @@ def test_filters_apply_to_base_dataset() -> None:
         include_latam=False,
     )
     _assert_has_stub_note(notes)
+    telemetry_note = _find_stub_note(notes)
     base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
     base_filtered = base[
         (base["market_cap"] >= 100_000)
@@ -89,6 +91,15 @@ def test_filters_apply_to_base_dataset() -> None:
         "forward_eps",
     ]:
         assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
+
+    assert f"(resultado: {len(df)})" in telemetry_note
+    assert "descartes:" in telemetry_note
+    for filter_key in ("min_market_cap", "max_pe", "min_revenue_growth", "include_latam"):
+        label = filter_key
+        if filter_key == "include_latam":
+            label = "include_latam=False"
+        pattern = rf"{label}: \d+/\d+ \(\d+%\)"
+        assert re.search(pattern, telemetry_note), telemetry_note
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
