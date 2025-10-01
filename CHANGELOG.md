@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.19] - 2025-10-03
+### Added
+- Presets personalizados en la UI del screener que permiten guardar y reutilizar combinaciones propias de filtros sin depender de configuraciones globales.
+### Changed
+- Flujo de comparación enriquecido para revisar lado a lado los resultados de presets activos, destacando las diferencias en filtros y métricas clave antes de confirmar los cambios.
+### Fixed
+- Cacheo de respuestas de Yahoo Finance homogeneizado entre backend y stub, evitando expiraciones adelantadas y asegurando consistencia en los resultados servidos a la UI.
+### Documentation
+- Limpieza de referencias legacy en las guías internas, documentando el nuevo flujo de presets personalizados y eliminando instrucciones obsoletas.
+
 ## [0.3.18] - 2025-10-02
 ### Added
 - Los listados de oportunidades ahora incluyen enlaces clickeables hacia Yahoo Finance, permitiendo abrir la ficha del ticker directamente desde la UI o los reportes exportados.
