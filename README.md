@@ -6,6 +6,51 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Quick-start (release 0.3.19)
+
+La versión **0.3.19** introduce el guardado local de presets personalizados, la comparación lado a
+l lado de filtros y la caché cooperativa que evita recalcular screenings idénticos dentro de la
+misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
+
+1. **Instala dependencias.**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+   Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
+2. **Levanta la aplicación.** Con el entorno activado ejecuta:
+   ```bash
+   streamlit run app.py
+   ```
+   La cabecera del sidebar mostrará el número de versión `0.3.19`, confirmando que la actualización
+   quedó aplicada.
+3. **Lanza un screening con presets personalizados.**
+   - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
+   - Completa los filtros (score mínimo, payout, racha, sectores, indicadores técnicos) y presiona
+     **Guardar preset**. La UI confirmará con un toast "Preset guardado" y el nuevo preset quedará
+     disponible en el selector.
+   - El botón **Comparar presets** despliega una vista dividida que muestra, a la izquierda, el
+     preset base y, a la derecha, el preset recién guardado. Cada columna lista los filtros con
+     resaltados verdes/rojos según subidas o bajadas respecto del original, facilitando la revisión
+     antes de lanzar el barrido definitivo.
+   - Pulsa **Ejecutar screening** para correr con el preset actual. Si repites exactamente los mismos
+     filtros durante la sesión, la telemetría de la barra lateral informará "cache hit" indicando que
+     el backend reutilizó los resultados almacenados en la caché cooperativa de la release 0.3.19.
+
+**Comportamiento del caché (0.3.19).** Cuando guardas un preset, la aplicación persiste la
+combinación de filtros y el resultado del último screening asociado. Al relanzarlo:
+
+- Si los filtros no cambiaron, se muestra una insignia "⚡ Resultado servido desde caché" en la tabla
+  y la telemetría reduce el runtime (<1 s en stub, ≈2 s en Yahoo) al evitar descargas redundantes.
+- Si modificas un slider o agregas/quitas sectores, la UI muestra "♻️ Caché invalidada" y el backend
+  recalcula el universo completo antes de guardar la nueva instantánea.
+- Desde **Comparar presets** puedes presionar **Revertir cambios** para volver al preset cacheado, lo
+  que reutiliza inmediatamente los resultados previos y confirma la integridad del guardado.
+
+Estas novedades convierten a la release 0.3.19 en la primera con presets persistentes, comparación
+visual y caché cooperativa, recortando tiempos de iteración cuando se prueban variaciones de filtros.
+
 ## Uso del proveedor de tiempo
 
 Para generar fechas consistentes en toda la aplicación, importa la clase `TimeProvider`:
