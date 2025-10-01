@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Documentation
+- README documenta la columna `Yahoo Finance Link`, ejemplificando su uso en la tabla de oportunidades y diferenciando cómo se pobla con universos live de Yahoo y con el stub determinista.
+- La guía de QA aclara que los 37 tickers del stub y los universos dinámicos comparten el mismo formato de enlace hacia Yahoo Finance para mantener paridad en las verificaciones.
 
 ## [0.3.17] - 2025-10-01
 ### Changed
