@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import ModuleType
 import sys
@@ -207,6 +208,19 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert int(max_results_inputs[0].value) == shared_settings.max_results
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
+    component = dataframes[0]
+    display_df = component.value
+    assert "Ticker (Yahoo)" in display_df.columns
+    assert "Yahoo Finance Link" in display_df.columns
+    columns_config = json.loads(component.proto.columns or "{}")
+    ticker_config = columns_config.get("Ticker (Yahoo)")
+    assert ticker_config is not None, "Expected link column configuration for Yahoo ticker"
+    assert ticker_config["type_config"]["type"] == "link"
+    assert ticker_config["type_config"]["display_text"] == r"https://finance.yahoo.com/quote/(.*?)"
+    assert display_df["Ticker (Yahoo)"].tolist() == [
+        "https://finance.yahoo.com/quote/AAPL",
+        "https://finance.yahoo.com/quote/NEE",
+    ]
     captions = [element.value for element in app.get("caption")]
     assert any("Yahoo Finance" in caption for caption in captions)
     expected_info_caption = shared_notes.format_note(

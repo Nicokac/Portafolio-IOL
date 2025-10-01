@@ -414,6 +414,49 @@ def render_opportunities_tab() -> None:
                 file_name="oportunidades.csv",
                 mime="text/csv",
                 key="download_opportunities_csv",
+            display_table = table.copy()
+            link_column = "Yahoo Finance Link"
+            column_config: dict[str, st.column_config.Column | st.column_config.LinkColumn] | None = None
+            column_order: list[str] | None = None
+
+            if {
+                "ticker",
+                link_column,
+            }.issubset(display_table.columns):
+
+                def _resolve_yahoo_url(row: pd.Series) -> str | None:
+                    raw_url = row.get(link_column)
+                    ticker_value = row.get("ticker")
+
+                    url = str(raw_url).strip() if raw_url else ""
+                    if not url and ticker_value:
+                        url = f"https://finance.yahoo.com/quote/{ticker_value}"
+                    return url or None
+
+                display_column = "Ticker (Yahoo)"
+                display_table[display_column] = display_table.apply(_resolve_yahoo_url, axis=1)
+                column_config = {
+                    display_column: st.column_config.LinkColumn(
+                        label="Ticker",
+                        help="Abrí la ficha del activo en Yahoo Finance.",
+                        display_text=r"https://finance.yahoo.com/quote/(.*?)",
+                    )
+                }
+                excluded_columns = {"ticker", link_column, display_column}
+                column_order = [
+                    display_column,
+                    *[
+                        column
+                        for column in display_table.columns
+                        if column not in excluded_columns
+                    ],
+                ]
+
+            st.dataframe(
+                display_table,
+                use_container_width=True,
+                column_config=column_config,
+                column_order=column_order,
             )
 
         if notes:
