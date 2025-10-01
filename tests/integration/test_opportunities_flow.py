@@ -897,7 +897,7 @@ def test_opportunities_flow_uses_preset_with_stub_fallback(
     assert (scores >= 72).all()
 
     markdown_blocks = [element.value for element in app.get("markdown")]
-    assert any("Datos simulados" in block for block in markdown_blocks)
+    assert any("Yahoo no disponible" in block for block in markdown_blocks)
     assert any("Filtros aplicados" in block for block in markdown_blocks)
     assert any("Stub procesó" in block for block in markdown_blocks)
 

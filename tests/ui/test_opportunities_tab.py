@@ -421,10 +421,9 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
             "score_compuesto": [61.0],
         }
     )
-    fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
     extra_note = "ℹ️ Recuerda validar con fuentes oficiales"
     app, _ = _run_app_with_result(
-        {"table": df, "notes": [fallback_note, extra_note], "source": "stub"}
+        {"table": df, "notes": [extra_note], "source": "stub"}
     )
     captions = [element.value for element in app.get("caption")]
     expected_stub_caption = shared_notes.format_note(
@@ -432,10 +431,9 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
     )
     assert expected_stub_caption in captions
     markdown_blocks = [element.value for element in app.get("markdown")]
-    formatted_fallback = shared_notes.format_note(fallback_note)
     formatted_extra = shared_notes.format_note(extra_note)
-    assert any(formatted_fallback in block for block in markdown_blocks)
     assert any(formatted_extra in block for block in markdown_blocks)
+    assert not any("Resultados simulados" in block for block in markdown_blocks)
 
 
 def test_stub_source_displays_warning_caption_and_notes() -> None:
@@ -478,7 +476,7 @@ def test_fallback_note_with_cause_highlighted() -> None:
             "score_compuesto": [61.0],
         }
     )
-    fallback_note = "⚠️ Datos simulados — Causa: Yahoo timeout"
+    fallback_note = "⚠️ Yahoo no disponible — Causa: Yahoo timeout"
 
     app, _ = _run_app_with_result(
         {"table": df, "notes": [fallback_note], "source": "stub"}
