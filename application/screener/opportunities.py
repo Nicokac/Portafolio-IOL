@@ -22,6 +22,23 @@ from shared.settings import settings as shared_settings
 
 LOGGER = logging.getLogger(__name__)
 
+_FILTER_LABELS: dict[str, str] = {
+    "max_payout": "max_payout",
+    "min_div_streak": "min_div_streak",
+    "min_cagr": "min_cagr",
+    "min_market_cap": "min_market_cap",
+    "max_pe": "max_pe",
+    "min_revenue_growth": "min_revenue_growth",
+    "min_eps_growth": "min_eps_growth",
+    "min_buyback": "min_buyback",
+    "min_score_threshold": "min_score_threshold",
+    "include_latam": "include_latam",
+    "sectors": "sectors",
+    "exclude_tickers": "exclude_tickers",
+    "restrict_to_tickers": "restrict_to_tickers",
+    "max_results": "max_results",
+}
+
 # Base dataset used to simulate screener output.
 _BASE_OPPORTUNITIES = [
     {
@@ -831,6 +848,7 @@ def _apply_filters_and_finalize(
     allow_na_filters: bool = False,
     extra_drop_columns: Sequence[str] | None = None,
     missing_optional_labels: Mapping[str, bool] | None = None,
+    filter_telemetry: list[tuple[str, int, int]] | None = None,
 ) -> pd.DataFrame:
     """Apply common filters and final adjustments for screener outputs."""
 
@@ -842,6 +860,11 @@ def _apply_filters_and_finalize(
         str(label): bool(flag)
         for label, flag in (missing_optional_labels or {}).items()
     }
+
+    def record_filter(name: str, before: int, after: int) -> None:
+        if filter_telemetry is None:
+            return
+        filter_telemetry.append((name, int(before), int(after)))
 
     def register_missing(mask: pd.Series, label: str) -> None:
         """Record tickers with missing critical data when NA filters are allowed."""
@@ -881,43 +904,55 @@ def _apply_filters_and_finalize(
         )
 
     if max_payout is not None and "payout_ratio" in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result["payout_ratio"], errors="coerce")
         if allow_na_filters:
             register_missing(series.isna(), "ratio de payout")
         mask = series.notna() & (series <= max_payout)
         result = result[mask]
+        record_filter("max_payout", before_count, len(result))
 
     if min_div_streak is not None and "dividend_streak" in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result["dividend_streak"], errors="coerce")
         if allow_na_filters:
             register_missing(series.isna(), "racha de dividendos")
         mask = series.notna() & (series >= min_div_streak)
         result = result[mask]
+        record_filter("min_div_streak", before_count, len(result))
 
     if min_cagr is not None and "cagr" in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result["cagr"], errors="coerce")
         if allow_na_filters:
             register_missing(series.isna(), "CAGR")
         mask = series.notna() & (series >= min_cagr)
         result = result[mask]
+        record_filter("min_cagr", before_count, len(result))
 
     if min_market_cap is not None and market_cap_column in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result[market_cap_column], errors="coerce")
         register_missing(series.isna(), "capitalización bursátil")
         mask = series.notna() & (series >= float(min_market_cap))
         result = result[mask]
+        record_filter("min_market_cap", before_count, len(result))
 
     if max_pe is not None and pe_ratio_column in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result[pe_ratio_column], errors="coerce")
         register_missing(series.isna(), "P/E")
         mask = series.notna() & (series <= float(max_pe))
         result = result[mask]
+        record_filter("max_pe", before_count, len(result))
 
     if min_revenue_growth is not None and revenue_growth_column in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result[revenue_growth_column], errors="coerce")
         register_missing(series.isna(), "crecimiento de ingresos")
         mask = series.notna() & (series >= float(min_revenue_growth))
         result = result[mask]
+        record_filter("min_revenue_growth", before_count, len(result))
 
     if trailing_eps_column in result.columns:
         series = pd.to_numeric(result[trailing_eps_column], errors="coerce")
@@ -944,14 +979,18 @@ def _apply_filters_and_finalize(
         mask = (trailing > 0) & (forward > 0) & (growth >= float(min_eps_growth))
         mask = mask.fillna(False)
         register_missing(growth.isna(), "crecimiento de EPS")
+        before_count = len(result)
         result = result[mask]
+        record_filter("min_eps_growth", before_count, len(result))
 
     if min_buyback is not None and buyback_column in result.columns:
+        before_count = len(result)
         series = pd.to_numeric(result[buyback_column], errors="coerce")
         if allow_na_filters:
             register_missing(series.isna(), "recompras")
         mask = series.notna() & (series >= float(min_buyback))
         result = result[mask]
+        record_filter("min_buyback", before_count, len(result))
 
     if min_score_threshold is not None and "score_compuesto" in result.columns:
         threshold = float(min_score_threshold)
@@ -961,6 +1000,7 @@ def _apply_filters_and_finalize(
         if allow_na_filters:
             mask = series.isna() | mask
         result = result[mask]
+        record_filter("min_score_threshold", before_threshold, len(result))
         if before_threshold > 0 and result.empty:
             notes.append(
                 "Ningún ticker superó el puntaje mínimo de "
@@ -968,9 +1008,12 @@ def _apply_filters_and_finalize(
             )
 
     if include_latam_flag is False and latam_column in result.columns:
+        before_count = len(result)
         result = result[~result[latam_column].fillna(False)]
+        record_filter("include_latam", before_count, len(result))
 
     if normalized_allowed and sector_column in result.columns:
+        before_count = len(result)
         result = result[
             result[sector_column]
             .astype("string")
@@ -978,13 +1021,18 @@ def _apply_filters_and_finalize(
             .str.casefold()
             .isin(normalized_allowed)
         ]
+        record_filter("sectors", before_count, len(result))
 
     if exclude_set and "ticker" in result.columns:
+        before_count = len(result)
         normalized_tickers = result["ticker"].astype("string").str.upper()
         result = result[~normalized_tickers.isin(exclude_set)]
+        record_filter("exclude_tickers", before_count, len(result))
 
     if restrict_to_tickers:
+        before_count = len(result)
         result = result[result["ticker"].isin(restrict_to_tickers)]
+        record_filter("restrict_to_tickers", before_count, len(result))
 
     if placeholder_tickers:
         placeholders = list(placeholder_tickers)
@@ -1036,6 +1084,7 @@ def _apply_filters_and_finalize(
             elif before_truncate > limit:
                 result = result.iloc[:limit]
             if before_truncate > len(result):
+                record_filter("max_results", before_truncate, len(result))
                 notes.append(
                     "Se muestran "
                     f"{len(result)} resultados de {before_truncate} tras aplicar el máximo solicitado ({limit})."
@@ -1194,6 +1243,9 @@ def run_screener_stub(
 
     df["score_compuesto"] = df.apply(_score_from_row, axis=1)
 
+    universe_count = int(df.index.size)
+    filter_telemetry: list[tuple[str, int, int]] = []
+
     result = _apply_filters_and_finalize(
         df,
         max_payout=max_payout,
@@ -1221,10 +1273,11 @@ def run_screener_stub(
             "buyback",
         ),
         allowed_sectors=_normalize_sector_filters(sectors),
+        filter_telemetry=filter_telemetry,
     )
 
     elapsed = time.perf_counter() - loop_start
-    processed_count = int(result.index.size)
+    result_count = int(result.index.size)
 
     try:
         warn_threshold = float(getattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.25))
@@ -1233,17 +1286,47 @@ def run_screener_stub(
 
     severity = "⚠️" if elapsed > warn_threshold else "ℹ️"
 
+    filter_metrics: list[str] = []
+    for name, before, after in filter_telemetry:
+        if before <= 0:
+            continue
+        dropped = before - after
+        ratio = (dropped / before) if before else 0.0
+        label = _FILTER_LABELS.get(name, name)
+        if name == "include_latam":
+            label = f"include_latam={include_latam}"
+        elif name == "max_results" and max_results is not None:
+            label = f"max_results={max_results}"
+        elif name == "sectors" and sectors:
+            label = "sectors"
+        elif name == "restrict_to_tickers" and manual_tickers:
+            label = "manual_tickers"
+        elif name == "exclude_tickers" and exclude_tickers:
+            label = "exclude_tickers"
+        filter_metrics.append(
+            f"{label}: {dropped}/{before} ({ratio:.0%})"
+        )
+
+    metrics_summary = "ningún filtro aplicado"
+    if filter_metrics:
+        metrics_summary = ", ".join(filter_metrics)
+
     LOGGER.info(
-        "%s Stub screener processed %s tickers in %.3f seconds (threshold: %.3f)",
+        "%s Stub screener processed %s tickers in %.3f seconds (threshold: %.3f, resultado: %s). Discards: %s",
         severity,
-        processed_count,
+        universe_count,
         elapsed,
         warn_threshold,
+        result_count,
+        metrics_summary,
     )
 
     telemetry_note = (
-        f"{severity} Stub procesó {processed_count} tickers en {elapsed:.2f} segundos"
+        f"{severity} Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
+        f"(resultado: {result_count})"
     )
+    if filter_metrics:
+        telemetry_note += " · descartes: " + ", ".join(filter_metrics)
 
     notes_attr = result.attrs.setdefault("_notes", [])
     notes_attr.append(telemetry_note)
