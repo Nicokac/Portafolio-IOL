@@ -140,7 +140,7 @@ _SCRIPT = textwrap.dedent(
 def test_header_displays_version() -> None:
     app = _render_app()
     headers = [element.value for element in app.get("header")]
-    expected_header = f"🚀 Empresas con oportunidad · beta {__version__}"
+    expected_header = f"🚀 Empresas con oportunidad · v{__version__}"
     assert expected_header in headers
 
 
