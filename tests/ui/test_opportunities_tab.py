@@ -211,14 +211,19 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert len(dataframes) == 1, "Expected a single dataframe rendered with link column configuration"
     component = dataframes[0]
     display_df = component.value
-    assert "Ticker (Yahoo)" in display_df.columns
+    assert "ticker" in display_df.columns
     assert "Yahoo Finance Link" in display_df.columns
     columns_config = json.loads(component.proto.columns or "{}")
-    ticker_config = columns_config.get("Ticker (Yahoo)")
-    assert ticker_config is not None, "Expected link column configuration for Yahoo ticker"
-    assert ticker_config["type_config"]["type"] == "link"
-    assert ticker_config["type_config"]["display_text"] == r"https://finance.yahoo.com/quote/(.*?)"
-    assert display_df["Ticker (Yahoo)"].tolist() == [
+    link_config = columns_config.get("Yahoo Finance Link")
+    assert link_config is not None, "Expected link column configuration for Yahoo Finance"
+    assert link_config["label"] == "Yahoo Finance Link"
+    assert link_config["type_config"]["type"] == "link"
+    assert link_config["type_config"]["display_text"] == r"https://finance.yahoo.com/quote/(.*?)"
+    column_order = list(component.proto.column_order)
+    assert "ticker" in column_order
+    assert "Yahoo Finance Link" in column_order
+    assert column_order.index("ticker") < column_order.index("Yahoo Finance Link")
+    assert display_df["Yahoo Finance Link"].tolist() == [
         "https://finance.yahoo.com/quote/AAPL",
         "https://finance.yahoo.com/quote/NEE",
     ]
