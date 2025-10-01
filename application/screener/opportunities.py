@@ -1278,6 +1278,8 @@ def run_screener_stub(
 
     elapsed = time.perf_counter() - loop_start
     result_count = int(result.index.size)
+    discarded_count = max(universe_count - result_count, 0)
+    discarded_ratio = (discarded_count / universe_count) if universe_count else 0.0
 
     filter_metrics: list[str] = []
     drop_summary_entries: list[tuple[str, str, int]] = []
@@ -1320,11 +1322,10 @@ def run_screener_stub(
     note_prefix = "⚠️" if elapsed > warn_threshold else "ℹ️"
     telemetry_note = (
         f"{note_prefix} Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
-        f"({drop_summary}, resultado: {result_count})"
+        f"({discarded_ratio:.0%} descartados, resultado: {result_count}; {drop_summary})"
     )
 
-    log_method = LOGGER.warning if note_prefix == "⚠️" else LOGGER.info
-    log_method("%s. Descartes: %s", telemetry_note, metrics_summary)
+    LOGGER.info("%s. Descartes: %s", telemetry_note, metrics_summary)
 
     notes_attr = result.attrs.setdefault("_notes", [])
     notes_attr.append(telemetry_note)
