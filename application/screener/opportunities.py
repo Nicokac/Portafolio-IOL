@@ -801,6 +801,17 @@ def _append_placeholder_rows(df: pd.DataFrame, tickers: Sequence[str]) -> pd.Dat
     return df.reset_index()
 
 
+def _format_yahoo_link(ticker: object) -> str | pd.NA:
+    """Build the Yahoo Finance quote URL for ``ticker`` when possible."""
+
+    if ticker is None:
+        return pd.NA
+    normalized = str(ticker).strip().upper()
+    if not normalized:
+        return pd.NA
+    return f"https://finance.yahoo.com/quote/{normalized}"
+
+
 def _normalise_score_column(
     df: pd.DataFrame, column: str = "score_compuesto"
 ) -> None:
@@ -1150,6 +1161,12 @@ def _apply_filters_and_finalize(
 
     result = result.reset_index(drop=True)
 
+    if "ticker" in result.columns:
+        links = result["ticker"].map(_format_yahoo_link)
+        result.loc[:, "Yahoo Finance Link"] = pd.Series(
+            links, index=result.index, dtype="string"
+        )
+
     if notes:
         result.attrs.setdefault("_notes", [])
         result.attrs["_notes"].extend(notes)
@@ -1222,6 +1239,7 @@ def run_screener_stub(
     loop_start = time.perf_counter()
 
     df = pd.DataFrame(_BASE_OPPORTUNITIES)
+    df["Yahoo Finance Link"] = df["ticker"].map(_format_yahoo_link)
     manual = _normalise_tickers(manual_tickers)
     excluded = set(_normalise_tickers(exclude_tickers))
 
@@ -1499,6 +1517,7 @@ def _output_columns(include_technicals: bool) -> list[str]:
         "cagr",
         "dividend_yield",
         "price",
+        "Yahoo Finance Link",
         "rsi",
         "sma_50",
         "sma_200",
@@ -1764,6 +1783,7 @@ def run_screener_yahoo(
             "cagr": cagr,
             "dividend_yield": dividend_yield,
             "price": price,
+            "Yahoo Finance Link": _format_yahoo_link(ticker),
             "rsi": rsi,
             "sma_50": sma_50,
             "sma_200": sma_200,

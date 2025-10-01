@@ -24,9 +24,19 @@ _EXPECTED_COLUMNS: Sequence[str] = (
     "cagr",
     "dividend_yield",
     "price",
+    "Yahoo Finance Link",
     "score_compuesto",
 )
 _TECHNICAL_COLUMNS: Sequence[str] = ("rsi", "sma_50", "sma_200")
+
+
+def _build_yahoo_link(ticker: object) -> str | pd.NA:
+    if ticker is None:
+        return pd.NA
+    normalized = str(ticker).strip().upper()
+    if not normalized:
+        return pd.NA
+    return f"https://finance.yahoo.com/quote/{normalized}"
 
 
 def _summarize_active_filters(filters: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -219,7 +229,13 @@ def _ensure_columns(df: pd.DataFrame, include_technicals: bool) -> pd.DataFrame:
 
     # Reorder columns for consistency.
     ordered_cols = [c for c in expected_columns if c in df.columns]
-    return df[ordered_cols]
+    df = df[ordered_cols]
+
+    if "ticker" in df.columns and "Yahoo Finance Link" in df.columns:
+        links = df["ticker"].map(_build_yahoo_link)
+        df.loc[:, "Yahoo Finance Link"] = links.astype("string")
+
+    return df
 
 
 def run_opportunities_controller(
@@ -375,7 +391,9 @@ def run_opportunities_controller(
             if rows.empty:
                 missing.append(ticker)
             else:
-                rows = rows.drop(columns=["ticker"], errors="ignore")
+                rows = rows.drop(
+                    columns=["ticker", "Yahoo Finance Link"], errors="ignore"
+                )
                 if rows.isna().all(axis=None):
                     missing.append(ticker)
         if missing:

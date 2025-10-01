@@ -85,6 +85,7 @@ def test_filters_apply_to_base_dataset() -> None:
 
     assert _tickers(df) == set(base_filtered["ticker"].unique())
     assert {"ticker", "sector", "score_compuesto"}.issubset(df.columns)
+    assert "Yahoo Finance Link" in df.columns
     assert (df["market_cap"] >= 100_000).all()
     assert (df["pe_ratio"] <= 35.0).all()
     assert (df["revenue_growth"] >= 5.0).all()
@@ -103,6 +104,14 @@ def test_filters_apply_to_base_dataset() -> None:
         "forward_eps",
     ]:
         assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
+
+    normalized_tickers = df["ticker"].astype("string").str.strip().str.upper()
+    valid_mask = normalized_tickers.notna() & (normalized_tickers != "")
+    expected_links = "https://finance.yahoo.com/quote/" + normalized_tickers[valid_mask]
+    assert (
+        df.loc[valid_mask, "Yahoo Finance Link"].astype(str).values.tolist()
+        == expected_links.astype(str).values.tolist()
+    )
 
     assert f"resultado: {len(df)}" in telemetry_note
     bullet_notes = [note for note in notes if note.startswith("• ")]
@@ -154,6 +163,7 @@ def test_manual_tickers_return_placeholder_after_filters() -> None:
     row = df.loc[df["ticker"] == "MELI"].iloc[0]
     assert pd.isna(row["pe_ratio"])
     assert pd.isna(row["market_cap"])
+    assert row["Yahoo Finance Link"] == "https://finance.yahoo.com/quote/MELI"
 
 
 def test_run_screener_stub_applies_score_threshold_inclusively() -> None:

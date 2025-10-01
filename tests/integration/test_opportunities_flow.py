@@ -1053,6 +1053,7 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
             "buyback": 6.0,
             "market_cap": 4_500.0,
             "is_latam": False,
+            "Yahoo Finance Link": "https://finance.yahoo.com/quote/ALFA",
             "score_compuesto": 95.0,
         },
         {
@@ -1063,6 +1064,7 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
             "buyback": 5.5,
             "market_cap": 3_800.0,
             "is_latam": True,
+            "Yahoo Finance Link": "https://finance.yahoo.com/quote/BETA",
             "score_compuesto": 91.0,
         },
         {
@@ -1073,6 +1075,7 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
             "buyback": 5.0,
             "market_cap": 3_400.0,
             "is_latam": False,
+            "Yahoo Finance Link": "https://finance.yahoo.com/quote/GAMA",
             "score_compuesto": 88.0,
         },
         {
@@ -1083,6 +1086,7 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
             "buyback": 4.8,
             "market_cap": 3_000.0,
             "is_latam": True,
+            "Yahoo Finance Link": "https://finance.yahoo.com/quote/DELTA",
             "score_compuesto": 83.0,
         },
         {
@@ -1093,6 +1097,7 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
             "buyback": 4.2,
             "market_cap": 2_900.0,
             "is_latam": False,
+            "Yahoo Finance Link": "https://finance.yahoo.com/quote/OMEGA",
             "score_compuesto": 78.0,
         },
     ]
