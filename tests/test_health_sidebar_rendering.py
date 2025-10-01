@@ -69,6 +69,7 @@ def test_sidebar_shows_empty_state_labels() -> None:
             "fx_cache": None,
             "portfolio": None,
             "quotes": None,
+            "opportunities": None,
         }
     )
 
@@ -88,6 +89,8 @@ def test_sidebar_shows_empty_state_labels() -> None:
         "#### 💱 FX",
         "_Sin llamadas a la API FX._",
         "_Sin uso de caché registrado._",
+        "#### 🔎 Screening de oportunidades",
+        "_Sin screenings recientes._",
         "#### ⏱️ Latencias",
         "- Portafolio: sin registro",
         "- Cotizaciones: sin registro",
@@ -98,7 +101,7 @@ def test_sidebar_shows_empty_state_labels() -> None:
 def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
     timezone = ZoneInfo("America/Argentina/Buenos_Aires")
     base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
-    timestamps = [base.timestamp() + offset for offset in range(6)]
+    timestamps = [base.timestamp() + offset for offset in range(7)]
 
     # <== De tu rama: El stub que simula TimeProvider para inyectarlo en el componente.
     class StubTimeProvider:
@@ -141,18 +144,24 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
                 "age": 45.6,
                 "ts": timestamps[3],
             },
+            "opportunities": {
+                "mode": "hit",
+                "elapsed_ms": 12.3,
+                "cached_elapsed_ms": 45.6,
+                "ts": timestamps[4],
+            },
             "portfolio": {
                 "elapsed_ms": 456.7,
                 "source": "api",
                 "detail": "fresh",
-                "ts": timestamps[4],
+                "ts": timestamps[5],
             },
             "quotes": {
                 "elapsed_ms": 789.1,
                 "source": "yfinance",
                 "count": 12,
                 "detail": "with gaps",
-                "ts": timestamps[5],
+                "ts": timestamps[6],
             },
         }
     )
@@ -174,9 +183,13 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
         shared_notes.format_note(
             f"✅ Uso de caché • {formatted[3]} (edad 46s)"
         ),
+        "#### 🔎 Screening de oportunidades",
+        shared_notes.format_note(
+            f"✅ Cache reutilizada • {formatted[4]} (12 ms • previo 46 ms)"
+        ),
         "#### ⏱️ Latencias",
-        f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[4]}",
-        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[5]}",
+        f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[5]}",
+        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[6]}",
     }
 
     missing = expected_lines.difference(markdown)

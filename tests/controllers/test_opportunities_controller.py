@@ -407,3 +407,62 @@ def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert captured["include_technicals"] is False
     assert "exclude_tickers" not in captured or captured["exclude_tickers"] is None
+
+
+def test_generate_report_reuses_cached_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    sut._clear_opportunities_cache()
+    df = pd.DataFrame([_make_sample_row()])
+
+    call_count = 0
+
+    def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
+        nonlocal call_count
+        call_count += 1
+        assert kwargs["include_technicals"] is True
+        return df, ["note"], "yahoo"
+
+    metrics: list[dict[str, Any]] = []
+
+    def fake_metrics(**payload: Any) -> None:
+        metrics.append(payload)
+
+    time_sequence = iter([0.0, 10.0, 10.05, 20.0, 20.001])
+
+    monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
+    monkeypatch.setattr(sut, "record_opportunities_report", fake_metrics)
+    monkeypatch.setattr(sut.time, "perf_counter", lambda: next(time_sequence))
+
+    params = {"manual_tickers": ["abc"], "include_technicals": True}
+
+    first = sut.generate_opportunities_report(params)
+    second = sut.generate_opportunities_report(params)
+
+    assert first is second
+    assert call_count == 1
+    assert metrics[0]["mode"] == "miss"
+    assert metrics[1]["mode"] == "hit"
+    assert metrics[1]["cached_elapsed_ms"] == pytest.approx(metrics[0]["elapsed_ms"])
+
+
+def test_generate_report_cache_invalidates_on_filter_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sut._clear_opportunities_cache()
+    df = pd.DataFrame([_make_sample_row()])
+
+    call_count = 0
+
+    def fake_controller(**kwargs: Any) -> Tuple[pd.DataFrame, List[str], str]:
+        nonlocal call_count
+        call_count += 1
+        return df, [], "yahoo"
+
+    monkeypatch.setattr(sut, "run_opportunities_controller", fake_controller)
+    monkeypatch.setattr(sut, "record_opportunities_report", lambda **_: None)
+
+    base_params = {"manual_tickers": ["abc"], "include_technicals": True}
+
+    sut.generate_opportunities_report(base_params)
+    sut.generate_opportunities_report({**base_params, "include_technicals": False})
+
+    assert call_count == 2
