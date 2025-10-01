@@ -50,6 +50,31 @@ st = _resolve_streamlit_module()
 sys.modules["streamlit"] = st
 
 
+_CRITICAL_SECTORS = (
+    "Technology",
+    "Energy",
+    "Industrials",
+    "Consumer",
+    "Healthcare",
+    "Financials",
+    "Utilities",
+    "Materials",
+)
+
+
+def _assert_distribution(dataset: Iterable[Mapping[str, object]]) -> None:
+    frame = pd.DataFrame(dataset)
+    counts = frame["sector"].value_counts()
+    for sector in _CRITICAL_SECTORS:
+        count = int(counts.get(sector, 0))
+        assert (
+            count >= 3
+        ), f"El sector crítico '{sector}' debería contar con al menos 3 emisores en el stub"
+        assert (
+            count <= 5
+        ), f"El sector crítico '{sector}' debería permanecer acotado para pruebas deterministas"
+
+
 @pytest.fixture(autouse=True)
 def _enable_opportunities_feature(monkeypatch: pytest.MonkeyPatch) -> None:
     import shared.config as shared_config
@@ -429,6 +454,8 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     import shared.settings as shared_settings
     import controllers.opportunities as controller_module
 
+    _assert_distribution(opportunities_module._BASE_OPPORTUNITIES)
+
     synthetic_base = [
         {
             "ticker": "ALFA",
@@ -643,6 +670,8 @@ def test_opportunities_flow_uses_preset_with_stub_fallback(
     from application.screener import opportunities as opportunities_module
     from controllers import opportunities as controller_module
     from shared.errors import AppError
+
+    _assert_distribution(opportunities_module._BASE_OPPORTUNITIES)
 
     preset_ready_dataset = [
         {

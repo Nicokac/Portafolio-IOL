@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.17] - 2025-10-01
+### Changed
+- El universo determinista del screener stub ahora incluye 37 emisores con al menos tres representantes en cada sector crítico (Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials) para garantizar escenarios de QA más exigentes.
+### Tests
+- Los tests del stub y los flujos de integración validan la nueva cobertura sectorial en lugar de listas cerradas de tickers.
+### Documentation
+- README actualizado con la distribución sectorial revisada y los nuevos emisores ficticios añadidos al stub.
+
 ## [0.3.16] - 2025-09-30
 ### Added
 - Se amplió el stub de fundamentals para cubrir emisores adicionales y acompañar las nuevas validaciones del flujo beta.
