@@ -430,7 +430,7 @@ def render_opportunities_tab() -> None:
                     link_column: st.column_config.LinkColumn(
                         label="Yahoo Finance Link",
                         help="Abrí la ficha del activo en Yahoo Finance.",
-                        display_text=r"https://finance.yahoo.com/quote/(.*?)",
+                        display_text=None,
                     )
                 }
                 column_order = [
@@ -458,9 +458,15 @@ def render_opportunities_tab() -> None:
                 key="download_opportunities_csv",
             )
 
-        has_fallback_note = any(
+        has_stub_or_fallback_note = any(
             isinstance(note, str)
-            and note.strip().startswith("⚠️ Yahoo no disponible — Causa:")
+            and note.strip().startswith(
+                (
+                    "⚠️ Yahoo no disponible — Causa:",
+                    "⚠️ Stub procesó",
+                    "ℹ️ Stub procesó",
+                )
+            )
             for note in notes
         )
 
@@ -470,7 +476,7 @@ def render_opportunities_tab() -> None:
                 st.markdown(_format_note(note))
 
         if source == "stub":
-            if not has_fallback_note:
+            if not has_stub_or_fallback_note:
                 st.caption(
                     shared_notes.format_note(
                         "⚠️ Resultados simulados (Yahoo no disponible)"

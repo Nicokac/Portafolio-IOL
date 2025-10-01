@@ -217,8 +217,11 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     link_config = columns_config.get("Yahoo Finance Link")
     assert link_config is not None, "Expected link column configuration for Yahoo Finance"
     assert link_config["label"] == "Yahoo Finance Link"
-    assert link_config["type_config"]["type"] == "link"
-    assert link_config["type_config"]["display_text"] == r"https://finance.yahoo.com/quote/(.*?)"
+    type_config = link_config["type_config"]
+    assert type_config["type"] == "link"
+    assert type_config.get("display_text") in (None, "")
+    columns_json = component.proto.columns or ""
+    assert r"https://finance.yahoo.com/quote/(.*?)" not in columns_json
     column_order = list(component.proto.column_order)
     assert "ticker" in column_order
     assert "Yahoo Finance Link" in column_order
