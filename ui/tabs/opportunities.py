@@ -406,15 +406,15 @@ def render_opportunities_tab() -> None:
             st.info("No se encontraron oportunidades con los filtros seleccionados.")
         else:
             st.subheader("Resultados del screening")
-            st.dataframe(table, use_container_width=True)
-            csv_payload = table.to_csv(index=False).encode("utf-8")
+            display_table = table.copy()
+            csv_payload = display_table.to_csv(index=False).encode("utf-8")
             st.download_button(
                 "Descargar resultados (.csv)",
                 data=csv_payload,
                 file_name="oportunidades.csv",
                 mime="text/csv",
                 key="download_opportunities_csv",
-            display_table = table.copy()
+            )
             link_column = "Yahoo Finance Link"
             column_config: dict[str, st.column_config.Column | st.column_config.LinkColumn] | None = None
             column_order: list[str] | None = None
