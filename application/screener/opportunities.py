@@ -1302,18 +1302,19 @@ def run_screener_stub(
     if filter_metrics:
         metrics_summary = ", ".join(filter_metrics)
 
-    LOGGER.info(
-        "Stub screener processed %s tickers in %.3f seconds (resultado: %s). Discards: %s",
-        universe_count,
-        elapsed,
-        result_count,
-        metrics_summary,
+    warn_threshold = getattr(
+        shared_settings,
+        "STUB_MAX_RUNTIME_WARN",
+        getattr(shared_settings, "stub_max_runtime_warn", 0.25),
     )
-
+    note_prefix = "⚠️" if elapsed > warn_threshold else "ℹ️"
     telemetry_note = (
-        f"ℹ️ Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
+        f"{note_prefix} Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
         f"(resultado: {result_count})"
     )
+
+    log_method = LOGGER.warning if note_prefix == "⚠️" else LOGGER.info
+    log_method("%s. Descartes: %s", telemetry_note, metrics_summary)
 
     notes_attr = result.attrs.setdefault("_notes", [])
     notes_attr.append(telemetry_note)
