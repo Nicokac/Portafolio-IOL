@@ -6,16 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Documentation
-- README documenta la columna `Yahoo Finance Link`, ejemplificando su uso en la tabla de oportunidades y diferenciando cómo se pobla con universos live de Yahoo y con el stub determinista.
-- La guía de QA aclara que los 37 tickers del stub y los universos dinámicos comparten el mismo formato de enlace hacia Yahoo Finance para mantener paridad en las verificaciones.
 
 ## [0.3.17] - 2025-10-01
+### Added
+- La estrategia Andy fue promovida a release estable tras validar los filtros financieros activos, el score normalizado y la telemetría espejo entre Yahoo y el stub, dejando documentada la cobertura manual que respalda el corte.
 ### Changed
 - El stub de oportunidades ahora genera notas de telemetría con severidades `ℹ️/⚠️` según el tiempo de ejecución y deja trazabilidad de los descartes aplicados para facilitar la observabilidad durante los failovers. ([`application/screener/opportunities.py`](application/screener/opportunities.py))
 - La UI y el backend leen la versión desde `pyproject.toml` mediante `shared.version.__version__`, evitando desfasajes entre las superficies y simplificando la sincronización de releases. ([`shared/version.py`](shared/version.py), [`ui/footer.py`](ui/footer.py))
 ### Documentation
 - Se incorporó una guía de interpretación para la telemetría del barrido, con ejemplos de severidades y métricas monitoreadas tanto en el stub como en Yahoo. ([`README.md`](README.md#telemetría-del-barrido))
+- README documenta la estrategia Andy lista para producción, enumerando:
+  - los filtros financieros activos que se aplican en la tabla de oportunidades;
+  - la normalización del `score_compuesto` en escala 0-100;
+  - la telemetría compartida entre Yahoo Finance y el stub determinista, junto con los casos de failover;
+  - la columna `Yahoo Finance Link`, ejemplificando cómo se pobla con universos live y con el stub.
+- La guía de QA aclara que los 37 tickers del stub y los universos dinámicos comparten el mismo formato de enlace hacia Yahoo Finance para mantener paridad en las verificaciones.
 
 ## [0.3.16] - 2025-09-30
 ### Added
