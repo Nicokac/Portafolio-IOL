@@ -25,6 +25,7 @@ _EXPECTED_COLUMNS = [
     "cagr",
     "dividend_yield",
     "price",
+    "Yahoo Finance Link",
     "score_compuesto",
 ]
 _EXPECTED_WITH_TECHNICALS = _EXPECTED_COLUMNS + ["rsi", "sma_50", "sma_200"]
@@ -57,6 +58,7 @@ def _make_sample_row(include_technicals: bool = False) -> Dict[str, Any]:
         "cagr": 8.0,
         "dividend_yield": 0.8,
         "price": 170.0,
+        "Yahoo Finance Link": "https://finance.yahoo.com/quote/AAPL",
         "score_compuesto": 75.0,
     }
     if include_technicals:
@@ -233,6 +235,7 @@ def test_controller_relays_strict_filters_and_minimum_notes(
                     "cagr": 11.0,
                     "dividend_yield": 1.8,
                     "price": 120.0,
+                    "Yahoo Finance Link": "https://finance.yahoo.com/quote/ELITE",
                     "score_compuesto": 68.0,
                 }
             ]
@@ -358,6 +361,7 @@ def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) ->
     assert pd.isna(aaa_row["payout_ratio"])
     assert pd.isna(aaa_row["dividend_streak"])
     assert pd.isna(aaa_row["sector"])
+    assert aaa_row["Yahoo Finance Link"] == "https://finance.yahoo.com/quote/AAA"
     assert pd.isna(aaa_row["rsi"])
     assert "Partial data" in notes
     assert any("BBB" in note for note in notes)

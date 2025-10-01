@@ -280,6 +280,7 @@ def test_run_screener_yahoo_marks_missing(caplog):
     assert df.iloc[0]["score_compuesto"] is pd.NA
     assert "sector" in df.columns
     assert pd.isna(df.iloc[0]["sector"])
+    assert df.iloc[0]["Yahoo Finance Link"] == "https://finance.yahoo.com/quote/ZZZ"
     assert any("EPS" in note for note in notes)
     assert any("faltan datos" in record.getMessage().lower() for record in caplog.records)
 
@@ -370,11 +371,20 @@ def test_run_screener_yahoo_filters_and_optional_columns(comprehensive_data):
         "cagr",
         "dividend_yield",
         "price",
+        "Yahoo Finance Link",
         "score_compuesto",
     ]
     assert not any(col.startswith("_meta") for col in df.columns)
     assert df.iloc[0]["ticker"] == "ABC"
     assert pd.isna(df.iloc[1]["payout_ratio"])
+    expected_links = (
+        "https://finance.yahoo.com/quote/"
+        + df["ticker"].astype("string").str.strip().str.upper()
+    )
+    assert (
+        df["Yahoo Finance Link"].astype("string").fillna("").tolist()
+        == expected_links.fillna("").tolist()
+    )
 
     assert any("Yahoo procesó" in note for note in notes)
 
@@ -1260,7 +1270,11 @@ def test_run_opportunities_controller_applies_new_filters(
 
     assert notes[0].startswith("ℹ️ Filtros aplicados:")
     assert any("Yahoo procesó" in note for note in notes)
-    assert any("No se encontraron datos" in note for note in notes)
+    for ticker in ("ABC", "PAY", "STK", "CGR"):
+        assert (
+            results[ticker]["Yahoo Finance Link"]
+            == f"https://finance.yahoo.com/quote/{ticker}"
+        )
     assert source == "yahoo"
 
 

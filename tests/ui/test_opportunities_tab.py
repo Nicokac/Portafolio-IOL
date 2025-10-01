@@ -160,6 +160,10 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
         {
             "ticker": ["AAPL", "NEE"],
             "price": [180.12, 78.6],
+            "Yahoo Finance Link": [
+                "https://finance.yahoo.com/quote/AAPL",
+                "https://finance.yahoo.com/quote/NEE",
+            ],
             "score_compuesto": [85.0, 72.0],
             "sector": ["Technology", "Utilities"],
         }
@@ -219,6 +223,7 @@ def test_checkbox_include_technicals_updates_params() -> None:
         {
             "ticker": ["MELI"],
             "price": [1225.5],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/MELI"],
             "score_compuesto": [85.0],
         }
     )
@@ -239,6 +244,7 @@ def test_selectbox_preset_applies_recommended_values_and_allows_manual_override(
         {
             "ticker": ["DUK"],
             "price": [94.2],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/DUK"],
             "score_compuesto": [68.0],
         }
     )
@@ -350,6 +356,7 @@ def test_fallback_legend_and_notes_displayed_when_stub_source() -> None:
         {
             "ticker": ["KO"],
             "price": [58.31],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/KO"],
             "score_compuesto": [61.0],
         }
     )
@@ -375,6 +382,7 @@ def test_stub_source_displays_warning_caption_and_notes() -> None:
         {
             "ticker": ["PFE"],
             "price": [35.12],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/PFE"],
             "score_compuesto": [54.0],
         }
     )
@@ -405,6 +413,7 @@ def test_fallback_note_with_cause_highlighted() -> None:
         {
             "ticker": ["KO"],
             "price": [58.31],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/KO"],
             "score_compuesto": [61.0],
         }
     )
@@ -425,6 +434,7 @@ def test_notes_block_highlights_backend_messages() -> None:
         {
             "ticker": ["AMZN"],
             "price": [140.25],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AMZN"],
             "score_compuesto": [78.0],
         }
     )
@@ -458,6 +468,7 @@ def test_notes_block_highlights_scarcity_messages() -> None:
         {
             "ticker": ["NFLX"],
             "price": [410.55],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/NFLX"],
             "score_compuesto": [71.0],
         }
     )
@@ -479,6 +490,7 @@ def test_notes_block_formats_success_messages() -> None:
         {
             "ticker": ["NFLX"],
             "price": [410.55],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/NFLX"],
             "score_compuesto": [71.0],
         }
     )
@@ -501,6 +513,10 @@ def test_notes_block_formats_truncation_and_shortage_notes() -> None:
         {
             "ticker": ["META", "GOOGL"],
             "price": [295.12, 138.45],
+            "Yahoo Finance Link": [
+                "https://finance.yahoo.com/quote/META",
+                "https://finance.yahoo.com/quote/GOOGL",
+            ],
             "score_compuesto": [83.5, 79.2],
         }
     )
@@ -524,6 +540,7 @@ def test_notes_block_displays_critical_missing_fundamental_warning() -> None:
         {
             "ticker": ["AAPL"],
             "price": [180.0],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AAPL"],
             "score_compuesto": [75.0],
         }
     )
