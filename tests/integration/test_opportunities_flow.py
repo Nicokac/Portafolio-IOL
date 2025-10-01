@@ -692,6 +692,19 @@ def test_fallback_stub_emits_runtime_telemetry_note(
 
     monkeypatch.setattr(controller_module, "run_screener_yahoo", None, raising=False)
 
+    monkeypatch.setattr(
+        opportunities_module.shared_settings,
+        "STUB_MAX_RUNTIME_WARN",
+        0.25,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        opportunities_module.shared_settings,
+        "stub_max_runtime_warn",
+        0.25,
+        raising=False,
+    )
+
     def _configure_perf_counter(values: Iterable[float]) -> None:
         sequence = list(values)
         calls = iter(sequence)

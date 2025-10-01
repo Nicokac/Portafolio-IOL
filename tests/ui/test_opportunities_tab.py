@@ -519,6 +519,40 @@ def test_notes_block_formats_truncation_and_shortage_notes() -> None:
     assert any(shortage_note in block for block in markdown_blocks)
 
 
+@pytest.mark.parametrize(
+    ("note", "expected_icon"),
+    [
+        (
+            "ℹ️ Stub procesó 10 tickers en 0.10 segundos (0% descartados, resultado: 10; sin descartes)",
+            ":information_source:",
+        ),
+        (
+            "⚠️ Stub procesó 8 tickers en 0.60 segundos (25% descartados, resultado: 6; sin descartes)",
+            ":warning:",
+        ),
+    ],
+)
+def test_notes_block_highlights_stub_runtime_telemetry(
+    note: str, expected_icon: str
+) -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["NFLX", "DIS"],
+            "price": [410.55, 95.12],
+            "score_compuesto": [71.0, 69.5],
+        }
+    )
+
+    app, _ = _run_app_with_result({"table": df, "notes": [note], "source": "stub"})
+
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    formatted_note = shared_notes.format_note(note)
+    assert formatted_note in markdown_blocks
+    assert formatted_note.startswith(expected_icon)
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Resultados simulados" in caption for caption in captions)
+
 def test_notes_block_displays_critical_missing_fundamental_warning() -> None:
     df = pd.DataFrame(
         {
