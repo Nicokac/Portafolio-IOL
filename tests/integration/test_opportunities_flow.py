@@ -681,7 +681,14 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     assert any("Stub procesó" in block for block in markdown_blocks)
 
     captions = [element.value for element in app.get("caption")]
-    assert any("Resultados simulados" in caption for caption in captions)
+    expected_stub_caption = shared_notes.format_note(
+        "⚠️ Resultados simulados (Yahoo no disponible)"
+    )
+    assert expected_stub_caption not in captions
+    expected_info_caption = shared_notes.format_note(
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+    )
+    assert expected_info_caption in captions
 
 
 def test_fallback_stub_emits_runtime_telemetry_note(
@@ -902,7 +909,14 @@ def test_opportunities_flow_uses_preset_with_stub_fallback(
     assert any("Stub procesó" in block for block in markdown_blocks)
 
     captions = [element.value for element in app.get("caption")]
-    assert any("Resultados simulados" in caption for caption in captions)
+    expected_stub_caption = shared_notes.format_note(
+        "⚠️ Resultados simulados (Yahoo no disponible)"
+    )
+    assert expected_stub_caption not in captions
+    expected_info_caption = shared_notes.format_note(
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+    )
+    assert expected_info_caption in captions
 
 
 def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:

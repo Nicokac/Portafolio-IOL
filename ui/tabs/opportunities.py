@@ -458,13 +458,24 @@ def render_opportunities_tab() -> None:
                 key="download_opportunities_csv",
             )
 
+        has_fallback_note = any(
+            isinstance(note, str)
+            and note.strip().startswith("⚠️ Yahoo no disponible — Causa:")
+            for note in notes
+        )
+
         if notes:
             st.markdown("### Notas del screening")
             for note in notes:
                 st.markdown(_format_note(note))
 
         if source == "stub":
-            st.caption(shared_notes.format_note("⚠️ Resultados simulados (Yahoo no disponible)"))
+            if not has_fallback_note:
+                st.caption(
+                    shared_notes.format_note(
+                        "⚠️ Resultados simulados (Yahoo no disponible)"
+                    )
+                )
         else:
             st.caption("Resultados obtenidos de Yahoo Finance")
         st.caption(
