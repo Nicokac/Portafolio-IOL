@@ -1,4 +1,4 @@
-"""UI helpers for the experimental opportunities tab."""
+"""UI helpers for the opportunities tab."""
 from __future__ import annotations
 
 from typing import Iterable, Mapping, Sequence
@@ -209,7 +209,7 @@ def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str], str
 
 
 def render_opportunities_tab() -> None:
-    """Renderiza la pestaña experimental de oportunidades."""
+    """Renderiza la pestaña de oportunidades."""
     required_attrs = (
         "header",
         "caption",
@@ -225,7 +225,7 @@ def render_opportunities_tab() -> None:
     if not all(hasattr(st, attr) for attr in required_attrs):  # pragma: no cover - only for test stubs
         return
 
-    st.header(f"🚀 Empresas con oportunidad · beta {__version__}")
+    st.header(f"🚀 Empresas con oportunidad · v{__version__}")
     with st.expander("¿Qué significa cada métrica?"):
         st.markdown(
             """
@@ -239,7 +239,7 @@ def render_opportunities_tab() -> None:
             """
         )
     st.caption(
-        "Explorá screenings cuantitativos experimentales para detectar compañías "
+        "Explorá screenings cuantitativos para detectar compañías "
         "que podrían presentar oportunidades de inversión."
     )
 
