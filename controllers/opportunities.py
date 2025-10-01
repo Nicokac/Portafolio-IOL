@@ -368,10 +368,11 @@ def run_opportunities_controller(
             df, stub_notes = stub_result
         else:
             df = stub_result  # type: ignore[assignment]
-        fallback_note = "⚠️ Datos simulados (Yahoo no disponible)"
+        fallback_note: Optional[str] = None
         if failure_reason:
-            fallback_note = f"{fallback_note} — Causa: {failure_reason}"
-        notes.append(fallback_note)
+            fallback_note = f"⚠️ Yahoo no disponible — Causa: {failure_reason}"
+        if fallback_note:
+            notes.append(fallback_note)
         if filters_note:
             notes.append(filters_note)
         if stub_notes:

@@ -207,8 +207,7 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
     assert stub_calls["sectors"] is None
     assert list(df.columns) == _EXPECTED_COLUMNS
     assert "MSFT" not in set(df["ticker"])
-    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
-    assert "boom" in notes[0]
+    assert notes[0] == "⚠️ Yahoo no disponible — Causa: boom"
     assert notes[1].startswith("ℹ️ Filtros aplicados:")
     assert "score ≥30" in notes[1]
     assert notes[2] == "Stub note"
@@ -303,7 +302,7 @@ def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.Monk
 
     assert "MSFT" not in set(df["ticker"])
     assert any(ticker == "AAPL" for ticker in df["ticker"])
-    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
+    assert notes[0] == "⚠️ Yahoo no disponible — Causa: boom"
     assert notes[1].startswith("ℹ️ Filtros aplicados:")
     assert "excluye" in notes[1]
     assert source == "stub"
@@ -328,8 +327,7 @@ def test_fallback_includes_unexpected_error_reason(monkeypatch: pytest.MonkeyPat
 
     assert "ticker" in df.columns
     assert source == "stub"
-    assert notes[0].startswith("⚠️ Datos simulados (Yahoo no disponible)")
-    assert "service offline" in notes[0]
+    assert notes[0] == "⚠️ Yahoo no disponible — Causa: service offline"
     assert notes[1].startswith("ℹ️ Filtros aplicados:")
     assert notes[2] == "Stub note"
 
