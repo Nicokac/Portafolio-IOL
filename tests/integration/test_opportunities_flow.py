@@ -5,7 +5,7 @@ import importlib.util
 import sys
 import time
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Callable, Iterable, Mapping, Optional
 
 import numpy as np
 import pandas as pd
@@ -303,6 +303,30 @@ def _set_selectbox(app: AppTest, label: str, value: str) -> None:
     widget.set_value(value)
 
 
+def _click_search_button(app: AppTest) -> None:
+    buttons = [
+        element
+        for element in app.get("button")
+        if getattr(element, "key", None) == "search_opportunities"
+    ]
+    assert buttons, "Expected the opportunities search button to be present"
+    buttons[0].click()
+
+
+def _execute_search_cycle(app: AppTest, *, timeout: float = 10.0) -> tuple[pd.DataFrame, list[str], list[str]]:
+    _click_search_button(app)
+    app.run(timeout=timeout)
+
+    dataframes = app.get("arrow_data_frame")
+    assert dataframes, "Expected the results dataframe to be rendered"
+    displayed = dataframes[0].value
+    assert isinstance(displayed, pd.DataFrame)
+
+    captions = [element.value for element in app.get("caption")]
+    markdown_blocks = [element.value for element in app.get("markdown")]
+    return displayed, captions, markdown_blocks
+
+
 def test_opportunities_flow_renders_yahoo_results(monkeypatch: pytest.MonkeyPatch) -> None:
     created_clients: list[_FakeYahooClient] = []
 
@@ -331,14 +355,7 @@ def test_opportunities_flow_renders_yahoo_results(monkeypatch: pytest.MonkeyPatc
 
     app.run()
 
-    buttons = [
-        element
-        for element in app.get("button")
-        if getattr(element, "key", None) == "search_opportunities"
-    ]
-    assert buttons, "Expected to find the opportunities search button"
-    buttons[0].click()
-
+    _click_search_button(app)
     app.run()
 
     assert created_clients, "Expected YahooFinanceClient to be instantiated"
@@ -747,13 +764,7 @@ def test_opportunities_flow_uses_preset_with_stub_fallback(
     assert slider_values["Racha mínima de dividendos (años)"] == 5
     assert slider_values["Score mínimo"] == 72
 
-    search_buttons = [
-        element
-        for element in app.get("button")
-        if getattr(element, "key", None) == "search_opportunities"
-    ]
-    assert search_buttons, "Expected the opportunities search button to be present"
-    search_buttons[0].click()
+    _click_search_button(app)
 
     app.run()
 
@@ -811,15 +822,8 @@ def test_yahoo_large_universe_e2e(monkeypatch: pytest.MonkeyPatch) -> None:
 
     app.run()
 
-    search_buttons = [
-        element
-        for element in app.get("button")
-        if getattr(element, "key", None) == "search_opportunities"
-    ]
-    assert search_buttons, "Expected search button to be present"
-
     start = time.perf_counter()
-    search_buttons[0].click()
+    _click_search_button(app)
     app.run(timeout=10)
     elapsed = time.perf_counter() - start
     assert elapsed < 6.5, f"Execution took too long: {elapsed:.2f} seconds"
@@ -891,13 +895,7 @@ def test_yahoo_large_universe_emits_telemetry(monkeypatch: pytest.MonkeyPatch) -
 
     app.run()
 
-    search_buttons = [
-        element
-        for element in app.get("button")
-        if getattr(element, "key", None) == "search_opportunities"
-    ]
-    assert search_buttons, "Expected search button to be present"
-    search_buttons[0].click()
+    _click_search_button(app)
 
     app.run(timeout=10)
 
@@ -911,3 +909,182 @@ def test_yahoo_large_universe_emits_telemetry(monkeypatch: pytest.MonkeyPatch) -
     assert any(
         "Yahoo procesó" in block for block in markdown_blocks
     ), "Expected telemetry note to be propagated to the UI"
+
+
+@pytest.mark.parametrize(
+    ("max_results", "min_score_threshold"),
+    [
+        (2, 60),
+        (3, 75),
+        (1, 85),
+    ],
+)
+def test_opportunities_flow_stub_failover_is_consistent_across_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    max_results: int,
+    min_score_threshold: int,
+) -> None:
+    from controllers import opportunities as controller_module
+
+    base_rows = [
+        {
+            "ticker": "ALFA",
+            "dividend_yield": 1.6,
+            "payout_ratio": 18.0,
+            "revenue_growth": 22.0,
+            "buyback": 6.0,
+            "market_cap": 4_500.0,
+            "is_latam": False,
+            "score_compuesto": 95.0,
+        },
+        {
+            "ticker": "BETA",
+            "dividend_yield": 1.4,
+            "payout_ratio": 21.0,
+            "revenue_growth": 20.0,
+            "buyback": 5.5,
+            "market_cap": 3_800.0,
+            "is_latam": True,
+            "score_compuesto": 91.0,
+        },
+        {
+            "ticker": "GAMA",
+            "dividend_yield": 1.8,
+            "payout_ratio": 24.0,
+            "revenue_growth": 19.5,
+            "buyback": 5.0,
+            "market_cap": 3_400.0,
+            "is_latam": False,
+            "score_compuesto": 88.0,
+        },
+        {
+            "ticker": "DELTA",
+            "dividend_yield": 1.2,
+            "payout_ratio": 26.0,
+            "revenue_growth": 17.0,
+            "buyback": 4.8,
+            "market_cap": 3_000.0,
+            "is_latam": True,
+            "score_compuesto": 83.0,
+        },
+        {
+            "ticker": "OMEGA",
+            "dividend_yield": 1.1,
+            "payout_ratio": 28.0,
+            "revenue_growth": 16.5,
+            "buyback": 4.2,
+            "market_cap": 2_900.0,
+            "is_latam": False,
+            "score_compuesto": 78.0,
+        },
+    ]
+
+    base_frame = pd.DataFrame(base_rows).sort_values(
+        "score_compuesto", ascending=False
+    )
+    call_history: list[Mapping[str, object]] = []
+
+    def _stubbed_generate(filters: Optional[Mapping[str, object]] = None) -> Mapping[str, object]:
+        captured = dict(filters or {})
+        call_history.append(captured)
+
+        requested_max = captured.get("max_results")
+        requested_threshold = captured.get("min_score_threshold")
+
+        max_count = int(requested_max) if requested_max is not None else None
+        score_threshold = (
+            float(requested_threshold) if requested_threshold is not None else 0.0
+        )
+
+        filtered = base_frame[base_frame["score_compuesto"] >= score_threshold]
+        limited = filtered.head(max_count) if max_count else filtered
+        table = limited.reset_index(drop=True).copy()
+
+        notes = [
+            (
+                "Telemetría de contingencia: stub procesó "
+                f"{len(filtered)} candidatos con umbral >= {score_threshold:.0f}."
+            ),
+            (
+                "Se muestran "
+                f"{len(table)} de {len(filtered)} resultados (máximo solicitado: {max_count or len(filtered)})."
+            ),
+            "Resultados generados por stub durante failover day.",
+        ]
+
+        return {"table": table, "notes": notes, "source": "stub"}
+
+    monkeypatch.setattr(controller_module, "generate_opportunities_report", _stubbed_generate)
+
+    app = _render_app()
+
+    def _configure_growth_profile(app_test: AppTest) -> None:
+        _set_number_input(app_test, "Capitalización mínima (US$ MM)", 2_500)
+        _set_number_input(app_test, "P/E máximo", 30.0)
+        _set_number_input(app_test, "Crecimiento ingresos mínimo (%)", 15.0)
+        _set_checkbox(app_test, "Incluir Latam", False)
+        _set_multiselect(app_test, "Sectores", ["Technology"])
+
+    def _configure_balanced_preset(app_test: AppTest) -> None:
+        _set_checkbox(app_test, "Incluir Latam", True)
+        _set_multiselect(app_test, "Sectores", ["Technology", "Healthcare"])
+
+    def _configure_value_rotation(app_test: AppTest) -> None:
+        _set_number_input(app_test, "Capitalización mínima (US$ MM)", 1_000)
+        _set_number_input(app_test, "P/E máximo", 26.0)
+        _set_number_input(app_test, "Crecimiento ingresos mínimo (%)", 12.0)
+        _set_checkbox(app_test, "Incluir Latam", True)
+        _set_multiselect(app_test, "Sectores", ["Industrials", "Technology"])
+
+    scenarios: list[Mapping[str, object]] = [
+        {"configure": _configure_growth_profile},
+        {"preset": "Crecimiento balanceado", "configure": _configure_balanced_preset},
+        {"configure": _configure_value_rotation},
+    ]
+
+    previous_tickers: Optional[list[str]] = None
+
+    for scenario in scenarios:
+        preset_name = scenario.get("preset")
+        if isinstance(preset_name, str):
+            _set_selectbox(app, "Perfil recomendado", preset_name)
+            app.run()
+
+        configure: Callable[[AppTest], None] = scenario["configure"]
+        configure(app)
+        _set_number_input(app, "Máximo de resultados", max_results)
+        _set_slider(app, "Score mínimo", min_score_threshold)
+
+        app.run()
+
+        table, captions, notes = _execute_search_cycle(app)
+
+        assert len(table) <= max_results
+        scores = pd.to_numeric(table["score_compuesto"], errors="coerce")
+        assert not scores.isna().any()
+        assert (scores >= min_score_threshold).all()
+
+        assert any(
+            "Resultados simulados" in caption for caption in captions
+        ), "Expected stub fallback caption to remain visible"
+        assert any(
+            "Telemetría" in note or "failover" in note.lower() for note in notes
+        ), "Expected telemetry note to be displayed"
+        assert any(
+            "máximo solicitado" in note for note in notes
+        ), "Expected truncation note to mention the requested maximum"
+
+        tickers = list(table["ticker"])
+        if previous_tickers is None:
+            previous_tickers = tickers
+        else:
+            assert tickers == previous_tickers, "Expected stable ordering across runs"
+
+    assert len(call_history) == len(scenarios)
+    for recorded_filters in call_history:
+        recorded_max = recorded_filters.get("max_results")
+        recorded_threshold = recorded_filters.get("min_score_threshold")
+        assert recorded_max is not None, "Expected max_results to be forwarded to stub"
+        assert recorded_threshold is not None, "Expected min_score_threshold to be forwarded"
+        assert int(recorded_max) == max_results
+        assert float(recorded_threshold) == pytest.approx(float(min_score_threshold))
