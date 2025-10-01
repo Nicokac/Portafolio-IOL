@@ -27,14 +27,14 @@ Ambos métodos apuntan al mismo reloj centralizado, por lo que los valores son i
 
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
 
-### Empresas con oportunidad (beta)
+### Empresas con oportunidad (disponible de forma estable)
 
-La vista beta evoluciona hacia un universo dinámico que se recalcula en cada sesión combinando:
+La pestaña ya se encuentra disponible de forma estable y en cada sesión combina:
 
 - Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
 - Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
 
-El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible.
+El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible, incluso en esta fase estable.
 
 La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL `https://finance.yahoo.com/quote/<ticker>`. En universos dinámicos descargados de Yahoo la columna reutiliza directamente el *slug* oficial (por ejemplo, `AAPL`), mientras que el stub determinista sintetiza enlaces equivalentes para sus 37 emisores (`UTLX`, `FNCL1`, etc.) manteniendo el mismo formato. Esto permite a QA y a los integradores validar rápidamente la procedencia sin importar si el listado proviene de datos live o del fallback.
 
@@ -106,6 +106,8 @@ El panel muestra una nota de telemetría por cada barrido, tanto si la corrida p
 En condiciones saludables la nota se mantiene en severidad `ℹ️`. Cuando el runtime supera los límites esperados (≈3 s para el stub, 8–9 s para Yahoo), el universo final cae por debajo del umbral mínimo configurado o los ratios de descarte exceden el 35 % de manera sostenida, la severidad escala automáticamente a `⚠️` y se resalta en la UI.
 
 **Guía rápida para QA y usuarios**
+
+Con la pestaña de oportunidades ya en disponibilidad estable, las comprobaciones de QA se mantienen enfocadas en validar que la experiencia se preserve consistente entre el universo live y el stub determinista.
 
 | Señal | Qué revisar | Acción sugerida |
 | --- | --- | --- |
@@ -271,7 +273,7 @@ LOG_USER="usuario"
 ```
 Los parámetros `CACHE_TTL_YF_*` ajustan cuánto tiempo se reutiliza cada respuesta de Yahoo Finance antes de volver a consultar la API (indicadores técnicos, históricos, fundamentales individuales y ranking del portafolio, respectivamente). Las variables `YAHOO_FUNDAMENTALS_TTL` (3600 segundos por defecto) y `YAHOO_QUOTES_TTL` (300 segundos por defecto) controlan el TTL de la caché específica para fundamentales y cotizaciones de Yahoo; puedes redefinir estos valores en el `.env` o en `secrets.toml` según tus necesidades. Ambos parámetros también se exponen con alias en minúsculas (`yahoo_fundamentals_ttl` y `yahoo_quotes_ttl`) para facilitar su lectura desde `st.secrets`, y cualquier alias o nombre en mayúsculas puede sobrescribirse indistintamente mediante variables de entorno, archivos `.env` o secretos.
 
-`MIN_SCORE_THRESHOLD` (80 por defecto) define el puntaje mínimo aceptado para que una empresa aparezca en el listado beta, mientras que `MAX_RESULTS` (20 por defecto) determina cuántas filas finales mostrará la UI tras aplicar filtros y ordenar el score normalizado. Ambos valores pueden sobreescribirse desde el mismo `.env`, `secrets.toml` o `config.json` si necesitás afinar la agresividad del recorte.
+`MIN_SCORE_THRESHOLD` (80 por defecto) define el puntaje mínimo aceptado para que una empresa aparezca en el listado estable de oportunidades, mientras que `MAX_RESULTS` (20 por defecto) determina cuántas filas finales mostrará la UI tras aplicar filtros y ordenar el score normalizado. Ambos valores pueden sobreescribirse desde el mismo `.env`, `secrets.toml` o `config.json` si necesitás afinar la agresividad del recorte.
 También puedes definir estos valores sensibles en `secrets.toml`,
 el cual `streamlit` expone a través de `st.secrets`. Los valores en
 `secrets.toml` tienen prioridad sobre las variables de entorno.
