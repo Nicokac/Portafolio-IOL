@@ -169,14 +169,21 @@ La aplicación consulta [Yahoo Finance](https://finance.yahoo.com/) mediante la 
 
 ### Smoke-test nocturno y guardas de frecuencia
 
-El workflow [`CI`](.github/workflows/ci.yml) ejecuta un smoke-test live contra Yahoo Finance todas las noches a las **02:30 UTC** a través del job `live-yahoo-smoke`. El disparador manual (`workflow_dispatch`) permanece disponible con el input `run-live-yahoo` para validar la dependencia bajo demanda sin esperar a la corrida programada.
+El workflow [`CI`](.github/workflows/ci.yml) ejecuta un smoke-test live contra Yahoo Finance todas las noches a las **02:30 UTC** a través del job `live-yahoo-smoke`. El disparador manual (`workflow_dispatch`) permanece disponible con el input `run-live-yahoo` para validar la dependencia bajo demanda sin esperar a la corrida programada, y se complementa con el toggle `skip-live-yahoo` para omitir la corrida si necesitas preservar cuota en una ejecución manual.
 
 Para evitar saturar el rate limit de Yahoo se exponen variables de repositorio que controlan la frecuencia:
 
 - `LIVE_YAHOO_SMOKE_SCHEDULE_MODE` (default: `nightly`) acepta `manual` para deshabilitar por completo los disparos programados, `weekdays` para limitarse a lunes-viernes y `custom` para utilizar una lista explícita de días.
 - `LIVE_YAHOO_SMOKE_ALLOWED_DAYS` define la lista de días permitidos (por ejemplo `mon,thu`) cuando el modo es `custom`. Los valores usan abreviaturas en inglés y se evalúan en UTC.
+- `LIVE_YAHOO_SMOKE_FORCE_SKIP` (default: `false`) pausa cualquier ejecución del job —manual o programada— hasta que lo vuelvas a colocar en `false`. Útil cuando se detecta throttling y conviene guardar cuota sin tocar la configuración de horarios.
 
-Cada ejecución deja trazabilidad en los logs del job y, en modo programado, documenta si se omitió el smoke-test debido a la guarda de frecuencia. Ante un fallo, GitHub Actions marca en rojo el workflow, envía notificaciones a los watchers del repositorio y conserva el log detallado del paso **Run live Yahoo Finance smoke-test** para inspeccionar el traceback. Puedes volver a lanzar la corrida desde la UI de Actions o ejecutar `pytest -m live_yahoo` localmente con `RUN_LIVE_YF=1` para reproducir el escenario.
+Si sólo necesitas suspender una corrida puntual, lanza el workflow manualmente con `run-live-yahoo=true` para habilitar el resto de jobs y marca `skip-live-yahoo=true`. El job quedará documentado como omitido en el historial sin consumir requests adicionales.
+
+Cada ejecución deja trazabilidad en los logs del job y, en modo programado, documenta si se omitió el smoke-test debido a la guarda de frecuencia o a un skip explícito. Ante un fallo:
+
+1. Revisa el paso **Run live Yahoo Finance smoke-test** para capturar el traceback y confirmar si se trata de un error transitorio (timeouts, throttling) o funcional.
+2. Si el fallo proviene de rate limiting, habilita temporalmente `LIVE_YAHOO_SMOKE_FORCE_SKIP=true` o relanza manualmente el workflow con `skip-live-yahoo=true` hasta que la cuota se recupere.
+3. Para validar la corrección, vuelve a lanzar el job desde la UI de Actions o ejecuta `pytest -m live_yahoo` localmente con `RUN_LIVE_YF=1`.
 
 ### Indicadores técnicos y fallback local
 

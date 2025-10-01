@@ -12,6 +12,10 @@ on:
         description: 'Run live Yahoo Finance smoke-test (uses RUN_LIVE_YF=1)'
         type: boolean
         default: false
+      skip-live-yahoo:
+        description: 'Skip live Yahoo Finance smoke-test (preserve Yahoo quota)'
+        type: boolean
+        default: false
       run-stub-sweep:
         description: 'Run prolonged stub fallback & preset sweep'
         type: boolean
@@ -51,13 +55,19 @@ jobs:
 
   live-yahoo-smoke:
     if: >-
-      (github.event_name == 'workflow_dispatch' && github.event.inputs.run-live-yahoo == 'true') ||
-      (github.event_name == 'schedule' && (vars.LIVE_YAHOO_SMOKE_SCHEDULE_MODE || 'nightly') != 'manual')
+      (vars.LIVE_YAHOO_SMOKE_FORCE_SKIP || 'false') != 'true' &&
+      (
+        (github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.run-live-yahoo == 'true' &&
+          github.event.inputs.skip-live-yahoo != 'true') ||
+        (github.event_name == 'schedule' && (vars.LIVE_YAHOO_SMOKE_SCHEDULE_MODE || 'nightly') != 'manual')
+      )
     runs-on: ubuntu-latest
     env:
       RUN_LIVE_YF: '1' # QA: smoke-test consumes datos en vivo y puede ser no determinista; activar sólo cuando se requiera validar Yahoo Finance.
       LIVE_YAHOO_SMOKE_SCHEDULE_MODE: ${{ vars.LIVE_YAHOO_SMOKE_SCHEDULE_MODE || 'nightly' }}
       LIVE_YAHOO_SMOKE_ALLOWED_DAYS: ${{ vars.LIVE_YAHOO_SMOKE_ALLOWED_DAYS || 'mon,tue,wed,thu,fri' }}
+      LIVE_YAHOO_SMOKE_FORCE_SKIP: ${{ vars.LIVE_YAHOO_SMOKE_FORCE_SKIP || 'false' }}
     steps:
       - name: Evaluar ventana de ejecución programada
         id: schedule_guard
