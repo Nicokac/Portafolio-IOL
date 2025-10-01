@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import logging
 import re
+import time
+from collections import OrderedDict
+from threading import Lock
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -15,6 +18,7 @@ except ImportError:  # pragma: no cover - fallback handled at runtime
     run_screener_yahoo = None  # type: ignore[assignment]
 
 from shared.errors import AppError
+from services.health import record_opportunities_report
 
 _EXPECTED_COLUMNS: Sequence[str] = (
     "ticker",
@@ -28,6 +32,48 @@ _EXPECTED_COLUMNS: Sequence[str] = (
     "score_compuesto",
 )
 _TECHNICAL_COLUMNS: Sequence[str] = ("rsi", "sma_50", "sma_200")
+
+_CACHE_MAX_ENTRIES = 64
+_CacheEntry = Tuple[Mapping[str, object], float]
+_OPPORTUNITIES_CACHE: "OrderedDict[tuple, _CacheEntry]" = OrderedDict()
+_OPPORTUNITIES_CACHE_LOCK = Lock()
+
+
+def _normalize_for_key(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return tuple((k, _normalize_for_key(v)) for k, v in sorted(value.items()))
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return tuple(_normalize_for_key(v) for v in value)
+    return value
+
+
+def _build_cache_key(controller_args: Mapping[str, Any]) -> tuple:
+    return tuple(
+        (key, _normalize_for_key(controller_args.get(key)))
+        for key in sorted(controller_args.keys())
+    )
+
+
+def _get_cached_result(key: tuple) -> Optional[_CacheEntry]:
+    with _OPPORTUNITIES_CACHE_LOCK:
+        entry = _OPPORTUNITIES_CACHE.get(key)
+        if entry is None:
+            return None
+        _OPPORTUNITIES_CACHE.move_to_end(key)
+        return entry
+
+
+def _store_cached_result(key: tuple, result: Mapping[str, object], elapsed_ms: float) -> None:
+    with _OPPORTUNITIES_CACHE_LOCK:
+        _OPPORTUNITIES_CACHE[key] = (result, elapsed_ms)
+        _OPPORTUNITIES_CACHE.move_to_end(key)
+        while len(_OPPORTUNITIES_CACHE) > _CACHE_MAX_ENTRIES:
+            _OPPORTUNITIES_CACHE.popitem(last=False)
+
+
+def _clear_opportunities_cache() -> None:
+    with _OPPORTUNITIES_CACHE_LOCK:
+        _OPPORTUNITIES_CACHE.clear()
 
 
 def _build_yahoo_link(ticker: object) -> str | pd.NA:
@@ -514,25 +560,44 @@ def generate_opportunities_report(
     else:
         include_technicals = False
 
-    df, notes, source = run_opportunities_controller(
-        manual_tickers=manual,
-        exclude_tickers=filters.get("exclude_tickers"),
-        max_payout=_as_optional_float(filters.get("max_payout")),
-        min_div_streak=_as_optional_int(filters.get("min_div_streak")),
-        min_cagr=_as_optional_float(filters.get("min_cagr")),
-        sectors=filters.get("sectors"),
-        include_technicals=include_technicals,
-        min_market_cap=_as_optional_float(filters.get("min_market_cap")),
-        max_pe=_as_optional_float(filters.get("max_pe")),
-        min_revenue_growth=_as_optional_float(filters.get("min_revenue_growth")),
-        include_latam=_as_optional_bool(filters.get("include_latam")),
-        min_eps_growth=_as_optional_float(filters.get("min_eps_growth")),
-        min_buyback=_as_optional_float(filters.get("min_buyback")),
-        min_score_threshold=_as_optional_float(filters.get("min_score_threshold")),
-        max_results=_as_optional_int(filters.get("max_results")),
-    )
+    controller_args = {
+        "manual_tickers": manual,
+        "exclude_tickers": filters.get("exclude_tickers"),
+        "max_payout": _as_optional_float(filters.get("max_payout")),
+        "min_div_streak": _as_optional_int(filters.get("min_div_streak")),
+        "min_cagr": _as_optional_float(filters.get("min_cagr")),
+        "sectors": filters.get("sectors"),
+        "include_technicals": include_technicals,
+        "min_market_cap": _as_optional_float(filters.get("min_market_cap")),
+        "max_pe": _as_optional_float(filters.get("max_pe")),
+        "min_revenue_growth": _as_optional_float(filters.get("min_revenue_growth")),
+        "include_latam": _as_optional_bool(filters.get("include_latam")),
+        "min_eps_growth": _as_optional_float(filters.get("min_eps_growth")),
+        "min_buyback": _as_optional_float(filters.get("min_buyback")),
+        "min_score_threshold": _as_optional_float(filters.get("min_score_threshold")),
+        "max_results": _as_optional_int(filters.get("max_results")),
+    }
 
-    return {"table": df, "notes": notes, "source": source}
+    cache_key = _build_cache_key(controller_args)
+    start = time.perf_counter()
+    cached_entry = _get_cached_result(cache_key)
+    if cached_entry is not None:
+        cached_result, baseline_elapsed = cached_entry
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        record_opportunities_report(
+            mode="hit",
+            elapsed_ms=elapsed_ms,
+            cached_elapsed_ms=baseline_elapsed,
+        )
+        return cached_result
+
+    compute_start = time.perf_counter()
+    df, notes, source = run_opportunities_controller(**controller_args)
+    elapsed_ms = (time.perf_counter() - compute_start) * 1000
+    result: Mapping[str, object] = {"table": df, "notes": notes, "source": source}
+    _store_cached_result(cache_key, result, elapsed_ms)
+    record_opportunities_report(mode="miss", elapsed_ms=elapsed_ms, cached_elapsed_ms=None)
+    return result
 
 
 __all__ = ["run_opportunities_controller", "generate_opportunities_report"]

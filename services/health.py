@@ -92,6 +92,22 @@ def record_quote_load(
     }
 
 
+def record_opportunities_report(
+    *, mode: str, elapsed_ms: Optional[float], cached_elapsed_ms: Optional[float]
+) -> None:
+    """Persist cache usage metrics for the opportunities screening."""
+
+    store = _store()
+    store["opportunities"] = {
+        "mode": mode,
+        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
+        "cached_elapsed_ms": (
+            float(cached_elapsed_ms) if cached_elapsed_ms is not None else None
+        ),
+        "ts": time.time(),
+    }
+
+
 def get_health_metrics() -> Dict[str, Any]:
     """Return a shallow copy of the tracked metrics for UI consumption."""
     store = _store()
@@ -102,6 +118,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "fx_cache": store.get("fx_cache"),
         "portfolio": store.get("portfolio"),
         "quotes": store.get("quotes"),
+        "opportunities": store.get("opportunities"),
     }
 
 
@@ -112,5 +129,6 @@ __all__ = [
     "record_iol_refresh",
     "record_portfolio_load",
     "record_quote_load",
+    "record_opportunities_report",
     "record_yfinance_usage",
 ]

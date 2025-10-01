@@ -73,6 +73,12 @@ def _dummy_metrics() -> dict[str, dict[str, object]]:
         "yfinance": {"source": "yfinance", "detail": "cache", "ts": None},
         "fx_api": {"status": "error", "error": "boom", "elapsed_ms": 250.5, "ts": None},
         "fx_cache": {"mode": "hit", "age": 12.3, "ts": None},
+        "opportunities": {
+            "mode": "miss",
+            "elapsed_ms": 321.0,
+            "cached_elapsed_ms": None,
+            "ts": None,
+        },
         "portfolio": {
             "elapsed_ms": 123.4,
             "source": "api",
@@ -119,11 +125,15 @@ def test_render_health_sidebar_uses_shared_note_formatter(
             _dummy_metrics["portfolio"], _dummy_metrics["quotes"]
         )
     )
+    opportunities_note = health_sidebar._format_opportunities_status(
+        _dummy_metrics["opportunities"]
+    )
     formatted_latency_lines = [f"formatted::{line}" for line in latency_lines]
     expected_notes: list[str] = [
         health_sidebar._format_iol_status(_dummy_metrics["iol_refresh"]),
         health_sidebar._format_yfinance_status(_dummy_metrics["yfinance"]),
         *fx_lines,
+        opportunities_note,
         *formatted_latency_lines,
     ]
 
@@ -141,6 +151,8 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         expected_notes[1],
         "#### 💱 FX",
         *fx_lines,
+        "#### 🔎 Screening de oportunidades",
+        opportunities_note,
         "#### ⏱️ Latencias",
         *formatted_latency_lines,
     ]

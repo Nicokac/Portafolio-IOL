@@ -110,6 +110,23 @@ def _format_latency_section(portfolio: Optional[dict], quotes: Optional[dict]) -
     ]
 
 
+def _format_opportunities_status(data: Optional[dict]) -> str:
+    if not data:
+        return "_Sin screenings recientes._"
+
+    mode = data.get("mode")
+    icon = "✅" if mode == "hit" else "⚙️"
+    label = "Cache reutilizada" if mode == "hit" else "Ejecución completa"
+    elapsed = data.get("elapsed_ms")
+    elapsed_txt = f"{float(elapsed):.0f} ms" if isinstance(elapsed, (int, float)) else "s/d"
+    baseline = data.get("cached_elapsed_ms")
+    baseline_txt = (
+        f" • previo {float(baseline):.0f} ms" if isinstance(baseline, (int, float)) else ""
+    )
+    ts = _format_timestamp(data.get("ts"))
+    return format_note(f"{icon} {label} • {ts} ({elapsed_txt}{baseline_txt})")
+
+
 def render_health_sidebar() -> None:
     """Render the health summary panel inside the sidebar."""
     metrics = get_health_metrics()
@@ -126,6 +143,9 @@ def render_health_sidebar() -> None:
     sidebar.markdown("#### 💱 FX")
     for line in _format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")):
         sidebar.markdown(line)
+
+    sidebar.markdown("#### 🔎 Screening de oportunidades")
+    sidebar.markdown(_format_opportunities_status(metrics.get("opportunities")))
 
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
