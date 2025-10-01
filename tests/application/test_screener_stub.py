@@ -56,7 +56,14 @@ def _assert_has_stub_note(notes: list[str], expected_severity: str = "info") -> 
     assert severity == expected_severity
     assert matched, "La nota del stub debería clasificarse por prefijo"
     assert content.startswith("Stub procesó "), "La nota debería describir la telemetría"
-    assert "descartados" in note or "sin descartes" in note
+    telemetry_match = re.search(
+        r"Stub procesó (\d+) tickers en (\d+\.\d{2}) segundos \((\d+)% descartados, resultado: (\d+); (.+)\)",
+        note,
+    )
+    assert telemetry_match, note
+    universe = int(telemetry_match.group(1))
+    result = int(telemetry_match.group(4))
+    assert universe >= result >= 0
     return note
 
 
