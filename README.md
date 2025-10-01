@@ -80,6 +80,16 @@ Cada registro respeta principios de la estrategia Andy: payout y P/E en rangos s
 
 Durante los failovers la UI etiqueta el origen como `stub` y continúa respetando los filtros configurados. Los tests automatizados utilizan este dataset extendido para comprobar diversidad sectorial y completitud de fundamentals, por lo que cualquier ajuste debe mantener la cobertura y las columnas documentadas.
 
+Además de la etiqueta, la UI muestra una nota informativa con la telemetría del barrido cuando se usa el stub o Yahoo Finance. El helper `shared.ui.notes.format_note` renderiza este mensaje con severidad `ℹ️` para que destaque sin generar alertas falsas. Un ejemplo típico es:
+
+```
+ℹ️ Stub sweep • elapsed: 2.4 s • universe: 37 tickers • discarded: 18% fundamentals / 10% técnicos
+```
+
+- **Elapsed time:** duración total del barrido, útil para detectar degradaciones repentinas (si sube por encima de ~3 s en el stub, indica tareas adicionales o latencia inesperada).
+- **Universe size:** cantidad de símbolos analizados en la corrida actual; cambios abruptos respecto al universo habitual (37 para el stub o el número que devuelva Yahoo) señalan filtros mal configurados o fallos de descarga.
+- **Discard ratios:** porcentaje de candidatos eliminados por falta de fundamentals o de señales técnicas; valores sostenidos por encima del 25 % ameritan revisar la fuente de datos o los umbrales configurados.
+
 El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
 
 Cada oportunidad obtiene un **score normalizado en escala 0-100** que promedia aportes de payout, racha de dividendos, CAGR, recompras, RSI y MACD. Esta normalización permite comparar emisores de distintas fuentes con un criterio homogéneo. Los resultados que queden por debajo del umbral configurado se descartan automáticamente para reducir ruido.
@@ -379,7 +389,7 @@ Para detonarlo manualmente:
 
 Al finalizar, revisa el resumen del job en GitHub Actions o descarga el
 artefacto `stub-sweep-logs`, que incluye `stub_sweep.log` y
-`stub_sweep_metrics.json` con las métricas necesarias para seguimiento de QA.
+`stub_sweep_metrics.json` con las métricas necesarias para seguimiento de QA. Allí se registran el `elapsed_time`, el tamaño del universo evaluado y los porcentajes de descartes de fundamentals/técnicos que muestra la nota de telemetría. En los monitoreos nocturnos consideramos saludable que el stub termine en menos de 3 segundos, que el universo se mantenga estable (37 símbolos) y que las tasas de descarte se mantengan por debajo del 25 %; desvíos persistentes disparan revisiones manuales o ajustes en los presets.
 
 ## Tiempos de referencia
 
