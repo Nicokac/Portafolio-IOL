@@ -167,6 +167,17 @@ format_note("⚠️ Solo se encontraron 3 tickers con datos recientes.")
 
 La aplicación consulta [Yahoo Finance](https://finance.yahoo.com/) mediante la librería `yfinance` para enriquecer la vista de portafolio con series históricas, indicadores técnicos y métricas fundamentales/ESG. La barra lateral de healthcheck refleja si la última descarga provino de Yahoo o si fue necesario recurrir a un respaldo local, facilitando la observabilidad de esta dependencia externa.
 
+### Smoke-test nocturno y guardas de frecuencia
+
+El workflow [`CI`](.github/workflows/ci.yml) ejecuta un smoke-test live contra Yahoo Finance todas las noches a las **02:30 UTC** a través del job `live-yahoo-smoke`. El disparador manual (`workflow_dispatch`) permanece disponible con el input `run-live-yahoo` para validar la dependencia bajo demanda sin esperar a la corrida programada.
+
+Para evitar saturar el rate limit de Yahoo se exponen variables de repositorio que controlan la frecuencia:
+
+- `LIVE_YAHOO_SMOKE_SCHEDULE_MODE` (default: `nightly`) acepta `manual` para deshabilitar por completo los disparos programados, `weekdays` para limitarse a lunes-viernes y `custom` para utilizar una lista explícita de días.
+- `LIVE_YAHOO_SMOKE_ALLOWED_DAYS` define la lista de días permitidos (por ejemplo `mon,thu`) cuando el modo es `custom`. Los valores usan abreviaturas en inglés y se evalúan en UTC.
+
+Cada ejecución deja trazabilidad en los logs del job y, en modo programado, documenta si se omitió el smoke-test debido a la guarda de frecuencia. Ante un fallo, GitHub Actions marca en rojo el workflow, envía notificaciones a los watchers del repositorio y conserva el log detallado del paso **Run live Yahoo Finance smoke-test** para inspeccionar el traceback. Puedes volver a lanzar la corrida desde la UI de Actions o ejecutar `pytest -m live_yahoo` localmente con `RUN_LIVE_YF=1` para reproducir el escenario.
+
 ### Indicadores técnicos y fallback local
 
 La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, EMA, MACD, RSI, Bollinger, ATR, Estocástico e Ichimoku). Los resultados se almacenan en caché durante el intervalo definido por `CACHE_TTL_YF_INDICATORS` (predeterminado: 900 segundos) para evitar llamadas redundantes. Cuando `yfinance` produce un `HTTPError` o `Timeout`, la aplicación recurre automáticamente a `infrastructure/cache/ta_fallback.csv` como stub hasta que el servicio se restablezca.
