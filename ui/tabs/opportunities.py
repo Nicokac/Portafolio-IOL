@@ -411,10 +411,8 @@ def render_opportunities_tab() -> None:
             column_config: dict[str, st.column_config.Column | st.column_config.LinkColumn] | None = None
             column_order: list[str] | None = None
 
-            if {
-                "ticker",
-                link_column,
-            }.issubset(display_table.columns):
+            required_columns = ("ticker", link_column)
+            if set(required_columns).issubset(display_table.columns):
 
                 def _resolve_yahoo_url(row: pd.Series) -> str | None:
                     raw_url = row.get(link_column)
@@ -425,22 +423,22 @@ def render_opportunities_tab() -> None:
                         url = f"https://finance.yahoo.com/quote/{ticker_value}"
                     return url or None
 
-                display_column = "Ticker (Yahoo)"
-                display_table[display_column] = display_table.apply(_resolve_yahoo_url, axis=1)
+                display_table[link_column] = display_table.apply(
+                    _resolve_yahoo_url, axis=1
+                )
                 column_config = {
-                    display_column: st.column_config.LinkColumn(
-                        label="Ticker",
+                    link_column: st.column_config.LinkColumn(
+                        label="Yahoo Finance Link",
                         help="Abrí la ficha del activo en Yahoo Finance.",
                         display_text=r"https://finance.yahoo.com/quote/(.*?)",
                     )
                 }
-                excluded_columns = {"ticker", link_column, display_column}
                 column_order = [
-                    display_column,
+                    *required_columns,
                     *[
                         column
                         for column in display_table.columns
-                        if column not in excluded_columns
+                        if column not in required_columns
                     ],
                 ]
 
