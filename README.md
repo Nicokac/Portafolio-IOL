@@ -36,55 +36,28 @@ La pestaña ya se encuentra disponible de forma estable y en cada sesión combin
 
 El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible, incluso en esta fase estable.
 
-La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL `https://finance.yahoo.com/quote/<ticker>`. En universos dinámicos descargados de Yahoo la columna reutiliza directamente el *slug* oficial (por ejemplo, `AAPL`), mientras que el stub determinista sintetiza enlaces equivalentes para sus 37 emisores (`UTLX`, `FNCL1`, etc.) manteniendo el mismo formato. Esto permite a QA y a los integradores validar rápidamente la procedencia sin importar si el listado proviene de datos live o del fallback.
+La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL `https://finance.yahoo.com/quote/<ticker>`. En universos dinámicos descargados de Yahoo la columna reutiliza directamente el *slug* oficial (por ejemplo, `AAPL`), mientras que el stub determinista sintetiza enlaces equivalentes para sus 37 emisores (`UTLX`, `FNCL1`, etc.) manteniendo el mismo formato. Esto permite a QA y a los integradores validar rápidamente la procedencia sin importar si el listado proviene de datos live o del fallback. A partir de la release actual, el listado añade la columna `Score` para dejar a la vista el puntaje compuesto que define el orden del ranking y, cuando corresponde, explicita el preset o filtro destacado que disparó la selección.
 
-| Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % | Yahoo Finance Link |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AAPL | Technology | 18.5 | 12 | 14.2 | 6.1 | 6.6 | 1.8 | 2,800,000 | 30.2 | 7.4 | [Ver ficha](https://finance.yahoo.com/quote/AAPL) |
-| MSFT | Technology | 28.3 | 20 | 11.7 | 9.2 | 9.8 | 1.1 | 2,450,000 | 33.5 | 14.8 | [Ver ficha](https://finance.yahoo.com/quote/MSFT) |
-| GOOGL | Communication Services | 0.0 | 0 | 0.0 | 5.2 | 6.1 | 2.3 | 1,750,000 | 27.6 | 9.8 | [Ver ficha](https://finance.yahoo.com/quote/GOOGL) |
-| KO | Consumer Defensive | 73.0 | 61 | 7.5 | 2.3 | 2.4 | 0.3 | 260,000 | 24.7 | 4.3 | [Ver ficha](https://finance.yahoo.com/quote/KO) |
-| PEP | Consumer Defensive | 68.5 | 51 | 8.9 | 6.9 | 7.3 | 1.5 | 250,000 | 25.4 | 6.2 | [Ver ficha](https://finance.yahoo.com/quote/PEP) |
-| JNJ | Healthcare | 51.2 | 59 | 6.9 | 8.5 | 8.7 | 0.6 | 415,000 | 21.4 | 3.1 | [Ver ficha](https://finance.yahoo.com/quote/JNJ) |
-| ABBV | Healthcare | 42.3 | 10 | 12.4 | 6.8 | 7.4 | 1.2 | 262,000 | 21.1 | 5.6 | [Ver ficha](https://finance.yahoo.com/quote/ABBV) |
-| NUE | Materials | 33.4 | 49 | 9.8 | 18.4 | 18.6 | 0.0 | 42,000 | 8.9 | -6.2 | [Ver ficha](https://finance.yahoo.com/quote/NUE) |
-| UNP | Industrials | 45.1 | 16 | 12.2 | 10.5 | 11.2 | 2.9 | 130,000 | 22.5 | 5.1 | [Ver ficha](https://finance.yahoo.com/quote/UNP) |
-| HON | Industrials | 41.4 | 12 | 9.1 | 8.0 | 8.8 | 1.7 | 130,000 | 24.8 | 3.9 | [Ver ficha](https://finance.yahoo.com/quote/HON) |
-| V | Financial Services | 21.6 | 14 | 17.3 | 8.7 | 9.6 | 2.8 | 495,000 | 29.5 | 11.2 | [Ver ficha](https://finance.yahoo.com/quote/V) |
-| JPM | Financial Services | 32.5 | 13 | 9.9 | 13.9 | 14.3 | 1.9 | 440,000 | 10.9 | 8.4 | [Ver ficha](https://finance.yahoo.com/quote/JPM) |
-| NEE | Utilities | 56.2 | 28 | 10.8 | 3.1 | 3.5 | 0.0 | 160,000 | 25.7 | 7.1 | [Ver ficha](https://finance.yahoo.com/quote/NEE) |
-| DUK | Utilities | 73.4 | 16 | 5.8 | 5.1 | 5.4 | 0.0 | 73,000 | 18.6 | 2.9 | [Ver ficha](https://finance.yahoo.com/quote/DUK) |
-| UTLX | Utilities | 61.5 | 19 | 6.7 | 3.1 | 3.3 | 0.0 | 58,600 | 19.2 | 4.6 | [Ver ficha](https://finance.yahoo.com/quote/UTLX) |
-| XOM | Energy | 41.8 | 40 | 4.4 | 10.1 | 9.7 | 3.4 | 460,000 | 11.4 | 9.6 | [Ver ficha](https://finance.yahoo.com/quote/XOM) |
-| CVX | Energy | 37.2 | 35 | 6.4 | 12.2 | 11.9 | 2.7 | 300,000 | 12.8 | 11.5 | [Ver ficha](https://finance.yahoo.com/quote/CVX) |
-| PLD | Real Estate | 63.5 | 12 | 9.4 | 3.6 | 3.9 | 0.0 | 115,000 | 28.9 | 8.7 | [Ver ficha](https://finance.yahoo.com/quote/PLD) |
-| MELI | Consumer Cyclical | 0.0 | 0 | 0.0 | 4.8 | 6.2 | 0.0 | 72,000 | 76.4 | 31.5 | [Ver ficha](https://finance.yahoo.com/quote/MELI) |
-| BBD | Financial Services | 28.0 | 6 | 7.1 | 1.6 | 1.8 | 1.0 | 47,000 | 9.5 | 12.4 | [Ver ficha](https://finance.yahoo.com/quote/BBD) |
-| FNCL1 | Financials | 29.4 | 16 | 10.8 | 4.8 | 5.2 | 2.4 | 96,500 | 17.6 | 9.4 | [Ver ficha](https://finance.yahoo.com/quote/FNCL1) |
-| FNCL2 | Financials | 34.1 | 12 | 8.7 | 3.5 | 3.8 | 1.6 | 73,400 | 15.8 | 6.3 | [Ver ficha](https://finance.yahoo.com/quote/FNCL2) |
-| FNCL3 | Financials | 26.7 | 9 | 11.5 | 5.6 | 6.0 | 2.9 | 128,900 | 18.9 | 11.1 | [Ver ficha](https://finance.yahoo.com/quote/FNCL3) |
-| MTRL | Materials | 36.5 | 11 | 8.2 | 4.2 | 4.6 | 1.4 | 68,000 | 19.4 | 6.3 | [Ver ficha](https://finance.yahoo.com/quote/MTRL) |
-| MATX | Materials | 31.8 | 14 | 10.1 | 4.9 | 5.3 | 1.9 | 52,300 | 17.2 | 9.1 | [Ver ficha](https://finance.yahoo.com/quote/MATX) |
-| CYCX | Consumer Cyclical | 22.5 | 8 | 13.1 | 4.6 | 5.5 | 2.5 | 78,000 | 27.1 | 15.7 | [Ver ficha](https://finance.yahoo.com/quote/CYCX) |
-| RSPR | Real Estate | 70.2 | 9 | 7.4 | 2.9 | 3.2 | 0.0 | 32,000 | 18.9 | 5.2 | [Ver ficha](https://finance.yahoo.com/quote/RSPR) |
-| ENRGX | Energy | 38.7 | 18 | 5.6 | 5.5 | 5.8 | 1.9 | 95,000 | 13.6 | 8.9 | [Ver ficha](https://finance.yahoo.com/quote/ENRGX) |
-| SOLR | Energy | 24.1 | 5 | 16.8 | 1.5 | 2.1 | 0.5 | 26,000 | 35.2 | 22.4 | [Ver ficha](https://finance.yahoo.com/quote/SOLR) |
-| LATC | Consumer Cyclical | 31.7 | 7 | 9.9 | 2.0 | 2.3 | 1.3 | 18,500 | 17.8 | 12.1 | [Ver ficha](https://finance.yahoo.com/quote/LATC) |
-| CNMR1 | Consumer | 48.6 | 15 | 10.2 | 3.1 | 3.4 | 0.9 | 42,500 | 19.6 | 7.9 | [Ver ficha](https://finance.yahoo.com/quote/CNMR1) |
-| CNMR2 | Consumer | 36.9 | 11 | 12.6 | 3.9 | 4.4 | 1.7 | 58,200 | 22.4 | 10.5 | [Ver ficha](https://finance.yahoo.com/quote/CNMR2) |
-| CNMR3 | Consumer | 41.2 | 13 | 9.4 | 2.8 | 3.1 | 1.0 | 37,800 | 18.9 | 6.7 | [Ver ficha](https://finance.yahoo.com/quote/CNMR3) |
-| FNSH | Consumer Defensive | 55.4 | 14 | 6.1 | 3.0 | 3.3 | 0.9 | 54,000 | 20.3 | 4.7 | [Ver ficha](https://finance.yahoo.com/quote/FNSH) |
-| INFR | Industrials | 29.8 | 11 | 10.4 | 4.9 | 5.4 | 2.2 | 67,000 | 21.7 | 9.5 | [Ver ficha](https://finance.yahoo.com/quote/INFR) |
-| DATA | Technology | 15.2 | 4 | 18.7 | 3.8 | 4.9 | 1.6 | 125,000 | 38.1 | 24.6 | [Ver ficha](https://finance.yahoo.com/quote/DATA) |
-| HLTH | Healthcare | 34.9 | 9 | 11.4 | 3.9 | 4.4 | 1.1 | 58,000 | 23.4 | 8.8 | [Ver ficha](https://finance.yahoo.com/quote/HLTH) |
+| Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % | Score | Filtro destacado | Yahoo Finance Link |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| AAPL | Technology | 18.5 | 12 | 14.2 | 6.1 | 6.6 | 1.8 | 2,800,000 | 30.2 | 7.4 | 88 | Crecimiento balanceado ≥85 | [Ver ficha](https://finance.yahoo.com/quote/AAPL) |
+| MSFT | Technology | 28.3 | 20 | 11.7 | 9.2 | 9.8 | 1.1 | 2,450,000 | 33.5 | 14.8 | 90 | Growth + buybacks ≥80 | [Ver ficha](https://finance.yahoo.com/quote/MSFT) |
+| KO | Consumer Defensive | 73.0 | 61 | 7.5 | 2.3 | 2.4 | 0.3 | 260,000 | 24.7 | 4.3 | 84 | Dividendos defensivos ≥80 | [Ver ficha](https://finance.yahoo.com/quote/KO) |
+| NEE | Utilities | 56.2 | 28 | 10.8 | 3.1 | 3.5 | 0.0 | 160,000 | 25.7 | 7.1 | 82 | Dividendos defensivos ≥80 | [Ver ficha](https://finance.yahoo.com/quote/NEE) |
+| UTLX | Utilities | 61.5 | 19 | 6.7 | 3.1 | 3.3 | 0.0 | 58,600 | 19.2 | 4.6 | 86 | Stub estable ≥80 | [Ver ficha](https://finance.yahoo.com/quote/UTLX) |
+| ENRGX | Energy | 38.7 | 18 | 5.6 | 5.5 | 5.8 | 1.9 | 95,000 | 13.6 | 8.9 | 83 | Recompras agresivas ≥80 | [Ver ficha](https://finance.yahoo.com/quote/ENRGX) |
 
-Cada registro respeta principios de la estrategia Andy: payout y P/E en rangos saludables, rachas y CAGR positivos, EPS forward superiores al trailing, buybacks y crecimiento de ingresos presentes cuando corresponde. El dataset se utiliza tanto para fallback como para pruebas end-to-end, garantizando que la aplicación conserve diversidad sectorial, métricas completas y comportamiento determinista durante los failovers.
+El muestreo superior refleja la combinación live + fallback que hoy ve la UI: los símbolos clásicos (`AAPL`, `MSFT`, `KO`, `NEE`) provienen de Yahoo, mientras que `UTLX` y `ENRGX` pertenecen al stub determinista y conservan las mismas métricas que en la versión estable anterior para garantizar reproducibilidad en QA.
 
-Durante los failovers la UI etiqueta el origen como `stub` y continúa respetando los filtros configurados. Los tests automatizados utilizan este dataset extendido para comprobar diversidad sectorial y completitud de fundamentals, por lo que cualquier ajuste debe mantener la cobertura y las columnas documentadas.
+El botón **"Descargar resultados (.csv)"** replica esta grilla y genera un archivo con las mismas columnas visibles en la UI (incluidos `score_compuesto`, el filtro aplicado y el enlace a Yahoo). Así se asegura paridad total entre lo que se analiza en pantalla y lo que se comparte para backtesting o QA, sin importar si la sesión proviene del origen `yahoo` o `stub`.
+
+Cada registro respeta los principios de la estrategia Andy: payout y P/E saludables, rachas y CAGR positivos, EPS forward por encima del trailing, buybacks y crecimiento de ingresos cuando corresponde. En la release actual, ese set determinista permite verificar que `score_compuesto` se mantenga estable tanto en modo `yahoo` como `stub`, sosteniendo la comparabilidad del ranking.
+
+Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas contextuales del caption principal. Los tests automatizados siguen apoyándose en este dataset extendido para validar diversidad sectorial, completitud de fundamentals y la presencia de la nueva columna `Score`.
 
 #### Telemetría del barrido
 
-El panel muestra una nota de telemetría por cada barrido, tanto si la corrida proviene de Yahoo Finance como del stub local. El helper `shared.ui.notes.format_note` arma el texto en base a los campos reportados por cada origen y selecciona la severidad adecuada (`ℹ️` o `⚠️`) según los umbrales definidos.
+El panel muestra una nota de telemetría por cada barrido, tanto si la corrida proviene de Yahoo Finance como del stub local. El helper `shared.ui.notes.format_note` arma el texto en base a los campos reportados por cada origen y selecciona la severidad adecuada (`ℹ️` o `⚠️`) según los umbrales vigentes.
 
 **Campos reportados**
 
@@ -93,21 +66,20 @@ El panel muestra una nota de telemetría por cada barrido, tanto si la corrida p
 - **Universo final (`universe` / `universe size`)**: tickers que sobreviven al filtrado; permite visualizar el recorte efectivo.
 - **Ratios de descarte (`discarded`)**: descomposición porcentual entre descartes por fundamentals y por técnicos, útil para saber qué bloque necesita ajustes.
 - **Fuente (`origin`)**: etiqueta visible (`yahoo` / `stub`) que coincide con el caption del listado para asegurar trazabilidad.
+- **Score medio (`score_avg`)**: promedio del `score_compuesto` tras aplicar filtros; ayuda a detectar si el preset activo está elevando o relajando el umbral configurado.
 
-**Ejemplos reales**
+**Ejemplos actualizados**
 
 ```
-ℹ️ Yahoo • runtime: 5.8 s • universe initial: 142 • universe final: 128 • discarded: 8% fundamentals / 2% técnicos
-ℹ️ Stub • runtime: 2.4 s • universe initial: 37 • universe final: 37 • discarded: 18% fundamentals / 10% técnicos
-⚠️ Yahoo • runtime: 11.6 s • universe initial: 142 • universe final: 9 • discarded: 54% fundamentals / 34% técnicos
-⚠️ Stub • runtime: 6.1 s • universe initial: 37 • universe final: 12 • discarded: 51% fundamentals / 17% técnicos
+ℹ️ Yahoo • runtime: 5.8 s • universe initial: 142 • universe final: 128 • discarded: 8% fundamentals / 2% técnicos • score_avg: 86
+ℹ️ Stub • runtime: 2.4 s • universe initial: 37 • universe final: 37 • discarded: 18% fundamentals / 10% técnicos • score_avg: 84
+⚠️ Yahoo • runtime: 11.6 s • universe initial: 142 • universe final: 9 • discarded: 54% fundamentals / 34% técnicos • score_avg: 79
+⚠️ Stub • runtime: 6.1 s • universe initial: 37 • universe final: 12 • discarded: 51% fundamentals / 17% técnicos • score_avg: 76
 ```
 
 En condiciones saludables la nota se mantiene en severidad `ℹ️`. Cuando el runtime supera los límites esperados (≈3 s para el stub, 8–9 s para Yahoo), el universo final cae por debajo del umbral mínimo configurado o los ratios de descarte exceden el 35 % de manera sostenida, la severidad escala automáticamente a `⚠️` y se resalta en la UI.
 
 **Guía rápida para QA y usuarios**
-
-Con la pestaña de oportunidades ya en disponibilidad estable, las comprobaciones de QA se mantienen enfocadas en validar que la experiencia se preserve consistente entre el universo live y el stub determinista.
 
 | Señal | Qué revisar | Acción sugerida |
 | --- | --- | --- |
@@ -115,12 +87,13 @@ Con la pestaña de oportunidades ya en disponibilidad estable, las comprobacione
 | `universe final < 10` | Filtros demasiado agresivos o caída de datos en la fuente. | Relajar filtros temporalmente y validar la disponibilidad de Yahoo/stub. |
 | `discarded fundamentals > 35 %` | Fundamentales incompletos para gran parte del universo. | Revisar los símbolos afectados; puede requerir recalibrar la caché o invalidar datos corruptos. |
 | `discarded técnicos > 35 %` | Indicadores técnicos no disponibles. | Confirmar que el toggle de indicadores esté activo y que las series históricas se descarguen correctamente. |
+| `score_avg < 80` (en presets exigentes) | Preset demasiado permisivo para la estrategia elegida. | Ajustar el slider de score o cambiar el preset recomendado. |
 
 Las notas siempre incluyen los porcentajes de descarte fundamental y técnico. Cuando alguno de los dos no aplica, el stub reporta explícitamente `0%` para preservar la consistencia del formato y evitar falsos positivos en los tests automatizados. Los equipos de QA pueden apoyarse en estos indicadores para automatizar aserciones: por ejemplo, validar que en modo stub el universo final se mantenga en 37 con severidad `ℹ️` o que en pruebas de resiliencia la degradación quede marcada con `⚠️`.
 
 Adicionalmente, las guías de QA asumen que tanto los 37 tickers deterministas del stub como los universos dinámicos de Yahoo exponen la columna `Yahoo Finance Link` con el patrón `https://finance.yahoo.com/quote/<ticker>`. Cualquier verificación de UI o fixtures debe asegurar que la URL se construya con el mismo formato sin importar el origen para conservar paridad funcional entre ambientes.
 
-El ranking final pondera criterios técnicos y fundamentales alineados con los parámetros disponibles en el backend. Los filtros actualmente soportados corresponden a los argumentos `max_payout`, `min_div_streak`, `min_cagr`, `min_market_cap`, `max_pe`, `min_revenue_growth`, `min_eps_growth`, `min_buyback`, `include_latam`, `sectors` e `include_technicals`, combinando métricas de dividendos, valuación, crecimiento y cobertura geográfica.
+El ranking final pondera dividendos, valuación, crecimiento y cobertura geográfica para sostener la consistencia del score compuesto.
 
 Cada oportunidad obtiene un **score normalizado en escala 0-100** que promedia aportes de payout, racha de dividendos, CAGR, recompras, RSI y MACD. Esta normalización permite comparar emisores de distintas fuentes con un criterio homogéneo. Los resultados que queden por debajo del umbral configurado se descartan automáticamente para reducir ruido.
 
@@ -130,12 +103,15 @@ Los controles disponibles en la UI permiten ajustar esos filtros sin modificar c
 - Checkbox **Incluir indicadores técnicos** para agregar RSI y medias móviles al resultado.
 - Inputs dedicados a crecimiento mínimo de EPS y porcentaje mínimo de recompras (`buybacks`).
 - Sliders y number inputs para capitalización, payout, P/E, crecimiento de ingresos, racha/CAGR de dividendos e inclusión de Latinoamérica.
+- Slider de score mínimo para ajustar `score_compuesto` sin salir de la UI.
 - Selector **Perfil recomendado** para aplicar presets preconfigurados según el tipo de oportunidad que se quiera priorizar:
   - **Dividendos defensivos**: favorece emisores consolidados con payout moderado, más de 10 años de dividendos, crecimiento estable y foco en sectores defensivos (``Consumer Defensive`` y ``Utilities``).
   - **Crecimiento balanceado**: combina expansión de ingresos/EPS de dos dígitos con payout controlado y sesgo hacia ``Technology`` y ``Healthcare`` para captar historias de crecimiento rentable.
   - **Recompras agresivas**: apunta a compañías con recompras netas relevantes, valuaciones razonables e inclusión de indicadores técnicos para reforzar el timing, con foco en ``Financial Services``, ``Technology`` e ``Industrials``.
 
 El umbral mínimo de score y el recorte del **top N** de oportunidades son parametrizables mediante las variables `MIN_SCORE_THRESHOLD` (valor por defecto: `80`) y `MAX_RESULTS` (valor por defecto: `20`). La interfaz utiliza ese valor centralizado como punto de partida en el selector "Máximo de resultados" para reflejar cualquier override definido en la configuración. Puedes redefinirlos desde `.env`, `secrets.toml` o `config.json` para adaptar la severidad del filtro o ampliar/restringir el listado mostrado en la UI. La cabecera del listado muestra notas contextuales cuando se aplican estos recortes y sigue diferenciando la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
+
+Los ejemplos documentados (tabla, presets y telemetría) reflejan la release vigente, donde la UI muestra `score_compuesto` en la grilla principal y conserva el caption `yahoo`/`stub` para todas las variantes de origen.
 
 
 #### ¿Qué significa cada métrica?
