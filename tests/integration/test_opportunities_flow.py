@@ -733,6 +733,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
     severity_fast, _, matched_fast = shared_notes.classify_note(fast_note)
     assert severity_fast == "info"
     assert matched_fast
+    assert "descartados" in fast_note or "sin descartes" in fast_note
     assert df_fast.attrs["_notes"][-1] == fast_note
 
     _configure_perf_counter([20.0, 20.5])
@@ -758,6 +759,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
     severity_slow, _, matched_slow = shared_notes.classify_note(slow_note)
     assert severity_slow == "warning"
     assert matched_slow
+    assert "descartados" in slow_note or "sin descartes" in slow_note
     assert df_slow.attrs["_notes"][-1] == slow_note
 
 

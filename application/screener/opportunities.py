@@ -1280,6 +1280,7 @@ def run_screener_stub(
     result_count = int(result.index.size)
 
     filter_metrics: list[str] = []
+    drop_summary_entries: list[tuple[str, str, int]] = []
     for name, before, after in filter_telemetry:
         if before <= 0:
             continue
@@ -1297,10 +1298,19 @@ def run_screener_stub(
         elif name == "exclude_tickers" and exclude_tickers:
             label = "exclude_tickers"
         filter_metrics.append(f"{label}: {dropped}/{before} ({ratio:.0%})")
+        if dropped > 0:
+            drop_summary_entries.append((name, label, dropped))
 
     metrics_summary = "ningún filtro aplicado"
     if filter_metrics:
         metrics_summary = ", ".join(filter_metrics)
+
+    drop_parts: list[str] = []
+    for name, label, dropped in drop_summary_entries:
+        percentage = (dropped / universe_count) if universe_count else 0.0
+        drop_parts.append(f"{percentage:.0%} descartados por {label}")
+
+    drop_summary = ", ".join(drop_parts) if drop_parts else "sin descartes"
 
     warn_threshold = getattr(
         shared_settings,
@@ -1310,7 +1320,7 @@ def run_screener_stub(
     note_prefix = "⚠️" if elapsed > warn_threshold else "ℹ️"
     telemetry_note = (
         f"{note_prefix} Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
-        f"(resultado: {result_count})"
+        f"({drop_summary}, resultado: {result_count})"
     )
 
     log_method = LOGGER.warning if note_prefix == "⚠️" else LOGGER.info

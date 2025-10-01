@@ -56,6 +56,7 @@ def _assert_has_stub_note(notes: list[str], expected_severity: str = "info") -> 
     assert severity == expected_severity
     assert matched, "La nota del stub debería clasificarse por prefijo"
     assert content.startswith("Stub procesó "), "La nota debería describir la telemetría"
+    assert "descartados" in note or "sin descartes" in note
     return note
 
 
@@ -96,16 +97,28 @@ def test_filters_apply_to_base_dataset() -> None:
     ]:
         assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
 
-    assert f"(resultado: {len(df)})" in telemetry_note
-
+    assert f"resultado: {len(df)}" in telemetry_note
     bullet_notes = [note for note in notes if note.startswith("• ")]
     assert bullet_notes, "Se esperaban ratios de descarte como viñetas"
+    universe_count = len(opportunities_module._BASE_OPPORTUNITIES)
     for filter_key in ("min_market_cap", "max_pe", "min_revenue_growth", "include_latam"):
         label = filter_key
         if filter_key == "include_latam":
             label = "include_latam=False"
-        pattern = rf"^• {label}: \d+/\d+ \(\d+%\)$"
-        assert any(re.search(pattern, bullet) for bullet in bullet_notes), bullet_notes
+        pattern = rf"^• {label}: (\d+)/(\d+) \(\d+%\)$"
+        match = None
+        for bullet in bullet_notes:
+            candidate = re.search(pattern, bullet)
+            if candidate:
+                match = candidate
+                break
+        assert match, bullet_notes
+        dropped = int(match.group(1))
+        if dropped > 0:
+            expected_pct = f"{(dropped / universe_count):.0%}"
+            assert (
+                f"{expected_pct} descartados por {label}" in telemetry_note
+            ), telemetry_note
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
