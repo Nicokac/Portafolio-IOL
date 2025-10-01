@@ -705,7 +705,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
 
     def _extract_stub_note(notes: Iterable[str]) -> str:
         for note in notes:
-            if note.startswith("ℹ️ Stub procesó"):
+            if note.startswith("ℹ️ Stub procesó") or note.startswith("⚠️ Stub procesó"):
                 return note
         raise AssertionError("Se esperaba una nota del stub")
 
@@ -756,7 +756,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
 
     slow_note = _extract_stub_note(notes_slow)
     severity_slow, _, matched_slow = shared_notes.classify_note(slow_note)
-    assert severity_slow == "info"
+    assert severity_slow == "warning"
     assert matched_slow
     assert df_slow.attrs["_notes"][-1] == slow_note
 

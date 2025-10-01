@@ -43,16 +43,17 @@ def _run_stub_with_notes(**kwargs: object) -> tuple[pd.DataFrame, list[str]]:
 
 
 def _find_stub_note(notes: list[str]) -> str:
+    prefixes = ("ℹ️", "⚠️")
     for note in notes:
-        if note.startswith("ℹ️ Stub procesó ") and " segundos" in note:
+        if any(note.startswith(f"{prefix} Stub procesó ") for prefix in prefixes) and " segundos" in note:
             return note
     raise AssertionError("Se esperaba una nota de telemetría del stub")
 
 
-def _assert_has_stub_note(notes: list[str]) -> str:
+def _assert_has_stub_note(notes: list[str], expected_severity: str = "info") -> str:
     note = _find_stub_note(notes)
     severity, content, matched = shared_notes.classify_note(note)
-    assert severity == "info"
+    assert severity == expected_severity
     assert matched, "La nota del stub debería clasificarse por prefijo"
     assert content.startswith("Stub procesó "), "La nota debería describir la telemetría"
     return note
@@ -248,15 +249,16 @@ def test_run_screener_stub_emits_telemetry_note() -> None:
 
 
 @pytest.mark.parametrize(
-    "perf_values",
+    ("perf_values", "expected_severity"),
     [
-        (100.0, 100.05),
-        (200.0, 200.5),
+        ((100.0, 100.05), "info"),
+        ((200.0, 200.5), "warning"),
     ],
 )
-def test_run_screener_stub_classifies_telemetry_as_info(
+def test_run_screener_stub_classifies_telemetry_by_runtime(
     monkeypatch: pytest.MonkeyPatch,
     perf_values: tuple[float, float],
+    expected_severity: str,
 ) -> None:
     calls = iter(perf_values)
 
@@ -267,11 +269,20 @@ def test_run_screener_stub_classifies_telemetry_as_info(
             return perf_values[-1]
 
     monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
+    monkeypatch.setattr(
+        opportunities_module.shared_settings,
+        "STUB_MAX_RUNTIME_WARN",
+        0.25,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        opportunities_module.shared_settings,
+        "stub_max_runtime_warn",
+        0.25,
+        raising=False,
+    )
 
     df, notes = _run_stub_with_notes()
-    note = _assert_has_stub_note(notes)
+    note = _assert_has_stub_note(notes, expected_severity=expected_severity)
 
-    severity, _, matched = shared_notes.classify_note(note)
-    assert severity == "info"
-    assert matched
     assert df.attrs["_notes"][-1] == note
