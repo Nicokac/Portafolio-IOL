@@ -74,6 +74,10 @@ PRESET_FILTERS: Mapping[str, Mapping[str, object]] = {
 }
 
 
+_CUSTOM_PRESETS_STATE_KEY = "custom_presets"
+_PENDING_PRESET_STATE_KEY = "opportunities_pending_preset"
+
+
 _INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
 _FLOAT_STATE_KEYS = {
     "max_pe",
@@ -106,10 +110,35 @@ def _compute_default_widget_values() -> dict[str, object]:
     }
 
 
+def _get_custom_presets() -> dict[str, Mapping[str, object]]:
+    presets = st.session_state.setdefault(_CUSTOM_PRESETS_STATE_KEY, {})
+    if not isinstance(presets, dict):
+        presets = {}
+        st.session_state[_CUSTOM_PRESETS_STATE_KEY] = presets
+    return presets
+
+
+def _iter_available_presets() -> Sequence[str]:
+    base_options: list[str] = ["Personalizado", *PRESET_FILTERS.keys()]
+    custom_presets = _get_custom_presets()
+    if custom_presets:
+        base_options.extend(sorted(custom_presets))
+    return base_options
+
+
+def _resolve_preset_definition(preset_name: str | None) -> Mapping[str, object] | None:
+    if not preset_name or preset_name == "Personalizado":
+        return None
+    preset = PRESET_FILTERS.get(preset_name)
+    if preset is None:
+        preset = _get_custom_presets().get(preset_name)
+    return preset
+
+
 def _apply_preset(preset_name: str | None) -> None:
     if not preset_name:
         return
-    preset = PRESET_FILTERS.get(preset_name)
+    preset = _resolve_preset_definition(preset_name)
     if not preset:
         return
     defaults = _compute_default_widget_values()
@@ -205,7 +234,115 @@ def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str], str
         if len(result) >= 3 and result[2]:
             source = str(result[2])
         return _normalize_table(table), _normalize_notes(notes), source
-    return _normalize_table(result), [], source
+        return _normalize_table(result), [], source
+
+
+def _slugify_label(label: str) -> str:
+    normalized = [
+        character.lower() if character.isalnum() else "_"
+        for character in str(label)
+    ]
+    slug = "".join(normalized).strip("_")
+    return slug or "preset"
+
+
+def _render_screening_block(
+    result: object,
+    *,
+    heading: str | None = None,
+    download_key: str = "download_opportunities_csv",
+    empty_message: str | None = None,
+) -> None:
+    table, notes, source = _extract_result(result)
+    if heading:
+        st.subheader(heading)
+
+    if table is None or table.empty:
+        st.info(empty_message or "No se encontraron oportunidades con los filtros seleccionados.")
+    else:
+        display_table = table.copy()
+        link_column = "Yahoo Finance Link"
+        column_config: dict[str, st.column_config.Column | st.column_config.LinkColumn] | None = None
+        column_order: list[str] | None = None
+
+        required_columns = ("ticker", link_column)
+        if set(required_columns).issubset(display_table.columns):
+
+            def _resolve_yahoo_url(row: pd.Series) -> str | None:
+                raw_url = row.get(link_column)
+                ticker_value = row.get("ticker")
+
+                url = str(raw_url).strip() if raw_url else ""
+                if not url and ticker_value:
+                    url = f"https://finance.yahoo.com/quote/{ticker_value}"
+                return url or None
+
+            display_table[link_column] = display_table.apply(
+                _resolve_yahoo_url, axis=1
+            )
+            column_config = {
+                link_column: st.column_config.LinkColumn(
+                    label="Yahoo Finance Link",
+                    help="Abrí la ficha del activo en Yahoo Finance.",
+                    display_text=None,
+                )
+            }
+            column_order = [
+                *required_columns,
+                *[
+                    column
+                    for column in display_table.columns
+                    if column not in required_columns
+                ],
+            ]
+
+        st.dataframe(
+            display_table,
+            use_container_width=True,
+            column_config=column_config,
+            column_order=column_order,
+        )
+
+        csv_payload = display_table.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Descargar resultados (.csv)",
+            data=csv_payload,
+            file_name="oportunidades.csv",
+            mime="text/csv",
+            key=download_key,
+        )
+
+    has_stub_or_fallback_note = any(
+        isinstance(note, str)
+        and note.strip().startswith(
+            (
+                "⚠️ Yahoo no disponible — Causa:",
+                "⚠️ Stub procesó",
+                "ℹ️ Stub procesó",
+            )
+        )
+        for note in notes
+    )
+
+    if notes:
+        st.markdown("### Notas del screening")
+        for note in notes:
+            st.markdown(_format_note(note))
+
+    if source == "stub":
+        if not has_stub_or_fallback_note:
+            st.caption(
+                shared_notes.format_note(
+                    "⚠️ Resultados simulados (Yahoo no disponible)"
+                )
+            )
+    else:
+        st.caption("Resultados obtenidos de Yahoo Finance")
+    st.caption(
+        shared_notes.format_note(
+            "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+        )
+    )
 
 
 def render_opportunities_tab() -> None:
@@ -247,10 +384,20 @@ def render_opportunities_tab() -> None:
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
     st.session_state.setdefault("opportunities_preset", "Personalizado")
+    _get_custom_presets()
+
+    pending_preset = st.session_state.pop(_PENDING_PRESET_STATE_KEY, None)
+    if pending_preset:
+        st.session_state["opportunities_preset"] = pending_preset
+        _apply_preset(pending_preset)
+
+    available_presets = list(_iter_available_presets())
+    if st.session_state["opportunities_preset"] not in available_presets:
+        st.session_state["opportunities_preset"] = "Personalizado"
 
     st.selectbox(
         "Perfil recomendado",
-        options=["Personalizado", *PRESET_FILTERS.keys()],
+        options=available_presets,
         key="opportunities_preset",
         on_change=_handle_preset_change,
         help="Aplicá perfiles sugeridos con criterios preconfigurados para iniciar el screening.",
@@ -359,17 +506,68 @@ def render_opportunities_tab() -> None:
             key="sectors",
         )
 
+    current_filters: dict[str, object] = {
+        "min_market_cap": float(min_market_cap),
+        "max_pe": float(max_pe),
+        "min_revenue_growth": float(min_growth),
+        "max_payout": float(max_payout),
+        "min_div_streak": int(min_div_streak),
+        "min_cagr": float(min_cagr),
+        "min_eps_growth": float(min_eps_growth),
+        "min_buyback": float(min_buyback),
+        "include_latam": bool(include_latam),
+        "include_technicals": bool(include_technicals),
+        "min_score_threshold": float(min_score_threshold),
+        "max_results": int(max_results),
+        "sectors": list(sectors),
+    }
+
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
         "el análisis con la configuración estable."
     )
 
-    if st.button(
-        "Buscar oportunidades",
-        key="search_opportunities",
-        type="primary",
-        use_container_width=True,
-    ):
+    with st.expander("Gestionar presets personalizados", expanded=True):
+        with st.form("custom_preset_save_form"):
+            preset_name_input = st.text_input(
+                "Nombre del preset",
+                key="custom_preset_name_input",
+                help="Guardá la configuración actual para reutilizarla en esta sesión.",
+            )
+            save_preset = st.form_submit_button("Guardar preset personalizado")
+            if save_preset:
+                preset_name = preset_name_input.strip()
+                if not preset_name:
+                    st.warning("Indicá un nombre para guardar el preset.")
+                elif preset_name in PRESET_FILTERS:
+                    st.warning("El nombre ingresado coincide con un preset predefinido. Elegí otro identificador.")
+                else:
+                    payload = dict(current_filters)
+                    custom_presets = dict(_get_custom_presets())
+                    custom_presets[preset_name] = payload
+                    st.session_state[_CUSTOM_PRESETS_STATE_KEY] = custom_presets
+                    st.session_state[_PENDING_PRESET_STATE_KEY] = preset_name
+                    st.success(f"Preset '{preset_name}' guardado correctamente.")
+
+        custom_presets = _get_custom_presets()
+        if custom_presets:
+            with st.form("custom_preset_select_form"):
+                options = sorted(custom_presets)
+                preset_selector_default = st.session_state.get("opportunities_preset")
+                if preset_selector_default not in options:
+                    preset_selector_default = options[0]
+                selected_custom = st.selectbox(
+                    "Preset personalizado guardado",
+                    options=options,
+                    index=options.index(preset_selector_default),
+                    key="custom_preset_selector",
+                )
+                apply_preset = st.form_submit_button("Aplicar preset guardado")
+                if apply_preset and selected_custom:
+                    st.session_state[_PENDING_PRESET_STATE_KEY] = selected_custom
+                    st.success(f"Preset '{selected_custom}' aplicado correctamente.")
+
+    def _resolve_generate_callable() -> "Callable[[Mapping[str, object]], Mapping[str, object]] | None":
         try:
             from controllers.opportunities import generate_opportunities_report
         except ImportError as err:  # pragma: no cover - fallback when controller missing
@@ -378,116 +576,98 @@ def render_opportunities_tab() -> None:
                 "Contactá al equipo si el problema persiste."
             )
             st.caption(f"Detalles técnicos: {err}")
+            return None
+
+        return generate_opportunities_report
+
+    results_rendered = False
+
+    if st.button(
+        "Buscar oportunidades",
+        key="search_opportunities",
+        type="primary",
+        use_container_width=True,
+    ):
+        generate_callable = _resolve_generate_callable()
+        if generate_callable is None:
             return
 
-        params = {
-            "min_market_cap": float(min_market_cap),
-            "max_pe": float(max_pe),
-            "min_revenue_growth": float(min_growth),
-            "max_payout": float(max_payout),
-            "min_div_streak": int(min_div_streak),
-            "min_cagr": float(min_cagr),
-            "min_eps_growth": float(min_eps_growth),
-            "min_buyback": float(min_buyback),
-            "include_latam": bool(include_latam),
-            "include_technicals": bool(include_technicals),
-            "min_score_threshold": float(min_score_threshold),
-            "max_results": int(max_results),
-        }
-        if sectors:
-            params["sectors"] = list(sectors)
+        params = dict(current_filters)
+        if not params.get("sectors"):
+            params.pop("sectors", None)
 
         with st.spinner("Generando screening de oportunidades..."):
-            result = generate_opportunities_report(params)
+            result = generate_callable(params)
 
-        table, notes, source = _extract_result(result)
+        _render_screening_block(result, heading="Resultados del screening")
+        results_rendered = True
 
-        if table is None or table.empty:
-            st.info("No se encontraron oportunidades con los filtros seleccionados.")
-        else:
-            st.subheader("Resultados del screening")
-            display_table = table.copy()
-            link_column = "Yahoo Finance Link"
-            column_config: dict[str, st.column_config.Column | st.column_config.LinkColumn] | None = None
-            column_order: list[str] | None = None
+    available_presets = list(_iter_available_presets())
+    st.session_state.setdefault("preset_comparison_left", "Personalizado")
+    st.session_state.setdefault("preset_comparison_right", "Personalizado")
+    if st.session_state["preset_comparison_left"] not in available_presets:
+        st.session_state["preset_comparison_left"] = available_presets[0]
+    if st.session_state["preset_comparison_right"] not in available_presets:
+        st.session_state["preset_comparison_right"] = available_presets[0]
 
-            required_columns = ("ticker", link_column)
-            if set(required_columns).issubset(display_table.columns):
-
-                def _resolve_yahoo_url(row: pd.Series) -> str | None:
-                    raw_url = row.get(link_column)
-                    ticker_value = row.get("ticker")
-
-                    url = str(raw_url).strip() if raw_url else ""
-                    if not url and ticker_value:
-                        url = f"https://finance.yahoo.com/quote/{ticker_value}"
-                    return url or None
-
-                display_table[link_column] = display_table.apply(
-                    _resolve_yahoo_url, axis=1
-                )
-                column_config = {
-                    link_column: st.column_config.LinkColumn(
-                        label="Yahoo Finance Link",
-                        help="Abrí la ficha del activo en Yahoo Finance.",
-                        display_text=None,
-                    )
-                }
-                column_order = [
-                    *required_columns,
-                    *[
-                        column
-                        for column in display_table.columns
-                        if column not in required_columns
-                    ],
-                ]
-
-            st.dataframe(
-                display_table,
-                use_container_width=True,
-                column_config=column_config,
-                column_order=column_order,
-            )
-
-            csv_payload = display_table.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "Descargar resultados (.csv)",
-                data=csv_payload,
-                file_name="oportunidades.csv",
-                mime="text/csv",
-                key="download_opportunities_csv",
-            )
-
-        has_stub_or_fallback_note = any(
-            isinstance(note, str)
-            and note.strip().startswith(
-                (
-                    "⚠️ Yahoo no disponible — Causa:",
-                    "⚠️ Stub procesó",
-                    "ℹ️ Stub procesó",
-                )
-            )
-            for note in notes
+    comparison_results: list[tuple[str, Mapping[str, object], object]] = []
+    with st.form("compare_presets_form"):
+        left_selection = st.selectbox(
+            "Preset columna izquierda",
+            options=available_presets,
+            key="preset_comparison_left",
+            help="Elegí el preset que se mostrará en la primera columna.",
         )
+        right_selection = st.selectbox(
+            "Preset columna derecha",
+            options=available_presets,
+            key="preset_comparison_right",
+            help="Elegí el preset que se mostrará en la segunda columna.",
+        )
+        compare_submit = st.form_submit_button("Comparar presets")
 
-        if notes:
-            st.markdown("### Notas del screening")
-            for note in notes:
-                st.markdown(_format_note(note))
+    if compare_submit:
+        generate_callable = _resolve_generate_callable()
+        if generate_callable is None:
+            return
 
-        if source == "stub":
-            if not has_stub_or_fallback_note:
-                st.caption(
-                    shared_notes.format_note(
-                        "⚠️ Resultados simulados (Yahoo no disponible)"
+        selections = [
+            ("Columna izquierda", left_selection),
+            ("Columna derecha", right_selection),
+        ]
+        for index, (title, preset_name) in enumerate(selections):
+            preset_definition = _resolve_preset_definition(preset_name)
+            if preset_definition is None:
+                filters_payload = dict(current_filters)
+            else:
+                filters_payload = dict(preset_definition)
+
+            with st.spinner(
+                f"Generando screening para '{preset_name or 'Personalizado'}'..."
+            ):
+                comparison_results.append(
+                    (
+                        preset_name or "Personalizado",
+                        filters_payload,
+                        generate_callable(filters_payload),
                     )
                 )
-        else:
-            st.caption("Resultados obtenidos de Yahoo Finance")
-        st.caption(
-            shared_notes.format_note(
-                "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
-            )
-        )
-    else:
+
+        if comparison_results:
+            st.markdown("### Comparativa de presets")
+            columns = st.columns(len(comparison_results))
+            for idx, (column, (preset_label, _, result)) in enumerate(
+                zip(columns, comparison_results)
+            ):
+                with column:
+                    slug = _slugify_label(preset_label)
+                    _render_screening_block(
+                        result,
+                        heading=f"Resultados: {preset_label}",
+                        download_key=f"download_opportunities_csv_{slug}_{idx}",
+                        empty_message="No se encontraron oportunidades para este preset.",
+                    )
+            results_rendered = True
+
+    if not results_rendered:
         st.info("El screening se ejecuta manualmente para evitar demoras innecesarias.")
