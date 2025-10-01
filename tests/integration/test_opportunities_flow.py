@@ -18,6 +18,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from shared.ui import notes as shared_notes
+
 _YAHOO_TEST_MODULE = PROJECT_ROOT / "tests" / "application" / "test_screener_yahoo.py"
 _YAHOO_SPEC = importlib.util.spec_from_file_location(
     "tests.application.test_screener_yahoo",
@@ -681,15 +683,13 @@ def test_opportunities_flow_applies_critical_filters_with_stub_dataset(
     assert any("Resultados simulados" in caption for caption in captions)
 
 
-def test_fallback_stub_emits_runtime_severity_notes(
+def test_fallback_stub_emits_runtime_telemetry_note(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from controllers import opportunities as controller_module
     import application.screener.opportunities as opportunities_module
-    import shared.settings as shared_settings
 
     monkeypatch.setattr(controller_module, "run_screener_yahoo", None, raising=False)
-    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.2, raising=False)
 
     def _configure_perf_counter(values: Iterable[float]) -> None:
         sequence = list(values)
@@ -705,7 +705,7 @@ def test_fallback_stub_emits_runtime_severity_notes(
 
     def _extract_stub_note(notes: Iterable[str]) -> str:
         for note in notes:
-            if note.startswith("ℹ️ Stub procesó") or note.startswith("⚠️ Stub procesó"):
+            if note.startswith("ℹ️ Stub procesó"):
                 return note
         raise AssertionError("Se esperaba una nota del stub")
 
@@ -730,7 +730,9 @@ def test_fallback_stub_emits_runtime_severity_notes(
 
     fast_note = _extract_stub_note(notes_fast)
     assert source_fast == "stub"
-    assert fast_note.startswith("ℹ️ ")
+    severity_fast, _, matched_fast = shared_notes.classify_note(fast_note)
+    assert severity_fast == "info"
+    assert matched_fast
     assert df_fast.attrs["_notes"][-1] == fast_note
 
     _configure_perf_counter([20.0, 20.5])
@@ -753,7 +755,9 @@ def test_fallback_stub_emits_runtime_severity_notes(
     )
 
     slow_note = _extract_stub_note(notes_slow)
-    assert slow_note.startswith("⚠️ ")
+    severity_slow, _, matched_slow = shared_notes.classify_note(slow_note)
+    assert severity_slow == "info"
+    assert matched_slow
     assert df_slow.attrs["_notes"][-1] == slow_note
 
 

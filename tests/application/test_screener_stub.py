@@ -14,7 +14,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from application.screener.opportunities import run_screener_stub
 import application.screener.opportunities as opportunities_module
-from shared import settings as shared_settings
+from shared.ui import notes as shared_notes
 
 
 _CRITICAL_SECTORS = (
@@ -44,14 +44,18 @@ def _run_stub_with_notes(**kwargs: object) -> tuple[pd.DataFrame, list[str]]:
 
 def _find_stub_note(notes: list[str]) -> str:
     for note in notes:
-        if note.startswith("ℹ️ Stub procesó ") or note.startswith("⚠️ Stub procesó "):
-            if " segundos" in note:
-                return note
+        if note.startswith("ℹ️ Stub procesó ") and " segundos" in note:
+            return note
     raise AssertionError("Se esperaba una nota de telemetría del stub")
 
 
-def _assert_has_stub_note(notes: list[str]) -> None:
-    _find_stub_note(notes)
+def _assert_has_stub_note(notes: list[str]) -> str:
+    note = _find_stub_note(notes)
+    severity, content, matched = shared_notes.classify_note(note)
+    assert severity == "info"
+    assert matched, "La nota del stub debería clasificarse por prefijo"
+    assert content.startswith("Stub procesó "), "La nota debería describir la telemetría"
+    return note
 
 
 def test_filters_apply_to_base_dataset() -> None:
@@ -61,8 +65,7 @@ def test_filters_apply_to_base_dataset() -> None:
         min_revenue_growth=5.0,
         include_latam=False,
     )
-    _assert_has_stub_note(notes)
-    telemetry_note = _find_stub_note(notes)
+    telemetry_note = _assert_has_stub_note(notes)
     base = pd.DataFrame(opportunities_module._BASE_OPPORTUNITIES)
     base_filtered = base[
         (base["market_cap"] >= 100_000)
@@ -93,13 +96,15 @@ def test_filters_apply_to_base_dataset() -> None:
         assert base_filtered[column].notna().all(), f"Expected column '{column}' to have values in the base dataset"
 
     assert f"(resultado: {len(df)})" in telemetry_note
-    assert "descartes:" in telemetry_note
+
+    bullet_notes = [note for note in notes if note.startswith("• ")]
+    assert bullet_notes, "Se esperaban ratios de descarte como viñetas"
     for filter_key in ("min_market_cap", "max_pe", "min_revenue_growth", "include_latam"):
         label = filter_key
         if filter_key == "include_latam":
             label = "include_latam=False"
-        pattern = rf"{label}: \d+/\d+ \(\d+%\)"
-        assert re.search(pattern, telemetry_note), telemetry_note
+        pattern = rf"^• {label}: \d+/\d+ \(\d+%\)$"
+        assert any(re.search(pattern, bullet) for bullet in bullet_notes), bullet_notes
 
 
 def test_include_latam_flag_keeps_companies_when_enabled() -> None:
@@ -242,42 +247,31 @@ def test_run_screener_stub_emits_telemetry_note() -> None:
     _assert_has_stub_note(notes)
 
 
-def test_run_screener_stub_emits_info_severity_under_threshold(
+@pytest.mark.parametrize(
+    "perf_values",
+    [
+        (100.0, 100.05),
+        (200.0, 200.5),
+    ],
+)
+def test_run_screener_stub_classifies_telemetry_as_info(
     monkeypatch: pytest.MonkeyPatch,
+    perf_values: tuple[float, float],
 ) -> None:
-    calls = iter([100.0, 100.05])
+    calls = iter(perf_values)
 
     def _fake_perf_counter() -> float:
         try:
             return next(calls)
         except StopIteration:
-            return 100.05
+            return perf_values[-1]
 
     monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
-    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.2, raising=False)
 
     df, notes = _run_stub_with_notes()
-    note = _find_stub_note(notes)
+    note = _assert_has_stub_note(notes)
 
-    assert note.startswith("ℹ️ ")
+    severity, _, matched = shared_notes.classify_note(note)
+    assert severity == "info"
+    assert matched
     assert df.attrs["_notes"][-1] == note
-
-
-def test_run_screener_stub_emits_warning_severity_over_threshold(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = iter([200.0, 200.5])
-
-    def _fake_perf_counter() -> float:
-        try:
-            return next(calls)
-        except StopIteration:
-            return 200.5
-
-    monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
-    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.25, raising=False)
-
-    _df, notes = _run_stub_with_notes()
-    note = _find_stub_note(notes)
-
-    assert note.startswith("⚠️ ")

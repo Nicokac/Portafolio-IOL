@@ -1279,13 +1279,6 @@ def run_screener_stub(
     elapsed = time.perf_counter() - loop_start
     result_count = int(result.index.size)
 
-    try:
-        warn_threshold = float(getattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.25))
-    except (TypeError, ValueError):
-        warn_threshold = 0.25
-
-    severity = "⚠️" if elapsed > warn_threshold else "ℹ️"
-
     filter_metrics: list[str] = []
     for name, before, after in filter_telemetry:
         if before <= 0:
@@ -1303,33 +1296,30 @@ def run_screener_stub(
             label = "manual_tickers"
         elif name == "exclude_tickers" and exclude_tickers:
             label = "exclude_tickers"
-        filter_metrics.append(
-            f"{label}: {dropped}/{before} ({ratio:.0%})"
-        )
+        filter_metrics.append(f"{label}: {dropped}/{before} ({ratio:.0%})")
 
     metrics_summary = "ningún filtro aplicado"
     if filter_metrics:
         metrics_summary = ", ".join(filter_metrics)
 
     LOGGER.info(
-        "%s Stub screener processed %s tickers in %.3f seconds (threshold: %.3f, resultado: %s). Discards: %s",
-        severity,
+        "Stub screener processed %s tickers in %.3f seconds (resultado: %s). Discards: %s",
         universe_count,
         elapsed,
-        warn_threshold,
         result_count,
         metrics_summary,
     )
 
     telemetry_note = (
-        f"{severity} Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
+        f"ℹ️ Stub procesó {universe_count} tickers en {elapsed:.2f} segundos "
         f"(resultado: {result_count})"
     )
-    if filter_metrics:
-        telemetry_note += " · descartes: " + ", ".join(filter_metrics)
 
     notes_attr = result.attrs.setdefault("_notes", [])
     notes_attr.append(telemetry_note)
+    if filter_metrics:
+        for metric in filter_metrics:
+            notes_attr.append(f"• {metric}")
 
     return result, list(notes_attr)
 
