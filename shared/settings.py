@@ -27,6 +27,8 @@ yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
+stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
+STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
 # Backwards compatibility for legacy imports
 YAHOO_FUNDAMENTALS_TTL: int = yahoo_fundamentals_ttl
@@ -55,6 +57,8 @@ __all__ = [
     "yahoo_quotes_ttl",
     "min_score_threshold",
     "max_results",
+    "stub_max_runtime_warn",
+    "STUB_MAX_RUNTIME_WARN",
     "YAHOO_FUNDAMENTALS_TTL",
     "YAHOO_QUOTES_TTL",
     "MIN_SCORE_THRESHOLD",

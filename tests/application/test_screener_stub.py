@@ -13,6 +13,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from application.screener.opportunities import run_screener_stub
 import application.screener.opportunities as opportunities_module
+from shared import settings as shared_settings
 
 
 _CRITICAL_SECTORS = (
@@ -40,10 +41,16 @@ def _run_stub_with_notes(**kwargs: object) -> tuple[pd.DataFrame, list[str]]:
     return df, notes
 
 
+def _find_stub_note(notes: list[str]) -> str:
+    for note in notes:
+        if note.startswith("ℹ️ Stub procesó ") or note.startswith("⚠️ Stub procesó "):
+            if " segundos" in note:
+                return note
+    raise AssertionError("Se esperaba una nota de telemetría del stub")
+
+
 def _assert_has_stub_note(notes: list[str]) -> None:
-    assert any(
-        note.startswith("ℹ️ Stub procesó ") and " segundos" in note for note in notes
-    ), "Se esperaba una nota de telemetría del stub"
+    _find_stub_note(notes)
 
 
 def test_filters_apply_to_base_dataset() -> None:
@@ -222,3 +229,44 @@ def test_run_screener_stub_truncates_large_universe(monkeypatch: pytest.MonkeyPa
 def test_run_screener_stub_emits_telemetry_note() -> None:
     _df, notes = _run_stub_with_notes()
     _assert_has_stub_note(notes)
+
+
+def test_run_screener_stub_emits_info_severity_under_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = iter([100.0, 100.05])
+
+    def _fake_perf_counter() -> float:
+        try:
+            return next(calls)
+        except StopIteration:
+            return 100.05
+
+    monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
+    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.2, raising=False)
+
+    df, notes = _run_stub_with_notes()
+    note = _find_stub_note(notes)
+
+    assert note.startswith("ℹ️ ")
+    assert df.attrs["_notes"][-1] == note
+
+
+def test_run_screener_stub_emits_warning_severity_over_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = iter([200.0, 200.5])
+
+    def _fake_perf_counter() -> float:
+        try:
+            return next(calls)
+        except StopIteration:
+            return 200.5
+
+    monkeypatch.setattr(opportunities_module.time, "perf_counter", _fake_perf_counter)
+    monkeypatch.setattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.25, raising=False)
+
+    _df, notes = _run_stub_with_notes()
+    note = _find_stub_note(notes)
+
+    assert note.startswith("⚠️ ")

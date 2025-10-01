@@ -110,6 +110,10 @@ class Settings:
         )
         self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 20)))
 
+        self.STUB_MAX_RUNTIME_WARN: float = float(
+            os.getenv("STUB_MAX_RUNTIME_WARN", cfg.get("STUB_MAX_RUNTIME_WARN", 0.25))
+        )
+
         flag_value = os.getenv(
             "FEATURE_OPPORTUNITIES_TAB",
             cfg.get("FEATURE_OPPORTUNITIES_TAB", "true"),

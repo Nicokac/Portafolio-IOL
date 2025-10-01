@@ -1224,22 +1224,31 @@ def run_screener_stub(
     )
 
     elapsed = time.perf_counter() - loop_start
-    processed_count = int(len(result.index))
+    processed_count = int(result.index.size)
+
+    try:
+        warn_threshold = float(getattr(shared_settings, "STUB_MAX_RUNTIME_WARN", 0.25))
+    except (TypeError, ValueError):
+        warn_threshold = 0.25
+
+    severity = "⚠️" if elapsed > warn_threshold else "ℹ️"
 
     LOGGER.info(
-        "Stub screener processed %s tickers in %.3f seconds",
+        "%s Stub screener processed %s tickers in %.3f seconds (threshold: %.3f)",
+        severity,
         processed_count,
         elapsed,
+        warn_threshold,
     )
 
     telemetry_note = (
-        f"ℹ️ Stub procesó {processed_count} tickers en {elapsed:.2f} segundos"
+        f"{severity} Stub procesó {processed_count} tickers en {elapsed:.2f} segundos"
     )
 
-    notes = list(result.attrs.pop("_notes", []))
-    notes.append(telemetry_note)
+    notes_attr = result.attrs.setdefault("_notes", [])
+    notes_attr.append(telemetry_note)
 
-    return result, notes
+    return result, list(notes_attr)
 
 
 def _is_valid_number(value: float | int | pd.NA | None) -> bool:
