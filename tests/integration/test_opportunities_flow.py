@@ -20,6 +20,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from shared.ui import notes as shared_notes
+from ui.tabs.opportunities import PRESET_FILTERS
 
 _YAHOO_TEST_MODULE = PROJECT_ROOT / "tests" / "application" / "test_screener_yahoo.py"
 _YAHOO_SPEC = importlib.util.spec_from_file_location(
@@ -1225,3 +1226,75 @@ def test_opportunities_flow_stub_failover_is_consistent_across_runs(
         assert recorded_threshold is not None, "Expected min_score_threshold to be forwarded"
         assert int(recorded_max) == max_results
         assert float(recorded_threshold) == pytest.approx(float(min_score_threshold))
+
+
+def test_opportunities_flow_compares_two_presets_in_parallel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_filters: list[Mapping[str, object]] = []
+
+    def _fake_generate(filters: Mapping[str, object]) -> Mapping[str, object]:
+        captured_filters.append(dict(filters))
+        index = len(captured_filters)
+        df = pd.DataFrame(
+            {
+                "ticker": [f"SYM{index}"],
+                "Yahoo Finance Link": [f"https://example.com/{index}"],
+                "score_compuesto": [70.0 + index],
+            }
+        )
+        return {"table": df, "notes": [f"preset #{index}"], "source": "yahoo"}
+
+    monkeypatch.setattr(
+        "controllers.opportunities.generate_opportunities_report", _fake_generate
+    )
+
+    app = _render_app()
+
+    _set_number_input(app, "Capitalización mínima (US$ MM)", 980)
+    _set_slider(app, "Score mínimo", 76)
+    app.run()
+
+    preset_input = next(
+        element for element in app.get("text_input") if element.label == "Nombre del preset"
+    )
+    preset_input.set_value("Comparativo avanzado")
+    app.run()
+
+    save_button = next(
+        element for element in app.get("button") if element.label == "Guardar preset personalizado"
+    )
+    save_button.click()
+    app.run()
+
+    _set_selectbox(app, "Preset columna izquierda", "Dividendos defensivos")
+    _set_selectbox(app, "Preset columna derecha", "Comparativo avanzado")
+
+    compare_button = next(
+        element for element in app.get("button") if element.label == "Comparar presets"
+    )
+    compare_button.click()
+    app.run()
+
+    assert len(captured_filters) == 2
+    left_filters, right_filters = captured_filters
+
+    expected_left = PRESET_FILTERS["Dividendos defensivos"]
+    for key, value in expected_left.items():
+        if key == "sectors":
+            assert left_filters[key] == list(value)
+        elif isinstance(value, (int, float)):
+            assert left_filters[key] == pytest.approx(float(value))
+        else:
+            assert left_filters[key] == value
+
+    stored_custom = app.session_state["custom_presets"]["Comparativo avanzado"]
+    for key, value in stored_custom.items():
+        assert right_filters[key] == value
+
+    subheaders = [element.value for element in app.get("subheader")]
+    assert "Resultados: Dividendos defensivos" in subheaders
+    assert "Resultados: Comparativo avanzado" in subheaders
+
+    dataframes = app.get("arrow_data_frame")
+    assert len(dataframes) >= 2, "Expected both comparison dataframes to be rendered"

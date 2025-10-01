@@ -66,6 +66,8 @@ def _run_app_with_result(
     | Callable[[Mapping[str, object]], Mapping[str, object]],
     overrides: Mapping[str, object] | None = None,
     override_steps: Sequence[Mapping[str, object]] | None = None,
+    *,
+    trigger_search: bool = True,
 ) -> tuple[AppTest, MagicMock]:
     _normalize_streamlit_module()
     if not hasattr(st, "secrets"):
@@ -99,15 +101,25 @@ def _run_app_with_result(
         elif overrides:
             _apply_overrides(overrides)
             app.run()
-        buttons = [
-            button for button in app.get("button") if getattr(button, "key", None) == "search_opportunities"
-        ]
-        assert (
-            buttons
-        ), "Expected the search button with key 'search_opportunities' to be rendered"
-        buttons[0].click()
-        app.run()
+        if trigger_search:
+            buttons = [
+                button
+                for button in app.get("button")
+                if getattr(button, "key", None) == "search_opportunities"
+            ]
+            assert (
+                buttons
+            ), "Expected the search button with key 'search_opportunities' to be rendered"
+            buttons[0].click()
+            app.run()
     return app, mock
+
+
+def _find_by_label(elements: Sequence[object], label: str):
+    for element in elements:
+        if getattr(element, "label", None) == label:
+            return element
+    raise AssertionError(f"Expected element with label '{label}' to be rendered")
 
 
 st = _resolve_streamlit_module()
@@ -358,6 +370,189 @@ def test_min_score_slider_uses_settings_default(monkeypatch: pytest.MonkeyPatch)
     sliders = [element for element in app.get("slider") if element.label == "Score mínimo"]
     assert sliders, "Expected to find slider for minimum score"
     assert int(sliders[0].value) == int(shared_settings.min_score_threshold)
+
+
+def test_custom_preset_can_be_saved_and_reapplied() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["SAFE"],
+            "price": [120.0],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/SAFE"],
+            "score_compuesto": [88.0],
+        }
+    )
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo"},
+        trigger_search=False,
+    )
+
+    capital_input = _find_by_label(
+        app.get("number_input"), "Capitalización mínima (US$ MM)"
+    )
+    capital_input.set_value(1250)
+    app.run()
+
+    score_slider = _find_by_label(app.get("slider"), "Score mínimo")
+    score_slider.set_value(82)
+    app.run()
+
+    latam_checkbox = _find_by_label(app.get("checkbox"), "Incluir Latam")
+    latam_checkbox.set_value(False)
+    app.run()
+
+    sectors_multiselect = _find_by_label(app.get("multiselect"), "Sectores")
+    sectors_multiselect.set_value(["Technology", "Healthcare"])
+    app.run()
+
+    preset_name_input = _find_by_label(app.get("text_input"), "Nombre del preset")
+    preset_name_input.set_value("Mi preset personalizado")
+    app.run()
+
+    save_button = _find_by_label(
+        app.get("button"), "Guardar preset personalizado"
+    )
+    save_button.click()
+    app.run()
+
+    assert "custom_presets" in app.session_state
+    saved_presets = app.session_state["custom_presets"]
+    assert "Mi preset personalizado" in saved_presets
+    saved_values = saved_presets["Mi preset personalizado"]
+    assert saved_values["min_market_cap"] == pytest.approx(1250.0)
+    assert saved_values["min_score_threshold"] == pytest.approx(82.0)
+    assert saved_values["include_latam"] is False
+    assert saved_values["sectors"] == ["Technology", "Healthcare"]
+
+    capital_input = _find_by_label(
+        app.get("number_input"), "Capitalización mínima (US$ MM)"
+    )
+    capital_input.set_value(600)
+    app.run()
+    score_slider = _find_by_label(app.get("slider"), "Score mínimo")
+    score_slider.set_value(40)
+    app.run()
+    sectors_multiselect = _find_by_label(app.get("multiselect"), "Sectores")
+    sectors_multiselect.set_value([])
+    app.run()
+
+    preset_selector = _find_by_label(
+        app.get("selectbox"), "Preset personalizado guardado"
+    )
+    preset_selector.set_value("Mi preset personalizado")
+    app.run()
+    apply_button = _find_by_label(
+        app.get("button"), "Aplicar preset guardado"
+    )
+    apply_button.click()
+    app.run()
+
+    assert app.session_state["opportunities_preset"] == "Mi preset personalizado"
+
+    search_buttons = [
+        button
+        for button in app.get("button")
+        if getattr(button, "key", None) == "search_opportunities"
+    ]
+    assert search_buttons, "Expected search button to trigger the controller"
+    with patch(
+        "controllers.opportunities.generate_opportunities_report",
+        return_value={"table": df, "notes": [], "source": "yahoo"},
+    ) as mock:
+        search_buttons[0].click()
+        app.run()
+
+    assert mock.call_count == 1
+    called_with = mock.call_args.args[0]
+    assert called_with["min_market_cap"] == pytest.approx(1250.0)
+    assert called_with["min_score_threshold"] == pytest.approx(82.0)
+    assert called_with["include_latam"] is False
+    assert called_with["sectors"] == ["Technology", "Healthcare"]
+
+
+def test_compare_presets_invokes_controller_for_each_column() -> None:
+    df_left = pd.DataFrame(
+        {
+            "ticker": ["DIV"],
+            "price": [84.0],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/DIV"],
+            "score_compuesto": [75.0],
+        }
+    )
+    df_right = pd.DataFrame(
+        {
+            "ticker": ["CSTM"],
+            "price": [91.5],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/CSTM"],
+            "score_compuesto": [81.0],
+        }
+    )
+
+    sequence = iter(
+        [
+            {"table": df_left, "notes": [], "source": "yahoo"},
+            {"table": df_right, "notes": [], "source": "stub"},
+        ]
+    )
+
+    app, _ = _run_app_with_result({"table": df_left, "notes": [], "source": "yahoo"}, trigger_search=False)
+
+    capital_input = _find_by_label(
+        app.get("number_input"), "Capitalización mínima (US$ MM)"
+    )
+    capital_input.set_value(950)
+    app.run()
+    latam_checkbox = _find_by_label(app.get("checkbox"), "Incluir Latam")
+    latam_checkbox.set_value(False)
+    app.run()
+
+    preset_name_input = _find_by_label(app.get("text_input"), "Nombre del preset")
+    preset_name_input.set_value("Comparativo")
+    app.run()
+    save_button = _find_by_label(
+        app.get("button"), "Guardar preset personalizado"
+    )
+    save_button.click()
+    app.run()
+
+    left_select = _find_by_label(app.get("selectbox"), "Preset columna izquierda")
+    left_select.set_value("Dividendos defensivos")
+    right_select = _find_by_label(app.get("selectbox"), "Preset columna derecha")
+    right_select.set_value("Comparativo")
+
+    compare_button = _find_by_label(
+        app.get("button"), "Comparar presets"
+    )
+    with patch(
+        "controllers.opportunities.generate_opportunities_report",
+        side_effect=lambda filters: next(sequence),
+    ) as mock:
+        compare_button.click()
+        app.run()
+
+    assert mock.call_count == 2
+    first_call = mock.call_args_list[0].args[0]
+    second_call = mock.call_args_list[1].args[0]
+
+    expected_left = PRESET_FILTERS["Dividendos defensivos"]
+    for key, value in expected_left.items():
+        if key == "sectors":
+            assert first_call[key] == list(value)
+        elif isinstance(value, (int, float)):
+            assert first_call[key] == pytest.approx(float(value))
+        else:
+            assert first_call[key] == value
+
+    custom_filters = app.session_state["custom_presets"]["Comparativo"]
+    for key, value in custom_filters.items():
+        assert second_call[key] == value
+
+    subheaders = [element.value for element in app.get("subheader")]
+    assert "Resultados: Dividendos defensivos" in subheaders
+    assert "Resultados: Comparativo" in subheaders
+
+    dataframes = app.get("arrow_data_frame")
+    assert len(dataframes) >= 2, "Expected two dataframes for the comparison results"
 
 
 def test_min_score_slider_normalizes_out_of_range_default(
