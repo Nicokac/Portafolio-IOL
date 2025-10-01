@@ -208,6 +208,7 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert int(max_results_inputs[0].value) == shared_settings.max_results
     dataframes = app.get("arrow_data_frame")
     assert dataframes, "Expected Streamlit dataframe component after execution"
+    assert len(dataframes) == 1, "Expected a single dataframe rendered with link column configuration"
     component = dataframes[0]
     display_df = component.value
     assert "Ticker (Yahoo)" in display_df.columns
