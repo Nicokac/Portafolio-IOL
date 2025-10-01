@@ -487,6 +487,16 @@ def test_fallback_note_with_cause_highlighted() -> None:
     formatted_fallback = shared_notes.format_note(fallback_note)
     assert any(formatted_fallback in block for block in markdown_blocks)
 
+    captions = [element.value for element in app.get("caption")]
+    expected_stub_caption = shared_notes.format_note(
+        "⚠️ Resultados simulados (Yahoo no disponible)"
+    )
+    assert expected_stub_caption not in captions
+    expected_info_caption = shared_notes.format_note(
+        "ℹ️ Los filtros avanzados de capitalización, P/E, crecimiento de ingresos, payout, racha de dividendos, CAGR, crecimiento de EPS, buybacks e inclusión de Latam requieren datos en vivo de Yahoo."
+    )
+    assert expected_info_caption in captions
+
 
 def test_notes_block_highlights_backend_messages() -> None:
     df = pd.DataFrame(
