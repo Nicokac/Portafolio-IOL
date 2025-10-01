@@ -362,6 +362,25 @@ Al hacerlo, GitHub Actions exportará `RUN_LIVE_YF=1` antes de invocar el
 marcador `live_yahoo`. Usa este job sólo cuando necesites verificar la
 integración en vivo o validar incidentes relacionados con Yahoo Finance.
 
+### Barrido prolongado del stub y presets en CI
+
+Adicionalmente, el workflow programa un job nocturno `stub-fallback-sweep`
+que se ejecuta todos los días a las **03:00 UTC** para ejercitar el stub y
+los presets recomendados. Este barrido ejecuta la batería prolongada de
+pruebas de fallback sobre el stub (incluye validaciones de notas, presets y
+consistencia entre corridas) y registra métricas de duración junto con los
+totales de `passed/failed/errors/skipped`.
+
+Para detonarlo manualmente:
+
+1. Ingresa a **Actions → CI → Run workflow**.
+2. Habilita el toggle **Run prolonged stub fallback & preset sweep**.
+3. Ejecuta el workflow.
+
+Al finalizar, revisa el resumen del job en GitHub Actions o descarga el
+artefacto `stub-sweep-logs`, que incluye `stub_sweep.log` y
+`stub_sweep_metrics.json` con las métricas necesarias para seguimiento de QA.
+
 ## Tiempos de referencia
 
 Los siguientes tiempos se observan en condiciones normales (aprox. 20 posiciones):
