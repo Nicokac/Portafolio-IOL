@@ -1,6 +1,8 @@
 import plotly.express as px
 import streamlit as st
 
+from shared.favorite_symbols import FavoriteSymbols
+from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.tables import render_totals, render_table
 from ui.export import PLOTLY_CONFIG
 from ui.charts import (
@@ -23,8 +25,36 @@ def generate_basic_charts(df_view, top_n):
     }
 
 
-def render_basic_section(df_view, controls, ccl_rate):
+def render_basic_section(df_view, controls, ccl_rate, favorites: FavoriteSymbols | None = None):
     """Render totals, table and basic charts for the portfolio."""
+    favorites = favorites or FavoriteSymbols(st.session_state)
+    symbols = (
+        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
+        if not df_view.empty
+        else []
+    )
+
+    render_favorite_badges(
+        favorites,
+        empty_message="⭐ Marcá tus símbolos preferidos para destacarlos en todas las secciones.",
+    )
+
+    if symbols:
+        options = favorites.sort_options(symbols)
+        selected_symbol = st.selectbox(
+            "Gestionar favoritos",
+            options=options,
+            index=favorites.default_index(options),
+            key="portfolio_favorite_select",
+            format_func=favorites.format_symbol,
+        )
+        render_favorite_toggle(
+            selected_symbol,
+            favorites,
+            key_prefix="portfolio",
+            help_text="La selección impacta todas las pestañas y exportaciones.",
+        )
+
     if df_view.empty:
         st.info("No hay datos del portafolio para mostrar.")
         return
@@ -36,6 +66,7 @@ def render_basic_section(df_view, controls, ccl_rate):
         controls.desc,
         ccl_rate=ccl_rate,
         show_usd=controls.show_usd,
+        favorites=favorites,
     )
 
     charts = generate_basic_charts(df_view, controls.top_n)

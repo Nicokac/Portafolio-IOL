@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from application.portfolio_service import calculate_totals, detect_currency
+from shared.favorite_symbols import FavoriteSymbols
 from shared.utils import (
     _as_float_or_none,
     _is_none_nan_inf,
@@ -37,11 +38,20 @@ def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
         c3b.metric("P/L (USD CCL)", format_money(usd_pl, currency="USD"))
         c4b.metric("CCL usado", format_money(rate))
 
-def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: float | None = None, show_usd: bool = False):
+def render_table(
+    df_view: pd.DataFrame,
+    order_by: str,
+    desc: bool,
+    ccl_rate: float | None = None,
+    show_usd: bool = False,
+    *,
+    favorites: FavoriteSymbols | None = None,
+):
     if df_view is None or df_view.empty:
         st.info("Sin datos para mostrar.")
         return
 
+    favorites = favorites or FavoriteSymbols(st.session_state)
     palette = get_active_palette()
     st.markdown(f"""
         <style>
@@ -100,9 +110,13 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
         tipo = str(r.get("tipo") or "")
         cur = detect_currency(sym, tipo)
 
+        is_favorite = favorites.is_favorite(sym)
+
         row = {
             "Símbolo": sym,
             "Tipo": tipo,
+            "Favorito": "⭐" if is_favorite else "",
+            "es_favorito": is_favorite,
             "cantidad_num": _as_float_or_none(r["cantidad"]),
             "ultimo_num": _as_float_or_none(r["ultimo"]),
             "valor_actual_num": _as_float_or_none(r["valor_actual"]),
@@ -208,9 +222,14 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
     }
 
     column_config: dict[str, st.column_config.Column] = {}
-    for col in ["Símbolo", "Tipo"]:
+    for col in ["Símbolo", "Tipo", "Favorito"]:
         if col in df_tbl.columns:
-            column_config[col] = st.column_config.Column(label=col, help=column_help[col])
+            help_text = column_help.get(col, "Indica si el símbolo está marcado como favorito.")
+            column_config[col] = st.column_config.Column(
+                label="⭐" if col == "Favorito" else col,
+                help=help_text,
+                width="small" if col == "Favorito" else None,
+            )
 
     for col, label in rename_map.items():
         if col in df_tbl.columns:
@@ -230,6 +249,9 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
     st.subheader("Detalle por símbolo")
     df_export = df_tbl.rename(columns=rename_map)
+    if "es_favorito" in df_tbl.columns:
+        df_export["Favorito"] = df_tbl["es_favorito"].astype(bool)
+        df_export.drop(columns=["es_favorito"], inplace=True, errors="ignore")
     download_csv(df_export, "portafolio.csv")
 
     page_size = st.number_input("Filas por página", min_value=5, max_value=100, value=20, step=5)
@@ -253,4 +275,5 @@ def render_table(df_view: pd.DataFrame, order_by: str, desc: bool, ccl_rate: flo
 
     st.caption("Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo.")
 
-    df_tbl.drop(columns=rename_map.keys(), inplace=True, errors="ignore")
+    drop_cols = list(rename_map.keys()) + ["es_favorito"]
+    df_tbl.drop(columns=drop_cols, inplace=True, errors="ignore")

@@ -7,9 +7,11 @@ from ui.ui_settings import render_ui_controls
 from ui.fundamentals import render_fundamental_data
 from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
+from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from shared.errors import AppError
+from shared.favorite_symbols import FavoriteSymbols
 
 from .load_data import load_portfolio_data
 from .filters import apply_filters
@@ -28,6 +30,7 @@ def render_portfolio_section(container, cli, fx_rates):
         tasvc = TAService()
 
         df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
+        favorites = FavoriteSymbols(st.session_state)
 
         controls: Controls = render_sidebar(all_symbols, available_types)
         render_ui_controls()
@@ -59,25 +62,39 @@ def render_portfolio_section(container, cli, fx_rates):
         st.session_state["portfolio_tab"] = tab_idx
 
         if tab_idx == 0:
-            render_basic_section(df_view, controls, ccl_rate)
+            render_basic_section(df_view, controls, ccl_rate, favorites=favorites)
         elif tab_idx == 1:
             render_advanced_analysis(df_view)
         elif tab_idx == 2:
-            render_risk_analysis(df_view, tasvc)
+            render_risk_analysis(df_view, tasvc, favorites=favorites)
         elif tab_idx == 3:
-            render_fundamental_analysis(df_view, tasvc)
+            render_fundamental_analysis(df_view, tasvc, favorites=favorites)
         else:
             st.subheader("Indicadores técnicos por activo")
+            render_favorite_badges(
+                favorites,
+                empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
+            )
             if not all_symbols:
                 st.info("No hay símbolos en el portafolio para analizar.")
             else:
+                options = favorites.sort_options(all_symbols)
+                if not options:
+                    options = list(all_symbols)
                 sym = st.selectbox(
                     "Seleccioná un símbolo (CEDEAR / ETF)",
-                    options=all_symbols,
-                    index=0,
+                    options=options,
+                    index=favorites.default_index(options),
                     key="ta_symbol",
+                    format_func=favorites.format_symbol,
                 )
                 if sym:
+                    render_favorite_toggle(
+                        sym,
+                        favorites,
+                        key_prefix="ta",
+                        help_text="Los favoritos quedan disponibles en todas las secciones.",
+                    )
                     try:
                         us_ticker = map_to_us_ticker(sym)
                     except ValueError:

@@ -13,6 +13,7 @@ from controllers.portfolio import risk as risk_mod
 from ui.fx_panels import render_spreads
 import ui.fx_panels as fx_panels
 import ui.tables as tables_mod
+from shared.favorite_symbols import FavoriteSymbols
 
 
 class DummyCtx:
@@ -38,7 +39,9 @@ def test_render_basic_section_captions(monkeypatch):
     monkeypatch.setattr(charts_mod.st, "columns", lambda n: (DummyCtx(), DummyCtx()))
     mock_caption = MagicMock()
     monkeypatch.setattr(charts_mod.st, "caption", mock_caption)
-    charts_mod.render_basic_section(df, controls, None)
+    monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    charts_mod.render_basic_section(df, controls, None, favorites=FavoriteSymbols({}))
     captions = [c.args[0] for c in mock_caption.call_args_list]
     expected = [
         "Barras que muestran qué activos ganan o pierden más. Las más altas son las que más afectan tu resultado.",
@@ -65,7 +68,9 @@ def test_render_risk_analysis_caption(monkeypatch):
     monkeypatch.setattr(risk_mod.st, "caption", mock_caption)
     monkeypatch.setattr(risk_mod, "plot_correlation_heatmap", lambda df: object())
     monkeypatch.setattr(risk_mod, "compute_returns", lambda df: pd.DataFrame())
-    risk_mod.render_risk_analysis(df, tasvc)
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+    risk_mod.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
     assert any("heatmap de correlación" in str(c.args[0]) for c in mock_caption.call_args_list)
 
 

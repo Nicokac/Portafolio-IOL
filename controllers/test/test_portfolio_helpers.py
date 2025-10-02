@@ -10,6 +10,7 @@ import controllers.portfolio.filters as filters_mod
 import controllers.portfolio.charts as charts_mod
 import controllers.portfolio.risk as risk_mod
 import controllers.portfolio.fundamentals as fund_mod
+from shared.favorite_symbols import FavoriteSymbols
 from domain.models import Controls
 
 
@@ -284,7 +285,9 @@ def test_compute_risk_metrics():
 def test_render_basic_section_handles_empty(monkeypatch):
     mock_info = MagicMock()
     monkeypatch.setattr(charts_mod.st, "info", mock_info)
-    pm.render_basic_section(pd.DataFrame(), Controls(), None)
+    monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    pm.render_basic_section(pd.DataFrame(), Controls(), None, favorites=FavoriteSymbols({}))
     mock_info.assert_called_once_with("No hay datos del portafolio para mostrar.")
 
 
@@ -300,6 +303,8 @@ def test_render_basic_section_with_data(monkeypatch):
     mock_totals = MagicMock()
     monkeypatch.setattr(charts_mod, "render_totals", mock_totals)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
     fig = object()
     monkeypatch.setattr(
         charts_mod,
@@ -317,7 +322,8 @@ def test_render_basic_section_with_data(monkeypatch):
     monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod.st, "info", lambda *a, **k: None)
 
-    pm.render_basic_section(df, Controls(), None)
+    monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: "AL30")
+    pm.render_basic_section(df, Controls(), None, favorites=FavoriteSymbols({}))
 
     mock_totals.assert_called_once()
     assert plot_mock.call_count == 4
@@ -399,8 +405,10 @@ def test_render_risk_analysis_insufficient_symbols(monkeypatch):
     mock_info = MagicMock()
     monkeypatch.setattr(risk_mod.st, "info", mock_info)
     monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
     tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
-    pm.render_risk_analysis(df, tasvc)
+    pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
     mock_info.assert_any_call(
         "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
     )
@@ -414,8 +422,10 @@ def test_render_risk_analysis_empty_history(monkeypatch):
     monkeypatch.setattr(risk_mod.st, "warning", lambda *a, **k: None)
     info_mock = MagicMock()
     monkeypatch.setattr(risk_mod.st, "info", info_mock)
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
     tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
-    pm.render_risk_analysis(df, tasvc)
+    pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
     info_mock.assert_any_call(
         "No se pudieron obtener datos históricos para calcular métricas de riesgo."
     )
@@ -424,9 +434,6 @@ def test_render_risk_analysis_empty_history(monkeypatch):
 def test_render_risk_analysis_valid_data(monkeypatch):
     df = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [100, 200]})
     monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
-    monkeypatch.setattr(
-        risk_mod.st, "selectbox", lambda label, options, index=0: options[index]
-    )
     monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
     monkeypatch.setattr(risk_mod.st, "plotly_chart", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "caption", lambda *a, **k: None)
@@ -480,6 +487,8 @@ def test_render_risk_analysis_valid_data(monkeypatch):
         risk_mod, "monte_carlo_simulation", lambda *a, **k: pd.Series([1, 2])
     )
     monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.05)
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
     def fake_history(simbolos=None, period=None):
         if simbolos == ["^GSPC"]:
@@ -488,7 +497,20 @@ def test_render_risk_analysis_valid_data(monkeypatch):
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
-    pm.render_risk_analysis(df, tasvc)
+    select_values = iter([["A", "B"], "1y"])
+
+    def fake_selectbox(label, options, index=0, **kwargs):
+        try:
+            val = next(select_values)
+        except StopIteration:
+            val = options[index]
+        if isinstance(val, list):
+            return val[0]
+        return val
+
+    monkeypatch.setattr(risk_mod.st, "selectbox", fake_selectbox)
+
+    pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
 
     assert col1.metric.call_args[0] == (
         "Volatilidad anualizada",
@@ -511,5 +533,7 @@ def test_render_fundamental_analysis_no_symbols(monkeypatch):
     mock_info = MagicMock()
     monkeypatch.setattr(fund_mod.st, "info", mock_info)
     tasvc = SimpleNamespace()
-    pm.render_fundamental_analysis(df, tasvc)
+    monkeypatch.setattr(fund_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(fund_mod, "render_favorite_toggle", lambda *a, **k: None)
+    pm.render_fundamental_analysis(df, tasvc, favorites=FavoriteSymbols({}))
     mock_info.assert_called_once_with("No hay símbolos en el portafolio para analizar.")
