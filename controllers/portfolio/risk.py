@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from shared.favorite_symbols import FavoriteSymbols
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.risk_service import (
     compute_returns,
@@ -36,7 +36,7 @@ def compute_risk_metrics(returns_df, bench_ret, weights):
 
 def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
     """Render correlation and risk analysis for the portfolio."""
-    favorites = favorites or FavoriteSymbols(st.session_state)
+    favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis de Correlación del Portafolio")
     symbols = (
         sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})

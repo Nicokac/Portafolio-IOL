@@ -1,7 +1,7 @@
 import logging
 import streamlit as st
 
-from shared.favorite_symbols import FavoriteSymbols
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.fundamentals import (
     render_fundamental_ranking,
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def render_fundamental_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
     """Render fundamental analysis section."""
-    favorites = favorites or FavoriteSymbols(st.session_state)
+    favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis fundamental del portafolio")
     symbols = (
         sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})

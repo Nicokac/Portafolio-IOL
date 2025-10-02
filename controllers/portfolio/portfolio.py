@@ -13,7 +13,7 @@ from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
-from shared.favorite_symbols import FavoriteSymbols
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from services.portfolio_view import PortfolioViewModelService
 
 from .load_data import load_portfolio_data
@@ -32,7 +32,7 @@ def render_portfolio_section(container, cli, fx_rates):
         tasvc = TAService()
 
         df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
-        favorites = FavoriteSymbols(st.session_state)
+        favorites = get_persistent_favorites()
 
         controls: Controls = render_sidebar(all_symbols, available_types)
         render_ui_controls()
@@ -76,6 +76,8 @@ def render_portfolio_section(container, cli, fx_rates):
                 empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
             )
             if not all_symbols:
+                st.info("No hay símbolos en el portafolio para analizar.")
+                return
             all_symbols_vm = list(viewmodel.metrics.all_symbols)
             if not all_symbols_vm:
                 st.info("No hay símbolos en el portafolio para analizar.")

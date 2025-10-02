@@ -1,20 +1,99 @@
 """Utilities to manage favorite symbols persisted in Streamlit session state."""
 from __future__ import annotations
 
-from typing import Iterable, MutableMapping, Sequence
+from pathlib import Path
+import json
+from typing import Iterable, MutableMapping, Protocol, Sequence
 
 import streamlit as st
+
+
+DEFAULT_STORAGE_PATH = Path.home() / ".portafolio_iol" / "favorites.json"
+
+
+class FavoriteStorage(Protocol):
+    """Protocol that defines how favorites are persisted externally."""
+
+    def load(self) -> list[str]:
+        """Return the stored list of symbols."""
+
+    def save(self, symbols: Sequence[str]) -> None:
+        """Persist the provided list of symbols."""
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the last persistence error, if any."""
+
+
+class JSONFavoriteStorage:
+    """Persist favorites to a JSON file on disk."""
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        self._path = Path(path) if path is not None else DEFAULT_STORAGE_PATH
+        self._last_error: str | None = None
+
+    @property
+    def path(self) -> Path:
+        """Return the file used to persist favorites."""
+
+        return self._path
+
+    @property
+    def last_error(self) -> str | None:  # pragma: no cover - simple property
+        return self._last_error
+
+    def load(self) -> list[str]:
+        """Load favorites from the configured JSON file."""
+
+        self._last_error = None
+        try:
+            with self._path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            return []
+        except OSError as exc:  # pragma: no cover - hard to trigger consistently
+            self._last_error = f"No se pudo leer favoritos: {exc}"
+            return []
+        except json.JSONDecodeError as exc:
+            self._last_error = f"Favoritos con formato inválido: {exc}"
+            return []
+
+        if not isinstance(data, list):
+            self._last_error = "Formato inválido: se esperaba una lista de símbolos"
+            return []
+        return [str(item) for item in data]
+
+    def save(self, symbols: Sequence[str]) -> None:
+        """Persist the favorites list as JSON, handling I/O errors gracefully."""
+
+        self._last_error = None
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            with self._path.open("w", encoding="utf-8") as fh:
+                json.dump(list(symbols), fh, ensure_ascii=False, indent=2)
+        except OSError as exc:
+            self._last_error = f"No se pudo guardar favoritos: {exc}"
 
 
 class FavoriteSymbols:
     """Manage a shared list of favorite symbols stored in ``st.session_state``."""
 
     STATE_KEY = "favorite_symbols"
+    LOADED_FLAG_KEY = "_favorite_symbols_loaded"
+    ERROR_KEY = "_favorite_symbols_error"
 
-    def __init__(self, state: MutableMapping[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        state: MutableMapping[str, object] | None = None,
+        *,
+        storage: FavoriteStorage | None = None,
+    ) -> None:
         self._state = state if state is not None else st.session_state
         if self.STATE_KEY not in self._state:
             self._state[self.STATE_KEY] = []
+        self._storage = storage
+        if storage is not None:
+            self._load_from_storage()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -23,6 +102,43 @@ class FavoriteSymbols:
             return ""
         sym = str(symbol).strip().upper()
         return sym
+
+    def _normalize_many(self, symbols: Iterable[str]) -> list[str]:
+        normalized: list[str] = []
+        for symbol in symbols:
+            sym = self._normalize(symbol)
+            if sym and sym not in normalized:
+                normalized.append(sym)
+        return normalized
+
+    def _sync_error_state(self) -> None:
+        if not self._storage:
+            return
+        err = self._storage.last_error
+        if err:
+            self._state[self.ERROR_KEY] = err
+        elif self.ERROR_KEY in self._state:
+            del self._state[self.ERROR_KEY]
+
+    def _load_from_storage(self) -> None:
+        if not self._storage:
+            return
+        if self._state.get(self.LOADED_FLAG_KEY):
+            return
+        existing = self._state.get(self.STATE_KEY)
+        if existing:
+            self._state[self.LOADED_FLAG_KEY] = True
+            return
+        stored = self._storage.load()
+        self._sync_error_state()
+        self._state[self.STATE_KEY] = self._normalize_many(stored)
+        self._state[self.LOADED_FLAG_KEY] = True
+
+    def _persist(self) -> None:
+        if not self._storage:
+            return
+        self._storage.save(self._state[self.STATE_KEY])
+        self._sync_error_state()
 
     def normalize(self, symbol: str | None) -> str:
         """Public wrapper returning the canonical representation for ``symbol``."""
@@ -33,6 +149,13 @@ class FavoriteSymbols:
     def list(self) -> list[str]:
         """Return the current list of favorite symbols."""
         return list(self._state.get(self.STATE_KEY, []))
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the last persistence error, if any."""
+
+        err = self._state.get(self.ERROR_KEY)
+        return str(err) if err else None
 
     def is_favorite(self, symbol: str | None) -> bool:
         """Check whether the provided symbol is currently marked as favorite."""
@@ -49,6 +172,7 @@ class FavoriteSymbols:
         favorites = self._state[self.STATE_KEY]
         if sym not in favorites:
             favorites.append(sym)
+            self._persist()
 
     def remove(self, symbol: str | None) -> None:
         """Remove a symbol from the favorites list."""
@@ -58,6 +182,7 @@ class FavoriteSymbols:
         favorites = self._state[self.STATE_KEY]
         if sym in favorites:
             favorites.remove(sym)
+            self._persist()
 
     def replace(self, symbols: Iterable[str]) -> list[str]:
         """Replace the favorites list with the given iterable of symbols."""
@@ -67,6 +192,7 @@ class FavoriteSymbols:
             if sym and sym not in normalized:
                 normalized.append(sym)
         self._state[self.STATE_KEY] = normalized
+        self._persist()
         return normalized
 
     def toggle(self, symbol: str | None, *, value: bool | None = None) -> bool:
@@ -124,4 +250,20 @@ class FavoriteSymbols:
         return 0 if options else 0
 
 
-__all__ = ["FavoriteSymbols"]
+def get_persistent_favorites(
+    state: MutableMapping[str, object] | None = None,
+    *,
+    storage: FavoriteStorage | None = None,
+) -> FavoriteSymbols:
+    """Return a ``FavoriteSymbols`` instance backed by on-disk persistence."""
+
+    storage = storage or JSONFavoriteStorage()
+    return FavoriteSymbols(state, storage=storage)
+
+
+__all__ = [
+    "FavoriteSymbols",
+    "FavoriteStorage",
+    "JSONFavoriteStorage",
+    "get_persistent_favorites",
+]
