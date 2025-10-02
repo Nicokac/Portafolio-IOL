@@ -56,6 +56,16 @@ fred_sector_series: Dict[str, str] = getattr(settings, "FRED_SECTOR_SERIES", {})
 macro_sector_fallback: Dict[str, Dict[str, object]] = getattr(
     settings, "MACRO_SECTOR_FALLBACK", {}
 )
+world_bank_api_key: str | None = getattr(settings, "WORLD_BANK_API_KEY", None)
+world_bank_api_base_url: str = getattr(
+    settings, "WORLD_BANK_API_BASE_URL", "https://api.worldbank.org/v2"
+)
+world_bank_api_rate_limit_per_minute: int = getattr(
+    settings, "WORLD_BANK_API_RATE_LIMIT_PER_MINUTE", 60
+)
+world_bank_sector_series: Dict[str, str] = getattr(
+    settings, "WORLD_BANK_SECTOR_SERIES", {}
+)
 
 __all__ = [
     "settings",
@@ -86,4 +96,8 @@ __all__ = [
     "fred_api_rate_limit_per_minute",
     "fred_sector_series",
     "macro_sector_fallback",
+    "world_bank_api_key",
+    "world_bank_api_base_url",
+    "world_bank_api_rate_limit_per_minute",
+    "world_bank_sector_series",
 ]

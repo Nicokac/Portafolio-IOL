@@ -63,23 +63,51 @@ def record_fx_api_response(
 
 def record_macro_api_usage(
     *,
-    provider: str,
-    status: str,
-    elapsed_ms: Optional[float] = None,
-    detail: Optional[str] = None,
-    fallback: bool = False,
+    attempts: Iterable[Mapping[str, Any]],
+    notes: Optional[Iterable[str]] = None,
+    metrics: Optional[Mapping[str, Any]] = None,
 ) -> None:
-    """Persist information about the macro/sector data provider."""
+    """Persist information about the macro/sector data providers."""
+
+    normalized_attempts: list[Dict[str, Any]] = []
+    for attempt in attempts:
+        if not isinstance(attempt, Mapping):
+            continue
+        entry: Dict[str, Any] = {
+            "provider": str(attempt.get("provider") or "unknown"),
+            "status": str(attempt.get("status") or "unknown"),
+        }
+        if "label" in attempt:
+            entry["label"] = str(attempt["label"])
+        elapsed = attempt.get("elapsed_ms")
+        if elapsed is not None:
+            try:
+                entry["elapsed_ms"] = float(elapsed)
+            except (TypeError, ValueError):
+                pass
+        detail = _clean_detail(attempt.get("detail"))
+        if detail:
+            entry["detail"] = detail
+        if attempt.get("fallback"):
+            entry["fallback"] = True
+        missing = attempt.get("missing_series")
+        if isinstance(missing, Iterable) and not isinstance(missing, (str, bytes, bytearray)):
+            items = [str(item).strip() for item in missing if str(item).strip()]
+            if items:
+                entry["missing_series"] = items
+        normalized_attempts.append(entry)
+
+    payload: Dict[str, Any] = {"attempts": normalized_attempts, "ts": time.time()}
+
+    if notes is not None:
+        normalized_notes = [str(note) for note in notes if str(note).strip()]
+        payload["notes"] = normalized_notes
+
+    if metrics is not None:
+        payload["metrics"] = dict(metrics)
 
     store = _store()
-    store["macro_api"] = {
-        "provider": str(provider or "unknown"),
-        "status": str(status or "unknown"),
-        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
-        "detail": _clean_detail(detail),
-        "fallback": bool(fallback),
-        "ts": time.time(),
-    }
+    store["macro_api"] = payload
 
 
 def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
