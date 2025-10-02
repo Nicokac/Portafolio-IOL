@@ -81,6 +81,11 @@ y caché cooperativa: toda la UI recuerda la versión activa, expone KPIs agrega
 el health sidebar y los presets continúan recortando los tiempos de iteración al dejar a la vista el
 impacto de cada cambio.
 
+## Documentación
+
+- [Guía de troubleshooting](docs/troubleshooting.md)
+- [Guía de pruebas](docs/testing.md)
+
 ## Uso del proveedor de tiempo
 
 Para generar fechas consistentes en toda la aplicación, importa la clase `TimeProvider`:
