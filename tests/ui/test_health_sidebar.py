@@ -68,6 +68,124 @@ class _DummyStreamlit:
         self.sidebar = _DummySidebar()
 
 
+def _setup_sidebar_with_metrics(
+    monkeypatch: pytest.MonkeyPatch, metrics: dict[str, object]
+) -> _DummyStreamlit:
+    dummy_streamlit = _DummyStreamlit()
+    monkeypatch.setattr(health_sidebar, "st", dummy_streamlit)
+    monkeypatch.setattr(health_sidebar, "get_health_metrics", lambda: metrics)
+    monkeypatch.setattr(health_service, "get_health_metrics", lambda: metrics)
+    return dummy_streamlit
+
+
+def _collect_markdown(sidebar: _DummySidebar) -> list[str]:
+    return list(sidebar.markdown_calls)
+
+
+def test_render_health_sidebar_with_success_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def _spy(note: str) -> str:
+        calls.append(note)
+        return health_sidebar.shared_notes.format_note(note)
+
+    monkeypatch.setattr(health_sidebar, "format_note", _spy)
+
+    metrics = {
+        "iol_refresh": {"status": "success", "detail": "Tokens OK", "ts": 1},
+        "yfinance": {"source": "fallback", "detail": "AAPL", "ts": 2},
+        "fx_api": {
+            "status": "success",
+            "error": None,
+            "elapsed_ms": 123.4,
+            "ts": 3,
+        },
+        "fx_cache": {"mode": "hit", "age": 5.0, "ts": 4},
+        "portfolio": {"elapsed_ms": 200.0, "source": "api", "ts": 5},
+        "quotes": {
+            "elapsed_ms": 350.0,
+            "source": "fallback",
+            "count": 3,
+            "detail": "cache",
+            "ts": 6,
+        },
+    }
+
+    dummy_streamlit = _setup_sidebar_with_metrics(monkeypatch, metrics)
+
+    health_sidebar.render_health_sidebar()
+
+    assert dummy_streamlit.sidebar.headers == [
+        f"🩺 Healthcheck (versión {health_sidebar.__version__})"
+    ]
+
+    md_calls = _collect_markdown(dummy_streamlit.sidebar)
+    assert any("#### 🔐 Conexión IOL" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "Tokens OK" in text for text in md_calls)
+    assert any(":information_source:" in text and "Fallback local" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "API FX OK" in text for text in md_calls)
+    assert any(":white_check_mark:" in text and "Uso de caché" in text for text in md_calls)
+    assert any("- Portafolio: 200 ms" in text for text in md_calls)
+    assert any("- Cotizaciones: 350 ms" in text and "items: 3" in text for text in md_calls)
+
+    assert any(note.startswith("✅ Refresh correcto •") and note.endswith("Tokens OK") for note in calls)
+    assert any(note.startswith("ℹ️ Fallback local •") and note.endswith("AAPL") for note in calls)
+    assert any(note.startswith("✅ API FX OK •") and "(123 ms)" in note for note in calls)
+    assert any(note.startswith("✅ Uso de caché •") and note.endswith("(edad 5s)") for note in calls)
+    assert any(note.startswith("- Portafolio: 200 ms") for note in calls)
+    assert any(note.startswith("- Cotizaciones: 350 ms") and "items: 3" in note for note in calls)
+
+
+def test_render_health_sidebar_with_missing_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    def _spy(note: str) -> str:
+        calls.append(note)
+        return health_sidebar.shared_notes.format_note(note)
+
+    monkeypatch.setattr(health_sidebar, "format_note", _spy)
+
+    metrics = {
+        "iol_refresh": {"status": "error", "detail": "Token inválido", "ts": 10},
+        "yfinance": None,
+        "fx_api": {
+            "status": "error",
+            "error": "timeout",
+            "elapsed_ms": None,
+            "ts": 11,
+        },
+        "fx_cache": None,
+        "portfolio": None,
+        "quotes": {
+            "elapsed_ms": None,
+            "source": "error",
+            "detail": "sin datos",
+            "ts": None,
+        },
+    }
+
+    dummy_streamlit = _setup_sidebar_with_metrics(monkeypatch, metrics)
+
+    health_sidebar.render_health_sidebar()
+
+    assert dummy_streamlit.sidebar.headers == [
+        f"🩺 Healthcheck (versión {health_sidebar.__version__})"
+    ]
+
+    md_calls = _collect_markdown(dummy_streamlit.sidebar)
+    assert any(":warning:" in text and "Error al refrescar" in text for text in md_calls)
+    assert "_Sin consultas registradas._" in md_calls
+    assert any(":warning:" in text and "API FX con errores" in text for text in md_calls)
+    assert "_Sin uso de caché registrado._" in md_calls
+    assert any(text.startswith("- Portafolio: sin registro") for text in md_calls)
+    assert any("- Cotizaciones: s/d" in text and "sin datos" in text for text in md_calls)
+
+    assert any(note.startswith("⚠️ Error al refrescar •") and note.endswith("Token inválido") for note in calls)
+    assert any(note.startswith("⚠️ API FX con errores •") and note.endswith("timeout") for note in calls)
+    assert any(note.startswith("- Portafolio: sin registro") for note in calls)
+    assert any(note.startswith("- Cotizaciones: s/d") and "sin datos" in note for note in calls)
+
+
 @pytest.fixture
 def _dummy_metrics() -> dict[str, object]:
     return {
