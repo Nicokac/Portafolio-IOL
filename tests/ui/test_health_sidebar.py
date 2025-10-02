@@ -75,6 +75,81 @@ def _dummy_metrics() -> dict[str, object]:
         "yfinance": {"source": "yfinance", "detail": "cache", "ts": None},
         "fx_api": {"status": "error", "error": "boom", "elapsed_ms": 250.5, "ts": None},
         "fx_cache": {"mode": "hit", "age": 12.3, "ts": None},
+        "macro_api": {
+            "latest": {
+                "provider": "fred",
+                "provider_label": "FRED",
+                "status": "error",
+                "elapsed_ms": 890.0,
+                "detail": "rate limit",
+                "fallback": False,
+                "ts": None,
+            },
+            "providers": {
+                "fred": {
+                    "label": "FRED",
+                    "count": 5,
+                    "status_counts": {"success": 3, "error": 2},
+                    "status_ratios": {"success": 0.6, "error": 0.4},
+                    "error_count": 2,
+                    "error_ratio": 0.4,
+                    "fallback_count": 1,
+                    "fallback_ratio": 0.2,
+                    "latency_buckets": {
+                        "counts": {"fast": 3, "medium": 1, "slow": 1},
+                        "total": 5,
+                        "ratios": {"fast": 0.6, "medium": 0.2, "slow": 0.2},
+                    },
+                    "latest": {
+                        "provider": "fred",
+                        "provider_label": "FRED",
+                        "status": "error",
+                        "elapsed_ms": 890.0,
+                        "detail": "rate limit",
+                        "fallback": False,
+                        "ts": None,
+                    },
+                },
+                "ecb": {
+                    "label": "ECB",
+                    "count": 2,
+                    "status_counts": {"success": 2},
+                    "status_ratios": {"success": 1.0},
+                    "error_count": 0,
+                    "error_ratio": 0.0,
+                    "fallback_count": 0,
+                    "fallback_ratio": 0.0,
+                    "latency_buckets": {
+                        "counts": {"fast": 1, "medium": 1},
+                        "total": 2,
+                        "ratios": {"fast": 0.5, "medium": 0.5},
+                    },
+                    "latest": {
+                        "provider": "ecb",
+                        "provider_label": "ECB",
+                        "status": "success",
+                        "elapsed_ms": 120.0,
+                        "detail": None,
+                        "fallback": False,
+                        "ts": None,
+                    },
+                },
+            },
+            "overall": {
+                "count": 7,
+                "status_counts": {"success": 5, "error": 2},
+                "status_ratios": {"success": 5 / 7, "error": 2 / 7},
+                "fallback_count": 1,
+                "fallback_ratio": 1 / 7,
+                "error_count": 2,
+                "error_ratio": 2 / 7,
+                "latency_buckets": {
+                    "counts": {"fast": 4, "medium": 2, "slow": 1},
+                    "total": 7,
+                    "ratios": {"fast": 4 / 7, "medium": 2 / 7, "slow": 1 / 7},
+                },
+            },
+        },
         "opportunities": {
             "mode": "miss",
             "elapsed_ms": 321.0,
@@ -159,6 +234,7 @@ def test_render_health_sidebar_uses_shared_note_formatter(
             _dummy_metrics["fx_api"], _dummy_metrics["fx_cache"]
         )
     )
+    macro_lines = list(health_sidebar._format_macro_section(_dummy_metrics["macro_api"]))
     latency_lines = list(
         health_sidebar._format_latency_section(
             _dummy_metrics["portfolio"], _dummy_metrics["quotes"]
@@ -186,10 +262,14 @@ def test_render_health_sidebar_uses_shared_note_formatter(
     assert history_lines and history_lines[0].startswith("| Momento | Modo | t (ms)")
     assert "| ✅ hit" in history_lines[0]
     assert "| ⚙️ miss" in history_lines[0]
+    assert any("Totales macro" in line for line in macro_lines)
+    assert any("FRED" in line for line in macro_lines)
+    assert any("Latencia:" in line for line in macro_lines)
     formatted_latency_lines = [f"formatted::{line}" for line in latency_lines]
     formatted_note_calls: list[str] = [
         health_sidebar._format_iol_status(_dummy_metrics["iol_refresh"]),
         health_sidebar._format_yfinance_status(_dummy_metrics["yfinance"]),
+        *macro_lines,
         *fx_lines,
         opportunities_note,
         *formatted_latency_lines,
@@ -207,6 +287,8 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         formatted_note_calls[0],
         "#### 📈 Yahoo Finance",
         formatted_note_calls[1],
+        "#### 🌐 Macro / Datos externos",
+        *macro_lines,
         "#### 💱 FX",
         *fx_lines,
         "#### 🔎 Screening de oportunidades",
@@ -269,6 +351,19 @@ def test_format_opportunities_status_includes_trend_from_stats(
     assert "hits 75%" in note
     assert "mejoras 50%" in note
     assert "Δ̄ +5" in note
+
+
+def test_format_macro_section_handles_missing_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(health_sidebar, "format_note", lambda text: text)
+
+    assert health_sidebar._format_macro_section(None) == [
+        "_Sin datos macro registrados._"
+    ]
+    assert health_sidebar._format_macro_section({}) == [
+        "_Sin datos macro registrados._"
+    ]
 
 
 def test_format_opportunities_history_shows_deltas() -> None:
@@ -356,6 +451,10 @@ def test_record_opportunities_report_rotates_history(
     assert improvement.get("count") == total_records
     assert improvement.get("losses") == total_records
     assert improvement.get("avg_delta_ms") == pytest.approx(-50.0, rel=1e-9)
+    elapsed_buckets = stats.get("elapsed_buckets") or {}
+    assert elapsed_buckets.get("counts", {}).get("fast") == total_records
+    cached_buckets = stats.get("cached_buckets") or {}
+    assert cached_buckets.get("counts", {}).get("fast") == total_records
 
 
 _SMOKE_SCRIPT = textwrap.dedent(
