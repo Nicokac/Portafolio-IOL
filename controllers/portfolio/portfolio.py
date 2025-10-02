@@ -10,15 +10,15 @@ from ui.charts import plot_technical_analysis_chart
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from shared.errors import AppError
+from services.portfolio_view import PortfolioViewModelService
 
 from .load_data import load_portfolio_data
-from .filters import apply_filters
 from .charts import render_basic_section, render_advanced_analysis
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
-
-
 logger = logging.getLogger(__name__)
+
+view_model_service = PortfolioViewModelService()
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -34,7 +34,8 @@ def render_portfolio_section(container, cli, fx_rates):
 
         refresh_secs = controls.refresh_secs
 
-        df_view = apply_filters(df_pos, controls, cli, psvc)
+        snapshot = view_model_service.get_portfolio_view(df_pos, controls, cli, psvc)
+        df_view = snapshot.df_view
 
         ccl_rate = fx_rates.get("ccl")
 
@@ -59,7 +60,7 @@ def render_portfolio_section(container, cli, fx_rates):
         st.session_state["portfolio_tab"] = tab_idx
 
         if tab_idx == 0:
-            render_basic_section(df_view, controls, ccl_rate)
+            render_basic_section(df_view, controls, ccl_rate, totals=snapshot.totals)
         elif tab_idx == 1:
             render_advanced_analysis(df_view)
         elif tab_idx == 2:
