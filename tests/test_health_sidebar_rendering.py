@@ -1,67 +1,43 @@
-"""Tests for the health sidebar rendering without mocking Streamlit."""
+"""Tests for the health sidebar rendering using local Streamlit stubs."""
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-import sys
-import textwrap
 from typing import Any, Dict
+
+import importlib
+import sys
 
 import pytest
 from zoneinfo import ZoneInfo
 
-import streamlit as st
-from streamlit.runtime.secrets import Secrets
-from streamlit.testing.v1 import AppTest
-
-# <== De 'main': Se importa TimeProvider para generar resultados esperados.
-from shared.time_provider import TIME_FORMAT, TimeProvider
-# <== De tu rama: Se importa TimeSnapshot para el stub.
-from shared.time_provider import TimeSnapshot
-from shared.version import __version__
-from shared.ui import notes as shared_notes
-
-_ORIGINAL_STREAMLIT = st
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-_SCRIPT = textwrap.dedent(
-    f"""
-    import sys
-    sys.path.insert(0, {repr(str(_PROJECT_ROOT))})
-    from ui.health_sidebar import render_health_sidebar
-    render_health_sidebar()
-    """
-)
+
+from shared.time_provider import TIME_FORMAT, TimeProvider, TimeSnapshot
+from shared.version import __version__
+from shared.ui import notes as shared_notes
 
 
-def _ensure_real_streamlit_module() -> None:
-    """Restore the actual Streamlit module if previous tests replaced it."""
-    global st
-    if sys.modules.get("streamlit") is not _ORIGINAL_STREAMLIT:
-        sys.modules["streamlit"] = _ORIGINAL_STREAMLIT
-    if st is not _ORIGINAL_STREAMLIT:
-        st = _ORIGINAL_STREAMLIT  # pragma: no cover - simple assignment for tests
+@pytest.fixture
+def health_sidebar_module(monkeypatch: pytest.MonkeyPatch):
+    import ui.health_sidebar as health_sidebar
+
+    module = importlib.reload(health_sidebar)
+    monkeypatch.setattr(module, "get_health_metrics", lambda: module.st.session_state.get("health_metrics", {}))
+    return module
 
 
-def _run_sidebar(metrics: Dict[str, Any]) -> AppTest:
-    """Execute the sidebar renderer with the provided metrics."""
-    _ensure_real_streamlit_module()
-    if not hasattr(st, "secrets"):
-        st.secrets = Secrets({})
-    app = AppTest.from_string(_SCRIPT)
-    app.session_state["health_metrics"] = metrics
-    app.run()
-    return app
+def _run_sidebar(module, metrics: Dict[str, Any]) -> None:
+    module.st.session_state["health_metrics"] = metrics
+    module.render_health_sidebar()
 
 
-def _collect(app: AppTest, element_type: str) -> list[str]:
-    return [element.value for element in app.sidebar if element.type == element_type]
-
-
-def test_sidebar_shows_empty_state_labels() -> None:
-    app = _run_sidebar(
+def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module) -> None:
+    _run_sidebar(
+        health_sidebar_module,
         {
             "iol_refresh": None,
             "yfinance": None,
@@ -70,17 +46,18 @@ def test_sidebar_shows_empty_state_labels() -> None:
             "portfolio": None,
             "quotes": None,
             "opportunities": None,
-        }
+        },
     )
 
-    assert _collect(app, "header") == [
+    assert health_sidebar_module.st.sidebar.headers == [
         f"🩺 Healthcheck (versión {__version__})"
     ]
-    assert "Monitorea la procedencia y el rendimiento de los datos cargados." in _collect(
-        app, "caption"
-    )
+    captions = list(health_sidebar_module.st.sidebar.captions)
+    assert any(
+        "Monitorea la procedencia" in caption for caption in captions
+    ), "Expected introductory caption to be present"
 
-    markdown = _collect(app, "markdown")
+    markdown_calls = list(health_sidebar_module.st.sidebar.markdowns)
     for expected in [
         "#### 🔐 Conexión IOL",
         "_Sin actividad registrada._",
@@ -95,15 +72,14 @@ def test_sidebar_shows_empty_state_labels() -> None:
         "- Portafolio: sin registro",
         "- Cotizaciones: sin registro",
     ]:
-        assert expected in markdown
+        assert expected in markdown_calls
 
 
-def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
+def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_sidebar_module) -> None:
     timezone = ZoneInfo("America/Argentina/Buenos_Aires")
     base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
     timestamps = [base.timestamp() + offset for offset in range(7)]
 
-    # <== De tu rama: El stub que simula TimeProvider para inyectarlo en el componente.
     class StubTimeProvider:
         def __init__(self) -> None:
             self.calls: list[float | None] = []
@@ -115,67 +91,64 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
             ts_value = float(ts)
             self.calls.append(ts_value)
             moment = datetime.fromtimestamp(ts_value, tz=timezone)
-            # El stub debe devolver un TimeSnapshot, como el TimeProvider real.
             return TimeSnapshot(moment.strftime(TIME_FORMAT), moment)
 
     provider_stub = StubTimeProvider()
-    monkeypatch.setattr("ui.health_sidebar.TimeProvider", provider_stub)
+    monkeypatch.setattr(health_sidebar_module, "TimeProvider", provider_stub)
 
-    app = _run_sidebar(
-        {
-            "iol_refresh": {
-                "status": "success",
-                "ts": timestamps[0],
-                "detail": "OK",
-            },
-            "yfinance": {
-                "source": "fallback",
-                "detail": "respaldo",
-                "ts": timestamps[1],
-            },
-            "fx_api": {
-                "status": "error",
-                "error": "boom",
-                "elapsed_ms": 123.4,
-                "ts": timestamps[2],
-            },
-            "fx_cache": {
-                "mode": "hit",
-                "age": 45.6,
-                "ts": timestamps[3],
-            },
-            "opportunities": {
-                "mode": "hit",
-                "elapsed_ms": 12.3,
-                "cached_elapsed_ms": 45.6,
-                "universe_initial": 150,
-                "universe_final": 90,
-                "discard_ratio": 0.4,
-                "highlighted_sectors": ["Energy", "Utilities"],
-                "counts_by_origin": {"nyse": 45, "nasdaq": 45},
-                "ts": timestamps[4],
-            },
-            "portfolio": {
-                "elapsed_ms": 456.7,
-                "source": "api",
-                "detail": "fresh",
-                "ts": timestamps[5],
-            },
-            "quotes": {
-                "elapsed_ms": 789.1,
-                "source": "yfinance",
-                "count": 12,
-                "detail": "with gaps",
-                "ts": timestamps[6],
-            },
-        }
-    )
+    metrics = {
+        "iol_refresh": {
+            "status": "success",
+            "ts": timestamps[0],
+            "detail": "OK",
+        },
+        "yfinance": {
+            "source": "fallback",
+            "detail": "respaldo",
+            "ts": timestamps[1],
+        },
+        "fx_api": {
+            "status": "error",
+            "error": "boom",
+            "elapsed_ms": 123.4,
+            "ts": timestamps[2],
+        },
+        "fx_cache": {
+            "mode": "hit",
+            "age": 45.6,
+            "ts": timestamps[3],
+        },
+        "opportunities": {
+            "mode": "hit",
+            "elapsed_ms": 12.3,
+            "cached_elapsed_ms": 45.6,
+            "universe_initial": 150,
+            "universe_final": 90,
+            "discard_ratio": 0.4,
+            "highlighted_sectors": ["Energy", "Utilities"],
+            "counts_by_origin": {"nyse": 45, "nasdaq": 45},
+            "ts": timestamps[4],
+        },
+        "portfolio": {
+            "elapsed_ms": 456.7,
+            "source": "api",
+            "detail": "fresh",
+            "ts": timestamps[5],
+        },
+        "quotes": {
+            "elapsed_ms": 789.1,
+            "source": "yfinance",
+            "count": 12,
+            "detail": "with gaps",
+            "ts": timestamps[6],
+        },
+    }
 
-    markdown = _collect(app, "markdown")
-    # <== De 'main': Generación de resultados esperados usando el TimeProvider real.
-    # Esto es robusto porque si cambia el formato en TimeProvider, el test se actualiza solo.
-    # Lo que hacemos es pedirle al objeto TimeSnapshot que nos dé su representación en texto.
+    _run_sidebar(health_sidebar_module, metrics)
+
+    markdown = list(health_sidebar_module.st.sidebar.markdowns)
     formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
+
     expected_lines = {
         "#### 🔐 Conexión IOL",
         shared_notes.format_note(f"✅ Refresh correcto • {formatted[0]} — OK"),
@@ -190,9 +163,8 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
         ),
         "#### 🔎 Screening de oportunidades",
         shared_notes.format_note(
-            f"✅ Cache reutilizada • {formatted[4]} (12 ms • previo 46 ms)"
-            " — universo 150→90 | descartes 40% | sectores: Energy, Utilities"
-            " | origen: nyse=45, nasdaq=45"
+            "✅ Cache reutilizada • "
+            f"{formatted[4]} (12 ms • previo 46 ms) — universo 150→90 | descartes 40% | sectores: Energy, Utilities | origen: nyse=45, nasdaq=45"
         ),
         "#### ⏱️ Latencias",
         f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[5]}",
