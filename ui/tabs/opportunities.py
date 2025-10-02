@@ -78,6 +78,9 @@ PRESET_FILTERS: Mapping[str, Mapping[str, object]] = {
 _CUSTOM_PRESETS_STATE_KEY = "custom_presets"
 _PENDING_PRESET_STATE_KEY = "opportunities_pending_preset"
 _SUMMARY_STATE_KEY = "opportunities_summary"
+_SUMMARY_EXPANDED_STATE_KEY = "opportunities_summary_expanded"
+_SUMMARY_COMPACT_OVERRIDE_KEY = "opportunities_summary_compact_override"
+_SUMMARY_COMPACT_BREAKPOINT = 768
 
 
 _INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
@@ -304,27 +307,109 @@ def _format_percentage(value: object) -> str:
     return f"{numeric:.0%}"
 
 
+def _resolve_compact_layout_override() -> bool | None:
+    override = st.session_state.get(_SUMMARY_COMPACT_OVERRIDE_KEY)
+    if isinstance(override, bool):
+        return override
+    return None
+
+
+def _should_use_compact_layout() -> bool:
+    override = _resolve_compact_layout_override()
+    if override is not None:
+        return override
+
+    viewport_candidates = (
+        "viewport_width",
+        "client_viewport",
+        "browser_info",
+        "screen",
+    )
+    width: int | float | str | None = None
+    for key in viewport_candidates:
+        candidate = st.session_state.get(key)
+        if isinstance(candidate, Mapping):
+            for inner_key in ("width", "client_width", "page_width", "innerWidth"):
+                if inner_key in candidate and candidate[inner_key] is not None:
+                    width = candidate[inner_key]
+                    break
+            if width is not None:
+                break
+        elif candidate is not None:
+            width = candidate
+            break
+
+    if width is not None:
+        try:
+            numeric_width = float(width)
+        except (TypeError, ValueError):
+            numeric_width = None
+        if numeric_width is not None:
+            return numeric_width <= _SUMMARY_COMPACT_BREAKPOINT
+
+    return False
+
+
 def _render_summary_block(
     summary: Mapping[str, object] | None,
     *,
     placeholder: st.delta_generator.DeltaGenerator | None = None,
+    expanded: bool = True,
 ) -> None:
     target = placeholder.empty() if placeholder is not None else st
     with target.container():
         st.markdown("### Resumen del screening")
+        if not expanded:
+            st.caption(
+                "Resumen oculto. Activá la opción **Mostrar resumen del screening** para ver los KPIs."
+            )
+            return
+
         normalized = _normalize_summary_payload(summary)
         if not normalized:
             st.info("Ejecutá el screening para ver un resumen de universo y descartes.")
             return
 
-        metrics_columns = st.columns(3)
+        compact_layout = _should_use_compact_layout()
+        if compact_layout:
+            st.caption(
+                "Modo compacto activado para facilitar la lectura de métricas en pantallas estrechas."
+            )
+
+        metrics_columns: Sequence[st.delta_generator.DeltaGenerator]
+        if compact_layout:
+            metrics_columns = [st.container(), st.container(), st.container()]
+        else:
+            metrics_columns = st.columns(3)
+
         universe_label = _format_integer(normalized.get("universe_count"))
         result_label = _format_integer(normalized.get("result_count"))
         ratio_label = _format_percentage(normalized.get("discarded_ratio"))
         ratio_delta = None if ratio_label == "—" else f"{ratio_label} descartados"
 
-        metrics_columns[0].metric("Universo analizado", universe_label)
-        metrics_columns[1].metric("Candidatos finales", result_label, delta=ratio_delta)
+        metrics_payload = (
+            (
+                metrics_columns[0],
+                "Universo analizado",
+                universe_label,
+                None,
+                "Cantidad total de empresas analizadas en el screening.",
+            ),
+            (
+                metrics_columns[1],
+                "Candidatos finales",
+                result_label,
+                ratio_delta,
+                "Cantidad de compañías que superaron los filtros establecidos. El delta muestra el porcentaje descartado.",
+            ),
+            (
+                metrics_columns[2],
+                "Sectores activos",
+                None,
+                None,
+                "Sectores con filtros activos. 'Todos' indica que no se aplicaron restricciones sectoriales.",
+            ),
+        )
 
         selected_sectors = normalized.get("selected_sectors") or []
         if not isinstance(selected_sectors, Sequence) or isinstance(
@@ -334,7 +419,12 @@ def _render_summary_block(
         sector_values = [str(value) for value in selected_sectors if value]
         sectors_count = len(sector_values)
         sectors_label = str(sectors_count) if sectors_count else "Todos"
-        metrics_columns[2].metric("Sectores activos", sectors_label)
+
+        for column, label, value, delta, help_text in metrics_payload:
+            with column:
+                metric_value = value if value is not None else sectors_label
+                column.metric(label, metric_value, delta=delta)
+                column.caption(help_text)
 
         if sector_values:
             st.caption("Sectores filtrados: " + ", ".join(sector_values))
@@ -668,10 +758,22 @@ def render_opportunities_tab() -> None:
         "sectors": list(sectors),
     }
 
+    st.session_state.setdefault(_SUMMARY_EXPANDED_STATE_KEY, True)
+    summary_expanded = st.checkbox(
+        "Mostrar resumen del screening",
+        value=bool(st.session_state[_SUMMARY_EXPANDED_STATE_KEY]),
+        key=_SUMMARY_EXPANDED_STATE_KEY,
+        help="Alterná la visualización de los KPIs principales del screening.",
+    )
+
     summary_placeholder = st.empty()
     stored_summary = st.session_state.get(_SUMMARY_STATE_KEY)
     initial_summary = stored_summary if isinstance(stored_summary, Mapping) else None
-    _render_summary_block(initial_summary, placeholder=summary_placeholder)
+    _render_summary_block(
+        initial_summary,
+        placeholder=summary_placeholder,
+        expanded=summary_expanded,
+    )
 
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
@@ -756,7 +858,11 @@ def render_opportunities_tab() -> None:
             st.session_state[_SUMMARY_STATE_KEY] = normalized_summary
         else:
             st.session_state.pop(_SUMMARY_STATE_KEY, None)
-        _render_summary_block(normalized_summary, placeholder=summary_placeholder)
+        _render_summary_block(
+            normalized_summary,
+            placeholder=summary_placeholder,
+            expanded=st.session_state.get(_SUMMARY_EXPANDED_STATE_KEY, True),
+        )
 
         _render_screening_block(result, heading="Resultados del screening")
         results_rendered = True
