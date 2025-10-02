@@ -111,7 +111,9 @@ def _format_latency_section(portfolio: Optional[dict], quotes: Optional[dict]) -
 
 
 def _format_opportunities_status(
-    data: Optional[dict], history: Optional[Sequence[Mapping[str, Any]]] = None
+    data: Optional[dict],
+    history: Optional[Sequence[Mapping[str, Any]]] = None,
+    stats: Optional[Mapping[str, Any]] = None,
 ) -> str:
     if not data and history:
         for entry in reversed(history):
@@ -192,6 +194,54 @@ def _format_opportunities_status(
     if origin_parts:
         metrics_parts.append("origen: " + ", ".join(origin_parts))
 
+    if stats and isinstance(stats, Mapping):
+        summary_parts: list[str] = []
+        elapsed_summary = stats.get("elapsed") if isinstance(stats, Mapping) else None
+        if isinstance(elapsed_summary, Mapping):
+            avg = elapsed_summary.get("avg")
+            count = elapsed_summary.get("count")
+            stdev = elapsed_summary.get("stdev")
+            if isinstance(avg, (int, float)) and isinstance(count, (int, float)):
+                count_int = int(count)
+                if isinstance(stdev, (int, float)) and stdev > 0:
+                    summary_parts.append(
+                        f"prom {float(avg):.0f}±{float(stdev):.0f} ms (n={count_int})"
+                    )
+                else:
+                    summary_parts.append(f"prom {float(avg):.0f} ms (n={count_int})")
+        hit_ratio = stats.get("hit_ratio") if isinstance(stats, Mapping) else None
+        mode_counts = stats.get("mode_counts") if isinstance(stats, Mapping) else None
+        total_modes = stats.get("mode_total") if isinstance(stats, Mapping) else None
+        if isinstance(hit_ratio, (int, float)) and isinstance(mode_counts, Mapping):
+            hit_count = mode_counts.get("hit", 0)
+            try:
+                hit_count_int = int(hit_count)
+            except (TypeError, ValueError):
+                hit_count_int = 0
+            total = int(total_modes) if isinstance(total_modes, (int, float)) else None
+            if total:
+                summary_parts.append(
+                    f"hits {hit_ratio:.0%} ({hit_count_int}/{total})"
+                )
+        improvement = stats.get("improvement") if isinstance(stats, Mapping) else None
+        if isinstance(improvement, Mapping):
+            win_ratio = improvement.get("win_ratio")
+            wins = improvement.get("wins")
+            count = improvement.get("count")
+            delta_avg = improvement.get("avg_delta_ms")
+            if isinstance(win_ratio, (int, float)) and isinstance(count, (int, float)):
+                try:
+                    wins_int = int(wins)
+                except (TypeError, ValueError):
+                    wins_int = 0
+                summary_parts.append(
+                    f"mejoras {win_ratio:.0%} ({wins_int}/{int(count)})"
+                )
+            if isinstance(delta_avg, (int, float)):
+                summary_parts.append(f"Δ̄ {float(delta_avg):+0.0f} ms vs caché")
+        if summary_parts:
+            metrics_parts.append("tendencia: " + " • ".join(summary_parts))
+
     metrics_txt = f" — {' | '.join(metrics_parts)}" if metrics_parts else ""
     return format_note(
         f"{icon} {label} • {ts} ({elapsed_txt}{baseline_txt}){metrics_txt}"
@@ -199,33 +249,53 @@ def _format_opportunities_status(
 
 
 def _format_opportunities_history(
-    history: Optional[Iterable[Mapping[str, Any]]]
+    history: Optional[Iterable[Mapping[str, Any]]],
+    stats: Optional[Mapping[str, Any]] = None,
 ) -> Iterable[str]:
     if not history:
         return ["_Sin historial disponible._"]
 
-    lines: list[str] = []
+    average_elapsed: Optional[float] = None
+    elapsed_stats = None
+    if isinstance(stats, Mapping):
+        elapsed_stats = stats.get("elapsed")
+    if isinstance(elapsed_stats, Mapping):
+        avg_candidate = elapsed_stats.get("avg")
+        if isinstance(avg_candidate, (int, float)):
+            average_elapsed = float(avg_candidate)
+
+    header = "| Momento | Modo | t (ms) | Δ prom | Base |\n| --- | --- | --- | --- | --- |"
+    rows = [header]
 
     for entry in history:
         if not isinstance(entry, Mapping):
             continue
         mode = entry.get("mode")
         icon = "✅" if mode == "hit" else "⚙️"
-        label = "hit de caché" if mode == "hit" else "ejecución completa"
+        label = "hit" if mode == "hit" else "miss"
         ts = _format_timestamp(entry.get("ts"))
         elapsed = entry.get("elapsed_ms")
         elapsed_txt = (
-            f"{float(elapsed):.0f} ms" if isinstance(elapsed, (int, float)) else "s/d"
+            f"{float(elapsed):.0f}" if isinstance(elapsed, (int, float)) else "s/d"
         )
         baseline = entry.get("cached_elapsed_ms")
         baseline_txt = (
-            f" • previo {float(baseline):.0f} ms"
-            if isinstance(baseline, (int, float))
-            else ""
+            f"{float(baseline):.0f}" if isinstance(baseline, (int, float)) else "s/d"
         )
-        lines.append(format_note(f"{icon} {ts} • {elapsed_txt} • {label}{baseline_txt}"))
+        if isinstance(elapsed, (int, float)) and average_elapsed is not None:
+            delta = float(elapsed) - average_elapsed
+            delta_txt = f"{delta:+.0f}"
+        else:
+            delta_txt = "s/d"
+        rows.append(
+            f"| {ts} | {icon} {label} | {elapsed_txt} | {delta_txt} | {baseline_txt} |"
+        )
 
-    return lines or ["_Sin historial disponible._"]
+    if len(rows) == 1:
+        return ["_Sin historial disponible._"]
+
+    table_block = "\n".join(rows)
+    return [table_block]
 
 
 def render_health_sidebar() -> None:
@@ -248,12 +318,16 @@ def render_health_sidebar() -> None:
     sidebar.markdown("#### 🔎 Screening de oportunidades")
     sidebar.markdown(
         _format_opportunities_status(
-            metrics.get("opportunities"), metrics.get("opportunities_history")
+            metrics.get("opportunities"),
+            metrics.get("opportunities_history"),
+            metrics.get("opportunities_stats"),
         )
     )
     sidebar.markdown("#### 🗂️ Historial de screenings")
     history_entries = metrics.get("opportunities_history") or []
-    for line in _format_opportunities_history(reversed(history_entries)):
+    for line in _format_opportunities_history(
+        reversed(history_entries), metrics.get("opportunities_stats")
+    ):
         sidebar.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")

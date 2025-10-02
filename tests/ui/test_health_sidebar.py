@@ -113,6 +113,24 @@ def _dummy_metrics() -> dict[str, object]:
                 "ts": None,
             },
         ],
+        "opportunities_stats": {
+            "elapsed": {"avg": 310.0, "stdev": 90.0, "count": 4},
+            "cached_elapsed": {"avg": 260.0, "stdev": 60.0, "count": 3},
+            "mode_counts": {"hit": 3, "miss": 1},
+            "mode_total": 4,
+            "mode_ratios": {"hit": 0.75, "miss": 0.25},
+            "hit_ratio": 0.75,
+            "improvement": {
+                "count": 3,
+                "wins": 2,
+                "losses": 1,
+                "ties": 0,
+                "win_ratio": 2 / 3,
+                "loss_ratio": 1 / 3,
+                "tie_ratio": 0.0,
+                "avg_delta_ms": 15.0,
+            },
+        },
     }
 
 
@@ -147,39 +165,48 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         )
     )
     opportunities_note = health_sidebar._format_opportunities_status(
-        _dummy_metrics["opportunities"], _dummy_metrics["opportunities_history"]
+        _dummy_metrics["opportunities"],
+        _dummy_metrics["opportunities_history"],
+        _dummy_metrics["opportunities_stats"],
     )
     history_lines = list(
         health_sidebar._format_opportunities_history(
-            reversed(_dummy_metrics["opportunities_history"])
+            reversed(_dummy_metrics["opportunities_history"]),
+            _dummy_metrics["opportunities_stats"],
         )
     )
     assert "universo 120→48" in opportunities_note
     assert "descartes 60%" in opportunities_note
     assert "sectores: Energy, Utilities" in opportunities_note
     assert "origen: nyse=30, nasdaq=18" in opportunities_note
+    assert "tendencia:" in opportunities_note
+    assert "hits 75% (3/4)" in opportunities_note
+    assert "mejoras 67% (2/3)" in opportunities_note
+    assert "Δ̄ +15 ms vs caché" in opportunities_note
+    assert history_lines and history_lines[0].startswith("| Momento | Modo | t (ms)")
+    assert "| ✅ hit" in history_lines[0]
+    assert "| ⚙️ miss" in history_lines[0]
     formatted_latency_lines = [f"formatted::{line}" for line in latency_lines]
-    expected_notes: list[str] = [
+    formatted_note_calls: list[str] = [
         health_sidebar._format_iol_status(_dummy_metrics["iol_refresh"]),
         health_sidebar._format_yfinance_status(_dummy_metrics["yfinance"]),
         *fx_lines,
         opportunities_note,
-        *history_lines,
         *formatted_latency_lines,
     ]
 
     if len(captured) > render_call_count:
         del captured[render_call_count:]
 
-    expected_raw_notes = [note.removeprefix("formatted::") for note in expected_notes]
+    expected_raw_notes = [note.removeprefix("formatted::") for note in formatted_note_calls]
 
     assert captured == expected_raw_notes
 
     expected_markdown_sequence: list[str] = [
         "#### 🔐 Conexión IOL",
-        expected_notes[0],
+        formatted_note_calls[0],
         "#### 📈 Yahoo Finance",
-        expected_notes[1],
+        formatted_note_calls[1],
         "#### 💱 FX",
         *fx_lines,
         "#### 🔎 Screening de oportunidades",
@@ -217,6 +244,59 @@ def test_format_opportunities_status_handles_partial_metrics(
     assert "s/d" in note
 
 
+def test_format_opportunities_status_includes_trend_from_stats(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(health_sidebar, "format_note", lambda text: text)
+    data = {
+        "mode": "hit",
+        "elapsed_ms": 200.0,
+        "cached_elapsed_ms": 250.0,
+        "ts": None,
+    }
+    stats = {
+        "elapsed": {"avg": 210.0, "stdev": 10.0, "count": 4},
+        "mode_counts": {"hit": 3, "miss": 1},
+        "mode_total": 4,
+        "hit_ratio": 0.75,
+        "improvement": {"count": 2, "wins": 1, "win_ratio": 0.5, "avg_delta_ms": 5.0},
+    }
+
+    note = health_sidebar._format_opportunities_status(data, stats=stats)
+
+    assert "tendencia" in note
+    assert "prom 210" in note
+    assert "hits 75%" in note
+    assert "mejoras 50%" in note
+    assert "Δ̄ +5" in note
+
+
+def test_format_opportunities_history_shows_deltas() -> None:
+    history = [
+        {"mode": "hit", "elapsed_ms": 200.0, "cached_elapsed_ms": 180.0, "ts": None},
+        {"mode": "miss", "elapsed_ms": 260.0, "cached_elapsed_ms": None, "ts": None},
+    ]
+    stats = {"elapsed": {"avg": 220.0, "stdev": 20.0, "count": 2}}
+
+    lines = list(health_sidebar._format_opportunities_history(history, stats))
+
+    assert len(lines) == 1
+    assert "Δ prom" in lines[0]
+    assert "+" in lines[0]
+    assert "-" in lines[0]
+
+
+def test_format_opportunities_history_handles_missing_stats() -> None:
+    history = [
+        {"mode": "hit", "elapsed_ms": None, "cached_elapsed_ms": None, "ts": None}
+    ]
+
+    lines = list(health_sidebar._format_opportunities_history(history, {}))
+
+    assert len(lines) == 1
+    assert lines[0].count("s/d") >= 2
+
+
 def test_render_health_sidebar_includes_history_section(
     monkeypatch: pytest.MonkeyPatch, _dummy_metrics: dict[str, object]
 ) -> None:
@@ -229,7 +309,8 @@ def test_render_health_sidebar_includes_history_section(
     assert "#### 🗂️ Historial de screenings" in dummy_streamlit.sidebar.markdown_calls
     expected_history_lines = list(
         health_sidebar._format_opportunities_history(
-            reversed(_dummy_metrics["opportunities_history"])
+            reversed(_dummy_metrics["opportunities_history"]),
+            _dummy_metrics.get("opportunities_stats"),
         )
     )
     for line in expected_history_lines:
@@ -246,7 +327,9 @@ def test_record_opportunities_report_rotates_history(
         SimpleNamespace(session_state=dummy_state),
     )
 
-    for idx in range(health_service._OPPORTUNITIES_HISTORY_LIMIT + 2):
+    total_records = health_service._OPPORTUNITIES_HISTORY_LIMIT + 2
+
+    for idx in range(total_records):
         health_service.record_opportunities_report(
             mode="hit" if idx % 2 == 0 else "miss",
             elapsed_ms=100 + idx,
@@ -258,6 +341,21 @@ def test_record_opportunities_report_rotates_history(
     assert len(history) == health_service._OPPORTUNITIES_HISTORY_LIMIT
     last_entry = metrics["opportunities"]
     assert history[-1] == last_entry
+
+    stats = metrics["opportunities_stats"]
+    assert stats["mode_counts"]["hit"] == (total_records + 1) // 2
+    assert stats["mode_counts"]["miss"] == total_records // 2
+    assert stats["elapsed"]["count"] == total_records
+    assert stats["cached_elapsed"]["count"] == total_records
+    assert stats["elapsed"]["avg"] == pytest.approx(103.0, rel=1e-9)
+    assert stats["elapsed"]["stdev"] == pytest.approx(2.0, rel=1e-9)
+    assert stats["hit_ratio"] == pytest.approx(
+        ((total_records + 1) // 2) / total_records
+    )
+    improvement = stats.get("improvement") or {}
+    assert improvement.get("count") == total_records
+    assert improvement.get("losses") == total_records
+    assert improvement.get("avg_delta_ms") == pytest.approx(-50.0, rel=1e-9)
 
 
 _SMOKE_SCRIPT = textwrap.dedent(
