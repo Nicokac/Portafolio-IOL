@@ -1,0 +1,265 @@
+"""Contract tests for the portfolio Streamlit UI."""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from typing import Any, Iterable, Iterator, Sequence
+from unittest.mock import MagicMock
+
+import pandas as pd
+import pytest
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from controllers.portfolio.portfolio import render_portfolio_section
+from domain.models import Controls
+
+
+class _DummyContainer:
+    def __enter__(self) -> "_DummyContainer":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - standard context signature
+        return None
+
+
+class _ContextManager:
+    def __init__(self, owner: "FakeStreamlit") -> None:
+        self._owner = owner
+
+    def __enter__(self) -> "_ContextManager":  # noqa: D401 - thin wrapper
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - thin wrapper
+        return None
+
+    def number_input(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.number_input(*args, **kwargs)
+
+    def selectbox(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.selectbox(*args, **kwargs)
+
+
+class FakeStreamlit:
+    """Minimal Streamlit stub capturing the interactions we care about."""
+
+    def __init__(self, radio_sequence: Iterable[int], selectbox_defaults: dict[str, Any] | None = None) -> None:
+        self.session_state: dict[str, Any] = {}
+        self._radio_iter: Iterator[int] = iter(radio_sequence)
+        self._selectbox_defaults = selectbox_defaults or {}
+        self.radio_calls: list[dict[str, Any]] = []
+        self.selectbox_calls: list[dict[str, Any]] = []
+        self.number_input_calls: list[dict[str, Any]] = []
+        self.subheaders: list[str] = []
+        self.warnings: list[str] = []
+        self.errors: list[str] = []
+        self.successes: list[str] = []
+        self.plot_calls: list[dict[str, Any]] = []
+        self.line_charts: list[pd.DataFrame] = []
+        self.metrics: list[tuple[Any, Any, Any]] = []
+
+    # ---- Core widgets -------------------------------------------------
+    def radio(self, label: str, *, options: Sequence[int], format_func, index: int, horizontal: bool) -> int:
+        value = next(self._radio_iter)
+        self.radio_calls.append({"label": label, "options": list(options), "index": index})
+        return value
+
+    def selectbox(self, label: str, options: Sequence[Any], index: int = 0, key: str | None = None, **_: Any) -> Any:
+        self.selectbox_calls.append({"label": label, "options": list(options), "key": key})
+        if label in self._selectbox_defaults:
+            return self._selectbox_defaults[label]
+        return options[index] if options else None
+
+    def number_input(self, label: str, *, min_value: Any, max_value: Any, value: Any, step: Any) -> Any:
+        self.number_input_calls.append(
+            {
+                "label": label,
+                "min_value": min_value,
+                "max_value": max_value,
+                "value": value,
+                "step": step,
+            }
+        )
+        return value
+
+    def columns(self, layout: Sequence[Any] | int) -> list[_ContextManager]:
+        if isinstance(layout, int):
+            return [_ContextManager(self) for _ in range(layout)]
+        return [_ContextManager(self) for _ in layout]
+
+    def expander(self, label: str):  # noqa: ANN001 - mimics streamlit signature
+        return _ContextManager(self)
+
+    # ---- Feedback widgets ---------------------------------------------
+    def subheader(self, text: str) -> None:
+        self.subheaders.append(text)
+
+    def info(self, message: str) -> None:
+        self.warnings.append(message)
+
+    def warning(self, message: str) -> None:
+        self.warnings.append(message)
+
+    def error(self, message: str) -> None:
+        self.errors.append(message)
+
+    def success(self, message: str) -> None:
+        self.successes.append(message)
+
+    def caption(self, *_: Any, **__: Any) -> None:  # pragma: no cover - display only
+        return None
+
+    def plotly_chart(self, fig: Any, **kwargs: Any) -> None:
+        self.plot_calls.append({"fig": fig, "kwargs": kwargs})
+
+    def line_chart(self, data: pd.DataFrame) -> None:
+        self.line_charts.append(data)
+
+    def metric(self, label: str, value: Any, delta: Any | None = None) -> None:
+        self.metrics.append((label, value, delta))
+
+    def columns_context(self, layout: Sequence[Any]) -> None:  # pragma: no cover - helper for compatibility
+        return None
+
+    def select_slider(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - unused shim
+        raise NotImplementedError
+
+    # ---- Session helpers ----------------------------------------------
+    def stop(self) -> None:  # pragma: no cover - not expected in these tests
+        raise RuntimeError("streamlit.stop should not be called in tests")
+
+    def rerun(self) -> None:  # pragma: no cover - not expected
+        raise RuntimeError("streamlit.rerun should not be called in tests")
+
+
+@pytest.fixture
+def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
+    import controllers.portfolio.portfolio as portfolio_mod
+
+    def _configure(fake_st: FakeStreamlit, *, df_view: pd.DataFrame | None = None, all_symbols: list[str] | None = None):
+        portfolio_mod.st = fake_st
+        monkeypatch.setattr(portfolio_mod, "PortfolioService", lambda: MagicMock())
+        monkeypatch.setattr(portfolio_mod, "TAService", lambda: MagicMock())
+
+        df_positions = pd.DataFrame({"simbolo": ["GGAL"], "mercado": ["bcba"], "cantidad": [10], "costo_unitario": [100.0]})
+        all_symbols = all_symbols or ["GGAL"]
+        available_types = ["ACCION"]
+
+        monkeypatch.setattr(
+            portfolio_mod,
+            "load_portfolio_data",
+            lambda cli, svc: (df_positions.copy(), list(all_symbols), list(available_types)),
+        )
+
+        controls = Controls(
+            refresh_secs=30,
+            hide_cash=True,
+            show_usd=False,
+            order_by="valor_actual",
+            desc=True,
+            top_n=10,
+            selected_syms=list(all_symbols),
+            selected_types=list(available_types),
+            symbol_query="",
+        )
+        monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda *a, **k: controls)
+        monkeypatch.setattr(portfolio_mod, "render_ui_controls", lambda: None)
+
+        df_view = df_view or pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [1200.0]})
+        monkeypatch.setattr(portfolio_mod, "apply_filters", lambda *a, **k: df_view)
+
+        basic = MagicMock()
+        advanced = MagicMock()
+        risk = MagicMock()
+        fundamental = MagicMock()
+
+        monkeypatch.setattr(portfolio_mod, "render_basic_section", basic)
+        monkeypatch.setattr(portfolio_mod, "render_advanced_analysis", advanced)
+        monkeypatch.setattr(portfolio_mod, "render_risk_analysis", risk)
+        monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", fundamental)
+
+        return portfolio_mod, basic, advanced, risk, fundamental
+
+    return _configure
+
+
+def test_render_portfolio_section_updates_tab_state(_portfolio_setup) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[1])
+    portfolio_mod, basic, advanced, risk, fundamental = _portfolio_setup(fake_st)
+
+    refresh_secs = render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={})
+
+    assert refresh_secs == 30
+    assert fake_st.session_state["portfolio_tab"] == 1
+    assert fake_st.radio_calls
+    assert fake_st.radio_calls[0]["options"] == list(range(5))
+
+    basic.assert_not_called()
+    advanced.assert_called_once()
+    risk.assert_not_called()
+    fundamental.assert_not_called()
+
+
+def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfolio_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = FakeStreamlit(
+        radio_sequence=[4],
+        selectbox_defaults={"Seleccioná un símbolo (CEDEAR / ETF)": "GGAL", "Período": "6mo", "Intervalo": "1d"},
+    )
+
+    indicators_df = pd.DataFrame(
+        {
+            "Close": [100.0, 101.0, 102.0],
+            "SMA_FAST": [100.0, 100.5, 101.0],
+            "SMA_SLOW": [99.0, 99.5, 100.0],
+            "BB_L": [95.0, 95.5, 96.0],
+            "BB_U": [105.0, 105.5, 106.0],
+            "MACD": [0.1, 0.2, 0.3],
+            "MACD_SIGNAL": [0.05, 0.1, 0.15],
+            "STOCH_K": [20.0, 40.0, 60.0],
+            "STOCH_D": [15.0, 30.0, 45.0],
+            "ICHI_CONV": [100.0, 100.5, 101.0],
+            "ICHI_BASE": [99.0, 99.5, 100.0],
+            "ATR": [1.0, 1.1, 1.2],
+        }
+    )
+
+    class DummyTA:
+        def fundamentals(self, ticker: str) -> dict:
+            return {"ticker": ticker, "roe": 0.12}
+
+        def indicators_for(self, *args: Any, **kwargs: Any) -> pd.DataFrame:
+            return indicators_df.copy()
+
+        def alerts_for(self, df_ind: pd.DataFrame) -> list[str]:
+            return []
+
+        def backtest(self, df_ind: pd.DataFrame, *, strategy: str = "sma") -> pd.DataFrame:
+            return pd.DataFrame({"equity": [1.0, 1.05, 1.1]})
+
+        def portfolio_history(self, *, simbolos: list[str], period: str = "1y") -> pd.DataFrame:
+            return pd.DataFrame()
+
+        def portfolio_fundamentals(self, simbolos: list[str]) -> pd.DataFrame:
+            return pd.DataFrame()
+
+    def _ta_factory():
+        return DummyTA()
+
+    portfolio_mod, basic, advanced, risk, fundamental = _portfolio_setup(fake_st, all_symbols=["GGAL", "AAPL"])
+    monkeypatch.setattr(portfolio_mod, "TAService", _ta_factory)
+    monkeypatch.setattr(portfolio_mod, "map_to_us_ticker", lambda sym: sym)
+    monkeypatch.setattr(portfolio_mod, "render_fundamental_data", MagicMock())
+    monkeypatch.setattr(portfolio_mod, "plot_technical_analysis_chart", lambda df, fast, slow: {"df": df, "fast": fast, "slow": slow})
+
+    render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={"ccl": 1000.0})
+
+    assert fake_st.session_state["portfolio_tab"] == 4
+    assert fake_st.selectbox_calls
+    first_select = fake_st.selectbox_calls[0]
+    assert first_select["label"] == "Seleccioná un símbolo (CEDEAR / ETF)"
+    assert first_select["options"] == ["GGAL", "AAPL"]
+    # Ensure advanced analysis helpers were not triggered in this branch
+    advanced.assert_not_called()
+    basic.assert_not_called()
