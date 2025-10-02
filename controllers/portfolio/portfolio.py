@@ -1,4 +1,5 @@
 import logging
+
 import streamlit as st
 
 from domain.models import Controls
@@ -10,17 +11,18 @@ from ui.charts import plot_technical_analysis_chart
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
+from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols
+from services.portfolio_view import PortfolioViewModelService
 
 from .load_data import load_portfolio_data
-from .filters import apply_filters
 from .charts import render_basic_section, render_advanced_analysis
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
-
-
 logger = logging.getLogger(__name__)
+
+view_model_service = PortfolioViewModelService()
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -36,33 +38,31 @@ def render_portfolio_section(container, cli, fx_rates):
         render_ui_controls()
 
         refresh_secs = controls.refresh_secs
+        viewmodel = build_portfolio_viewmodel(
+            df_pos=df_pos,
+            controls=controls,
+            cli=cli,
+            portfolio_service=psvc,
+            fx_rates=fx_rates,
+            all_symbols=all_symbols,
+            apply_filters_fn=apply_filters,
+        )
 
-        df_view = apply_filters(df_pos, controls, cli, psvc)
-
-        ccl_rate = fx_rates.get("ccl")
-
-        tab_labels = [
-            "📂 Portafolio",
-            "📊 Análisis avanzado",
-            "🎲 Análisis de Riesgo",
-            "📑 Análisis fundamental",
-            "🔎 Análisis de activos",
-        ]
-
-        if "portfolio_tab" not in st.session_state:
-            st.session_state["portfolio_tab"] = 0
+        tab_labels = list(viewmodel.tab_options)
 
         tab_idx = st.radio(
             "Secciones",
             options=range(len(tab_labels)),
             format_func=lambda i: tab_labels[i],
-            index=st.session_state["portfolio_tab"],
             horizontal=True,
+            key="portfolio_tab",
         )
-        st.session_state["portfolio_tab"] = tab_idx
+        controls = viewmodel.controls
+        ccl_rate = viewmodel.metrics.ccl_rate
+        df_view = viewmodel.positions
 
         if tab_idx == 0:
-            render_basic_section(df_view, controls, ccl_rate, favorites=favorites)
+            render_basic_section(df_view, controls, ccl_rate, favorites=favorites, totals=snapshot.totals)
         elif tab_idx == 1:
             render_advanced_analysis(df_view)
         elif tab_idx == 2:
@@ -76,11 +76,13 @@ def render_portfolio_section(container, cli, fx_rates):
                 empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
             )
             if not all_symbols:
+            all_symbols_vm = list(viewmodel.metrics.all_symbols)
+            if not all_symbols_vm:
                 st.info("No hay símbolos en el portafolio para analizar.")
             else:
-                options = favorites.sort_options(all_symbols)
+                options = favorites.sort_options(all_symbols_vm)
                 if not options:
-                    options = list(all_symbols)
+                    options = all_symbols_vm
                 sym = st.selectbox(
                     "Seleccioná un símbolo (CEDEAR / ETF)",
                     options=options,

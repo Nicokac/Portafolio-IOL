@@ -25,7 +25,13 @@ def generate_basic_charts(df_view, top_n):
     }
 
 
-def render_basic_section(df_view, controls, ccl_rate, favorites: FavoriteSymbols | None = None):
+def render_basic_section(
+    df_view,
+    controls,
+    ccl_rate,
+    totals=None,
+    favorites: FavoriteSymbols | None = None,
+):
     """Render totals, table and basic charts for the portfolio."""
     favorites = favorites or FavoriteSymbols(st.session_state)
     symbols = (
@@ -59,7 +65,7 @@ def render_basic_section(df_view, controls, ccl_rate, favorites: FavoriteSymbols
         st.info("No hay datos del portafolio para mostrar.")
         return
 
-    render_totals(df_view, ccl_rate=ccl_rate)
+    render_totals(df_view, ccl_rate=ccl_rate, totals=totals)
     render_table(
         df_view,
         controls.order_by,
