@@ -3,6 +3,7 @@ from __future__ import annotations
 """Helpers to capture health metrics and expose them via ``st.session_state``."""
 
 from collections import deque
+import math
 from typing import Any, Deque, Dict, Iterable, Mapping, Optional
 import time
 
@@ -11,6 +12,7 @@ import streamlit as st
 
 _HEALTH_KEY = "health_metrics"
 _OPPORTUNITIES_HISTORY_KEY = "opportunities_history"
+_OPPORTUNITIES_STATS_KEY = "opportunities_stats"
 _OPPORTUNITIES_HISTORY_LIMIT = 5
 
 
@@ -190,6 +192,57 @@ def record_opportunities_report(
 
     store["opportunities"] = entry
 
+    stats = store.get(_OPPORTUNITIES_STATS_KEY)
+    if not isinstance(stats, dict):
+        stats = {
+            "modes": {},
+            "elapsed_sum": 0.0,
+            "elapsed_sum_sq": 0.0,
+            "elapsed_count": 0,
+            "cached_sum": 0.0,
+            "cached_sum_sq": 0.0,
+            "cached_count": 0,
+            "improvement_count": 0,
+            "improvement_wins": 0,
+            "improvement_losses": 0,
+            "improvement_ties": 0,
+            "improvement_delta_sum": 0.0,
+        }
+
+    modes: Dict[str, int] = stats.setdefault("modes", {})
+    modes[mode] = int(modes.get(mode, 0)) + 1
+
+    elapsed_value = _as_optional_float(elapsed_ms)
+    if elapsed_value is not None:
+        stats["elapsed_count"] = int(stats.get("elapsed_count", 0)) + 1
+        stats["elapsed_sum"] = float(stats.get("elapsed_sum", 0.0)) + elapsed_value
+        stats["elapsed_sum_sq"] = (
+            float(stats.get("elapsed_sum_sq", 0.0)) + elapsed_value * elapsed_value
+        )
+
+    cached_value = _as_optional_float(cached_elapsed_ms)
+    if cached_value is not None:
+        stats["cached_count"] = int(stats.get("cached_count", 0)) + 1
+        stats["cached_sum"] = float(stats.get("cached_sum", 0.0)) + cached_value
+        stats["cached_sum_sq"] = (
+            float(stats.get("cached_sum_sq", 0.0)) + cached_value * cached_value
+        )
+
+    if elapsed_value is not None and cached_value is not None:
+        stats["improvement_count"] = int(stats.get("improvement_count", 0)) + 1
+        diff = cached_value - elapsed_value
+        stats["improvement_delta_sum"] = float(
+            stats.get("improvement_delta_sum", 0.0)
+        ) + diff
+        if diff > 0:
+            stats["improvement_wins"] = int(stats.get("improvement_wins", 0)) + 1
+        elif diff < 0:
+            stats["improvement_losses"] = int(stats.get("improvement_losses", 0)) + 1
+        else:
+            stats["improvement_ties"] = int(stats.get("improvement_ties", 0)) + 1
+
+    store[_OPPORTUNITIES_STATS_KEY] = stats
+
     raw_history = store.get(_OPPORTUNITIES_HISTORY_KEY)
     history: Deque[Dict[str, Any]]
     if isinstance(raw_history, deque):
@@ -206,6 +259,71 @@ def record_opportunities_report(
 def get_health_metrics() -> Dict[str, Any]:
     """Return a shallow copy of the tracked metrics for UI consumption."""
     store = _store()
+
+    def _summarize_stats(raw_stats: Any) -> Dict[str, Any]:
+        if not isinstance(raw_stats, Mapping):
+            return {}
+
+        summary: Dict[str, Any] = {}
+
+        modes: Dict[str, int] = {}
+        raw_modes = raw_stats.get("modes")
+        if isinstance(raw_modes, Mapping):
+            for key, value in raw_modes.items():
+                try:
+                    modes[str(key)] = int(value)
+                except (TypeError, ValueError):
+                    continue
+        if modes:
+            total_modes = sum(max(count, 0) for count in modes.values())
+            total_modes = max(total_modes, 0)
+            if total_modes:
+                summary["mode_counts"] = modes
+                summary["mode_total"] = total_modes
+                summary["mode_ratios"] = {
+                    name: count / total_modes for name, count in modes.items()
+                }
+                hit_count = modes.get("hit", 0)
+                summary["hit_ratio"] = hit_count / total_modes
+
+        def _summarize_timing(prefix: str) -> Optional[Dict[str, Any]]:
+            count = int(raw_stats.get(f"{prefix}_count", 0) or 0)
+            if count <= 0:
+                return None
+            sum_value = float(raw_stats.get(f"{prefix}_sum", 0.0) or 0.0)
+            sum_sq_value = float(raw_stats.get(f"{prefix}_sum_sq", 0.0) or 0.0)
+            avg = sum_value / count
+            variance = max(sum_sq_value / count - avg * avg, 0.0)
+            stdev = math.sqrt(variance)
+            return {"count": count, "avg": avg, "stdev": stdev}
+
+        elapsed_stats = _summarize_timing("elapsed")
+        if elapsed_stats:
+            summary["elapsed"] = elapsed_stats
+
+        cached_stats = _summarize_timing("cached")
+        if cached_stats:
+            summary["cached_elapsed"] = cached_stats
+
+        improvement_count = int(raw_stats.get("improvement_count", 0) or 0)
+        if improvement_count > 0:
+            wins = int(raw_stats.get("improvement_wins", 0) or 0)
+            losses = int(raw_stats.get("improvement_losses", 0) or 0)
+            ties = int(raw_stats.get("improvement_ties", 0) or 0)
+            delta_sum = float(raw_stats.get("improvement_delta_sum", 0.0) or 0.0)
+            summary["improvement"] = {
+                "count": improvement_count,
+                "wins": wins,
+                "losses": losses,
+                "ties": ties,
+                "win_ratio": wins / improvement_count,
+                "loss_ratio": losses / improvement_count,
+                "tie_ratio": ties / improvement_count,
+                "avg_delta_ms": delta_sum / improvement_count,
+            }
+
+        return summary
+
     return {
         "iol_refresh": store.get("iol_refresh"),
         "yfinance": store.get("yfinance"),
@@ -215,6 +333,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "quotes": store.get("quotes"),
         "opportunities": store.get("opportunities"),
         "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
+        "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
     }
 
 
