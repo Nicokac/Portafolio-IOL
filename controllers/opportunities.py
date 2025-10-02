@@ -6,6 +6,7 @@ import math
 import re
 import time
 from collections import OrderedDict
+from functools import lru_cache
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from numbers import Number
@@ -20,7 +21,23 @@ except ImportError:  # pragma: no cover - fallback handled at runtime
     run_screener_yahoo = None  # type: ignore[assignment]
 
 from shared.errors import AppError
-from services.health import record_opportunities_report
+from shared.settings import (
+    settings as shared_settings,
+    fred_api_base_url,
+    fred_api_key,
+    fred_api_rate_limit_per_minute,
+    fred_sector_series,
+    macro_api_provider,
+    macro_sector_fallback,
+)
+from infrastructure.macro import (
+    FredClient,
+    FredSeriesObservation,
+    MacroAPIError,
+)
+from services.health import record_macro_api_usage, record_opportunities_report
+
+LOGGER = logging.getLogger(__name__)
 
 _EXPECTED_COLUMNS: Sequence[str] = (
     "ticker",
@@ -32,8 +49,11 @@ _EXPECTED_COLUMNS: Sequence[str] = (
     "price",
     "Yahoo Finance Link",
     "score_compuesto",
+    "macro_outlook",
 )
 _TECHNICAL_COLUMNS: Sequence[str] = ("rsi", "sma_50", "sma_200")
+
+_MACRO_COLUMN = "macro_outlook"
 
 _CACHE_MAX_ENTRIES = 64
 _CacheEntry = Tuple[Mapping[str, object], float]
@@ -78,6 +98,333 @@ def _clear_opportunities_cache() -> None:
         _OPPORTUNITIES_CACHE.clear()
 
 
+@lru_cache(maxsize=1)
+def _macro_series_lookup() -> Dict[str, str]:
+    mapping: Dict[str, str] = {}
+    for raw_label, raw_series in fred_sector_series.items():
+        label = str(raw_label or "").strip()
+        series_id = str(raw_series or "").strip()
+        if not label or not series_id:
+            continue
+        mapping[label.casefold()] = series_id
+    return mapping
+
+
+@lru_cache(maxsize=1)
+def _macro_fallback_lookup() -> Dict[str, Dict[str, Any]]:
+    normalized: Dict[str, Dict[str, Any]] = {}
+    for raw_label, entry in macro_sector_fallback.items():
+        if not isinstance(entry, Mapping):
+            continue
+        label = str(raw_label or "").strip()
+        if not label:
+            continue
+        value = entry.get("value")
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        as_of_raw = entry.get("as_of")
+        as_of = None
+        if as_of_raw is not None:
+            text = str(as_of_raw).strip()
+            if text:
+                as_of = text
+        normalized[label.casefold()] = {"value": numeric_value, "as_of": as_of}
+    return normalized
+
+
+@lru_cache(maxsize=1)
+def _get_macro_client() -> Optional[FredClient]:
+    provider = str(macro_api_provider or "fred").strip().casefold()
+    if provider != "fred":
+        return None
+    api_key = fred_api_key
+    if not api_key:
+        return None
+    try:
+        rate_limit = int(fred_api_rate_limit_per_minute)
+    except (TypeError, ValueError):
+        rate_limit = 0
+    try:
+        return FredClient(
+            api_key,
+            base_url=fred_api_base_url,
+            calls_per_minute=max(rate_limit, 0),
+            user_agent=getattr(shared_settings, "USER_AGENT", "Portafolio-IOL/1.0 (+app)"),
+        )
+    except Exception as exc:  # pragma: no cover - defensive guard
+        LOGGER.exception("Unable to build FRED client: %s", exc)
+        return None
+
+
+def _format_macro_value(value: float) -> str:
+    absolute = abs(value)
+    if absolute >= 1000:
+        return f"{value:,.0f}"
+    if absolute >= 100:
+        return f"{value:,.1f}"
+    if absolute >= 1:
+        return f"{value:,.2f}"
+    return f"{value:,.3f}"
+
+
+def _ensure_macro_column(df: pd.DataFrame) -> pd.DataFrame:
+    if _MACRO_COLUMN not in df.columns:
+        df[_MACRO_COLUMN] = pd.NA
+    df[_MACRO_COLUMN] = df[_MACRO_COLUMN].astype("string")
+    return df
+
+
+def _assign_macro_value(df: pd.DataFrame, sector: str, cell_value: str) -> bool:
+    if "sector" not in df.columns:
+        return False
+    mask = (
+        df["sector"].astype("string").str.casefold() == str(sector or "").casefold()
+    )
+    if not mask.any():
+        return False
+    df.loc[mask, _MACRO_COLUMN] = cell_value
+    return True
+
+
+def _apply_macro_entries(
+    df: pd.DataFrame, entries: Mapping[str, Mapping[str, Any]]
+) -> Dict[str, Any]:
+    df = _ensure_macro_column(df)
+    coverage = 0
+    reference_dates: set[str] = set()
+    for sector, entry in entries.items():
+        if not isinstance(entry, Mapping):
+            continue
+        raw_value = entry.get("value")
+        try:
+            numeric_value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        formatted = _format_macro_value(numeric_value)
+        as_of = entry.get("as_of")
+        cell_value = formatted
+        if as_of:
+            as_of_text = str(as_of).strip()
+            if as_of_text:
+                reference_dates.add(as_of_text)
+                cell_value = f"{formatted} ({as_of_text})"
+        if _assign_macro_value(df, sector, cell_value):
+            coverage += 1
+    metrics: Dict[str, Any] = {}
+    if coverage:
+        metrics["macro_sector_coverage"] = coverage
+    if reference_dates:
+        metrics["macro_reference_dates"] = sorted(reference_dates)
+    return metrics
+
+
+def _build_observation_entries(
+    observations: Mapping[str, FredSeriesObservation]
+) -> Dict[str, Dict[str, Any]]:
+    entries: Dict[str, Dict[str, Any]] = {}
+    for sector, observation in observations.items():
+        if not isinstance(observation, FredSeriesObservation):
+            continue
+        entries[sector] = {
+            "value": observation.value,
+            "as_of": observation.as_of,
+        }
+    return entries
+
+
+def _build_sector_entries(
+    sectors: Sequence[str], lookup: Mapping[str, Mapping[str, Any]]
+) -> Dict[str, Mapping[str, Any]]:
+    entries: Dict[str, Mapping[str, Any]] = {}
+    for sector in sectors:
+        entry = lookup.get(sector.casefold())
+        if entry:
+            entries[sector] = entry
+    return entries
+
+
+def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, Any]]:
+    notes: List[str] = []
+    metrics: Dict[str, Any] = {}
+
+    if df.empty or "sector" not in df.columns:
+        return notes, metrics
+
+    sectors: List[str] = []
+    seen: set[str] = set()
+    for raw in df["sector"].astype("string").tolist():
+        sector = str(raw or "").strip()
+        if not sector:
+            continue
+        key = sector.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        sectors.append(sector)
+
+    if not sectors:
+        return notes, metrics
+
+    provider_label = str(macro_api_provider or "fred").strip() or "fred"
+    provider_display = provider_label.upper() if provider_label.casefold() == "fred" else provider_label
+
+    fallback_lookup = _macro_fallback_lookup()
+
+    def _use_fallback(
+        reason: Optional[str],
+    ) -> Tuple[List[str], Dict[str, Any], bool]:
+        entries = _build_sector_entries(sectors, fallback_lookup)
+        if entries:
+            fallback_metrics = _apply_macro_entries(df, entries)
+            fallback_metrics["macro_source"] = "fallback"
+            note_reason = f" ({reason})" if reason else ""
+            note = (
+                f"Datos macro mediante fallback configurado{note_reason}."
+            )
+            return [note], fallback_metrics, True
+        if reason:
+            return [f"Datos macro no disponibles: {reason}"], {}, False
+        return [], {}, False
+
+    provider_normalized = provider_label.casefold()
+    if provider_normalized != "fred":
+        extra_notes, extra_metrics, used_fallback = _use_fallback(
+            "proveedor no soportado"
+        )
+        notes.extend(extra_notes)
+        metrics.update(extra_metrics)
+        if not used_fallback:
+            metrics.setdefault("macro_source", "unavailable")
+        record_macro_api_usage(
+            provider=provider_display,
+            status="disabled",
+            detail="proveedor no soportado",
+            fallback=used_fallback,
+        )
+        return notes, metrics
+
+    client = _get_macro_client()
+    if client is None:
+        reason = "FRED sin credenciales configuradas" if not fred_api_key else "FRED no disponible"
+        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
+        notes.extend(extra_notes)
+        metrics.update(extra_metrics)
+        if not used_fallback:
+            metrics.setdefault("macro_source", "unavailable")
+        record_macro_api_usage(
+            provider=provider_display,
+            status="disabled",
+            detail=reason,
+            fallback=used_fallback,
+        )
+        return notes, metrics
+
+    series_lookup = _macro_series_lookup()
+    mapping: Dict[str, str] = {}
+    missing_series: List[str] = []
+    for sector in sectors:
+        series_id = series_lookup.get(sector.casefold())
+        if series_id:
+            mapping[sector] = series_id
+        else:
+            missing_series.append(sector)
+
+    if not mapping:
+        reason = "no hay series configuradas para los sectores seleccionados"
+        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
+        notes.extend(extra_notes)
+        metrics.update(extra_metrics)
+        if not used_fallback:
+            metrics.setdefault("macro_source", "unavailable")
+        record_macro_api_usage(
+            provider=provider_display,
+            status="error",
+            detail=reason,
+            fallback=used_fallback,
+        )
+        if missing_series:
+            notes.append(
+                "Sin series asociadas para: " + ", ".join(sorted(set(missing_series)))
+            )
+            metrics["macro_missing_series"] = sorted(set(missing_series))
+        return notes, metrics
+
+    start = time.perf_counter()
+    try:
+        observations = client.get_latest_observations(mapping)
+    except MacroAPIError as exc:
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        reason = str(exc)
+        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
+        notes.extend(extra_notes)
+        metrics.update(extra_metrics)
+        if not used_fallback:
+            metrics.setdefault("macro_source", "unavailable")
+        record_macro_api_usage(
+            provider=provider_display,
+            status="error",
+            detail=reason,
+            elapsed_ms=elapsed_ms,
+            fallback=used_fallback,
+        )
+        if missing_series:
+            metrics.setdefault(
+                "macro_missing_series", sorted(set(missing_series))
+            )
+        return notes, metrics
+
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    observation_entries = _build_observation_entries(observations)
+    if not observation_entries:
+        extra_notes, extra_metrics, used_fallback = _use_fallback(
+            "FRED no devolvió observaciones válidas"
+        )
+        notes.extend(extra_notes)
+        metrics.update(extra_metrics)
+        if not used_fallback:
+            metrics.setdefault("macro_source", "unavailable")
+        record_macro_api_usage(
+            provider=provider_display,
+            status="error",
+            detail="sin observaciones válidas",
+            elapsed_ms=elapsed_ms,
+            fallback=used_fallback,
+        )
+        if missing_series:
+            metrics.setdefault(
+                "macro_missing_series", sorted(set(missing_series))
+            )
+        return notes, metrics
+
+    metrics.update(_apply_macro_entries(df, observation_entries))
+    metrics["macro_source"] = "fred"
+    record_macro_api_usage(
+        provider=provider_display,
+        status="success",
+        elapsed_ms=elapsed_ms,
+        fallback=False,
+    )
+
+    reference_dates = metrics.get("macro_reference_dates")
+    if reference_dates:
+        if isinstance(reference_dates, list):
+            notes.append(
+                "Datos macro (FRED) actualizados al: "
+                + ", ".join(reference_dates)
+            )
+    else:
+        notes.append("Datos macro (FRED) incorporados.")
+
+    if missing_series:
+        missing_sorted = sorted(set(missing_series))
+        notes.append(
+            "Sin series asociadas para: " + ", ".join(missing_sorted)
+        )
+        metrics["macro_missing_series"] = missing_sorted
+
+    return notes, metrics
 def _build_yahoo_link(ticker: object) -> str | pd.NA:
     if ticker is None:
         return pd.NA
@@ -454,7 +801,13 @@ def run_opportunities_controller(
                 "No se encontraron datos para: " + ", ".join(sorted(set(missing)))
             )
 
+    macro_notes, macro_metrics = _enrich_with_macro_context(df)
+    if macro_notes:
+        notes.extend(macro_notes)
+
     metrics_payload = _collect_metrics_from_table(df)
+    if macro_metrics:
+        metrics_payload.update(macro_metrics)
     if (
         selected_sectors
         and "highlighted_sectors" not in metrics_payload

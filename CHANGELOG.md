@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Cliente dedicado para FRED con autenticación, gestión de rate limiting y normalización de observaciones para enriquecer el screener de oportunidades con contexto macro/sectorial. ([`infrastructure/macro/fred_client.py`](infrastructure/macro/fred_client.py))
+- Métrica de salud que expone el estado de la nueva dependencia externa (`macro_api`) y tests que cubren los flujos de fallback del controlador. ([`services/health.py`](services/health.py), [`controllers/test/test_opportunities_macro.py`](controllers/test/test_opportunities_macro.py))
+### Changed
+- El controlador de oportunidades combina la información sectorial proveniente de FRED (o del fallback configurado) con los resultados del screening, agregando la columna `macro_outlook` y notas contextuales. ([`controllers/opportunities.py`](controllers/opportunities.py))
+### Documentation
+- README actualizado con los pasos para habilitar la integración macro, variables de entorno requeridas y consideraciones de failover. ([`README.md`](README.md#datos-macro-y-sectoriales-fred--fallback))
 
 ## [0.3.22] - 2025-10-06
 ### Changed
