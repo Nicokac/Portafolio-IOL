@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from application.portfolio_service import calculate_totals, detect_currency
-from shared.favorite_symbols import FavoriteSymbols
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from application.portfolio_service import calculate_totals, detect_currency, PortfolioTotals
 from shared.utils import (
     _as_float_or_none,
@@ -65,7 +65,7 @@ def render_table(
         st.info("Sin datos para mostrar.")
         return
 
-    favorites = favorites or FavoriteSymbols(st.session_state)
+    favorites = favorites or get_persistent_favorites()
     palette = get_active_palette()
     st.markdown(f"""
         <style>

@@ -1,7 +1,7 @@
 import plotly.express as px
 import streamlit as st
 
-from shared.favorite_symbols import FavoriteSymbols
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.tables import render_totals, render_table
 from ui.export import PLOTLY_CONFIG
@@ -33,7 +33,7 @@ def render_basic_section(
     favorites: FavoriteSymbols | None = None,
 ):
     """Render totals, table and basic charts for the portfolio."""
-    favorites = favorites or FavoriteSymbols(st.session_state)
+    favorites = favorites or get_persistent_favorites()
     symbols = (
         sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
         if not df_view.empty

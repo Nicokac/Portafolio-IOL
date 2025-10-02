@@ -76,6 +76,27 @@ y caché cooperativa: toda la UI recuerda la versión activa, expone KPIs agrega
 el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando
 los tiempos de iteración al dejar a la vista el impacto de cada cambio.
 
+## Persistencia de favoritos
+
+La lista de símbolos marcados como favoritos se comparte entre pestañas y ahora también se
+sincroniza con disco para mantenerla entre sesiones. Por defecto se serializa como un archivo JSON
+en ``~/.portafolio_iol/favorites.json`` con la siguiente estructura:
+
+```json
+[
+  "GGAL",
+  "PAMP",
+  "TXAR"
+]
+```
+
+- El archivo se crea automáticamente la primera vez que marcás un símbolo como favorito. Cada
+  entrada es una cadena en mayúsculas.
+- Si el archivo está corrupto o no se puede leer, la aplicación continúa funcionando con una lista
+  vacía y muestra el error en la sesión actual para que puedas depurarlo.
+- Podés borrar el archivo para reiniciar la lista; se volverá a generar cuando agregues un nuevo
+  favorito.
+
 ## Documentación
 
 - [Guía de troubleshooting](docs/troubleshooting.md)
