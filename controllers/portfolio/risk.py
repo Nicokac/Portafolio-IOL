@@ -5,6 +5,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from shared.favorite_symbols import FavoriteSymbols
+from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.risk_service import (
     compute_returns,
     annualized_volatility,
@@ -32,9 +34,36 @@ def compute_risk_metrics(returns_df, bench_ret, weights):
     return vol, b, var_95, opt_w, port_ret
 
 
-def render_risk_analysis(df_view, tasvc):
+def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
     """Render correlation and risk analysis for the portfolio."""
+    favorites = favorites or FavoriteSymbols(st.session_state)
     st.subheader("Análisis de Correlación del Portafolio")
+    symbols = (
+        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
+        if not df_view.empty
+        else []
+    )
+
+    render_favorite_badges(
+        favorites,
+        empty_message="⭐ Marcá tus favoritos para seguirlos de cerca en el análisis de riesgo.",
+    )
+    if symbols:
+        options = favorites.sort_options(symbols)
+        selected_symbol = st.selectbox(
+            "Gestionar favoritos",
+            options=options,
+            index=favorites.default_index(options),
+            key="risk_favorite_select",
+            format_func=favorites.format_symbol,
+        )
+        render_favorite_toggle(
+            selected_symbol,
+            favorites,
+            key_prefix="risk",
+            help_text="Tus favoritos se sincronizan entre portafolio, riesgo, técnico y fundamental.",
+        )
+
     corr_period = st.selectbox(
         "Calcular correlación sobre el último período:",
         ["3mo", "6mo", "1y", "2y", "5y"],
