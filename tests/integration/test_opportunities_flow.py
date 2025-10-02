@@ -719,7 +719,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
         raise AssertionError("Se esperaba una nota del stub")
 
     _configure_perf_counter([10.0, 10.05])
-    df_fast, notes_fast, source_fast = controller_module.run_opportunities_controller(
+    payload_fast = controller_module.run_opportunities_controller(
         manual_tickers=None,
         exclude_tickers=None,
         max_payout=None,
@@ -736,6 +736,10 @@ def test_fallback_stub_emits_runtime_telemetry_note(
         max_results=None,
         sectors=None,
     )
+
+    df_fast = payload_fast["table"]
+    notes_fast = payload_fast["notes"]
+    source_fast = payload_fast["source"]
 
     fast_note = _extract_stub_note(notes_fast)
     assert source_fast == "stub"
@@ -749,7 +753,7 @@ def test_fallback_stub_emits_runtime_telemetry_note(
     assert df_fast.attrs["_notes"][-1] == fast_note
 
     _configure_perf_counter([20.0, 20.5])
-    df_slow, notes_slow, _ = controller_module.run_opportunities_controller(
+    payload_slow = controller_module.run_opportunities_controller(
         manual_tickers=None,
         exclude_tickers=None,
         max_payout=None,
@@ -766,6 +770,9 @@ def test_fallback_stub_emits_runtime_telemetry_note(
         max_results=None,
         sectors=None,
     )
+
+    df_slow = payload_slow["table"]
+    notes_slow = payload_slow["notes"]
 
     slow_note = _extract_stub_note(notes_slow)
     severity_slow, _, matched_slow = shared_notes.classify_note(slow_note)

@@ -87,7 +87,7 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("fallback used")),
     )
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         manual_tickers=[" aapl", "MSFT", "msft"],
         exclude_tickers=[" msft"],
         max_payout=70.0,
@@ -104,6 +104,11 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
         min_score_threshold=42.5,
         max_results=15,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
+    metrics = payload.get("metrics", {})
 
     assert captured_kwargs == {
         "manual_tickers": ["AAPL", "MSFT"],
@@ -130,13 +135,14 @@ def test_propagates_filters_and_uses_yahoo(monkeypatch: pytest.MonkeyPatch) -> N
     assert "buyback ≥0.5" in notes[0]
     assert notes[1:] == ["Yahoo note"]
     assert source == "yahoo"
+    assert metrics.get("universe_final") == len(df.index)
 
 
 def test_controller_propagates_yahoo_notes(monkeypatch: pytest.MonkeyPatch) -> None:
-    payload = pd.DataFrame([_make_sample_row()])
+    yahoo_df = pd.DataFrame([_make_sample_row()])
 
     def fake_yahoo(**kwargs: Any) -> Tuple[pd.DataFrame, List[str]]:  # noqa: ARG001
-        return payload, ["Nota desde Yahoo"]
+        return yahoo_df, ["Nota desde Yahoo"]
 
     monkeypatch.setattr(sut, "run_screener_yahoo", fake_yahoo)
     monkeypatch.setattr(
@@ -145,12 +151,16 @@ def test_controller_propagates_yahoo_notes(monkeypatch: pytest.MonkeyPatch) -> N
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("stub used")),
     )
 
-    df, notes, source = sut.run_opportunities_controller(
+    response = sut.run_opportunities_controller(
         manual_tickers=["aapl"],
         include_technicals=False,
     )
 
-    assert df.equals(payload[_EXPECTED_COLUMNS])
+    df = response["table"]
+    notes = response["notes"]
+    source = response["source"]
+
+    assert df.equals(yahoo_df[_EXPECTED_COLUMNS])
     assert notes[0].startswith("ℹ️ Filtros aplicados:")
     assert "tickers" in notes[0]
     assert notes[1:] == ["Nota desde Yahoo"]
@@ -180,7 +190,7 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         return filtered, ["Stub note"]
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         manual_tickers=["aapl", None],
         exclude_tickers=["MSFT"],
         max_payout=60,
@@ -192,6 +202,10 @@ def test_fallback_to_stub_preserves_filters(monkeypatch: pytest.MonkeyPatch) -> 
         min_score_threshold="30.0",
         max_results="2",
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert stub_calls["manual_tickers"] == ["AAPL"]
     assert stub_calls["exclude_tickers"] == ["MSFT"]
@@ -248,7 +262,7 @@ def test_controller_relays_strict_filters_and_minimum_notes(
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("stub fallback not expected")),
     )
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         sectors=["technology", "healthcare"],
         include_technicals=False,
         min_eps_growth=20.0,
@@ -256,6 +270,10 @@ def test_controller_relays_strict_filters_and_minimum_notes(
         min_score_threshold=60.0,
         max_results=1,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert captured_kwargs == {
         "manual_tickers": None,
@@ -294,11 +312,15 @@ def test_excluded_tickers_are_removed_from_stub_results(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         manual_tickers=["AAPL", "MSFT"],
         exclude_tickers=["MSFT"],
         min_buyback=0.0,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert "MSFT" not in set(df["ticker"])
     assert any(ticker == "AAPL" for ticker in df["ticker"])
@@ -320,10 +342,14 @@ def test_fallback_includes_unexpected_error_reason(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(sut, "run_screener_stub", fake_stub)
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         manual_tickers=["AAPL"],
         include_technicals=False,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert "ticker" in df.columns
     assert source == "stub"
@@ -348,10 +374,14 @@ def test_normalises_incomplete_yahoo_payload(monkeypatch: pytest.MonkeyPatch) ->
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("fallback used")),
     )
 
-    df, notes, source = sut.run_opportunities_controller(
+    payload = sut.run_opportunities_controller(
         manual_tickers=["aaa", "bbb"],
         include_technicals=True,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert list(df.columns) == _EXPECTED_WITH_TECHNICALS
     aaa_row = df[df["ticker"] == "AAA"].iloc[0]

@@ -1139,7 +1139,7 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
 
     monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
 
-    df, notes, source = ctrl.run_opportunities_controller(
+    payload = ctrl.run_opportunities_controller(
         manual_tickers=["abc"],
         include_technicals=False,
         min_market_cap=500_000_000,
@@ -1147,6 +1147,10 @@ def test_run_opportunities_controller_calls_yahoo(monkeypatch, comprehensive_dat
         min_revenue_growth=5.0,
         include_latam=True,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert not any("Datos simulados" in note for note in notes)
     assert {ticker for ticker in df["ticker"]} == {"ABC"}
@@ -1164,10 +1168,14 @@ def test_run_opportunities_controller_exposes_technicals(monkeypatch, comprehens
         lambda **_kwargs: (_ for _ in ()).throw(AssertionError("fallback should not run")),
     )
 
-    df, notes, source = ctrl.run_opportunities_controller(
+    payload = ctrl.run_opportunities_controller(
         manual_tickers=["abc"],
         include_technicals=True,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert notes[0].startswith("ℹ️ Filtros aplicados:")
     assert any("Yahoo procesó" in note for note in notes)
@@ -1251,13 +1259,17 @@ def test_run_opportunities_controller_applies_new_filters(
 
     monkeypatch.setattr(ctrl, "run_screener_stub", _stub_not_expected)
 
-    df, notes, source = ctrl.run_opportunities_controller(
+    payload = ctrl.run_opportunities_controller(
         manual_tickers=["abc", "pay", "stk", "cgr"],
         max_payout=50.0,
         min_div_streak=3,
         min_cagr=5.0,
         include_technicals=False,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert list(df["ticker"]) == ["ABC", "PAY", "STK", "CGR"]
     results = {row["ticker"]: row for _, row in df.iterrows()}

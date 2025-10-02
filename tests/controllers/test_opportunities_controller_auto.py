@@ -104,7 +104,7 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
     monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
 
-    df, notes, source = run_opportunities_controller(
+    payload = run_opportunities_controller(
         manual_tickers=None,
         include_technicals=False,
         min_market_cap=8_000_000_000,
@@ -112,6 +112,10 @@ def test_controller_uses_auto_universe(monkeypatch, auto_dataset):
         min_revenue_growth=10.0,
         include_latam=False,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     table = df.set_index("ticker")
     assert set(table.index) == {"AAA", "BBB", "CCC"}
@@ -128,7 +132,11 @@ def test_controller_reports_when_no_candidates(monkeypatch):
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
     monkeypatch.setattr(ops, "_get_target_markets", lambda: ["TEST"])
 
-    df, notes, source = run_opportunities_controller(manual_tickers=None)
+    payload = run_opportunities_controller(manual_tickers=None)
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert df.empty
     assert any("No se encontraron símbolos" in note for note in notes)
@@ -145,11 +153,15 @@ def test_controller_uses_configured_markets(monkeypatch, auto_dataset):
     monkeypatch.setattr(ops, "YahooFinanceClient", lambda: client)
     monkeypatch.setattr(ops, "_get_target_markets", lambda: ["LATAM"])
 
-    df, notes, source = run_opportunities_controller(
+    payload = run_opportunities_controller(
         manual_tickers=None,
         include_technicals=False,
         include_latam=True,
     )
+
+    df = payload["table"]
+    notes = payload["notes"]
+    source = payload["source"]
 
     assert list(df["ticker"]) == ["BBB"]
     assert source == "yahoo"
