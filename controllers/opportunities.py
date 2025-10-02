@@ -29,11 +29,16 @@ from shared.settings import (
     fred_sector_series,
     macro_api_provider,
     macro_sector_fallback,
+    world_bank_api_base_url,
+    world_bank_api_key,
+    world_bank_api_rate_limit_per_minute,
+    world_bank_sector_series,
 )
 from infrastructure.macro import (
     FredClient,
-    FredSeriesObservation,
     MacroAPIError,
+    MacroSeriesObservation,
+    WorldBankClient,
 )
 from services.health import record_macro_api_usage, record_opportunities_report
 
@@ -98,10 +103,45 @@ def _clear_opportunities_cache() -> None:
         _OPPORTUNITIES_CACHE.clear()
 
 
-@lru_cache(maxsize=1)
-def _macro_series_lookup() -> Dict[str, str]:
+def _provider_sequence() -> List[str]:
+    raw = str(macro_api_provider or "fred")
+    tokens = [token.strip() for token in raw.split(",") if token.strip()]
+    sequence: List[str] = []
+    seen: set[str] = set()
+
+    def _append(name: str) -> None:
+        normalized = name.casefold()
+        if not normalized or normalized in seen:
+            return
+        sequence.append(normalized)
+        seen.add(normalized)
+
+    _append("fred")
+    for token in tokens:
+        if token.casefold() == "default":
+            continue
+        _append(token)
+    return sequence
+
+
+def _format_provider_display(provider: str) -> str:
+    mapping = {
+        "fred": "FRED",
+        "worldbank": "World Bank",
+    }
+    normalized = provider.casefold()
+    return mapping.get(normalized, provider)
+
+
+@lru_cache(maxsize=4)
+def _macro_series_lookup(provider: str) -> Dict[str, str]:
     mapping: Dict[str, str] = {}
-    for raw_label, raw_series in fred_sector_series.items():
+    normalized = provider.casefold()
+    if normalized == "worldbank":
+        source = world_bank_sector_series
+    else:
+        source = fred_sector_series
+    for raw_label, raw_series in source.items():
         label = str(raw_label or "").strip()
         series_id = str(raw_series or "").strip()
         if not label or not series_id:
@@ -134,28 +174,47 @@ def _macro_fallback_lookup() -> Dict[str, Dict[str, Any]]:
     return normalized
 
 
-@lru_cache(maxsize=1)
-def _get_macro_client() -> Optional[FredClient]:
-    provider = str(macro_api_provider or "fred").strip().casefold()
-    if provider != "fred":
-        return None
-    api_key = fred_api_key
-    if not api_key:
-        return None
-    try:
-        rate_limit = int(fred_api_rate_limit_per_minute)
-    except (TypeError, ValueError):
-        rate_limit = 0
-    try:
-        return FredClient(
-            api_key,
-            base_url=fred_api_base_url,
-            calls_per_minute=max(rate_limit, 0),
-            user_agent=getattr(shared_settings, "USER_AGENT", "Portafolio-IOL/1.0 (+app)"),
-        )
-    except Exception as exc:  # pragma: no cover - defensive guard
-        LOGGER.exception("Unable to build FRED client: %s", exc)
-        return None
+@lru_cache(maxsize=4)
+def _get_macro_client(provider: str):
+    normalized = provider.casefold()
+    user_agent = getattr(shared_settings, "USER_AGENT", "Portafolio-IOL/1.0 (+app)")
+
+    if normalized == "fred":
+        api_key = fred_api_key
+        if not api_key:
+            return None
+        try:
+            rate_limit = int(fred_api_rate_limit_per_minute)
+        except (TypeError, ValueError):
+            rate_limit = 0
+        try:
+            return FredClient(
+                api_key,
+                base_url=fred_api_base_url,
+                calls_per_minute=max(rate_limit, 0),
+                user_agent=user_agent,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            LOGGER.exception("Unable to build FRED client: %s", exc)
+            return None
+
+    if normalized == "worldbank":
+        try:
+            rate_limit = int(world_bank_api_rate_limit_per_minute)
+        except (TypeError, ValueError):
+            rate_limit = 0
+        try:
+            return WorldBankClient(
+                api_key=world_bank_api_key,
+                base_url=world_bank_api_base_url,
+                calls_per_minute=max(rate_limit, 0),
+                user_agent=user_agent,
+            )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            LOGGER.exception("Unable to build World Bank client: %s", exc)
+            return None
+
+    return None
 
 
 def _format_macro_value(value: float) -> str:
@@ -221,11 +280,11 @@ def _apply_macro_entries(
 
 
 def _build_observation_entries(
-    observations: Mapping[str, FredSeriesObservation]
+    observations: Mapping[str, MacroSeriesObservation]
 ) -> Dict[str, Dict[str, Any]]:
     entries: Dict[str, Dict[str, Any]] = {}
     for sector, observation in observations.items():
-        if not isinstance(observation, FredSeriesObservation):
+        if not isinstance(observation, MacroSeriesObservation):
             continue
         entries[sector] = {
             "value": observation.value,
@@ -243,6 +302,21 @@ def _build_sector_entries(
         if entry:
             entries[sector] = entry
     return entries
+
+
+def _build_series_mapping(
+    provider: str, sectors: Sequence[str]
+) -> Tuple[Dict[str, str], List[str]]:
+    lookup = _macro_series_lookup(provider)
+    mapping: Dict[str, str] = {}
+    missing: List[str] = []
+    for sector in sectors:
+        series_id = lookup.get(sector.casefold())
+        if series_id:
+            mapping[sector] = series_id
+        else:
+            missing.append(sector)
+    return mapping, missing
 
 
 def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, Any]]:
@@ -267,162 +341,152 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
     if not sectors:
         return notes, metrics
 
-    provider_label = str(macro_api_provider or "fred").strip() or "fred"
-    provider_display = provider_label.upper() if provider_label.casefold() == "fred" else provider_label
-
     fallback_lookup = _macro_fallback_lookup()
+    provider_attempts: List[Dict[str, Any]] = []
+    failure_notes: List[str] = []
+    success_provider: Optional[str] = None
+    success_display = ""
+    missing_series_for_success: List[str] = []
+    last_reason: Optional[str] = None
 
-    def _use_fallback(
-        reason: Optional[str],
-    ) -> Tuple[List[str], Dict[str, Any], bool]:
+    for provider in _provider_sequence():
+        provider_display = _format_provider_display(provider)
+        attempt: Dict[str, Any] = {
+            "provider": provider,
+            "label": provider_display,
+        }
+
+        if provider == "fred" and not fred_api_key:
+            reason = "FRED sin credenciales configuradas"
+            attempt["status"] = "disabled"
+            attempt["detail"] = reason
+            provider_attempts.append(attempt)
+            failure_notes.append(f"{provider_display} no disponible: {reason}")
+            last_reason = reason
+            continue
+
+        client = _get_macro_client(provider)
+        if client is None:
+            reason = f"{provider_display} no disponible"
+            attempt["status"] = "disabled"
+            attempt["detail"] = reason
+            provider_attempts.append(attempt)
+            failure_notes.append(reason)
+            last_reason = reason
+            continue
+
+        mapping, missing_series = _build_series_mapping(provider, sectors)
+        if missing_series:
+            attempt["missing_series"] = sorted(set(missing_series))
+        if not mapping:
+            reason = "no hay series configuradas para los sectores seleccionados"
+            attempt["status"] = "error"
+            attempt["detail"] = reason
+            provider_attempts.append(attempt)
+            failure_notes.append(f"{provider_display}: {reason}")
+            last_reason = reason
+            continue
+
+        start = time.perf_counter()
+        try:
+            observations = client.get_latest_observations(mapping)
+        except MacroAPIError as exc:
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            reason = str(exc)
+            attempt["status"] = "error"
+            attempt["detail"] = reason
+            attempt["elapsed_ms"] = elapsed_ms
+            provider_attempts.append(attempt)
+            failure_notes.append(f"{provider_display} no disponible: {reason}")
+            last_reason = reason
+            continue
+
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        observation_entries = _build_observation_entries(observations)
+        if not observation_entries:
+            reason = f"{provider_display} no devolvió observaciones válidas"
+            attempt["status"] = "error"
+            attempt["detail"] = reason
+            attempt["elapsed_ms"] = elapsed_ms
+            provider_attempts.append(attempt)
+            failure_notes.append(reason)
+            last_reason = reason
+            continue
+
+        metrics.update(_apply_macro_entries(df, observation_entries))
+        metrics["macro_source"] = provider
+        if missing_series:
+            missing_series_for_success = sorted(set(missing_series))
+            if missing_series_for_success:
+                metrics["macro_missing_series"] = missing_series_for_success
+        attempt["status"] = "success"
+        attempt["elapsed_ms"] = elapsed_ms
+        provider_attempts.append(attempt)
+        success_provider = provider
+        success_display = provider_display
+        last_reason = None
+        break
+
+    if success_provider is None:
         entries = _build_sector_entries(sectors, fallback_lookup)
+        fallback_attempt: Dict[str, Any] = {
+            "provider": "fallback",
+            "label": "Fallback",
+            "fallback": True,
+        }
         if entries:
             fallback_metrics = _apply_macro_entries(df, entries)
             fallback_metrics["macro_source"] = "fallback"
-            note_reason = f" ({reason})" if reason else ""
-            note = (
-                f"Datos macro mediante fallback configurado{note_reason}."
-            )
-            return [note], fallback_metrics, True
-        if reason:
-            return [f"Datos macro no disponibles: {reason}"], {}, False
-        return [], {}, False
-
-    provider_normalized = provider_label.casefold()
-    if provider_normalized != "fred":
-        extra_notes, extra_metrics, used_fallback = _use_fallback(
-            "proveedor no soportado"
-        )
-        notes.extend(extra_notes)
-        metrics.update(extra_metrics)
-        if not used_fallback:
-            metrics.setdefault("macro_source", "unavailable")
-        record_macro_api_usage(
-            provider=provider_display,
-            status="disabled",
-            detail="proveedor no soportado",
-            fallback=used_fallback,
-        )
-        return notes, metrics
-
-    client = _get_macro_client()
-    if client is None:
-        reason = "FRED sin credenciales configuradas" if not fred_api_key else "FRED no disponible"
-        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
-        notes.extend(extra_notes)
-        metrics.update(extra_metrics)
-        if not used_fallback:
-            metrics.setdefault("macro_source", "unavailable")
-        record_macro_api_usage(
-            provider=provider_display,
-            status="disabled",
-            detail=reason,
-            fallback=used_fallback,
-        )
-        return notes, metrics
-
-    series_lookup = _macro_series_lookup()
-    mapping: Dict[str, str] = {}
-    missing_series: List[str] = []
-    for sector in sectors:
-        series_id = series_lookup.get(sector.casefold())
-        if series_id:
-            mapping[sector] = series_id
+            metrics.update(fallback_metrics)
+            fallback_attempt["status"] = "success"
+            if last_reason:
+                fallback_attempt["detail"] = last_reason
+                note_reason = f" ({last_reason})"
+            else:
+                note_reason = ""
+            notes.extend(failure_notes)
+            notes.append(f"Datos macro mediante fallback configurado{note_reason}.")
         else:
-            missing_series.append(sector)
-
-    if not mapping:
-        reason = "no hay series configuradas para los sectores seleccionados"
-        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
-        notes.extend(extra_notes)
-        metrics.update(extra_metrics)
-        if not used_fallback:
+            fallback_attempt["status"] = "unavailable"
+            if last_reason:
+                fallback_attempt["detail"] = last_reason
+                notes.extend(failure_notes)
+                notes.append(f"Datos macro no disponibles: {last_reason}")
+            else:
+                notes.extend(failure_notes)
+                notes.append("Datos macro no disponibles")
             metrics.setdefault("macro_source", "unavailable")
+
+        provider_attempts.append(fallback_attempt)
+        metrics["macro_provider_attempts"] = provider_attempts
         record_macro_api_usage(
-            provider=provider_display,
-            status="error",
-            detail=reason,
-            fallback=used_fallback,
+            attempts=provider_attempts,
+            notes=notes,
+            metrics=metrics,
         )
-        if missing_series:
-            notes.append(
-                "Sin series asociadas para: " + ", ".join(sorted(set(missing_series)))
-            )
-            metrics["macro_missing_series"] = sorted(set(missing_series))
         return notes, metrics
 
-    start = time.perf_counter()
-    try:
-        observations = client.get_latest_observations(mapping)
-    except MacroAPIError as exc:
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        reason = str(exc)
-        extra_notes, extra_metrics, used_fallback = _use_fallback(reason)
-        notes.extend(extra_notes)
-        metrics.update(extra_metrics)
-        if not used_fallback:
-            metrics.setdefault("macro_source", "unavailable")
-        record_macro_api_usage(
-            provider=provider_display,
-            status="error",
-            detail=reason,
-            elapsed_ms=elapsed_ms,
-            fallback=used_fallback,
-        )
-        if missing_series:
-            metrics.setdefault(
-                "macro_missing_series", sorted(set(missing_series))
-            )
-        return notes, metrics
-
-    elapsed_ms = (time.perf_counter() - start) * 1000.0
-    observation_entries = _build_observation_entries(observations)
-    if not observation_entries:
-        extra_notes, extra_metrics, used_fallback = _use_fallback(
-            "FRED no devolvió observaciones válidas"
-        )
-        notes.extend(extra_notes)
-        metrics.update(extra_metrics)
-        if not used_fallback:
-            metrics.setdefault("macro_source", "unavailable")
-        record_macro_api_usage(
-            provider=provider_display,
-            status="error",
-            detail="sin observaciones válidas",
-            elapsed_ms=elapsed_ms,
-            fallback=used_fallback,
-        )
-        if missing_series:
-            metrics.setdefault(
-                "macro_missing_series", sorted(set(missing_series))
-            )
-        return notes, metrics
-
-    metrics.update(_apply_macro_entries(df, observation_entries))
-    metrics["macro_source"] = "fred"
-    record_macro_api_usage(
-        provider=provider_display,
-        status="success",
-        elapsed_ms=elapsed_ms,
-        fallback=False,
-    )
-
+    notes.extend(failure_notes)
     reference_dates = metrics.get("macro_reference_dates")
-    if reference_dates:
-        if isinstance(reference_dates, list):
-            notes.append(
-                "Datos macro (FRED) actualizados al: "
-                + ", ".join(reference_dates)
-            )
-    else:
-        notes.append("Datos macro (FRED) incorporados.")
-
-    if missing_series:
-        missing_sorted = sorted(set(missing_series))
+    if reference_dates and isinstance(reference_dates, list):
         notes.append(
-            "Sin series asociadas para: " + ", ".join(missing_sorted)
+            f"Datos macro ({success_display}) actualizados al: "
+            + ", ".join(reference_dates)
         )
-        metrics["macro_missing_series"] = missing_sorted
+    else:
+        notes.append(f"Datos macro ({success_display}) incorporados.")
+
+    if missing_series_for_success:
+        notes.append(
+            "Sin series asociadas para: " + ", ".join(missing_series_for_success)
+        )
+
+    metrics["macro_provider_attempts"] = provider_attempts
+    record_macro_api_usage(
+        attempts=provider_attempts,
+        notes=notes,
+        metrics=metrics,
+    )
 
     return notes, metrics
 def _build_yahoo_link(ticker: object) -> str | pd.NA:

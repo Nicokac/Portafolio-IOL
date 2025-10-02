@@ -8,11 +8,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 ## Quick-start (release 0.3.23)
 
-La versión **0.3.23** multiplica la visibilidad operativa: el health sidebar incorpora promedios,
-ratio de *cache hits* y mejoras versus la caché, el controlador macro aplica un fallback
-multinivel cuando FRED no responde y el dashboard de oportunidades estrena KPIs accionables para
-dimensionar universo, candidatos finales y filtros activos. Sigue estos pasos para reproducir el
-flujo completo y validar las novedades clave del release:
+La versión **0.3.23** multiplica la visibilidad operativa y afina el onboarding:  
+- El **mini-dashboard inicial** resume valor de la cartera, variación diaria y cash disponible.  
+- El **health sidebar** incorpora promedios, ratio de *cache hits* y mejoras versus la caché.  
+- El controlador macro aplica un **fallback multinivel (FRED → World Bank → fallback estático)** cuando las APIs no responden.  
+- El dashboard de oportunidades estrena **KPIs accionables** para dimensionar universo, candidatos finales y filtros activos.  
+
+Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
 ### Ejemplo completo
 
@@ -33,6 +35,8 @@ flujo completo y validar las novedades clave del release:
    tarjetas de KPIs: universo analizado, candidatos finales y sectores activos (con deltas de
    descartes y tiempos de cómputo).
 3. **Lanza un screening con presets personalizados y revisa la telemetría ampliada.**
+   quedó aplicada. Al mismo tiempo, el mini-dashboard superior renderizará tarjetas con el valor
+   total de la cartera, la variación diaria y el cash disponible usando los datos stub incluidos.
    - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
    - Completa los filtros (score mínimo, payout, racha, sectores, indicadores técnicos) y presiona
      **Guardar preset**. La UI confirmará con un toast "Preset guardado" y el nuevo preset quedará
@@ -132,12 +136,16 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Para habilitar la integración se deben definir las siguientes variables (vía `.env`, `streamlit secrets` o `config.json`):
 
   ```bash
-  export MACRO_API_PROVIDER=fred
+  export MACRO_API_PROVIDER="fred,worldbank"
   export FRED_API_KEY="<tu-clave>"
   export FRED_SECTOR_SERIES='{"Technology": "IPN31152N", "Finance": "IPN52300N"}'
   # Opcional: tuning avanzado
   export FRED_API_BASE_URL="https://api.stlouisfed.org/fred"
   export FRED_API_RATE_LIMIT_PER_MINUTE=120
+  export WORLD_BANK_API_KEY="<tu-clave-wb>"
+  export WORLD_BANK_SECTOR_SERIES='{"Energy": "EG.USE.PCAP.KG.OE"}'
+  export WORLD_BANK_API_BASE_URL="https://api.worldbank.org/v2"
+  export WORLD_BANK_API_RATE_LIMIT_PER_MINUTE=60
   export MACRO_SECTOR_FALLBACK='{"Technology": {"value": 2.1, "as_of": "2023-06-30"}}'
   ```
 

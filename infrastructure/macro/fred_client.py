@@ -7,15 +7,15 @@ extensible for future indicators.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
 import time
-from threading import Lock
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, Mapping, MutableMapping, Optional
 
 import requests
 
 from infrastructure.http.session import build_session
+from .rate_limiter import RateLimiter
 
 
 class MacroAPIError(RuntimeError):
@@ -31,7 +31,7 @@ class MacroRateLimitError(MacroAPIError):
 
 
 @dataclass(frozen=True)
-class FredSeriesObservation:
+class MacroSeriesObservation:
     """Represents the most recent observation available for a series."""
 
     series_id: str
@@ -39,38 +39,8 @@ class FredSeriesObservation:
     as_of: str
 
 
-class _RateLimiter:
-    """Simple rate limiter that spaces out requests at a fixed interval."""
-
-    def __init__(
-        self,
-        *,
-        calls_per_minute: int,
-        monotonic: Callable[[], float] = time.monotonic,
-        sleeper: Callable[[float], None] = time.sleep,
-    ) -> None:
-        if calls_per_minute < 0:
-            raise ValueError("calls_per_minute must be >= 0")
-        self._interval = 0.0
-        if calls_per_minute:
-            self._interval = 60.0 / float(calls_per_minute)
-        self._monotonic = monotonic
-        self._sleep = sleeper
-        self._lock = Lock()
-        self._next_time = 0.0
-
-    def acquire(self) -> None:
-        """Block until the caller is allowed to make another request."""
-
-        if self._interval <= 0:
-            return
-        with self._lock:
-            now = self._monotonic()
-            wait_for = self._next_time - now
-            if wait_for > 0:
-                self._sleep(wait_for)
-                now = self._monotonic()
-            self._next_time = now + self._interval
+# Backwards compatibility for legacy imports expecting ``FredSeriesObservation``
+FredSeriesObservation = MacroSeriesObservation
 
 
 class FredClient:
@@ -92,14 +62,14 @@ class FredClient:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._session = session or build_session(user_agent or "Portafolio-IOL/1.0")
-        self._rate_limiter = _RateLimiter(
+        self._rate_limiter = RateLimiter(
             calls_per_minute=calls_per_minute, monotonic=monotonic, sleeper=sleeper
         )
 
     # Public API -----------------------------------------------------------
     def get_latest_observation(
         self, series_id: str, *, params: Optional[Mapping[str, Any]] = None
-    ) -> Optional[FredSeriesObservation]:
+    ) -> Optional[MacroSeriesObservation]:
         """Return the most recent valid observation for ``series_id``."""
 
         payload = self._request_json(
@@ -130,15 +100,15 @@ class FredClient:
             ).strip()
             if not as_of:
                 continue
-            return FredSeriesObservation(series_id=series_id, value=value, as_of=as_of)
+            return MacroSeriesObservation(series_id=series_id, value=value, as_of=as_of)
         return None
 
     def get_latest_observations(
         self, series_map: Mapping[str, str]
-    ) -> Dict[str, FredSeriesObservation]:
+    ) -> Dict[str, MacroSeriesObservation]:
         """Return observations for the provided mapping of label -> series ID."""
 
-        results: Dict[str, FredSeriesObservation] = {}
+        results: Dict[str, MacroSeriesObservation] = {}
         for label, series_id in series_map.items():
             if not series_id:
                 continue
