@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import textwrap
+from types import SimpleNamespace
 from typing import Iterable
 
 import streamlit as _streamlit_module
@@ -14,6 +15,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import services.health as health_service  # noqa: E402  - added to sys.path above
 import ui.health_sidebar as health_sidebar  # noqa: E402  - added to sys.path above
 
 
@@ -67,7 +69,7 @@ class _DummyStreamlit:
 
 
 @pytest.fixture
-def _dummy_metrics() -> dict[str, dict[str, object]]:
+def _dummy_metrics() -> dict[str, object]:
     return {
         "iol_refresh": {"status": "success", "detail": "OK", "ts": None},
         "yfinance": {"source": "yfinance", "detail": "cache", "ts": None},
@@ -97,11 +99,25 @@ def _dummy_metrics() -> dict[str, dict[str, object]]:
             "detail": "gap",
             "ts": None,
         },
+        "opportunities_history": [
+            {
+                "mode": "miss",
+                "elapsed_ms": 400.0,
+                "cached_elapsed_ms": 250.0,
+                "ts": None,
+            },
+            {
+                "mode": "hit",
+                "elapsed_ms": 220.0,
+                "cached_elapsed_ms": 210.0,
+                "ts": None,
+            },
+        ],
     }
 
 
 def test_render_health_sidebar_uses_shared_note_formatter(
-    monkeypatch: pytest.MonkeyPatch, _dummy_metrics: dict[str, dict[str, object]]
+    monkeypatch: pytest.MonkeyPatch, _dummy_metrics: dict[str, object]
 ) -> None:
     dummy_streamlit = _DummyStreamlit()
     monkeypatch.setattr(health_sidebar, "st", dummy_streamlit)
@@ -131,7 +147,12 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         )
     )
     opportunities_note = health_sidebar._format_opportunities_status(
-        _dummy_metrics["opportunities"]
+        _dummy_metrics["opportunities"], _dummy_metrics["opportunities_history"]
+    )
+    history_lines = list(
+        health_sidebar._format_opportunities_history(
+            reversed(_dummy_metrics["opportunities_history"])
+        )
     )
     assert "universo 120→48" in opportunities_note
     assert "descartes 60%" in opportunities_note
@@ -143,6 +164,7 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         health_sidebar._format_yfinance_status(_dummy_metrics["yfinance"]),
         *fx_lines,
         opportunities_note,
+        *history_lines,
         *formatted_latency_lines,
     ]
 
@@ -162,6 +184,8 @@ def test_render_health_sidebar_uses_shared_note_formatter(
         *fx_lines,
         "#### 🔎 Screening de oportunidades",
         opportunities_note,
+        "#### 🗂️ Historial de screenings",
+        *history_lines,
         "#### ⏱️ Latencias",
         *formatted_latency_lines,
     ]
@@ -191,6 +215,49 @@ def test_format_opportunities_status_handles_partial_metrics(
     assert "sectores: Energy" in note
     assert "origen: nyse=10" in note
     assert "s/d" in note
+
+
+def test_render_health_sidebar_includes_history_section(
+    monkeypatch: pytest.MonkeyPatch, _dummy_metrics: dict[str, object]
+) -> None:
+    dummy_streamlit = _DummyStreamlit()
+    monkeypatch.setattr(health_sidebar, "st", dummy_streamlit)
+    monkeypatch.setattr(health_sidebar, "get_health_metrics", lambda: _dummy_metrics)
+
+    health_sidebar.render_health_sidebar()
+
+    assert "#### 🗂️ Historial de screenings" in dummy_streamlit.sidebar.markdown_calls
+    expected_history_lines = list(
+        health_sidebar._format_opportunities_history(
+            reversed(_dummy_metrics["opportunities_history"])
+        )
+    )
+    for line in expected_history_lines:
+        assert line in dummy_streamlit.sidebar.markdown_calls
+
+
+def test_record_opportunities_report_rotates_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dummy_state: dict[str, object] = {}
+    monkeypatch.setattr(
+        health_service,
+        "st",
+        SimpleNamespace(session_state=dummy_state),
+    )
+
+    for idx in range(health_service._OPPORTUNITIES_HISTORY_LIMIT + 2):
+        health_service.record_opportunities_report(
+            mode="hit" if idx % 2 == 0 else "miss",
+            elapsed_ms=100 + idx,
+            cached_elapsed_ms=50 + idx,
+        )
+
+    metrics = health_service.get_health_metrics()
+    history = metrics["opportunities_history"]
+    assert len(history) == health_service._OPPORTUNITIES_HISTORY_LIMIT
+    last_entry = metrics["opportunities"]
+    assert history[-1] == last_entry
 
 
 _SMOKE_SCRIPT = textwrap.dedent(

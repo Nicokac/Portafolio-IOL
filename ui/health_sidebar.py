@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Sidebar panel summarising recent data source health."""
 
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import streamlit as st
 
@@ -110,7 +110,15 @@ def _format_latency_section(portfolio: Optional[dict], quotes: Optional[dict]) -
     ]
 
 
-def _format_opportunities_status(data: Optional[dict]) -> str:
+def _format_opportunities_status(
+    data: Optional[dict], history: Optional[Sequence[Mapping[str, Any]]] = None
+) -> str:
+    if not data and history:
+        for entry in reversed(history):
+            if isinstance(entry, Mapping):
+                data = dict(entry)
+                break
+
     if not data:
         return "_Sin screenings recientes._"
 
@@ -190,6 +198,36 @@ def _format_opportunities_status(data: Optional[dict]) -> str:
     )
 
 
+def _format_opportunities_history(
+    history: Optional[Iterable[Mapping[str, Any]]]
+) -> Iterable[str]:
+    if not history:
+        return ["_Sin historial disponible._"]
+
+    lines: list[str] = []
+
+    for entry in history:
+        if not isinstance(entry, Mapping):
+            continue
+        mode = entry.get("mode")
+        icon = "✅" if mode == "hit" else "⚙️"
+        label = "hit de caché" if mode == "hit" else "ejecución completa"
+        ts = _format_timestamp(entry.get("ts"))
+        elapsed = entry.get("elapsed_ms")
+        elapsed_txt = (
+            f"{float(elapsed):.0f} ms" if isinstance(elapsed, (int, float)) else "s/d"
+        )
+        baseline = entry.get("cached_elapsed_ms")
+        baseline_txt = (
+            f" • previo {float(baseline):.0f} ms"
+            if isinstance(baseline, (int, float))
+            else ""
+        )
+        lines.append(format_note(f"{icon} {ts} • {elapsed_txt} • {label}{baseline_txt}"))
+
+    return lines or ["_Sin historial disponible._"]
+
+
 def render_health_sidebar() -> None:
     """Render the health summary panel inside the sidebar."""
     metrics = get_health_metrics()
@@ -208,7 +246,15 @@ def render_health_sidebar() -> None:
         sidebar.markdown(line)
 
     sidebar.markdown("#### 🔎 Screening de oportunidades")
-    sidebar.markdown(_format_opportunities_status(metrics.get("opportunities")))
+    sidebar.markdown(
+        _format_opportunities_status(
+            metrics.get("opportunities"), metrics.get("opportunities_history")
+        )
+    )
+    sidebar.markdown("#### 🗂️ Historial de screenings")
+    history_entries = metrics.get("opportunities_history") or []
+    for line in _format_opportunities_history(reversed(history_entries)):
+        sidebar.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
