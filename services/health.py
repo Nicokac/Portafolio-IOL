@@ -2,13 +2,16 @@ from __future__ import annotations
 
 """Helpers to capture health metrics and expose them via ``st.session_state``."""
 
-from typing import Any, Dict, Iterable, Mapping, Optional
+from collections import deque
+from typing import Any, Deque, Dict, Iterable, Mapping, Optional
 import time
 
 import streamlit as st
 
 
 _HEALTH_KEY = "health_metrics"
+_OPPORTUNITIES_HISTORY_KEY = "opportunities_history"
+_OPPORTUNITIES_HISTORY_LIMIT = 5
 
 
 def _store() -> Dict[str, Any]:
@@ -187,6 +190,18 @@ def record_opportunities_report(
 
     store["opportunities"] = entry
 
+    raw_history = store.get(_OPPORTUNITIES_HISTORY_KEY)
+    history: Deque[Dict[str, Any]]
+    if isinstance(raw_history, deque):
+        history = raw_history
+    elif isinstance(raw_history, list):
+        history = deque(raw_history, maxlen=_OPPORTUNITIES_HISTORY_LIMIT)
+    else:
+        history = deque(maxlen=_OPPORTUNITIES_HISTORY_LIMIT)
+
+    history.append(entry)
+    store[_OPPORTUNITIES_HISTORY_KEY] = history
+
 
 def get_health_metrics() -> Dict[str, Any]:
     """Return a shallow copy of the tracked metrics for UI consumption."""
@@ -199,6 +214,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "portfolio": store.get("portfolio"),
         "quotes": store.get("quotes"),
         "opportunities": store.get("opportunities"),
+        "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
     }
 
 
