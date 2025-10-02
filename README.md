@@ -6,13 +6,12 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.23)
+## Quick-start (release 0.3.24)
 
-La versión **0.3.23** multiplica la visibilidad operativa y afina el onboarding:  
-- El **mini-dashboard inicial** resume valor de la cartera, variación diaria y cash disponible.  
-- El **health sidebar** incorpora promedios, ratio de *cache hits* y mejoras versus la caché.  
-- El controlador macro aplica un **fallback multinivel (FRED → World Bank → fallback estático)** cuando las APIs no responden.  
-- El dashboard de oportunidades estrena **KPIs accionables** para dimensionar universo, candidatos finales y filtros activos.  
+La versión **0.3.24** refuerza la cobertura macro y la observabilidad de cada proveedor:
+- El **cliente World Bank** amplía el fallback multinivel (FRED → World Bank → fallback estático), manteniendo la columna `macro_outlook` cuando FRED queda inhabilitado o llega al límite de rate limiting.
+- El **health sidebar** ahora agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
+- Las notas del screening registran la secuencia de proveedores consultados (FRED, World Bank, fallback) con sus estados y latencias, alineando la telemetría mostrada en la UI con los datos persistidos en `services.health`.
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
@@ -29,7 +28,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar mostrará el número de versión `0.3.23`, confirmando que la actualización
+   La cabecera del sidebar mostrará el número de versión `0.3.24`, confirmando que la actualización
    quedó aplicada. Abre la pestaña **Empresas con oportunidad**, activa la casilla **Mostrar
    resumen del screening** y ejecuta una búsqueda con los datos stub incluidos para ver las nuevas
    tarjetas de KPIs: universo analizado, candidatos finales y sectores activos (con deltas de
@@ -49,11 +48,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
      filtros durante la sesión, la telemetría enriquecida del health sidebar mostrará el último modo
      (hit/miss), el ahorro promedio frente a la caché y el historial tabular de screenings con sus
      variaciones frente al promedio.
-4. **Valida el fallback multinivel de datos macro.** Con la app en ejecución, asegúrate de no tener
-   configurada la variable `FRED_API_KEY` (o renómbrala temporalmente) y ejecuta un screening. El
-   bloque de notas debe indicar "Datos macro mediante fallback configurado" y el health sidebar
-   registrará el proveedor como `fallback`. Si luego exportas una clave válida y repites la corrida,
-   el panel volverá a marcar `fred` como fuente y mostrará la latencia obtenida.
+4. **Valida el fallback multinivel de datos macro.** Arranca con `MACRO_API_PROVIDER="fred,worldbank"` y deja sin definir `FRED_API_KEY` para forzar el salto al segundo proveedor. Declara una serie World Bank (`WORLD_BANK_SECTOR_SERIES='{"Energy": "EG.USE.PCAP.KG.OE"}'`) y ejecuta un screening: las notas mostrarán "Datos macro (World Bank)" y el health sidebar actualizará los contadores de éxito, fallbacks y buckets de latencia para ese proveedor. Si luego quitas también la clave de World Bank o las series configuradas, la secuencia finalizará en el fallback estático y registrará el motivo en la misma telemetría.
 
 **Notas clave del flujo**
 
@@ -62,7 +57,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
 - La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
 - El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
 
-**Comportamiento del caché (0.3.23).** Cuando guardas un preset, la aplicación persiste la
+**Comportamiento del caché (0.3.24).** Cuando guardas un preset, la aplicación persiste la
 combinación de filtros y el resultado del último screening asociado. Al relanzarlo, el panel de
 telemetría ahora etiqueta cada corrida con un identificador incremental y agrega una tabla de
 componentes (descarga, normalización, render) para comparar tiempos:
@@ -76,10 +71,10 @@ componentes (descarga, normalización, render) para comparar tiempos:
   que reutiliza inmediatamente los resultados previos, dispara el contador de *cache hits* y confirma
   la integridad del guardado.
 
-Estas novedades convierten a la release 0.3.23 en la referencia para validar onboarding, telemetría
+Estas novedades convierten a la release 0.3.24 en la referencia para validar onboarding, telemetría
 y caché cooperativa: toda la UI recuerda la versión activa, expone KPIs agregados de rendimiento en
-el health sidebar y los presets continúan recortando los tiempos de iteración al dejar a la vista el
-impacto de cada cambio.
+el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando
+los tiempos de iteración al dejar a la vista el impacto de cada cambio.
 
 ## Uso del proveedor de tiempo
 
@@ -154,13 +149,13 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.23)
+##### Escenarios de fallback macro (0.3.24)
 
-1. **Proveedor no soportado.** Si `MACRO_API_PROVIDER` apunta a un proveedor distinto de `fred`, el controlador descarta la integración live y aplica el fallback estático si existe. El health sidebar registra el estado `disabled` con detalle "proveedor no soportado".
-2. **Credenciales ausentes o cliente inactivo.** Cuando `_get_macro_client()` no puede inicializarse (por ejemplo, sin `FRED_API_KEY`), las notas informan "FRED sin credenciales configuradas" y la métrica `macro_source` pasa a `fallback` o `unavailable` según exista respaldo declarado.
-3. **Series faltantes.** Si no hay series configuradas para los sectores activos, se aplica el fallback y se listan los sectores sin cobertura en `macro_missing_series` para depuración rápida.
-4. **Errores de API o rate limiting.** Ante un `MacroAPIError` (incluye timeouts y límites de FRED), el release recurre al fallback configurado y anota la latencia que disparó el error, manteniendo visibilidad en la métrica `elapsed_ms`.
-5. **Observaciones inválidas.** Si FRED responde sin datos válidos, se utiliza el fallback y se etiqueta el estado como `error` con detalle "sin observaciones válidas" para evidenciar que la llamada completó pero sin información aprovechable.
+1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El resumen macro del health sidebar incrementa los contadores de éxito y actualiza los buckets de latencia para el nuevo proveedor.
+2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente.
+3. **Proveedor no soportado.** Cuando `MACRO_API_PROVIDER` apunta a valores fuera del set `fred/worldbank`, el controlador descarta la integración live y aplica el fallback estático si existe. El health sidebar deja el estado `disabled` con el detalle "proveedor no soportado".
+4. **Errores de API o rate limiting.** Ante un `MacroAPIError` (incluye timeouts y límites de FRED o del World Bank), la telemetría conserva la latencia que disparó el problema y los contadores globales agregan tanto el `error` como el `fallback` resultante.
+5. **Series faltantes u observaciones inválidas.** Cuando un proveedor responde sin datos válidos o no hay series configuradas para un sector activo, la nota lista los sectores faltantes (`macro_missing_series`) y el fallback estático aporta el valor definitivo.
 
 #### Telemetría del barrido
 
@@ -303,9 +298,9 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.23".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.24".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.23)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia y reutilización.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.24)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia y reutilización, incluyendo el resumen macro con World Bank.
 
 ### Interpretación del health sidebar (KPIs agregados)
 
