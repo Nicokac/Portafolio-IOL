@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.24.1] - 2025-10-09
+
+### Tests
+- La suite de CI recuperó su estabilidad tras ajustar los timeouts intermitentes y sincronizar los entornos de ejecución.
+
+### Changed
+- Los mocks de proveedores externos fueron alineados con los contratos vigentes para evitar desfasajes durante las pruebas integradas.
+
+### Fixed
+- La persistencia de favoritos ahora conserva los emisores marcados entre sesiones, incluso al alternar entre vistas y filtros derivados.
+
+### Documentation
+- Guías actualizadas describiendo la estabilidad recuperada, los mocks vigentes y el flujo persistente de favoritos para el release 0.3.24.1.
+
 ## [0.3.24] - 2025-10-08
 
 ### Changed
