@@ -123,19 +123,24 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Para habilitar la integración se deben definir las siguientes variables (vía `.env`, `streamlit secrets` o `config.json`):
 
   ```bash
-  export MACRO_API_PROVIDER=fred
+  export MACRO_API_PROVIDER="fred,worldbank"
   export FRED_API_KEY="<tu-clave>"
   export FRED_SECTOR_SERIES='{"Technology": "IPN31152N", "Finance": "IPN52300N"}'
   # Opcional: tuning avanzado
   export FRED_API_BASE_URL="https://api.stlouisfed.org/fred"
   export FRED_API_RATE_LIMIT_PER_MINUTE=120
+  export WORLD_BANK_API_KEY="<tu-clave-wb>"
+  export WORLD_BANK_SECTOR_SERIES='{"Energy": "EG.USE.PCAP.KG.OE"}'
+  export WORLD_BANK_API_BASE_URL="https://api.worldbank.org/v2"
+  export WORLD_BANK_API_RATE_LIMIT_PER_MINUTE=60
   export MACRO_SECTOR_FALLBACK='{"Technology": {"value": 2.1, "as_of": "2023-06-30"}}'
   ```
 
   - `FRED_SECTOR_SERIES` mapea el nombre del sector que aparece en el screener con el identificador de serie en FRED. Es sensible a los sectores retornados por Yahoo/stub, por lo que conviene mantener la misma capitalización mostrada en la tabla.
+  - `WORLD_BANK_SECTOR_SERIES` replica ese mapeo para el proveedor secundario. Cada clave debe coincidir con el sector de la grilla y cada valor con el código del indicador publicado por el World Bank.
   - `MACRO_SECTOR_FALLBACK` permite declarar valores estáticos (por sector) que se aplican automáticamente cuando la API externa no está disponible, cuando el proveedor configurado no es soportado o cuando falta alguna serie en la configuración.
-- Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
-- El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
+- Flujo de failover: cada corrida evalúa la cadena `FRED → proveedor secundario (por ej. World Bank) → fallback estático`. Ante cualquier error de la API primaria (credenciales faltantes, rate limiting, respuesta inválida, etc.), el controlador intenta automáticamente con el proveedor configurado en `MACRO_API_PROVIDER` y finalmente con los valores declarados en `MACRO_SECTOR_FALLBACK`. Si ningún eslabón responde, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). El helper `services.health.record_macro_api_usage` persiste la secuencia completa de intentos (estado, latencia, detalle y proveedor) para que el healthcheck exponga si se usó FRED, World Bank o el fallback.
+- El rate limiting se maneja desde `infrastructure/macro/fred_client.py` y `infrastructure/macro/worldbank_client.py`, que serializan las llamadas según el umbral configurado y reutilizan el `User-Agent` global para respetar los términos de uso de cada servicio.
 
 #### Telemetría del barrido
 
