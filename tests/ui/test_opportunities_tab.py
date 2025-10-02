@@ -253,6 +253,50 @@ def test_button_executes_controller_and_shows_yahoo_caption() -> None:
     assert not any(fallback_note in block for block in markdown_blocks)
 
 
+def test_summary_block_renders_metrics_and_chart() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL", "JNJ", "PEP"],
+            "price": [180.12, 160.5, 180.44],
+            "Yahoo Finance Link": [
+                "https://finance.yahoo.com/quote/AAPL",
+                "https://finance.yahoo.com/quote/JNJ",
+                "https://finance.yahoo.com/quote/PEP",
+            ],
+            "score_compuesto": [85.0, 72.0, 70.0],
+            "sector": ["Technology", "Healthcare", "Consumer Defensive"],
+        }
+    )
+    summary = {
+        "universe_count": 12,
+        "result_count": 3,
+        "discarded_ratio": 0.75,
+        "selected_sectors": ["Technology", "Healthcare"],
+        "filter_descriptions": ["max_pe: 9/12 (75%)"],
+        "sector_distribution": {
+            "Technology": 1,
+            "Healthcare": 1,
+            "Consumer Defensive": 1,
+        },
+        "drop_summary": "75% descartados por max_pe",
+    }
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo", "summary": summary},
+        trigger_search=True,
+    )
+
+    metric_labels = [metric.label for metric in app.get("metric")]
+    assert "Universo analizado" in metric_labels
+    assert "Candidatos finales" in metric_labels
+    assert "Sectores activos" in metric_labels
+
+    markdown_values = [element.value for element in app.get("markdown")]
+    assert any("Distribución por sector" in value for value in markdown_values)
+    captions = [element.value for element in app.get("caption")]
+    assert "Sin datos de sector disponibles." not in captions
+
+
 def test_download_button_exports_screening_results_csv() -> None:
     df = pd.DataFrame(
         {
