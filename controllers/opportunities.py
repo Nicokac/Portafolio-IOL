@@ -307,8 +307,8 @@ def run_opportunities_controller(
     min_buyback: Optional[float] = None,
     min_score_threshold: Optional[float] = None,
     max_results: Optional[int] = None,
-) -> Tuple[pd.DataFrame, List[str], str]:
-    """Run the opportunities screener and return the results, notes and source."""
+) -> Mapping[str, object]:
+    """Run the opportunities screener and return the results and metadata."""
 
     tickers = _clean_manual_tickers(manual_tickers)
     excluded = _clean_manual_tickers(exclude_tickers)
@@ -454,7 +454,19 @@ def run_opportunities_controller(
                 "No se encontraron datos para: " + ", ".join(sorted(set(missing)))
             )
 
-    return df, notes, source
+    metrics_payload = _collect_metrics_from_table(df)
+    if (
+        selected_sectors
+        and "highlighted_sectors" not in metrics_payload
+    ):
+        metrics_payload["highlighted_sectors"] = selected_sectors
+
+    result: Dict[str, object] = {"table": df, "notes": notes, "source": source}
+    if metrics_payload:
+        result.update(metrics_payload)
+        result["metrics"] = metrics_payload
+
+    return result
 
 
 def _normalize_yahoo_response(
@@ -550,6 +562,104 @@ def _as_optional_bool(value: Any) -> Optional[bool]:
     return None
 
 
+def _collect_metrics_from_table(table: Any) -> Dict[str, Any]:
+    metrics: Dict[str, Any] = {}
+
+    if not isinstance(table, pd.DataFrame):
+        return metrics
+
+    summary = getattr(table, "attrs", {}).get("summary")
+    summary_mapping: Mapping[str, Any] | None = (
+        summary if isinstance(summary, Mapping) else None
+    )
+
+    def _coerce_int(value: Any) -> Optional[int]:
+        parsed = _as_optional_int(value)
+        if parsed is not None:
+            return parsed
+        float_value = _as_optional_float(value)
+        if float_value is None:
+            return None
+        if float_value.is_integer():
+            return int(float_value)
+        return None
+
+    def _coerce_float(value: Any) -> Optional[float]:
+        parsed = _as_optional_float(value)
+        if parsed is None:
+            return None
+        return float(parsed)
+
+    initial = _coerce_int(summary_mapping.get("universe_count")) if summary_mapping else None
+    final = _coerce_int(summary_mapping.get("result_count")) if summary_mapping else None
+
+    if final is None:
+        final = _coerce_int(table.index.size)
+
+    if initial is None and final is not None:
+        initial = final
+
+    if initial is not None:
+        metrics["universe_initial"] = initial
+    if final is not None:
+        metrics["universe_final"] = final
+
+    ratio = (
+        _coerce_float(summary_mapping.get("discarded_ratio"))
+        if summary_mapping
+        else None
+    )
+    if ratio is None and initial:
+        ratio = (max(initial - (final or 0), 0) / initial) if initial else 0.0
+    if ratio is not None:
+        metrics["discard_ratio"] = ratio
+
+    highlighted: list[str] = []
+    if summary_mapping and "selected_sectors" in summary_mapping:
+        raw = summary_mapping.get("selected_sectors")
+        if isinstance(raw, str):
+            value = raw.strip()
+            if value:
+                highlighted = [value]
+        elif isinstance(raw, Iterable) and not isinstance(raw, (bytes, bytearray)):
+            highlighted = [
+                str(item).strip()
+                for item in raw
+                if not isinstance(item, Mapping) and str(item).strip()
+            ]
+
+    counts: Dict[str, Any] = {}
+    if summary_mapping and "sector_distribution" in summary_mapping:
+        raw_counts = summary_mapping.get("sector_distribution")
+        if isinstance(raw_counts, Mapping):
+            for key, value in raw_counts.items():
+                label = str(key).strip()
+                if not label:
+                    continue
+                numeric = _coerce_int(value)
+                if numeric is None:
+                    numeric_float = _coerce_float(value)
+                else:
+                    numeric_float = float(numeric)
+                if numeric_float is None:
+                    continue
+                counts[label] = numeric if numeric is not None else numeric_float
+
+    if not highlighted and counts:
+        ordered = sorted(
+            counts.items(),
+            key=lambda item: (-float(item[1]), item[0]),
+        )
+        highlighted = [label for label, value in ordered if float(value) > 0][:3]
+
+    if highlighted:
+        metrics["highlighted_sectors"] = highlighted
+    if counts:
+        metrics["counts_by_origin"] = counts
+
+    return metrics
+
+
 def _extract_opportunities_metrics(payload: Mapping[str, Any]) -> Dict[str, Any]:
     metrics: Dict[str, Any] = {}
     raw_metrics = payload.get("metrics")
@@ -585,12 +695,16 @@ def _normalise_controller_payload(
         notes = _normalize_notes(payload.get("notes"))
         source = str(payload.get("source") or "desconocido")
         metrics = _extract_opportunities_metrics(payload)
+        table_metrics = _collect_metrics_from_table(df)
+        for key, value in table_metrics.items():
+            metrics.setdefault(key, value)
         return df, notes, source, metrics
 
     if isinstance(payload, tuple) and len(payload) == 3:
         df, notes, source = payload
         normalized_notes = _normalize_notes(notes)
-        return df, normalized_notes, source, {}
+        table_metrics = _collect_metrics_from_table(df)
+        return df, normalized_notes, source, table_metrics
 
     return pd.DataFrame(), [], "desconocido", {}
 def _convert_summary_value(value: Any) -> Any:
@@ -718,17 +832,17 @@ def generate_opportunities_report(
     raw_payload = run_opportunities_controller(**controller_args)
     df, notes, source, metrics_payload = _normalise_controller_payload(raw_payload)
     elapsed_ms = (time.perf_counter() - compute_start) * 1000
-    result: Dict[str, object] = {"table": df, "notes": notes, "source": source}
-    if metrics_payload:
-        result["metrics"] = metrics_payload
     summary = _build_summary_payload(df, filters)
-    result: Mapping[str, object] = {
+    result: Dict[str, object] = {
         "table": df,
         "notes": notes,
         "source": source,
         "summary": summary,
     }
-    _store_cached_result(cache_key, result, elapsed_ms)
+    if metrics_payload:
+        result["metrics"] = metrics_payload
+    result_mapping: Mapping[str, object] = result
+    _store_cached_result(cache_key, result_mapping, elapsed_ms)
     record_opportunities_report(
         mode="miss",
         elapsed_ms=elapsed_ms,

@@ -133,6 +133,10 @@ def test_render_health_sidebar_uses_shared_note_formatter(
     opportunities_note = health_sidebar._format_opportunities_status(
         _dummy_metrics["opportunities"]
     )
+    assert "universo 120→48" in opportunities_note
+    assert "descartes 60%" in opportunities_note
+    assert "sectores: Energy, Utilities" in opportunities_note
+    assert "origen: nyse=30, nasdaq=18" in opportunities_note
     formatted_latency_lines = [f"formatted::{line}" for line in latency_lines]
     expected_notes: list[str] = [
         health_sidebar._format_iol_status(_dummy_metrics["iol_refresh"]),
