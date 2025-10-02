@@ -39,6 +39,51 @@ _FILTER_LABELS: dict[str, str] = {
     "max_results": "max_results",
 }
 
+
+def _summarize_filter_telemetry(
+    filter_telemetry: Sequence[tuple[str, int, int]],
+    *,
+    include_latam: bool | None,
+    max_results: Optional[int],
+    sectors: Optional[Iterable[str]],
+    manual_tickers: Optional[Iterable[str]],
+    exclude_tickers: Optional[Iterable[str]],
+) -> tuple[list[str], list[tuple[str, str, int]]]:
+    """Return human readable summaries for the applied filters."""
+
+    filter_metrics: list[str] = []
+    drop_summary_entries: list[tuple[str, str, int]] = []
+
+    for name, before, after in filter_telemetry:
+        dropped = max(int(before) - int(after), 0)
+        ratio = (dropped / before) if before else 0.0
+        label = _FILTER_LABELS.get(name, name)
+        if name == "include_latam":
+            label = f"include_latam={include_latam}"
+        elif name == "max_results" and max_results is not None:
+            label = f"max_results={max_results}"
+        elif name == "sectors" and sectors:
+            label = "sectors"
+        elif name == "restrict_to_tickers" and manual_tickers:
+            label = "manual_tickers"
+        elif name == "exclude_tickers" and exclude_tickers:
+            label = "exclude_tickers"
+        filter_metrics.append(f"{label}: {dropped}/{before} ({ratio:.0%})")
+        if dropped > 0:
+            drop_summary_entries.append((name, label, dropped))
+
+    return filter_metrics, drop_summary_entries
+
+
+def _compute_sector_distribution(df: pd.DataFrame) -> dict[str, int]:
+    if "sector" not in df.columns:
+        return {}
+    series = (
+        df["sector"].astype("string").fillna("Sin sector").str.strip().replace("", "Sin sector")
+    )
+    counts = series.value_counts()
+    return {str(index): int(count) for index, count in counts.items()}
+
 # Base dataset used to simulate screener output.
 _BASE_OPPORTUNITIES = [
     {
@@ -1263,6 +1308,7 @@ def run_screener_stub(
 
     universe_count = int(df.index.size)
     filter_telemetry: list[tuple[str, int, int]] = []
+    normalized_sectors = _normalize_sector_filters(sectors)
 
     result = _apply_filters_and_finalize(
         df,
@@ -1290,7 +1336,7 @@ def run_screener_stub(
             "forward_eps",
             "buyback",
         ),
-        allowed_sectors=_normalize_sector_filters(sectors),
+        allowed_sectors=normalized_sectors,
         filter_telemetry=filter_telemetry,
     )
 
@@ -1298,28 +1344,14 @@ def run_screener_stub(
     result_count = int(result.index.size)
     discarded_count = max(universe_count - result_count, 0)
     discarded_ratio = (discarded_count / universe_count) if universe_count else 0.0
-
-    filter_metrics: list[str] = []
-    drop_summary_entries: list[tuple[str, str, int]] = []
-    for name, before, after in filter_telemetry:
-        if before <= 0:
-            continue
-        dropped = before - after
-        ratio = (dropped / before) if before else 0.0
-        label = _FILTER_LABELS.get(name, name)
-        if name == "include_latam":
-            label = f"include_latam={include_latam}"
-        elif name == "max_results" and max_results is not None:
-            label = f"max_results={max_results}"
-        elif name == "sectors" and sectors:
-            label = "sectors"
-        elif name == "restrict_to_tickers" and manual_tickers:
-            label = "manual_tickers"
-        elif name == "exclude_tickers" and exclude_tickers:
-            label = "exclude_tickers"
-        filter_metrics.append(f"{label}: {dropped}/{before} ({ratio:.0%})")
-        if dropped > 0:
-            drop_summary_entries.append((name, label, dropped))
+    filter_metrics, drop_summary_entries = _summarize_filter_telemetry(
+        filter_telemetry,
+        include_latam=include_latam,
+        max_results=max_results,
+        sectors=sectors,
+        manual_tickers=manual,
+        exclude_tickers=exclude_tickers,
+    )
 
     metrics_summary = "ningún filtro aplicado"
     if filter_metrics:
@@ -1344,6 +1376,20 @@ def run_screener_stub(
     )
 
     LOGGER.info("%s. Descartes: %s", telemetry_note, metrics_summary)
+
+    summary_payload = {
+        "universe_count": universe_count,
+        "result_count": result_count,
+        "discarded_ratio": discarded_ratio,
+        "elapsed_seconds": float(elapsed),
+        "selected_sectors": list(normalized_sectors),
+        "sector_distribution": _compute_sector_distribution(result),
+        "filter_descriptions": list(filter_metrics),
+        "drop_summary": drop_summary,
+        "source": "stub",
+    }
+
+    result.attrs["summary"] = summary_payload
 
     notes_attr = result.attrs.setdefault("_notes", [])
     notes_attr.append(telemetry_note)
@@ -1825,6 +1871,8 @@ def run_screener_yahoo(
         "crecimiento de EPS": min_eps_growth is None,
     }
 
+    filter_telemetry: list[tuple[str, int, int]] = []
+
     df = _apply_filters_and_finalize(
         df,
         max_payout=max_payout,
@@ -1861,6 +1909,7 @@ def run_screener_yahoo(
             "_meta_buyback",
         ),
         missing_optional_labels=missing_optional_labels,
+        filter_telemetry=filter_telemetry,
     )
 
     filter_notes = list(df.attrs.pop("_notes", []))
@@ -1868,6 +1917,40 @@ def run_screener_yahoo(
         notes.extend(filter_notes)
 
     notes.append(telemetry_note)
+
+    filter_metrics, drop_summary_entries = _summarize_filter_telemetry(
+        filter_telemetry,
+        include_latam=include_latam_flag,
+        max_results=max_results,
+        sectors=sectors,
+        manual_tickers=manual_requested,
+        exclude_tickers=excluded,
+    )
+
+    drop_parts: list[str] = []
+    for _, label, dropped in drop_summary_entries:
+        percentage = (dropped / universe_size) if universe_size else 0.0
+        drop_parts.append(f"{percentage:.0%} descartados por {label}")
+
+    drop_summary = ", ".join(drop_parts) if drop_parts else "sin descartes"
+
+    summary_payload = {
+        "universe_count": universe_size,
+        "result_count": int(df.index.size),
+        "discarded_ratio": (
+            (max(universe_size - int(df.index.size), 0) / universe_size)
+            if universe_size
+            else 0.0
+        ),
+        "elapsed_seconds": float(elapsed),
+        "selected_sectors": list(sector_filters),
+        "sector_distribution": _compute_sector_distribution(df),
+        "filter_descriptions": list(filter_metrics),
+        "drop_summary": drop_summary,
+        "source": "yahoo",
+    }
+
+    df.attrs["summary"] = summary_payload
 
     if using_default_universe and tickers:
         filters_applied: list[str] = []

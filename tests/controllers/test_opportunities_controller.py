@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Mapping, Tuple
 
 import sys
 
@@ -389,7 +389,12 @@ def test_generate_report_includes_source(monkeypatch: pytest.MonkeyPatch) -> Non
         }
     )
 
-    assert result == {"table": df, "notes": ["note"], "source": "stub"}
+    assert result["table"] is df
+    assert result["notes"] == ["note"]
+    assert result["source"] == "stub"
+    summary = result.get("summary")
+    assert isinstance(summary, Mapping)
+    assert summary["result_count"] == len(df.index)
 
 
 def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> None:

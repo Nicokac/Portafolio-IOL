@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import time
 from collections import OrderedDict
 from threading import Lock
+from numbers import Number
 from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
@@ -260,6 +262,7 @@ def _clean_sectors(sectors: Optional[Iterable[str]]) -> List[str]:
 def _ensure_columns(df: pd.DataFrame, include_technicals: bool) -> pd.DataFrame:
     """Guarantee that the DataFrame exposes the expected schema."""
 
+    preserved_attrs = dict(getattr(df, "attrs", {}))
     df = df.copy()
     expected_columns = list(_EXPECTED_COLUMNS)
     if include_technicals:
@@ -280,6 +283,9 @@ def _ensure_columns(df: pd.DataFrame, include_technicals: bool) -> pd.DataFrame:
     if "ticker" in df.columns and "Yahoo Finance Link" in df.columns:
         links = df["ticker"].map(_build_yahoo_link)
         df.loc[:, "Yahoo Finance Link"] = links.astype("string")
+
+    if preserved_attrs:
+        df.attrs.update(preserved_attrs)
 
     return df
 
@@ -544,6 +550,76 @@ def _as_optional_bool(value: Any) -> Optional[bool]:
     return None
 
 
+def _convert_summary_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(k): _convert_summary_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_convert_summary_value(v) for v in value]
+    if hasattr(value, "item") and not isinstance(value, Number):
+        try:
+            return _convert_summary_value(value.item())
+        except Exception:  # pragma: no cover - defensive branch
+            pass
+    if isinstance(value, Number):
+        numeric = float(value)
+        if math.isnan(numeric) or math.isinf(numeric):
+            return None
+        if float(numeric).is_integer():
+            return int(round(numeric))
+        return float(numeric)
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):  # type: ignore[arg-type]
+            return None
+    except Exception:  # pragma: no cover - defensive branch
+        pass
+    return value
+
+
+def _build_summary_payload(
+    table: pd.DataFrame | None, filters: Mapping[str, Any]
+) -> Mapping[str, Any]:
+    summary: dict[str, Any] = {}
+    if isinstance(table, pd.DataFrame):
+        raw_summary = getattr(table, "attrs", {}).get("summary")
+        if isinstance(raw_summary, Mapping):
+            summary.update(raw_summary)
+
+    if isinstance(table, pd.DataFrame):
+        summary.setdefault("result_count", int(table.index.size))
+        summary.setdefault("universe_count", summary.get("result_count"))
+    else:
+        summary.setdefault("result_count", 0)
+
+    if "discarded_ratio" not in summary:
+        try:
+            universe = int(summary.get("universe_count") or 0)
+            result_count = int(summary.get("result_count") or 0)
+        except (TypeError, ValueError):
+            universe = 0
+            result_count = 0
+        summary["discarded_ratio"] = (
+            (max(universe - result_count, 0) / universe) if universe else 0.0
+        )
+
+    selected_sectors = summary.get("selected_sectors")
+    if not selected_sectors:
+        raw_sectors = filters.get("sectors") or []
+        if isinstance(raw_sectors, (list, tuple, set, frozenset)):
+            selected_sectors = [str(item) for item in raw_sectors if item]
+        elif raw_sectors:
+            selected_sectors = [str(raw_sectors)]
+        else:
+            selected_sectors = []
+        summary["selected_sectors"] = selected_sectors
+
+    normalized = {str(key): _convert_summary_value(value) for key, value in summary.items()}
+    return normalized
+
+
 def generate_opportunities_report(
     filters: Optional[Mapping[str, Any]] = None,
 ) -> Mapping[str, object]:
@@ -594,7 +670,13 @@ def generate_opportunities_report(
     compute_start = time.perf_counter()
     df, notes, source = run_opportunities_controller(**controller_args)
     elapsed_ms = (time.perf_counter() - compute_start) * 1000
-    result: Mapping[str, object] = {"table": df, "notes": notes, "source": source}
+    summary = _build_summary_payload(df, filters)
+    result: Mapping[str, object] = {
+        "table": df,
+        "notes": notes,
+        "source": source,
+        "summary": summary,
+    }
     _store_cached_result(cache_key, result, elapsed_ms)
     record_opportunities_report(mode="miss", elapsed_ms=elapsed_ms, cached_elapsed_ms=None)
     return result
