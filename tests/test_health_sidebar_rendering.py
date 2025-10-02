@@ -148,6 +148,11 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
                 "mode": "hit",
                 "elapsed_ms": 12.3,
                 "cached_elapsed_ms": 45.6,
+                "universe_initial": 150,
+                "universe_final": 90,
+                "discard_ratio": 0.4,
+                "highlighted_sectors": ["Energy", "Utilities"],
+                "counts_by_origin": {"nyse": 45, "nasdaq": 45},
                 "ts": timestamps[4],
             },
             "portfolio": {
@@ -186,6 +191,8 @@ def test_sidebar_formats_populated_metrics(monkeypatch) -> None:
         "#### 🔎 Screening de oportunidades",
         shared_notes.format_note(
             f"✅ Cache reutilizada • {formatted[4]} (12 ms • previo 46 ms)"
+            " — universo 150→90 | descartes 40% | sectores: Energy, Utilities"
+            " | origen: nyse=45, nasdaq=45"
         ),
         "#### ⏱️ Latencias",
         f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[5]}",

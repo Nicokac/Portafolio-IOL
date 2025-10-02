@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Sidebar panel summarising recent data source health."""
 
-from typing import Iterable, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 import streamlit as st
 
@@ -124,7 +124,70 @@ def _format_opportunities_status(data: Optional[dict]) -> str:
         f" • previo {float(baseline):.0f} ms" if isinstance(baseline, (int, float)) else ""
     )
     ts = _format_timestamp(data.get("ts"))
-    return format_note(f"{icon} {label} • {ts} ({elapsed_txt}{baseline_txt})")
+    metrics_parts: list[str] = []
+
+    def _coerce_int(value: Any) -> Optional[int]:
+        try:
+            if value is None:
+                return None
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_float(value: Any) -> Optional[float]:
+        try:
+            if value is None:
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    initial = _coerce_int(data.get("universe_initial"))
+    final = _coerce_int(data.get("universe_final"))
+    if initial is not None and final is not None:
+        metrics_parts.append(f"universo {initial}→{final}")
+    elif initial is not None:
+        metrics_parts.append(f"universo inicial {initial}")
+    elif final is not None:
+        metrics_parts.append(f"universo final {final}")
+
+    ratio = _coerce_float(data.get("discard_ratio"))
+    if ratio is not None:
+        metrics_parts.append(f"descartes {ratio:.0%}")
+
+    sectors_raw = data.get("highlighted_sectors")
+    if isinstance(sectors_raw, str):
+        sectors = [sectors_raw.strip()] if sectors_raw.strip() else []
+    elif isinstance(sectors_raw, Iterable) and not isinstance(
+        sectors_raw, (bytes, bytearray, str)
+    ):
+        sectors = [str(item).strip() for item in sectors_raw if str(item).strip()]
+    else:
+        sectors = []
+    if sectors:
+        metrics_parts.append("sectores: " + ", ".join(sectors))
+
+    origin_raw = data.get("counts_by_origin")
+    origin_parts: list[str] = []
+    if isinstance(origin_raw, Mapping):
+        for key, value in origin_raw.items():
+            origin_label = str(key).strip()
+            if not origin_label:
+                continue
+            numeric = _coerce_float(value)
+            if numeric is None:
+                continue
+            if float(numeric).is_integer():
+                origin_parts.append(f"{origin_label}={int(numeric)}")
+            else:
+                origin_parts.append(f"{origin_label}={numeric:g}")
+    if origin_parts:
+        metrics_parts.append("origen: " + ", ".join(origin_parts))
+
+    metrics_txt = f" — {' | '.join(metrics_parts)}" if metrics_parts else ""
+    return format_note(
+        f"{icon} {label} • {ts} ({elapsed_txt}{baseline_txt}){metrics_txt}"
+    )
 
 
 def render_health_sidebar() -> None:

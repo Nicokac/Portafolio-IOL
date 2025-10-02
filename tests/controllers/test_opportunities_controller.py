@@ -414,6 +414,48 @@ def test_generate_report_parses_string_bool(monkeypatch: pytest.MonkeyPatch) -> 
     assert "exclude_tickers" not in captured or captured["exclude_tickers"] is None
 
 
+def test_generate_report_records_extended_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    df = pd.DataFrame([_make_sample_row()])
+
+    payload = {
+        "table": df,
+        "notes": ["note"],
+        "source": "stub",
+        "universe_initial": "100",
+        "universe_final": 25,
+        "discard_ratio": "0.5",
+        "highlighted_sectors": ("Energy", "Utilities"),
+        "counts_by_origin": {"nyse": "10", "nasdaq": 15},
+    }
+
+    recorded: list[Dict[str, Any]] = []
+
+    sut._clear_opportunities_cache()
+    monkeypatch.setattr(sut, "run_opportunities_controller", lambda **_: payload)
+    monkeypatch.setattr(
+        sut,
+        "record_opportunities_report",
+        lambda **kwargs: recorded.append(kwargs),
+    )
+
+    result = sut.generate_opportunities_report({})
+
+    assert result["metrics"] == {
+        "universe_initial": "100",
+        "universe_final": 25,
+        "discard_ratio": "0.5",
+        "highlighted_sectors": ("Energy", "Utilities"),
+        "counts_by_origin": {"nyse": "10", "nasdaq": 15},
+    }
+    assert recorded, "Health metrics should be recorded"
+    forwarded = recorded[0]
+    assert forwarded["universe_initial"] == "100"
+    assert forwarded["universe_final"] == 25
+    assert forwarded["discard_ratio"] == "0.5"
+    assert forwarded["highlighted_sectors"] == ("Energy", "Utilities")
+    assert forwarded["counts_by_origin"] == {"nyse": "10", "nasdaq": 15}
+
+
 def test_generate_report_reuses_cached_result(monkeypatch: pytest.MonkeyPatch) -> None:
     sut._clear_opportunities_cache()
     df = pd.DataFrame([_make_sample_row()])
