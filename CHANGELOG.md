@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.24] - 2025-10-08
+
+### Changed
+- Refactor del módulo de portafolio para simplificar dependencias internas y facilitar futuras extensiones en la UI y los controladores.
+
+### Fixed
+- Ajustes en los cacheos del screener para estabilizar invalidaciones y preservar resultados consistentes entre ejecuciones consecutivas.
+
+### Added
+- Gestión de favoritos en el portafolio que habilita marcar emisores clave y priorizarlos en los listados derivados.
+
+### Documentation
+- Plan de documentación para describir el refactor del portafolio, los escenarios de cacheo y el uso de favoritos en la próxima iteración.
+
 ## [0.3.23] - 2025-10-07
 ### Added
 - Cliente dedicado para FRED con autenticación, gestión de rate limiting y normalización de observaciones para enriquecer el screener de oportunidades con contexto macro/sectorial. ([`infrastructure/macro/fred_client.py`](infrastructure/macro/fred_client.py))
