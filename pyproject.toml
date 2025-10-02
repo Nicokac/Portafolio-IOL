@@ -1,6 +1,6 @@
 [project]
 name = "portafolio-iol"
-version = "0.3.20"
+version = "0.3.21"
 
 [tool.pytest.ini_options]
 markers = [
