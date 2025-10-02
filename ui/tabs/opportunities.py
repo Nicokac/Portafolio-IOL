@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Iterable, Mapping, Sequence
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -76,6 +77,7 @@ PRESET_FILTERS: Mapping[str, Mapping[str, object]] = {
 
 _CUSTOM_PRESETS_STATE_KEY = "custom_presets"
 _PENDING_PRESET_STATE_KEY = "opportunities_pending_preset"
+_SUMMARY_STATE_KEY = "opportunities_summary"
 
 
 _INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
@@ -236,6 +238,150 @@ def _extract_result(result: object) -> tuple[pd.DataFrame | None, list[str], str
         return _normalize_table(table), _normalize_notes(notes), source
         return _normalize_table(result), [], source
 
+
+def _normalize_summary_value(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {str(k): _normalize_summary_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_normalize_summary_value(v) for v in value]
+    if hasattr(value, "item") and not isinstance(value, (str, bytes, bytearray)):
+        try:
+            return _normalize_summary_value(value.item())
+        except Exception:  # pragma: no cover - defensive path
+            pass
+    if isinstance(value, (int, float, str)):
+        if isinstance(value, float) and pd.isna(value):
+            return None
+        return value
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):  # type: ignore[arg-type]
+            return None
+    except Exception:  # pragma: no cover - defensive path
+        pass
+    return value
+
+
+def _normalize_summary_payload(
+    summary: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    if not summary:
+        return None
+    return {str(key): _normalize_summary_value(value) for key, value in summary.items()}
+
+
+def _extract_summary_payload(result: object) -> Mapping[str, object] | None:
+    if isinstance(result, Mapping):
+        summary = result.get("summary")
+        if isinstance(summary, Mapping):
+            return summary
+        table = result.get("table")
+    else:
+        table = result
+    if isinstance(table, pd.DataFrame):
+        raw_summary = getattr(table, "attrs", {}).get("summary")
+        if isinstance(raw_summary, Mapping):
+            return raw_summary
+    return None
+
+
+def _format_integer(value: object) -> str:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "—"
+    return f"{number:,}".replace(",", ".")
+
+
+def _format_percentage(value: object) -> str:
+    try:
+        numeric = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return "—"
+    if pd.isna(numeric):
+        return "—"
+    return f"{numeric:.0%}"
+
+
+def _render_summary_block(
+    summary: Mapping[str, object] | None,
+    *,
+    placeholder: st.delta_generator.DeltaGenerator | None = None,
+) -> None:
+    target = placeholder.empty() if placeholder is not None else st
+    with target.container():
+        st.markdown("### Resumen del screening")
+        normalized = _normalize_summary_payload(summary)
+        if not normalized:
+            st.info("Ejecutá el screening para ver un resumen de universo y descartes.")
+            return
+
+        metrics_columns = st.columns(3)
+        universe_label = _format_integer(normalized.get("universe_count"))
+        result_label = _format_integer(normalized.get("result_count"))
+        ratio_label = _format_percentage(normalized.get("discarded_ratio"))
+        ratio_delta = None if ratio_label == "—" else f"{ratio_label} descartados"
+
+        metrics_columns[0].metric("Universo analizado", universe_label)
+        metrics_columns[1].metric("Candidatos finales", result_label, delta=ratio_delta)
+
+        selected_sectors = normalized.get("selected_sectors") or []
+        if not isinstance(selected_sectors, Sequence) or isinstance(
+            selected_sectors, (str, bytes, bytearray)
+        ):
+            selected_sectors = [str(selected_sectors)] if selected_sectors else []
+        sector_values = [str(value) for value in selected_sectors if value]
+        sectors_count = len(sector_values)
+        sectors_label = str(sectors_count) if sectors_count else "Todos"
+        metrics_columns[2].metric("Sectores activos", sectors_label)
+
+        if sector_values:
+            st.caption("Sectores filtrados: " + ", ".join(sector_values))
+
+        drop_summary = normalized.get("drop_summary")
+        if drop_summary:
+            st.caption(f"Resumen de descartes: {drop_summary}")
+
+        elapsed_seconds = normalized.get("elapsed_seconds")
+        if isinstance(elapsed_seconds, (int, float)) and not pd.isna(elapsed_seconds):
+            st.caption(f"Tiempo de cómputo: {float(elapsed_seconds):.2f} s")
+
+        filter_descriptions = normalized.get("filter_descriptions") or []
+        if filter_descriptions:
+            st.markdown("#### Impacto de filtros")
+            for idx, description in enumerate(filter_descriptions):
+                st.markdown(f"- {description}")
+
+        st.markdown("#### Distribución por sector")
+        distribution = normalized.get("sector_distribution")
+        if isinstance(distribution, Mapping) and distribution:
+            rows = [
+                (str(sector), int(count))
+                for sector, count in distribution.items()
+                if count is not None
+            ]
+            chart_df = pd.DataFrame(rows, columns=["sector", "count"])
+            chart = (
+                alt.Chart(chart_df)
+                .mark_arc(innerRadius=60)
+                .encode(
+                    theta=alt.Theta(field="count", type="quantitative"),
+                    color=alt.Color(field="sector", type="nominal", legend=alt.Legend(title="Sector")),
+                    tooltip=[
+                        alt.Tooltip("sector:N", title="Sector"),
+                        alt.Tooltip("count:Q", title="Empresas"),
+                    ],
+                )
+                .properties(height=280)
+            )
+            st.altair_chart(
+                chart,
+                use_container_width=True,
+                key="opportunities_summary_sector_chart",
+            )
+        else:
+            st.caption("Sin datos de sector disponibles.")
 
 def _slugify_label(label: str) -> str:
     normalized = [
@@ -522,6 +668,11 @@ def render_opportunities_tab() -> None:
         "sectors": list(sectors),
     }
 
+    summary_placeholder = st.empty()
+    stored_summary = st.session_state.get(_SUMMARY_STATE_KEY)
+    initial_summary = stored_summary if isinstance(stored_summary, Mapping) else None
+    _render_summary_block(initial_summary, placeholder=summary_placeholder)
+
     st.markdown(
         "Seleccioná los parámetros deseados y presioná **Buscar oportunidades** para ejecutar "
         "el análisis con la configuración estable."
@@ -598,6 +749,14 @@ def render_opportunities_tab() -> None:
 
         with st.spinner("Generando screening de oportunidades..."):
             result = generate_callable(params)
+
+        summary_payload = _extract_summary_payload(result)
+        normalized_summary = _normalize_summary_payload(summary_payload)
+        if normalized_summary is not None:
+            st.session_state[_SUMMARY_STATE_KEY] = normalized_summary
+        else:
+            st.session_state.pop(_SUMMARY_STATE_KEY, None)
+        _render_summary_block(normalized_summary, placeholder=summary_placeholder)
 
         _render_screening_block(result, heading="Resultados del screening")
         results_rendered = True
