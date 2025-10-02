@@ -12,6 +12,8 @@ La versión **0.3.19** introduce el guardado local de presets personalizados, la
 l lado de filtros y la caché cooperativa que evita recalcular screenings idénticos dentro de la
 misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
 
+### Ejemplo completo
+
 1. **Instala dependencias.**
    ```bash
    python -m venv .venv
@@ -37,6 +39,12 @@ misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
    - Pulsa **Ejecutar screening** para correr con el preset actual. Si repites exactamente los mismos
      filtros durante la sesión, la telemetría de la barra lateral informará "cache hit" indicando que
      el backend reutilizó los resultados almacenados en la caché cooperativa de la release 0.3.19.
+
+**Notas clave del flujo**
+
+- El toast "Preset guardado" deja visible el preset recién creado dentro del selector para reutilizarlo en corridas posteriores.
+- La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
+- El bloque de telemetría marca explícitamente los *cache hits* con la duración reducida respecto de la corrida original, dejando constancia del beneficio que aporta la caché cooperativa durante la sesión.
 
 **Comportamiento del caché (0.3.19).** Cuando guardas un preset, la aplicación persiste la
 combinación de filtros y el resultado del último screening asociado. Al relanzarlo:
