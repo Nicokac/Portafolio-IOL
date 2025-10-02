@@ -13,7 +13,7 @@ from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
-from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
+from shared.favorite_symbols import get_persistent_favorites
 from services.portfolio_view import PortfolioViewModelService
 
 from .load_data import load_portfolio_data
@@ -38,14 +38,18 @@ def render_portfolio_section(container, cli, fx_rates):
         render_ui_controls()
 
         refresh_secs = controls.refresh_secs
-        viewmodel = build_portfolio_viewmodel(
+        snapshot = view_model_service.get_portfolio_view(
             df_pos=df_pos,
             controls=controls,
             cli=cli,
-            portfolio_service=psvc,
+            psvc=psvc,
+        )
+
+        viewmodel = build_portfolio_viewmodel(
+            snapshot=snapshot,
+            controls=controls,
             fx_rates=fx_rates,
             all_symbols=all_symbols,
-            apply_filters_fn=apply_filters,
         )
 
         tab_labels = list(viewmodel.tab_options)
@@ -62,7 +66,13 @@ def render_portfolio_section(container, cli, fx_rates):
         df_view = viewmodel.positions
 
         if tab_idx == 0:
-            render_basic_section(df_view, controls, ccl_rate, favorites=favorites, totals=snapshot.totals)
+            render_basic_section(
+                df_view,
+                controls,
+                ccl_rate,
+                favorites=favorites,
+                totals=viewmodel.totals,
+            )
         elif tab_idx == 1:
             render_advanced_analysis(df_view)
         elif tab_idx == 2:

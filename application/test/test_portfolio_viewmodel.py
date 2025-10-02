@@ -2,15 +2,16 @@ import pandas as pd
 import pandas.testing as pdt
 import pytest
 
+from application.portfolio_service import calculate_totals
 from application.portfolio_viewmodel import (
     build_portfolio_viewmodel,
     get_portfolio_tabs,
 )
 from domain.models import Controls
+from services.portfolio_view import PortfolioViewSnapshot
 
 
 def test_build_portfolio_viewmodel_computes_totals_and_metrics():
-    df_pos = pd.DataFrame({'simbolo': ['AAA']})
     controls = Controls(refresh_secs=60)
     filtered = pd.DataFrame({
         'simbolo': ['AAA'],
@@ -18,14 +19,19 @@ def test_build_portfolio_viewmodel_computes_totals_and_metrics():
         'costo': [100.0],
     })
 
+    snapshot = PortfolioViewSnapshot(
+        df_view=filtered,
+        totals=calculate_totals(filtered),
+        apply_elapsed=0.01,
+        totals_elapsed=0.005,
+        generated_at=0.0,
+    )
+
     vm = build_portfolio_viewmodel(
-        df_pos=df_pos,
+        snapshot=snapshot,
         controls=controls,
-        cli=object(),
-        portfolio_service=object(),
         fx_rates={'ccl': 900.0},
         all_symbols=['AAA'],
-        apply_filters_fn=lambda *a, **k: filtered,
     )
 
     pdt.assert_frame_equal(vm.positions, filtered)
@@ -44,13 +50,10 @@ def test_build_portfolio_viewmodel_handles_missing_data():
     controls = Controls()
 
     vm = build_portfolio_viewmodel(
-        df_pos=pd.DataFrame(),
+        snapshot=None,
         controls=controls,
-        cli=None,
-        portfolio_service=None,
         fx_rates=None,
         all_symbols=None,
-        apply_filters_fn=lambda *a, **k: None,
     )
 
     assert isinstance(vm.positions, pd.DataFrame)

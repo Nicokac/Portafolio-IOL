@@ -17,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.24.2] - 2025-10-10
+
+### Fixed
+- Se corrigió el `NameError` en `render_portfolio_section` al eliminar la referencia
+  obsoleta a `apply_filters` y delegar la construcción del view-model al servicio
+  cacheado de portafolio.
+
+### Changed
+- `build_portfolio_viewmodel` ahora recibe un `PortfolioViewSnapshot` en lugar de
+  ejecutar filtros manualmente, alineando la nueva capa de cache con los
+  controladores.
+
+### Tests
+- Se actualizaron las suites de portafolio para simular el servicio de view-model
+  cacheado y validar el flujo completo tras el refactor.
+
 ## [0.3.24.1] - 2025-10-09
 
 ### Tests

@@ -4,6 +4,18 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Portafolio y datos de mercado
 
+- **La app falla con `NameError: name 'apply_filters' is not defined`.**
+  - **Síntomas:** Al iniciar sesión, Streamlit detiene la ejecución y
+    muestra el error anterior en `controllers/portfolio/portfolio.py`.
+  - **Diagnóstico rápido:** Confirmá que estés ejecutando la versión
+    `0.3.24.2` o superior, donde el controlador delega la construcción
+    del view-model al servicio cacheado.
+  - **Resolución:**
+    1. Actualizá el repo a la release más reciente.
+    2. Si mantenés un fork, reemplazá llamadas directas a
+       `apply_filters` por `PortfolioViewModelService.get_portfolio_view`
+       y reutilizá `build_portfolio_viewmodel` con el snapshot devuelto.
+
 - **No se puede guardar el token de IOL y la aplicación se cierra.**
   - **Síntomas:** Streamlit termina inmediatamente con un mensaje que indica que falta la clave Fernet o que no se permiten tokens sin cifrar.
   - **Diagnóstico rápido:** Revisa las variables `IOL_TOKENS_KEY` y `IOL_ALLOW_PLAIN_TOKENS` definidas en el `.env` o en `secrets.toml`.
