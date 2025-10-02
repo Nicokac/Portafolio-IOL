@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os, json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Mapping, Optional
 from dotenv import load_dotenv
 from functools import lru_cache
 import logging
@@ -44,6 +44,32 @@ class Settings:
 
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
+
+        # --- Macro data providers ---
+        self.MACRO_API_PROVIDER: str = os.getenv(
+            "MACRO_API_PROVIDER", cfg.get("MACRO_API_PROVIDER", "fred")
+        )
+        raw_series = self.secret_or_env("FRED_SECTOR_SERIES", cfg.get("FRED_SECTOR_SERIES"))
+        self.FRED_SECTOR_SERIES: Dict[str, str] = self._parse_sector_series(raw_series)
+        raw_fallback = self.secret_or_env(
+            "MACRO_SECTOR_FALLBACK", cfg.get("MACRO_SECTOR_FALLBACK")
+        )
+        self.MACRO_SECTOR_FALLBACK: Dict[str, Dict[str, Any]] = self._parse_macro_fallback(
+            raw_fallback
+        )
+        self.FRED_API_KEY: str | None = self.secret_or_env(
+            "FRED_API_KEY", cfg.get("FRED_API_KEY")
+        )
+        self.FRED_API_BASE_URL: str = os.getenv(
+            "FRED_API_BASE_URL",
+            cfg.get("FRED_API_BASE_URL", "https://api.stlouisfed.org/fred"),
+        )
+        self.FRED_API_RATE_LIMIT_PER_MINUTE: int = int(
+            os.getenv(
+                "FRED_API_RATE_LIMIT_PER_MINUTE",
+                cfg.get("FRED_API_RATE_LIMIT_PER_MINUTE", 120),
+            )
+        )
 
         default_markets = ["NASDAQ", "NYSE", "AMEX"]
         sentinel = object()
@@ -153,6 +179,74 @@ class Settings:
             return st.secrets[key]
         except (KeyError, StreamlitSecretNotFoundError, AttributeError):
             return os.getenv(key, default)
+
+    @staticmethod
+    def _parse_jsonish(raw: Any) -> Any:
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                return raw
+        return raw
+
+    def _parse_sector_series(self, raw: Any) -> Dict[str, str]:
+        parsed = self._parse_jsonish(raw)
+        if not isinstance(parsed, Mapping):
+            return {}
+        mapping: Dict[str, str] = {}
+        for key, value in parsed.items():
+            label = str(key or "").strip()
+            if not label:
+                continue
+            series_id: str = ""
+            if isinstance(value, Mapping):
+                series_id = str(
+                    value.get("series_id")
+                    or value.get("series")
+                    or value.get("id")
+                    or ""
+                ).strip()
+            else:
+                series_id = str(value or "").strip()
+            if not series_id:
+                continue
+            mapping[label] = series_id
+        return mapping
+
+    def _parse_macro_fallback(self, raw: Any) -> Dict[str, Dict[str, Any]]:
+        parsed = self._parse_jsonish(raw)
+        if not isinstance(parsed, Mapping):
+            return {}
+        fallback: Dict[str, Dict[str, Any]] = {}
+        for key, value in parsed.items():
+            label = str(key or "").strip()
+            if not label:
+                continue
+            numeric_value: Optional[float] = None
+            as_of: Optional[str] = None
+            if isinstance(value, Mapping):
+                raw_value = value.get("value")
+                try:
+                    numeric_value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+                raw_as_of = value.get("as_of")
+                if raw_as_of is not None:
+                    text = str(raw_as_of).strip()
+                    if text:
+                        as_of = text
+            else:
+                try:
+                    numeric_value = float(value)
+                except (TypeError, ValueError):
+                    continue
+            entry: Dict[str, Any] = {"value": numeric_value}
+            if as_of:
+                entry["as_of"] = as_of
+            fallback[label] = entry
+        return fallback
 
 settings = Settings()
 

@@ -6,6 +6,8 @@ variables, `streamlit` secrets or ``config.json`` via ``shared.config``.
 """
 from __future__ import annotations
 
+from typing import Dict
+
 from shared.config import settings as _config_settings
 
 # Re-export the shared Settings instance so existing imports keep working.
@@ -41,6 +43,20 @@ FEATURE_OPPORTUNITIES_TAB: bool = bool(
     getattr(settings, "FEATURE_OPPORTUNITIES_TAB", False)
 )
 
+# Macro data provider configuration
+macro_api_provider: str = getattr(settings, "MACRO_API_PROVIDER", "fred")
+fred_api_key: str | None = getattr(settings, "FRED_API_KEY", None)
+fred_api_base_url: str = getattr(
+    settings, "FRED_API_BASE_URL", "https://api.stlouisfed.org/fred"
+)
+fred_api_rate_limit_per_minute: int = getattr(
+    settings, "FRED_API_RATE_LIMIT_PER_MINUTE", 120
+)
+fred_sector_series: Dict[str, str] = getattr(settings, "FRED_SECTOR_SERIES", {})
+macro_sector_fallback: Dict[str, Dict[str, object]] = getattr(
+    settings, "MACRO_SECTOR_FALLBACK", {}
+)
+
 __all__ = [
     "settings",
     "cache_ttl_portfolio",
@@ -64,4 +80,10 @@ __all__ = [
     "MIN_SCORE_THRESHOLD",
     "MAX_RESULTS",
     "FEATURE_OPPORTUNITIES_TAB",
+    "macro_api_provider",
+    "fred_api_key",
+    "fred_api_base_url",
+    "fred_api_rate_limit_per_minute",
+    "fred_sector_series",
+    "macro_sector_fallback",
 ]

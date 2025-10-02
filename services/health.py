@@ -59,6 +59,27 @@ def record_fx_api_response(
     }
 
 
+def record_macro_api_usage(
+    *,
+    provider: str,
+    status: str,
+    elapsed_ms: Optional[float] = None,
+    detail: Optional[str] = None,
+    fallback: bool = False,
+) -> None:
+    """Persist information about the macro/sector data provider."""
+
+    store = _store()
+    store["macro_api"] = {
+        "provider": str(provider or "unknown"),
+        "status": str(status or "unknown"),
+        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
+        "detail": _clean_detail(detail),
+        "fallback": bool(fallback),
+        "ts": time.time(),
+    }
+
+
 def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
     """Persist information about session cache usage for FX rates."""
     store = _store()
