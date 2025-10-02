@@ -1,4 +1,5 @@
 import logging
+
 import streamlit as st
 
 from domain.models import Controls
@@ -9,6 +10,7 @@ from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
+from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
 from services.portfolio_view import PortfolioViewModelService
 
@@ -33,31 +35,28 @@ def render_portfolio_section(container, cli, fx_rates):
         render_ui_controls()
 
         refresh_secs = controls.refresh_secs
+        viewmodel = build_portfolio_viewmodel(
+            df_pos=df_pos,
+            controls=controls,
+            cli=cli,
+            portfolio_service=psvc,
+            fx_rates=fx_rates,
+            all_symbols=all_symbols,
+            apply_filters_fn=apply_filters,
+        )
 
-        snapshot = view_model_service.get_portfolio_view(df_pos, controls, cli, psvc)
-        df_view = snapshot.df_view
-
-        ccl_rate = fx_rates.get("ccl")
-
-        tab_labels = [
-            "📂 Portafolio",
-            "📊 Análisis avanzado",
-            "🎲 Análisis de Riesgo",
-            "📑 Análisis fundamental",
-            "🔎 Análisis de activos",
-        ]
-
-        if "portfolio_tab" not in st.session_state:
-            st.session_state["portfolio_tab"] = 0
+        tab_labels = list(viewmodel.tab_options)
 
         tab_idx = st.radio(
             "Secciones",
             options=range(len(tab_labels)),
             format_func=lambda i: tab_labels[i],
-            index=st.session_state["portfolio_tab"],
             horizontal=True,
+            key="portfolio_tab",
         )
-        st.session_state["portfolio_tab"] = tab_idx
+        controls = viewmodel.controls
+        ccl_rate = viewmodel.metrics.ccl_rate
+        df_view = viewmodel.positions
 
         if tab_idx == 0:
             render_basic_section(df_view, controls, ccl_rate, totals=snapshot.totals)
@@ -69,12 +68,13 @@ def render_portfolio_section(container, cli, fx_rates):
             render_fundamental_analysis(df_view, tasvc)
         else:
             st.subheader("Indicadores técnicos por activo")
-            if not all_symbols:
+            all_symbols_vm = list(viewmodel.metrics.all_symbols)
+            if not all_symbols_vm:
                 st.info("No hay símbolos en el portafolio para analizar.")
             else:
                 sym = st.selectbox(
                     "Seleccioná un símbolo (CEDEAR / ETF)",
-                    options=all_symbols,
+                    options=all_symbols_vm,
                     index=0,
                     key="ta_symbol",
                 )

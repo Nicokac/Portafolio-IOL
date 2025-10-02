@@ -1,0 +1,83 @@
+"""View-model builders for the portfolio section."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Mapping, Sequence
+
+import pandas as pd
+
+from application.portfolio_service import PortfolioTotals, calculate_totals
+from domain.models import Controls
+
+
+_DEFAULT_TABS: tuple[str, ...] = (
+    "📂 Portafolio",
+    "📊 Análisis avanzado",
+    "🎲 Análisis de Riesgo",
+    "📑 Análisis fundamental",
+    "🔎 Análisis de activos",
+)
+
+
+@dataclass(frozen=True)
+class PortfolioMetrics:
+    """Aggregated metrics for the portfolio section."""
+
+    refresh_secs: int
+    ccl_rate: float | None
+    all_symbols: tuple[str, ...]
+    has_positions: bool
+
+
+@dataclass(frozen=True)
+class PortfolioViewModel:
+    """Container with all data required by the portfolio UI."""
+
+    positions: pd.DataFrame
+    totals: PortfolioTotals
+    controls: Controls
+    metrics: PortfolioMetrics
+    tab_options: tuple[str, ...]
+
+
+def get_portfolio_tabs() -> tuple[str, ...]:
+    """Return the tuple with the available portfolio tabs."""
+
+    return _DEFAULT_TABS
+
+
+def build_portfolio_viewmodel(
+    *,
+    df_pos: pd.DataFrame,
+    controls: Controls,
+    cli,
+    portfolio_service,
+    fx_rates: Mapping[str, float] | None,
+    all_symbols: Sequence[str] | None,
+    apply_filters_fn: Callable[[pd.DataFrame, Controls, object, object], pd.DataFrame],
+) -> PortfolioViewModel:
+    """Build the portfolio view-model based on current controls and data."""
+
+    df_view = apply_filters_fn(df_pos, controls, cli, portfolio_service)
+    df_view = df_view if isinstance(df_view, pd.DataFrame) else pd.DataFrame()
+
+    totals = calculate_totals(df_view)
+
+    ccl_rate = None
+    if fx_rates:
+        ccl_rate = fx_rates.get("ccl")
+
+    metrics = PortfolioMetrics(
+        refresh_secs=controls.refresh_secs,
+        ccl_rate=ccl_rate,
+        all_symbols=tuple(all_symbols or ()),
+        has_positions=not df_view.empty,
+    )
+
+    return PortfolioViewModel(
+        positions=df_view,
+        totals=totals,
+        controls=controls,
+        metrics=metrics,
+        tab_options=get_portfolio_tabs(),
+    )
