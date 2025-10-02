@@ -8,10 +8,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 ## Quick-start (release 0.3.23)
 
-La versión **0.3.23** afina el onboarding con recordatorios visibles de la release en todas las
-superficies críticas (login, sidebar y pestañas principales) y mantiene las mejoras de telemetría y
-caché de los cortes anteriores. Sigue estos pasos para reproducir el flujo completo en minutos y
-validar los ajustes introducidos en esta publicación:
+La versión **0.3.23** multiplica la visibilidad operativa y afina el onboarding:  
+- El **mini-dashboard inicial** resume valor de la cartera, variación diaria y cash disponible.  
+- El **health sidebar** incorpora promedios, ratio de *cache hits* y mejoras versus la caché.  
+- El controlador macro aplica un **fallback multinivel (FRED → World Bank → fallback estático)** cuando las APIs no responden.  
+- El dashboard de oportunidades estrena **KPIs accionables** para dimensionar universo, candidatos finales y filtros activos.  
+
+Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
 ### Ejemplo completo
 
@@ -22,14 +25,18 @@ validar los ajustes introducidos en esta publicación:
    pip install -r requirements.txt
    ```
    Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
-2. **Levanta la aplicación y valida el mini-dashboard.** Con el entorno activado ejecuta:
+2. **Levanta la aplicación y valida el dashboard renovado.** Con el entorno activado ejecuta:
    ```bash
    streamlit run app.py
    ```
    La cabecera del sidebar mostrará el número de versión `0.3.23`, confirmando que la actualización
+   quedó aplicada. Abre la pestaña **Empresas con oportunidad**, activa la casilla **Mostrar
+   resumen del screening** y ejecuta una búsqueda con los datos stub incluidos para ver las nuevas
+   tarjetas de KPIs: universo analizado, candidatos finales y sectores activos (con deltas de
+   descartes y tiempos de cómputo).
+3. **Lanza un screening con presets personalizados y revisa la telemetría ampliada.**
    quedó aplicada. Al mismo tiempo, el mini-dashboard superior renderizará tarjetas con el valor
    total de la cartera, la variación diaria y el cash disponible usando los datos stub incluidos.
-3. **Lanza un screening con presets personalizados y revisa la telemetría.**
    - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
    - Completa los filtros (score mínimo, payout, racha, sectores, indicadores técnicos) y presiona
      **Guardar preset**. La UI confirmará con un toast "Preset guardado" y el nuevo preset quedará
@@ -39,9 +46,14 @@ validar los ajustes introducidos en esta publicación:
      resaltados verdes/rojos según subidas o bajadas respecto del original, facilitando la revisión
      antes de lanzar el barrido definitivo.
    - Pulsa **Ejecutar screening** para correr con el preset actual. Si repites exactamente los mismos
-     filtros durante la sesión, la telemetría enriquecida de la barra lateral marcará "cache hit",
-     mostrará el tiempo ahorrado respecto de la primera corrida y desglosará la latencia por etapa
-     (descarga remota, normalización, render de UI).
+     filtros durante la sesión, la telemetría enriquecida del health sidebar mostrará el último modo
+     (hit/miss), el ahorro promedio frente a la caché y el historial tabular de screenings con sus
+     variaciones frente al promedio.
+4. **Valida el fallback multinivel de datos macro.** Con la app en ejecución, asegúrate de no tener
+   configurada la variable `FRED_API_KEY` (o renómbrala temporalmente) y ejecuta un screening. El
+   bloque de notas debe indicar "Datos macro mediante fallback configurado" y el health sidebar
+   registrará el proveedor como `fallback`. Si luego exportas una clave válida y repites la corrida,
+   el panel volverá a marcar `fred` como fuente y mostrará la latencia obtenida.
 
 **Notas clave del flujo**
 
@@ -65,8 +77,9 @@ componentes (descarga, normalización, render) para comparar tiempos:
   la integridad del guardado.
 
 Estas novedades convierten a la release 0.3.23 en la referencia para validar onboarding, telemetría
-y caché cooperativa: toda la UI recuerda la versión activa y los presets continúan recortando los
-tiempos de iteración al dejar a la vista el impacto de cada cambio.
+y caché cooperativa: toda la UI recuerda la versión activa, expone KPIs agregados de rendimiento en
+el health sidebar y los presets continúan recortando los tiempos de iteración al dejar a la vista el
+impacto de cada cambio.
 
 ## Uso del proveedor de tiempo
 
@@ -137,10 +150,17 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
   ```
 
   - `FRED_SECTOR_SERIES` mapea el nombre del sector que aparece en el screener con el identificador de serie en FRED. Es sensible a los sectores retornados por Yahoo/stub, por lo que conviene mantener la misma capitalización mostrada en la tabla.
-  - `WORLD_BANK_SECTOR_SERIES` replica ese mapeo para el proveedor secundario. Cada clave debe coincidir con el sector de la grilla y cada valor con el código del indicador publicado por el World Bank.
-  - `MACRO_SECTOR_FALLBACK` permite declarar valores estáticos (por sector) que se aplican automáticamente cuando la API externa no está disponible, cuando el proveedor configurado no es soportado o cuando falta alguna serie en la configuración.
-- Flujo de failover: cada corrida evalúa la cadena `FRED → proveedor secundario (por ej. World Bank) → fallback estático`. Ante cualquier error de la API primaria (credenciales faltantes, rate limiting, respuesta inválida, etc.), el controlador intenta automáticamente con el proveedor configurado en `MACRO_API_PROVIDER` y finalmente con los valores declarados en `MACRO_SECTOR_FALLBACK`. Si ningún eslabón responde, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). El helper `services.health.record_macro_api_usage` persiste la secuencia completa de intentos (estado, latencia, detalle y proveedor) para que el healthcheck exponga si se usó FRED, World Bank o el fallback.
-- El rate limiting se maneja desde `infrastructure/macro/fred_client.py` y `infrastructure/macro/worldbank_client.py`, que serializan las llamadas según el umbral configurado y reutilizan el `User-Agent` global para respetar los términos de uso de cada servicio.
+- `MACRO_SECTOR_FALLBACK` permite declarar valores estáticos (por sector) que se aplican automáticamente cuando la API externa no está disponible, cuando el proveedor configurado no es soportado o cuando falta alguna serie en la configuración.
+- Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
+- El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
+
+##### Escenarios de fallback macro (0.3.23)
+
+1. **Proveedor no soportado.** Si `MACRO_API_PROVIDER` apunta a un proveedor distinto de `fred`, el controlador descarta la integración live y aplica el fallback estático si existe. El health sidebar registra el estado `disabled` con detalle "proveedor no soportado".
+2. **Credenciales ausentes o cliente inactivo.** Cuando `_get_macro_client()` no puede inicializarse (por ejemplo, sin `FRED_API_KEY`), las notas informan "FRED sin credenciales configuradas" y la métrica `macro_source` pasa a `fallback` o `unavailable` según exista respaldo declarado.
+3. **Series faltantes.** Si no hay series configuradas para los sectores activos, se aplica el fallback y se listan los sectores sin cobertura en `macro_missing_series` para depuración rápida.
+4. **Errores de API o rate limiting.** Ante un `MacroAPIError` (incluye timeouts y límites de FRED), el release recurre al fallback configurado y anota la latencia que disparó el error, manteniendo visibilidad en la métrica `elapsed_ms`.
+5. **Observaciones inválidas.** Si FRED responde sin datos válidos, se utiliza el fallback y se etiqueta el estado como `error` con detalle "sin observaciones válidas" para evidenciar que la llamada completó pero sin información aprovechable.
 
 #### Telemetría del barrido
 
@@ -285,7 +305,16 @@ Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se r
 
 El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.23".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.23)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.23)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia y reutilización.
+
+### Interpretación del health sidebar (KPIs agregados)
+
+- **Conexión IOL (`🔐`)**: informa el último refresco exitoso o fallido con timestamp y detalle para incidentes de autenticación.
+- **Yahoo Finance (`📈`)**: muestra si las cotizaciones provienen de Yahoo, del fallback local o si hubo errores; cada entrada incluye el timestamp y un detalle del símbolo involucrado.
+- **FX (`💱`)**: divide en dos líneas el estado de la API y de la caché, exponiendo latencia en milisegundos, edad del dato y mensajes de error en caso de fallar.
+- **Screening de oportunidades (`🔎`)**: indica si el último barrido reutilizó la caché o corrió completo, con tiempos actuales, baseline cacheado, universo inicial/final, ratio de descartes y sectores destacados. Cuando hay historial suficiente, la nueva línea de "tendencia" agrega promedios, desvíos, ratio de *hits* (incluidos los totales) y métricas de mejora frente a la caché.
+- **Historial de screenings (`🗂️`)**: renderiza una tabla con los barridos recientes, marcando cada modo (`hit`/`miss`), el delta frente al promedio y el tiempo cacheado de referencia.
+- **Latencias (`⏱️`)**: resume en líneas separadas la latencia de la carga del portafolio y de las cotizaciones, incluyendo fuente, cantidad de ítems y timestamp para correlacionar con incidentes puntuales.
 
 ## Requisitos de sistema
 
@@ -446,6 +475,9 @@ Para más detalles, consulta la [documentación oficial de Streamlit sobre gesti
   3. Verifica que cada sesión opere de forma independiente; cerrar sesión en una no debe afectar a la otra.
 
 ## Pruebas
+
+Consulta la guía extendida en [docs/testing.md](docs/testing.md) para instrucciones detalladas,
+marcadores y flags recomendados.
 
 Con las dependencias de desarrollo instaladas, ejecutar la suite completa de pruebas:
 
