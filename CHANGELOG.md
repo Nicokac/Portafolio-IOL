@@ -6,12 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.20] - 2025-10-04
 ### Added
-- Caché en `generate_opportunities_report` reutilizando screenings por combinación de filtros y registrando métricas de duración previa vs. cacheada en el healthcheck. ([`controllers/opportunities.py`](controllers/opportunities.py), [`services/health.py`](services/health.py), [`ui/health_sidebar.py`](ui/health_sidebar.py))
+- Mini-dashboard en el healthcheck que expone la duración previa y cacheada de los screenings de oportunidades, permitiendo
+  comparar tiempos desde la UI. ([`controllers/opportunities.py`](controllers/opportunities.py), [`services/health.py`](services/health.py),
+  [`ui/health_sidebar.py`](ui/health_sidebar.py))
+### Changed
+- Telemetría extendida para registrar aciertos de caché y variaciones de filtros del screener, dejando trazabilidad directa en el
+  panel de salud. ([`services/health.py`](services/health.py), [`ui/health_sidebar.py`](ui/health_sidebar.py))
 ### Tests
 - Casos que validan *cache hits* e invalidaciones al cambiar filtros del screener de oportunidades. ([`tests/controllers/test_opportunities_controller.py`](tests/controllers/test_opportunities_controller.py))
 ### Documentation
-- README actualizado con la estrategia de cacheo y las métricas expuestas en el sidebar. ([`README.md`](README.md#caché-del-screening-de-oportunidades))
+- Limpieza de referencias legacy y actualización de la estrategia de cacheo documentada para reflejar el nuevo dashboard y la
+  telemetría extendida. ([`README.md`](README.md#caché-del-screener-de-oportunidades))
 
 ## [0.3.19] - 2025-10-03
 ### Added
