@@ -68,49 +68,76 @@ def record_macro_api_usage(
     attempts: Iterable[Mapping[str, Any]],
     notes: Optional[Iterable[str]] = None,
     metrics: Optional[Mapping[str, Any]] = None,
+    latest: Optional[Mapping[str, Any]] = None,
 ) -> None:
     """Persist information about the macro/sector data providers."""
+
+    now = time.time()
+
+    def _normalize_attempt(entry: Mapping[str, Any]) -> Dict[str, Any]:
+        provider_raw = entry.get("provider")
+        provider_text = str(provider_raw or "unknown").strip() or "unknown"
+        provider_key = provider_text.casefold()
+
+        label_raw = entry.get("label") or entry.get("provider_label")
+        label = str(label_raw or provider_text).strip() or provider_text
+
+        status_raw = str(entry.get("status") or "unknown").strip() or "unknown"
+        status_value = status_raw.casefold() or "unknown"
+
+        normalized: Dict[str, Any] = {
+            "provider": provider_key,
+            "provider_label": label,
+            "status": status_raw,
+            "provider_key": provider_key,
+            "status_normalized": status_value,
+            "provider_display": provider_text,
+        }
+
+        elapsed_value = _as_optional_float(entry.get("elapsed_ms"))
+        if elapsed_value is not None:
+            normalized["elapsed_ms"] = elapsed_value
+
+        detail = _clean_detail(entry.get("detail"))
+        if detail:
+            normalized["detail"] = detail
+
+        if entry.get("fallback"):
+            normalized["fallback"] = True
+
+        missing = _normalize_sectors(entry.get("missing_series"))
+        if missing:
+            normalized["missing_series"] = missing
+
+        timestamp = entry.get("ts")
+        try:
+            normalized["ts"] = float(timestamp)
+        except (TypeError, ValueError):
+            normalized["ts"] = now
+
+        return normalized
 
     normalized_attempts: list[Dict[str, Any]] = []
     for attempt in attempts:
         if not isinstance(attempt, Mapping):
             continue
-        entry: Dict[str, Any] = {
-            "provider": str(attempt.get("provider") or "unknown"),
-            "status": str(attempt.get("status") or "unknown"),
-        }
-        if "label" in attempt:
-            entry["label"] = str(attempt["label"])
-        elapsed = attempt.get("elapsed_ms")
-        if elapsed is not None:
-            try:
-                entry["elapsed_ms"] = float(elapsed)
-            except (TypeError, ValueError):
-                pass
-        detail = _clean_detail(attempt.get("detail"))
-        if detail:
-            entry["detail"] = detail
-        if attempt.get("fallback"):
-            entry["fallback"] = True
-        missing = attempt.get("missing_series")
-        if isinstance(missing, Iterable) and not isinstance(missing, (str, bytes, bytearray)):
-            items = [str(item).strip() for item in missing if str(item).strip()]
-            if items:
-                entry["missing_series"] = items
-        normalized_attempts.append(entry)
+        normalized_attempts.append(_normalize_attempt(attempt))
 
-    payload: Dict[str, Any] = {"attempts": normalized_attempts, "ts": time.time()}
+    normalized_latest: Optional[Dict[str, Any]] = None
+    if isinstance(latest, Mapping):
+        normalized_latest = _normalize_attempt(latest)
+    elif normalized_attempts:
+        normalized_latest = dict(normalized_attempts[-1])
 
+    normalized_notes: Optional[list[str]] = None
     if notes is not None:
-        normalized_notes = [str(note) for note in notes if str(note).strip()]
-        payload["notes"] = normalized_notes
+        normalized_notes = [str(note).strip() for note in notes if str(note).strip()]
 
+    normalized_metrics: Optional[Dict[str, Any]] = None
     if metrics is not None:
-        payload["metrics"] = dict(metrics)
+        normalized_metrics = dict(metrics)
 
     store = _store()
-    store["macro_api"] = payload
-
     raw_macro = store.get("macro_api")
     macro_data: Dict[str, Any]
     if isinstance(raw_macro, Mapping):
@@ -118,49 +145,88 @@ def record_macro_api_usage(
     else:
         macro_data = {}
 
-    macro_data["latest"] = latest_entry
+    macro_data["ts"] = now
+    macro_data["attempts"] = normalized_attempts
+    if normalized_notes is not None:
+        macro_data["notes"] = normalized_notes
+    if normalized_metrics is not None:
+        macro_data["metrics"] = normalized_metrics
+    if normalized_latest is not None:
+        macro_data["latest"] = normalized_latest
 
-    providers: Dict[str, Any]
     raw_providers = macro_data.get("providers")
+    providers: Dict[str, Any] = {}
     if isinstance(raw_providers, Mapping):
-        providers = dict(raw_providers)
-    else:
-        providers = {}
+        for key, value in raw_providers.items():
+            if isinstance(value, Mapping):
+                providers[key] = dict(value)
 
-    provider_stats_raw = providers.get(provider_key)
-    if isinstance(provider_stats_raw, Mapping):
-        provider_stats = dict(provider_stats_raw)
-    else:
-        provider_stats = {}
+    def _update_provider_stats(entry: Mapping[str, Any]) -> None:
+        provider_key = str(
+            entry.get("provider_key") or entry.get("provider") or "unknown"
+        ).casefold()
+        provider_label = str(
+            entry.get("provider_label") or entry.get("label") or provider_key
+        ).strip() or provider_key
+        status_value = str(
+            entry.get("status_normalized") or entry.get("status") or "unknown"
+        ).casefold() or "unknown"
+        elapsed_value = _as_optional_float(entry.get("elapsed_ms"))
+        fallback_flag = bool(entry.get("fallback"))
+        detail_value = _clean_detail(entry.get("detail"))
+        missing_series = _normalize_sectors(entry.get("missing_series"))
 
-    provider_stats["latest"] = latest_entry
-    provider_stats["label"] = provider_label
-    provider_stats["total"] = int(provider_stats.get("total", 0) or 0) + 1
+        provider_stats_raw = providers.get(provider_key)
+        if isinstance(provider_stats_raw, Mapping):
+            provider_stats = dict(provider_stats_raw)
+        else:
+            provider_stats = {}
 
-    status_counts = provider_stats.get("status_counts")
-    if not isinstance(status_counts, dict):
-        status_counts = {}
-    status_counts[status_value] = int(status_counts.get(status_value, 0) or 0) + 1
-    provider_stats["status_counts"] = status_counts
+        latest_payload: Dict[str, Any] = {
+            "provider": provider_key,
+            "provider_label": provider_label,
+            "status": status_value,
+            "fallback": fallback_flag,
+        }
+        if elapsed_value is not None:
+            latest_payload["elapsed_ms"] = elapsed_value
+        ts_value = entry.get("ts")
+        try:
+            latest_payload["ts"] = float(ts_value)
+        except (TypeError, ValueError):
+            latest_payload["ts"] = now
+        if detail_value:
+            latest_payload["detail"] = detail_value
+        if missing_series:
+            latest_payload["missing_series"] = missing_series
 
-    latency_buckets = provider_stats.get("latency_buckets")
-    if not isinstance(latency_buckets, dict):
-        latency_buckets = {}
-    bucket = _classify_latency_bucket(elapsed_value)
-    latency_buckets[bucket] = int(latency_buckets.get(bucket, 0) or 0) + 1
-    provider_stats["latency_buckets"] = latency_buckets
+        provider_stats["latest"] = latest_payload
+        provider_stats["label"] = provider_label
+        provider_stats["total"] = int(provider_stats.get("total", 0) or 0) + 1
 
-    if fallback:
-        provider_stats["fallback_count"] = int(
-            provider_stats.get("fallback_count", 0) or 0
-        ) + 1
+        status_counts = provider_stats.get("status_counts")
+        if not isinstance(status_counts, dict):
+            status_counts = {}
+        status_counts[status_value] = int(status_counts.get(status_value, 0) or 0) + 1
+        provider_stats["status_counts"] = status_counts
 
-    if status_value == "error":
-        provider_stats["error_count"] = int(
-            provider_stats.get("error_count", 0) or 0
-        ) + 1
+        _increment_latency_bucket(provider_stats, "latency", elapsed_value)
 
-    providers[provider_key] = provider_stats
+        if fallback_flag:
+            provider_stats["fallback_count"] = int(
+                provider_stats.get("fallback_count", 0) or 0
+            ) + 1
+
+        if status_value == "error":
+            provider_stats["error_count"] = int(
+                provider_stats.get("error_count", 0) or 0
+            ) + 1
+
+        providers[provider_key] = provider_stats
+
+    for entry in normalized_attempts:
+        _update_provider_stats(entry)
+
     macro_data["providers"] = providers
     store["macro_api"] = macro_data
 
