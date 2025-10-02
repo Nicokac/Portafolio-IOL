@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Helpers to capture health metrics and expose them via ``st.session_state``."""
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 import time
 
 import streamlit as st
@@ -92,13 +92,72 @@ def record_quote_load(
     }
 
 
+def _as_optional_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_optional_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_sectors(value: Any) -> Optional[list[str]]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        item = value.strip()
+        return [item] if item else None
+    if isinstance(value, Iterable) and not isinstance(value, (bytes, bytearray, str)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items or None
+    return None
+
+
+def _normalize_origin_counts(value: Any) -> Optional[Dict[str, int | float]]:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        return None
+
+    normalized: Dict[str, int | float] = {}
+    for raw_key, raw_value in value.items():
+        key = str(raw_key).strip()
+        if not key:
+            continue
+        numeric = _as_optional_float(raw_value)
+        if numeric is None:
+            continue
+        if float(numeric).is_integer():
+            normalized[key] = int(numeric)
+        else:
+            normalized[key] = float(numeric)
+    return normalized or None
+
+
 def record_opportunities_report(
-    *, mode: str, elapsed_ms: Optional[float], cached_elapsed_ms: Optional[float]
+    *,
+    mode: str,
+    elapsed_ms: Optional[float],
+    cached_elapsed_ms: Optional[float],
+    universe_initial: Optional[Any] = None,
+    universe_final: Optional[Any] = None,
+    discard_ratio: Optional[Any] = None,
+    highlighted_sectors: Optional[Any] = None,
+    counts_by_origin: Optional[Any] = None,
 ) -> None:
     """Persist cache usage metrics for the opportunities screening."""
 
     store = _store()
-    store["opportunities"] = {
+    entry: Dict[str, Any] = {
         "mode": mode,
         "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
         "cached_elapsed_ms": (
@@ -106,6 +165,27 @@ def record_opportunities_report(
         ),
         "ts": time.time(),
     }
+
+    initial = _as_optional_int(universe_initial)
+    final = _as_optional_int(universe_final)
+    if initial is not None:
+        entry["universe_initial"] = initial
+    if final is not None:
+        entry["universe_final"] = final
+
+    ratio = _as_optional_float(discard_ratio)
+    if ratio is not None:
+        entry["discard_ratio"] = ratio
+
+    sectors = _normalize_sectors(highlighted_sectors)
+    if sectors is not None:
+        entry["highlighted_sectors"] = sectors
+
+    origins = _normalize_origin_counts(counts_by_origin)
+    if origins is not None:
+        entry["counts_by_origin"] = origins
+
+    store["opportunities"] = entry
 
 
 def get_health_metrics() -> Dict[str, Any]:

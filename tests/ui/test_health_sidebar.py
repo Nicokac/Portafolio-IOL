@@ -77,6 +77,11 @@ def _dummy_metrics() -> dict[str, dict[str, object]]:
             "mode": "miss",
             "elapsed_ms": 321.0,
             "cached_elapsed_ms": None,
+            "universe_initial": 120,
+            "universe_final": 48,
+            "discard_ratio": 0.6,
+            "highlighted_sectors": ["Energy", "Utilities"],
+            "counts_by_origin": {"nyse": 30, "nasdaq": 18},
             "ts": None,
         },
         "portfolio": {
@@ -158,6 +163,30 @@ def test_render_health_sidebar_uses_shared_note_formatter(
     ]
 
     assert dummy_streamlit.sidebar.markdown_calls == expected_markdown_sequence
+
+
+def test_format_opportunities_status_handles_partial_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(health_sidebar, "format_note", lambda text: text)
+    data = {
+        "mode": "miss",
+        "elapsed_ms": None,
+        "cached_elapsed_ms": None,
+        "universe_final": "15",
+        "discard_ratio": "not-a-number",
+        "highlighted_sectors": "Energy",
+        "counts_by_origin": {"nyse": "10", "": 5, "invalid": "oops"},
+        "ts": None,
+    }
+
+    note = health_sidebar._format_opportunities_status(data)
+
+    assert "universo final 15" in note
+    assert "descartes" not in note
+    assert "sectores: Energy" in note
+    assert "origen: nyse=10" in note
+    assert "s/d" in note
 
 
 _SMOKE_SCRIPT = textwrap.dedent(

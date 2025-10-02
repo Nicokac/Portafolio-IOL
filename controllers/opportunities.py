@@ -6,7 +6,7 @@ import re
 import time
 from collections import OrderedDict
 from threading import Lock
-from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import pandas as pd
 
@@ -544,6 +544,51 @@ def _as_optional_bool(value: Any) -> Optional[bool]:
     return None
 
 
+def _extract_opportunities_metrics(payload: Mapping[str, Any]) -> Dict[str, Any]:
+    metrics: Dict[str, Any] = {}
+    raw_metrics = payload.get("metrics")
+    if isinstance(raw_metrics, Mapping):
+        metrics.update(raw_metrics)
+
+    for key in (
+        "universe_initial",
+        "universe_final",
+        "discard_ratio",
+        "highlighted_sectors",
+        "counts_by_origin",
+    ):
+        if key in payload and key not in metrics:
+            metrics[key] = payload[key]
+
+    return metrics
+
+
+def _normalise_controller_payload(
+    payload: Any,
+) -> Tuple[pd.DataFrame, List[str], str, Dict[str, Any]]:
+    if isinstance(payload, Mapping):
+        table = payload.get("table")
+        if isinstance(table, pd.DataFrame):
+            df = table
+        else:
+            try:
+                df = pd.DataFrame(table)
+            except Exception:
+                df = pd.DataFrame()
+
+        notes = _normalize_notes(payload.get("notes"))
+        source = str(payload.get("source") or "desconocido")
+        metrics = _extract_opportunities_metrics(payload)
+        return df, notes, source, metrics
+
+    if isinstance(payload, tuple) and len(payload) == 3:
+        df, notes, source = payload
+        normalized_notes = _normalize_notes(notes)
+        return df, normalized_notes, source, {}
+
+    return pd.DataFrame(), [], "desconocido", {}
+
+
 def generate_opportunities_report(
     filters: Optional[Mapping[str, Any]] = None,
 ) -> Mapping[str, object]:
@@ -583,20 +628,32 @@ def generate_opportunities_report(
     cached_entry = _get_cached_result(cache_key)
     if cached_entry is not None:
         cached_result, baseline_elapsed = cached_entry
+        metrics_payload: Dict[str, Any] = {}
+        if isinstance(cached_result, Mapping):
+            metrics_payload = _extract_opportunities_metrics(cached_result)
         elapsed_ms = (time.perf_counter() - start) * 1000
         record_opportunities_report(
             mode="hit",
             elapsed_ms=elapsed_ms,
             cached_elapsed_ms=baseline_elapsed,
+            **metrics_payload,
         )
         return cached_result
 
     compute_start = time.perf_counter()
-    df, notes, source = run_opportunities_controller(**controller_args)
+    raw_payload = run_opportunities_controller(**controller_args)
+    df, notes, source, metrics_payload = _normalise_controller_payload(raw_payload)
     elapsed_ms = (time.perf_counter() - compute_start) * 1000
-    result: Mapping[str, object] = {"table": df, "notes": notes, "source": source}
+    result: Dict[str, object] = {"table": df, "notes": notes, "source": source}
+    if metrics_payload:
+        result["metrics"] = metrics_payload
     _store_cached_result(cache_key, result, elapsed_ms)
-    record_opportunities_report(mode="miss", elapsed_ms=elapsed_ms, cached_elapsed_ms=None)
+    record_opportunities_report(
+        mode="miss",
+        elapsed_ms=elapsed_ms,
+        cached_elapsed_ms=None,
+        **metrics_payload,
+    )
     return result
 
 
