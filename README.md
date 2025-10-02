@@ -80,6 +80,10 @@ los tiempos de iteración al dejar a la vista el impacto de cada cambio.
 
 - [Guía de troubleshooting](docs/troubleshooting.md)
 - [Guía de pruebas](docs/testing.md)
+- [Integración en CI/CD](docs/testing.md#integración-en-cicd): ejemplos de pipelines para instalar dependencias,
+  forzar los mocks (`RUN_LIVE_YF=0`) y ejecutar `pytest --maxfail=1 --disable-warnings -q`. Los jobs adjuntan
+  el directorio `htmlcov`; descárgalo desde los artefactos del pipeline y abre `index.html` para revisar la
+  cobertura en detalle.
 
 ## Uso del proveedor de tiempo
 
