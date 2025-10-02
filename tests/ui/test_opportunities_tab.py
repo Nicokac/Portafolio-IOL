@@ -21,7 +21,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 from shared.errors import AppError
 import shared.settings as shared_settings
 from shared.ui import notes as shared_notes
-from ui.tabs.opportunities import PRESET_FILTERS
+from ui.tabs.opportunities import (
+    PRESET_FILTERS,
+    _SUMMARY_COMPACT_OVERRIDE_KEY,
+    _SUMMARY_STATE_KEY,
+)
 
 def _resolve_streamlit_module() -> ModuleType:
     """Ensure we use the real Streamlit implementation, not a test stub."""
@@ -295,6 +299,77 @@ def test_summary_block_renders_metrics_and_chart() -> None:
     assert any("Distribución por sector" in value for value in markdown_values)
     captions = [element.value for element in app.get("caption")]
     assert "Sin datos de sector disponibles." not in captions
+
+
+def test_summary_help_text_and_collapse_behavior() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AAPL"],
+            "score_compuesto": [90.0],
+            "sector": ["Technology"],
+        }
+    )
+    summary = {
+        "universe_count": 25,
+        "result_count": 5,
+        "discarded_ratio": 0.8,
+        "selected_sectors": ["Technology", "Healthcare"],
+        "sector_distribution": {"Technology": 1},
+    }
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo", "summary": summary},
+        trigger_search=True,
+    )
+
+    checkbox_labels = [element.label for element in app.get("checkbox")]
+    assert "Mostrar resumen del screening" in checkbox_labels
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Cantidad total de empresas analizadas" in caption for caption in captions)
+    assert any("Cantidad de compañías que superaron los filtros establecidos" in caption for caption in captions)
+    assert any("Sectores con filtros activos" in caption for caption in captions)
+
+    toggle = _find_by_label(app.get("checkbox"), "Mostrar resumen del screening")
+    toggle.set_value(False)
+    app.run()
+
+    assert not app.get("metric"), "Las métricas deberían ocultarse cuando el resumen está contraído"
+    collapsed_captions = [element.value for element in app.get("caption")]
+    assert any("Resumen oculto" in caption for caption in collapsed_captions)
+    assert _SUMMARY_STATE_KEY in app.session_state
+    assert app.session_state[_SUMMARY_STATE_KEY]["universe_count"] == 25
+
+
+def test_summary_compact_mode_respects_override() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AAPL"],
+            "score_compuesto": [90.0],
+            "sector": ["Technology"],
+        }
+    )
+    summary = {
+        "universe_count": 10,
+        "result_count": 2,
+        "discarded_ratio": 0.8,
+        "sector_distribution": {"Technology": 2},
+    }
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo", "summary": summary},
+        trigger_search=True,
+    )
+
+    assert len(app.get("metric")) == 3
+    app.session_state[_SUMMARY_COMPACT_OVERRIDE_KEY] = True
+    app.run()
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("Modo compacto" in caption for caption in captions)
+    assert len(app.get("metric")) == 3
 
 
 def test_download_button_exports_screening_results_csv() -> None:
