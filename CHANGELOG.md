@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.22] - 2025-10-06
+### Changed
+- Sincronización del número de versión `0.3.22` entre `pyproject.toml`, el helper `shared.version`
+  y las superficies visibles para mantener el encabezado de pestañas y el sidebar actualizados.
+### Documentation
+- Quick-start y menús documentados mencionando explícitamente la release 0.3.22 y reforzando el
+  recordatorio de versión visible en la UI.
+
 ## [0.3.21] - 2025-10-05
 ### Changed
 - Refinamiento UX del mini-dashboard del healthcheck para resaltar los tiempos cacheados vs. recientes con etiquetas de estado
