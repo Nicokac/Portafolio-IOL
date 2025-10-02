@@ -13,7 +13,6 @@ from controllers.portfolio import (
 )
 from application.portfolio_service import calculate_totals
 from domain.models import Controls
-from application.portfolio_service import PortfolioTotals
 
 
 def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_rate=None):
@@ -33,6 +32,16 @@ def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_
     )
 
 
+def _make_snapshot(vm: PortfolioViewModel, *, apply_elapsed: float = 0.0, totals_elapsed: float = 0.0):
+    return SimpleNamespace(
+        df_view=vm.positions,
+        totals=vm.totals,
+        apply_elapsed=apply_elapsed,
+        totals_elapsed=totals_elapsed,
+        generated_at=0.0,
+    )
+
+
 def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     container = contextlib.nullcontext()
     mock_cli = MagicMock()
@@ -44,13 +53,7 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     controls = Controls(refresh_secs=55)
     vm = _make_viewmodel(empty_df, controls, all_symbols=[])
 
-    snapshot = SimpleNamespace(
-        df_view=empty_df,
-        totals=PortfolioTotals(0.0, 0.0, 0.0, float('nan'), 0.0),
-        apply_elapsed=0.0,
-        totals_elapsed=0.0,
-        generated_at=0.0,
-    )
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.charts.st', mock_st), \
@@ -59,6 +62,7 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
@@ -77,6 +81,7 @@ def test_ta_section_without_symbols_shows_message():
     mock_st.radio.return_value = 4
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(pd.DataFrame(), controls, all_symbols=[])
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -84,6 +89,7 @@ def test_ta_section_without_symbols_shows_message():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
@@ -114,13 +120,7 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
 
-    snapshot = SimpleNamespace(
-        df_view=df,
-        totals=PortfolioTotals(100.0, 80.0, 20.0, 25.0, 0.0),
-        apply_elapsed=0.0,
-        totals_elapsed=0.0,
-        generated_at=0.0,
-    )
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -128,6 +128,7 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_basic_section') as basic, \
          patch('controllers.portfolio.portfolio.render_advanced_analysis') as adv, \
@@ -161,13 +162,7 @@ def test_ta_section_symbol_without_us_ticker():
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
 
-    snapshot = SimpleNamespace(
-        df_view=df,
-        totals=PortfolioTotals(100.0, 90.0, 10.0, 11.11, 0.0),
-        apply_elapsed=0.0,
-        totals_elapsed=0.0,
-        generated_at=0.0,
-    )
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -175,6 +170,7 @@ def test_ta_section_symbol_without_us_ticker():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', side_effect=ValueError('invalid')), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
@@ -218,6 +214,7 @@ def test_ta_section_symbol_with_empty_df():
     mock_tasvc.indicators_for.return_value = pd.DataFrame()
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -225,6 +222,7 @@ def test_ta_section_symbol_with_empty_df():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
@@ -265,6 +263,7 @@ def test_ta_section_symbol_with_data():
     mock_tasvc.backtest.return_value = pd.DataFrame({'equity': [1.0, 1.1]})
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    snapshot = _make_snapshot(vm)
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -272,6 +271,7 @@ def test_ta_section_symbol_with_data():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
+         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
