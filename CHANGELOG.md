@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.21] - 2025-10-05
+### Changed
+- Refinamiento UX del mini-dashboard del healthcheck para resaltar los tiempos cacheados vs. recientes con etiquetas de estado
+  claras y tooltips que explican la metodología de medición. ([`ui/health_sidebar.py`](ui/health_sidebar.py))
+### Added
+- Telemetría histórica del screener que persiste los tiempos de ejecución previos y permite graficar tendencias directamente
+  desde el panel de salud. ([`services/health.py`](services/health.py), [`controllers/opportunities.py`](controllers/opportunities.py))
+### Documentation
+- Se incorporó documentación multimedia (capturas y clips) que guía la interpretación del mini-dashboard y la navegación por la
+  nueva telemetría histórica. ([`README.md`](README.md#caché-del-screener-de-oportunidades))
+
 ## [0.3.20] - 2025-10-04
 ### Added
 - Mini-dashboard en el healthcheck que expone la duración previa y cacheada de los screenings de oportunidades, permitiendo
