@@ -81,6 +81,7 @@ _SUMMARY_STATE_KEY = "opportunities_summary"
 _SUMMARY_EXPANDED_STATE_KEY = "opportunities_summary_expanded"
 _SUMMARY_COMPACT_OVERRIDE_KEY = "opportunities_summary_compact_override"
 _SUMMARY_COMPACT_BREAKPOINT = 768
+_SUMMARY_SECTOR_SCROLL_THRESHOLD = 6
 
 
 _INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
@@ -376,9 +377,19 @@ def _render_summary_block(
                 "Modo compacto activado para facilitar la lectura de métricas en pantallas estrechas."
             )
 
+        selected_sectors = normalized.get("selected_sectors") or []
+        if not isinstance(selected_sectors, Sequence) or isinstance(
+            selected_sectors, (str, bytes, bytearray)
+        ):
+            selected_sectors = [str(selected_sectors)] if selected_sectors else []
+        sector_values = [str(value) for value in selected_sectors if value]
+        sectors_count = len(sector_values)
+        sectors_label = str(sectors_count) if sectors_count else "Todos"
+        sectors_container_enabled = sectors_count > _SUMMARY_SECTOR_SCROLL_THRESHOLD
+
         metrics_columns: Sequence[st.delta_generator.DeltaGenerator]
-        if compact_layout:
-            metrics_columns = [st.container(), st.container(), st.container()]
+        if compact_layout or sectors_container_enabled:
+            metrics_columns = st.columns(3, gap="small")
         else:
             metrics_columns = st.columns(3)
 
@@ -411,23 +422,22 @@ def _render_summary_block(
             ),
         )
 
-        selected_sectors = normalized.get("selected_sectors") or []
-        if not isinstance(selected_sectors, Sequence) or isinstance(
-            selected_sectors, (str, bytes, bytearray)
-        ):
-            selected_sectors = [str(selected_sectors)] if selected_sectors else []
-        sector_values = [str(value) for value in selected_sectors if value]
-        sectors_count = len(sector_values)
-        sectors_label = str(sectors_count) if sectors_count else "Todos"
-
         for column, label, value, delta, help_text in metrics_payload:
             with column:
                 metric_value = value if value is not None else sectors_label
-                column.metric(label, metric_value, delta=delta)
+                column.metric(label, metric_value, delta=delta, help=help_text)
                 column.caption(help_text)
 
         if sector_values:
-            st.caption("Sectores filtrados: " + ", ".join(sector_values))
+            if sectors_container_enabled:
+                st.caption(
+                    "Sectores filtrados: abrí el panel para ver el detalle por sector."
+                )
+                with st.expander("Sectores filtrados activos", expanded=False):
+                    sector_lines = "\n".join(f"- {sector}" for sector in sector_values)
+                    st.markdown(sector_lines)
+            else:
+                st.caption("Sectores filtrados: " + ", ".join(sector_values))
 
         drop_summary = normalized.get("drop_summary")
         if drop_summary:
