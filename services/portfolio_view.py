@@ -10,9 +10,104 @@ from typing import Any
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
-
+from application.risk_service import (
+    annualized_volatility,
+    beta,
+    compute_returns,
+)
 
 logger = logging.getLogger(__name__)
+
+def _max_drawdown_from_returns(returns: pd.Series) -> float:
+    """Compute maximum drawdown given a return series."""
+
+    if returns is None or returns.empty:
+        return 0.0
+
+    wealth = (1 + returns).cumprod()
+    running_max = wealth.cummax()
+    drawdowns = wealth / running_max - 1
+    return float(drawdowns.min())
+
+
+def compute_symbol_risk_metrics(
+    tasvc,
+    symbols: list[str],
+    *,
+    benchmark: str,
+    period: str,
+) -> pd.DataFrame:
+    """Return risk metrics (volatility, drawdown, beta) for each symbol.
+
+    Parameters
+    ----------
+    tasvc:
+        Service exposing ``portfolio_history``.
+    symbols:
+        Portfolio symbols to evaluate.
+    benchmark:
+        Benchmark symbol used to compare beta and relative metrics.
+    period:
+        Historical period used to compute metrics (e.g. ``"6mo"``).
+    """
+
+    if tasvc is None or not symbols:
+        return pd.DataFrame()
+
+    try:
+        prices = tasvc.portfolio_history(
+            simbolos=list({*symbols, benchmark}), period=period
+        )
+    except Exception:
+        logger.exception("Error fetching portfolio history for risk metrics")
+        return pd.DataFrame()
+
+    if prices is None or prices.empty:
+        return pd.DataFrame()
+
+    returns = compute_returns(prices)
+    if returns.empty:
+        return pd.DataFrame()
+
+    metrics: list[dict[str, Any]] = []
+
+    bench_returns = returns.get(benchmark)
+    if bench_returns is None:
+        bench_returns = pd.Series(dtype=float)
+
+    for sym in prices.columns:
+        sym_returns = returns.get(sym)
+        if sym_returns is None or sym_returns.empty:
+            continue
+
+        vol = annualized_volatility(sym_returns)
+        dd = _max_drawdown_from_returns(sym_returns)
+
+        is_benchmark = sym == benchmark
+        if is_benchmark:
+            sym_beta = 1.0 if len(sym_returns) else float("nan")
+        elif bench_returns.empty:
+            sym_beta = float("nan")
+        else:
+            aligned_sym, aligned_bench = sym_returns.align(
+                bench_returns, join="inner"
+            )
+            sym_beta = beta(aligned_sym, aligned_bench)
+
+        metrics.append(
+            {
+                "simbolo": sym,
+                "volatilidad": vol,
+                "drawdown": dd,
+                "beta": sym_beta,
+                "es_benchmark": is_benchmark,
+            }
+        )
+
+    if not metrics:
+        return pd.DataFrame()
+
+    return pd.DataFrame(metrics)
 
 
 @dataclass(frozen=True)

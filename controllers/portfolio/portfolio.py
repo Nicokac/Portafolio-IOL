@@ -74,7 +74,7 @@ def render_portfolio_section(container, cli, fx_rates):
                 totals=viewmodel.totals,
             )
         elif tab_idx == 1:
-            render_advanced_analysis(df_view)
+            render_advanced_analysis(df_view, tasvc)
         elif tab_idx == 2:
             render_risk_analysis(df_view, tasvc, favorites=favorites)
         elif tab_idx == 3:

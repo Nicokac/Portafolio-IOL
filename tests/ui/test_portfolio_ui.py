@@ -14,6 +14,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from controllers.portfolio.portfolio import render_portfolio_section
+import controllers.portfolio.charts as charts_mod
 from domain.models import Controls
 
 
@@ -263,3 +264,35 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     # Ensure advanced analysis helpers were not triggered in this branch
     advanced.assert_not_called()
     basic.assert_not_called()
+
+
+def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[])
+    fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]
+    monkeypatch.setattr(charts_mod, "st", fake_st)
+    monkeypatch.setattr(
+        charts_mod,
+        "compute_symbol_risk_metrics",
+        lambda *a, **k: pd.DataFrame(),
+    )
+    monkeypatch.setattr(charts_mod, "plot_bubble_pl_vs_costo", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "plot_heat_pl_pct", lambda *a, **k: None)
+
+    df = pd.DataFrame(
+        {
+            "simbolo": ["GGAL"],
+            "tipo": ["Accion"],
+            "valor_actual": [1000.0],
+            "costo": [800.0],
+            "pl": [200.0],
+            "pl_%": [0.25],
+            "pl_d": [5.0],
+        }
+    )
+
+    charts_mod.render_advanced_analysis(df, tasvc=None)
+
+    labels = [call["label"] for call in fake_st.selectbox_calls]
+    assert "Período de métricas" in labels
+    assert "Métrica de riesgo" in labels
+    assert "Benchmark" in labels

@@ -1,6 +1,8 @@
 # ui/charts.py
 from __future__ import annotations
 import logging
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -145,46 +147,76 @@ def plot_bubble_pl_vs_costo(
     color_seq: list[str] | None = None,
     log_x: bool = False,
     log_y: bool = False,
+    category_col: str | None = None,
+    benchmark_col: str | None = None,
 ):
     """Bubble chart flexible in axes, palette and scale."""
     if df is None or df.empty:
         return None
-    needed = {"simbolo", "tipo", "valor_actual", x_axis, y_axis}
+    needed = {x_axis, y_axis}
+    if "simbolo" in df.columns:
+        needed.add("simbolo")
     if not needed.issubset(df.columns):
         return None
 
-    subset_cols = list(needed | {"costo", "pl"})
+    subset_cols = list({x_axis, y_axis, "valor_actual"})
     d = df.dropna(subset=[c for c in subset_cols if c in df.columns]).copy()
     if d.empty:
         return None
 
     # Evita tamaños negativos o NaN
-    d["valor_ok"] = pd.to_numeric(d["valor_actual"], errors="coerce").clip(lower=0.0).fillna(0.0)
+    if "valor_actual" in d.columns:
+        d["valor_ok"] = (
+            pd.to_numeric(d["valor_actual"], errors="coerce")
+            .clip(lower=0.0)
+            .fillna(0.0)
+        )
+    else:
+        d["valor_ok"] = 1.0
+
+    color_kwargs: dict[str, Any] = {}
+    if category_col and category_col in d.columns:
+        pal = get_active_palette()
+        categories = d[category_col].fillna("Desconocido").astype(str)
+        unique_cats = categories.unique().tolist()
+        color_map = {cat: pal.accent for cat in unique_cats}
+        if "Benchmark" in color_map:
+            color_map["Benchmark"] = pal.highlight_bg
+        color_kwargs = {
+            "color": category_col,
+            "symbol": category_col,
+            "color_discrete_map": None if color_seq else color_map,
+            "color_discrete_sequence": color_seq,
+        }
+    elif "tipo" in d.columns:
+        color_kwargs = {
+            "color": "tipo",
+            "color_discrete_map": None if color_seq else _color_discrete_map(d),
+            "color_discrete_sequence": color_seq,
+        }
+    else:
+        color_kwargs = {
+            "color_discrete_sequence": color_seq or px.colors.qualitative.Plotly,
+        }
+
+    hover_data: dict[str, Any] = {"valor_ok": ":,.0f"}
+    if "costo" in d:
+        hover_data["costo"] = ":,.0f"
+    if "pl" in d:
+        hover_data["pl"] = ":,.0f"
 
     fig = px.scatter(
-        # d, x=x_axis, y=y_axis, size="valor_ok", color="tipo",
-        # hover_name="simbolo", size_max=52,
-        # color_discrete_map=_color_discrete_map(d),
-        # hover_data={"costo": ":,.0f" if "costo" in d else True,
-        #             "pl": ":,.0f" if "pl" in d else True,
-        #             "valor_ok": ":,.0f"},
         d,
         x=x_axis,
         y=y_axis,
         size="valor_ok",
-        color="tipo",
-        hover_name="simbolo",
+        hover_name="simbolo" if "simbolo" in d.columns else None,
         size_max=52,
-        color_discrete_map=None if color_seq else _color_discrete_map(d),
-        color_discrete_sequence=color_seq,
-        hover_data={
-            "costo": ":,.0f" if "costo" in d else True,
-            "pl": ":,.0f" if "pl" in d else True,
-            "valor_ok": ":,.0f",
-        },
+        hover_data=hover_data,
+        **color_kwargs,
     )
     # pal = get_active_palette()
-    pal = get_active_palette()    
+    pal = get_active_palette()
     if SHOW_AXIS_TITLES:
         # fig.update_xaxes(title=x_axis.replace("_", " ").capitalize(), tickformat=",")
         # fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=pal.grid)
@@ -205,6 +237,21 @@ def plot_bubble_pl_vs_costo(
         # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
         fig.update_xaxes(tickformat=",", type="log" if log_x else "linear")
         fig.update_yaxes(tickformat=",", zeroline=True, zerolinecolor=pal.grid, type="log" if log_y else "linear")
+
+    if benchmark_col and benchmark_col in d.columns:
+        bench_points = d[d[benchmark_col].fillna(False)]
+        if not bench_points.empty:
+            bench_x = bench_points.iloc[0][x_axis]
+            bench_y = bench_points.iloc[0][y_axis]
+            if pd.notna(bench_x):
+                fig.add_vline(
+                    x=float(bench_x), line_dash="dot", line_color=pal.highlight_bg
+                )
+            if pd.notna(bench_y):
+                fig.add_hline(
+                    y=float(bench_y), line_dash="dot", line_color=pal.highlight_bg
+                )
+
     return _apply_layout(fig)
 
 #def plot_heat_pl_pct(df: pd.DataFrame):
