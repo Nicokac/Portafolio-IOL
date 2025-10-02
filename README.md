@@ -6,11 +6,12 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.19)
+## Quick-start (release 0.3.20)
 
-La versión **0.3.19** introduce el guardado local de presets personalizados, la comparación lado a
-l lado de filtros y la caché cooperativa que evita recalcular screenings idénticos dentro de la
-misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
+La versión **0.3.20** incorpora el mini-dashboard inicial con métricas clave de la cartera y una
+telemetría enriquecida que desglosa runtimes, *cache hits* y llamadas remotas, además de mantener
+los presets personalizados, la comparación lado a lado y la caché cooperativa introducidos en la
+release anterior. Sigue estos pasos para reproducir el flujo completo en minutos:
 
 ### Ejemplo completo
 
@@ -21,13 +22,14 @@ misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
    pip install -r requirements.txt
    ```
    Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
-2. **Levanta la aplicación.** Con el entorno activado ejecuta:
+2. **Levanta la aplicación y valida el mini-dashboard.** Con el entorno activado ejecuta:
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar mostrará el número de versión `0.3.19`, confirmando que la actualización
-   quedó aplicada.
-3. **Lanza un screening con presets personalizados.**
+   La cabecera del sidebar mostrará el número de versión `0.3.20`, confirmando que la actualización
+   quedó aplicada. Al mismo tiempo, el mini-dashboard superior renderizará tarjetas con el valor
+   total de la cartera, la variación diaria y el cash disponible usando los datos stub incluidos.
+3. **Lanza un screening con presets personalizados y revisa la telemetría.**
    - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
    - Completa los filtros (score mínimo, payout, racha, sectores, indicadores técnicos) y presiona
      **Guardar preset**. La UI confirmará con un toast "Preset guardado" y el nuevo preset quedará
@@ -37,27 +39,34 @@ misma sesión. Sigue estos pasos para reproducir el flujo completo en minutos:
      resaltados verdes/rojos según subidas o bajadas respecto del original, facilitando la revisión
      antes de lanzar el barrido definitivo.
    - Pulsa **Ejecutar screening** para correr con el preset actual. Si repites exactamente los mismos
-     filtros durante la sesión, la telemetría de la barra lateral informará "cache hit" indicando que
-     el backend reutilizó los resultados almacenados en la caché cooperativa de la release 0.3.19.
+     filtros durante la sesión, la telemetría enriquecida de la barra lateral marcará "cache hit",
+     mostrará el tiempo ahorrado respecto de la primera corrida y desglosará la latencia por etapa
+     (descarga remota, normalización, render de UI).
 
 **Notas clave del flujo**
 
+- El mini-dashboard inicial resume valor de la cartera, variación diaria y cash disponible con formato de tarjetas, y se actualiza automáticamente después de cada screening.
 - El toast "Preset guardado" deja visible el preset recién creado dentro del selector para reutilizarlo en corridas posteriores.
 - La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
-- El bloque de telemetría marca explícitamente los *cache hits* con la duración reducida respecto de la corrida original, dejando constancia del beneficio que aporta la caché cooperativa durante la sesión.
+- El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
 
-**Comportamiento del caché (0.3.19).** Cuando guardas un preset, la aplicación persiste la
-combinación de filtros y el resultado del último screening asociado. Al relanzarlo:
+**Comportamiento del caché (0.3.20).** Cuando guardas un preset, la aplicación persiste la
+combinación de filtros y el resultado del último screening asociado. Al relanzarlo, el panel de
+telemetría ahora etiqueta cada corrida con un identificador incremental y agrega una tabla de
+componentes (descarga, normalización, render) para comparar tiempos:
 
 - Si los filtros no cambiaron, se muestra una insignia "⚡ Resultado servido desde caché" en la tabla
-  y la telemetría reduce el runtime (<1 s en stub, ≈2 s en Yahoo) al evitar descargas redundantes.
+  y la telemetría reduce el runtime (<1 s en stub, ≈2 s en Yahoo) al evitar descargas redundantes,
+  resaltando en verde el ahorro neto respecto de la corrida anterior.
 - Si modificas un slider o agregas/quitas sectores, la UI muestra "♻️ Caché invalidada" y el backend
   recalcula el universo completo antes de guardar la nueva instantánea.
 - Desde **Comparar presets** puedes presionar **Revertir cambios** para volver al preset cacheado, lo
-  que reutiliza inmediatamente los resultados previos y confirma la integridad del guardado.
+  que reutiliza inmediatamente los resultados previos, dispara el contador de *cache hits* y confirma
+  la integridad del guardado.
 
-Estas novedades convierten a la release 0.3.19 en la primera con presets persistentes, comparación
-visual y caché cooperativa, recortando tiempos de iteración cuando se prueban variaciones de filtros.
+Estas novedades convierten a la release 0.3.20 en la primera con mini-dashboard, telemetría
+enriquecida, presets persistentes, comparación visual y caché cooperativa, recortando tiempos de
+iteración cuando se prueban variaciones de filtros y dejando a la vista el impacto de cada cambio.
 
 ## Uso del proveedor de tiempo
 
@@ -249,9 +258,9 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.19".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.20".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.19)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.20)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
 
 ## Requisitos de sistema
 

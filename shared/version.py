@@ -8,7 +8,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
     import tomli as _toml  # type: ignore[import-untyped]
 
 
-DEFAULT_VERSION = "0.3.19"
+DEFAULT_VERSION = "0.3.20"
 PROJECT_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
