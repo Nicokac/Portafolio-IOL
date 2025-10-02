@@ -24,6 +24,7 @@ from shared.ui import notes as shared_notes
 from ui.tabs.opportunities import (
     PRESET_FILTERS,
     _SUMMARY_COMPACT_OVERRIDE_KEY,
+    _SUMMARY_SECTOR_SCROLL_THRESHOLD,
     _SUMMARY_STATE_KEY,
 )
 
@@ -323,6 +324,12 @@ def test_summary_help_text_and_collapse_behavior() -> None:
         trigger_search=True,
     )
 
+    metrics = app.get("metric")
+    metric_help = {metric.label: metric.help for metric in metrics}
+    assert "Cantidad total de empresas" in metric_help["Universo analizado"]
+    assert "El delta muestra el porcentaje descartado" in metric_help["Candidatos finales"]
+    assert "Sectores con filtros activos" in metric_help["Sectores activos"]
+
     checkbox_labels = [element.label for element in app.get("checkbox")]
     assert "Mostrar resumen del screening" in checkbox_labels
 
@@ -370,6 +377,74 @@ def test_summary_compact_mode_respects_override() -> None:
     captions = [element.value for element in app.get("caption")]
     assert any("Modo compacto" in caption for caption in captions)
     assert len(app.get("metric")) == 3
+
+
+def test_summary_sector_caption_when_below_threshold() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AAPL"],
+            "score_compuesto": [90.0],
+            "sector": ["Technology"],
+        }
+    )
+    sectors = ["Technology", "Healthcare"]
+    summary = {
+        "universe_count": 15,
+        "result_count": 4,
+        "discarded_ratio": 0.6,
+        "selected_sectors": sectors,
+        "sector_distribution": {"Technology": 2, "Healthcare": 2},
+    }
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo", "summary": summary},
+        trigger_search=True,
+    )
+
+    captions = [element.value for element in app.get("caption")]
+    assert any(
+        "Sectores filtrados: Technology, Healthcare" in caption
+        for caption in captions
+    ), "Los sectores deberían mostrarse inline cuando son pocos"
+    expander_labels = [expander.label for expander in app.get("expander")]
+    assert "Sectores filtrados activos" not in expander_labels
+
+
+def test_summary_sector_expander_when_above_threshold() -> None:
+    df = pd.DataFrame(
+        {
+            "ticker": ["AAPL"],
+            "Yahoo Finance Link": ["https://finance.yahoo.com/quote/AAPL"],
+            "score_compuesto": [90.0],
+            "sector": ["Technology"],
+        }
+    )
+    sectors = [f"Sector {idx}" for idx in range(_SUMMARY_SECTOR_SCROLL_THRESHOLD + 2)]
+    summary = {
+        "universe_count": 30,
+        "result_count": 6,
+        "discarded_ratio": 0.8,
+        "selected_sectors": sectors,
+        "sector_distribution": {"Technology": 1},
+    }
+
+    app, _ = _run_app_with_result(
+        {"table": df, "notes": [], "source": "yahoo", "summary": summary},
+        trigger_search=True,
+    )
+
+    captions = [element.value for element in app.get("caption")]
+    assert any("abrí el panel" in caption for caption in captions)
+
+    sector_expander = _find_by_label(
+        app.get("expander"), "Sectores filtrados activos"
+    )
+    expander_markdown = "\n".join(
+        markdown.value for markdown in sector_expander.get("markdown")
+    )
+    for sector in sectors:
+        assert sector in expander_markdown
 
 
 def test_download_button_exports_screening_results_csv() -> None:
