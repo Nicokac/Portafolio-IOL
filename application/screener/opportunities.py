@@ -1286,11 +1286,13 @@ def run_screener_stub(
     df = pd.DataFrame(_BASE_OPPORTUNITIES)
     df["Yahoo Finance Link"] = df["ticker"].map(_format_yahoo_link)
     manual = _normalise_tickers(manual_tickers)
+    manual_set = set(manual)
     excluded = set(_normalise_tickers(exclude_tickers))
 
     if excluded:
         df = df[~df["ticker"].isin(excluded)]
         manual = [ticker for ticker in manual if ticker not in excluded]
+        manual_set = {ticker for ticker in manual_set if ticker not in excluded}
 
     df = df.copy()
 
@@ -1306,7 +1308,17 @@ def run_screener_stub(
 
     df["score_compuesto"] = df.apply(_score_from_row, axis=1)
 
-    universe_count = int(df.index.size)
+    tickers_before_filters = set(
+        df.get("ticker", pd.Series(dtype="string"))
+        .astype("string")
+        .str.strip()
+        .str.upper()
+    )
+    tickers_before_filters = {ticker for ticker in tickers_before_filters if ticker}
+    if manual_set:
+        tickers_before_filters.update(manual_set)
+
+    universe_count = len(tickers_before_filters)
     filter_telemetry: list[tuple[str, int, int]] = []
     normalized_sectors = _normalize_sector_filters(sectors)
 
@@ -1341,7 +1353,15 @@ def run_screener_stub(
     )
 
     elapsed = time.perf_counter() - loop_start
-    result_count = int(result.index.size)
+
+    if "ticker" in result.columns:
+        result_tickers = (
+            result["ticker"].astype("string").str.strip().str.upper()
+        )
+        result_count = len({ticker for ticker in result_tickers if ticker})
+    else:
+        result_count = int(result.index.size)
+
     discarded_count = max(universe_count - result_count, 0)
     discarded_ratio = (discarded_count / universe_count) if universe_count else 0.0
     filter_metrics, drop_summary_entries = _summarize_filter_telemetry(

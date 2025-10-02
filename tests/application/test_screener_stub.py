@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import sys
 import time
@@ -316,3 +317,14 @@ def test_run_screener_stub_classifies_telemetry_by_runtime(
     note = _assert_has_stub_note(notes, expected_severity=expected_severity)
 
     assert df.attrs["_notes"][-1] == note
+
+
+def test_run_screener_stub_logs_telemetry_note(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger=opportunities_module.LOGGER.name)
+
+    df, notes = _run_stub_with_notes()
+    note = _assert_has_stub_note(notes)
+
+    assert note in df.attrs["_notes"]
+    logged_messages = [record.getMessage() for record in caplog.records]
+    assert any(note in message for message in logged_messages)
