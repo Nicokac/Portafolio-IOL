@@ -1,4 +1,5 @@
 import contextlib
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, ANY
 
 import pandas as pd
@@ -12,6 +13,7 @@ from controllers.portfolio import (
 )
 from application.portfolio_service import calculate_totals
 from domain.models import Controls
+from application.portfolio_service import PortfolioTotals
 
 
 def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_rate=None):
@@ -42,6 +44,14 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     controls = Controls(refresh_secs=55)
     vm = _make_viewmodel(empty_df, controls, all_symbols=[])
 
+    snapshot = SimpleNamespace(
+        df_view=empty_df,
+        totals=PortfolioTotals(0.0, 0.0, 0.0, float('nan'), 0.0),
+        apply_elapsed=0.0,
+        totals_elapsed=0.0,
+        generated_at=0.0,
+    )
+
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.charts.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -65,7 +75,6 @@ def test_ta_section_without_symbols_shows_message():
     mock_st = MagicMock()
     mock_st.session_state = {}
     mock_st.radio.return_value = 4
-
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(pd.DataFrame(), controls, all_symbols=[])
 
@@ -105,6 +114,14 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
 
+    snapshot = SimpleNamespace(
+        df_view=df,
+        totals=PortfolioTotals(100.0, 80.0, 20.0, 25.0, 0.0),
+        apply_elapsed=0.0,
+        totals_elapsed=0.0,
+        generated_at=0.0,
+    )
+
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
          patch('controllers.portfolio.portfolio.TAService'), \
@@ -143,6 +160,14 @@ def test_ta_section_symbol_without_us_ticker():
     df = pd.DataFrame({'simbolo': ['AAA']})
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+
+    snapshot = SimpleNamespace(
+        df_view=df,
+        totals=PortfolioTotals(100.0, 90.0, 10.0, 11.11, 0.0),
+        apply_elapsed=0.0,
+        totals_elapsed=0.0,
+        generated_at=0.0,
+    )
 
     with patch('controllers.portfolio.portfolio.st', mock_st), \
          patch('controllers.portfolio.portfolio.PortfolioService'), \
@@ -191,7 +216,6 @@ def test_ta_section_symbol_with_empty_df():
     mock_tasvc = MagicMock()
     mock_tasvc.fundamentals.return_value = {}
     mock_tasvc.indicators_for.return_value = pd.DataFrame()
-
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
 
@@ -239,7 +263,6 @@ def test_ta_section_symbol_with_data():
     mock_tasvc.indicators_for.return_value = df_ind
     mock_tasvc.alerts_for.return_value = []
     mock_tasvc.backtest.return_value = pd.DataFrame({'equity': [1.0, 1.1]})
-
     controls = Controls(refresh_secs=0)
     vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
 

@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pandas as pd
 import streamlit as st
-from application.portfolio_service import calculate_totals, detect_currency
+from application.portfolio_service import calculate_totals, detect_currency, PortfolioTotals
 from shared.utils import (
     _as_float_or_none,
     _is_none_nan_inf,
@@ -13,18 +13,31 @@ from shared.utils import (
 from .palette import get_active_palette
 from .export import download_csv
 
-def render_totals(df_view: pd.DataFrame, ccl_rate: float | None = None):
-    totals = calculate_totals(df_view)
+def render_totals(
+    df_view: pd.DataFrame,
+    ccl_rate: float | None = None,
+    totals: PortfolioTotals | None = None,
+):
+    totals = totals or calculate_totals(df_view)
     total_val = totals.total_value
     total_cost = totals.total_cost
     total_pl = totals.total_pl
     total_pl_pct = totals.total_pl_pct
+    total_cash = totals.total_cash
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Valorizado", format_money(total_val))
-    c2.metric("Costo", format_money(total_cost))
-    c3.metric("P/L", format_money(total_pl), delta=None if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%")
-    c4.metric("P/L %", "—" if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%")
+    c2.metric("Cash", format_money(total_cash))
+    c3.metric("Costo", format_money(total_cost))
+    c4.metric(
+        "P/L",
+        format_money(total_pl),
+        delta=None if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
+    )
+    c5.metric(
+        "P/L %",
+        "—" if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
+    )
 
     if _as_float_or_none(ccl_rate):
         rate = float(ccl_rate)

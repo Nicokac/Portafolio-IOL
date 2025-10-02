@@ -12,15 +12,15 @@ from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
+from services.portfolio_view import PortfolioViewModelService
 
 from .load_data import load_portfolio_data
-from .filters import apply_filters
 from .charts import render_basic_section, render_advanced_analysis
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
-
-
 logger = logging.getLogger(__name__)
+
+view_model_service = PortfolioViewModelService()
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -35,7 +35,6 @@ def render_portfolio_section(container, cli, fx_rates):
         render_ui_controls()
 
         refresh_secs = controls.refresh_secs
-
         viewmodel = build_portfolio_viewmodel(
             df_pos=df_pos,
             controls=controls,
@@ -60,7 +59,7 @@ def render_portfolio_section(container, cli, fx_rates):
         df_view = viewmodel.positions
 
         if tab_idx == 0:
-            render_basic_section(df_view, controls, ccl_rate)
+            render_basic_section(df_view, controls, ccl_rate, totals=snapshot.totals)
         elif tab_idx == 1:
             render_advanced_analysis(df_view)
         elif tab_idx == 2:

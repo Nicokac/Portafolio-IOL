@@ -11,7 +11,7 @@ from ui import tables
 @pytest.fixture
 def mock_st(monkeypatch):
     mock = MagicMock()
-    mock.columns.return_value = [MagicMock() for _ in range(4)]
+    mock.columns.return_value = [MagicMock() for _ in range(5)]
     mock.text_input.return_value = ""
     mock.dataframe = MagicMock()
     mock.metric = MagicMock()
@@ -27,14 +27,17 @@ def mock_st(monkeypatch):
     )
     monkeypatch.setattr(tables, "st", mock)
     return mock
+
+
 def test_render_totals_without_ccl_rate(mock_st):
     df = pd.DataFrame({"valor_actual": [100, 200], "costo": [40, 110]})
-    cols = [MagicMock() for _ in range(4)]
+    cols = [MagicMock() for _ in range(5)]
     mock_st.columns.return_value = cols
     with patch.object(tables, "format_money", lambda v, currency="ARS": f"{v}-{currency}"):
         tables.render_totals(df)
     expected_calls = [
         call("Valorizado", "300.0-ARS"),
+        call("Cash", "0.0-ARS"),
         call("Costo", "150.0-ARS"),
         call("P/L", "150.0-ARS", delta="100.00%"),
         call("P/L %", "100.00%"),
@@ -45,13 +48,14 @@ def test_render_totals_without_ccl_rate(mock_st):
 
 def test_render_totals_with_ccl_rate(mock_st):
     df = pd.DataFrame({"valor_actual": [100, 200], "costo": [40, 110]})
-    cols1 = [MagicMock() for _ in range(4)]
+    cols1 = [MagicMock() for _ in range(5)]
     cols2 = [MagicMock() for _ in range(4)]
     mock_st.columns.side_effect = [cols1, cols2]
     with patch.object(tables, "format_money", lambda v, currency="ARS": f"{v}-{currency}"):
         tables.render_totals(df, ccl_rate=100)
     base_calls = [
         call("Valorizado", "300.0-ARS"),
+        call("Cash", "0.0-ARS"),
         call("Costo", "150.0-ARS"),
         call("P/L", "150.0-ARS", delta="100.00%"),
         call("P/L %", "100.00%"),

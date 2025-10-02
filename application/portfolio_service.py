@@ -27,13 +27,14 @@ class PortfolioTotals:
     total_cost: float
     total_pl: float
     total_pl_pct: float
+    total_cash: float = 0.0
 
 
 def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     """Calcula totales agregados de valorizado, costo y P/L."""
 
     if df_view is None or df_view.empty:
-        return PortfolioTotals(0.0, 0.0, 0.0, float("nan"))
+        return PortfolioTotals(0.0, 0.0, 0.0, float("nan"), 0.0)
 
     valor_actual = df_view.get("valor_actual", pd.Series(dtype=float))
     costo = df_view.get("costo", pd.Series(dtype=float))
@@ -42,12 +43,22 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     total_cost = float(np.nansum(getattr(costo, "values", [])))
     total_pl = total_val - total_cost
 
+    cash_mask = df_view.get("simbolo")
+    cash_series = pd.Series(dtype=float)
+    if cash_mask is not None and "valor_actual" in df_view.columns:
+        try:
+            mask = cash_mask.astype(str).str.upper().isin({"IOLPORA", "PARKING"})
+            cash_series = pd.to_numeric(df_view.loc[mask, "valor_actual"], errors="coerce")
+        except Exception:
+            cash_series = pd.Series(dtype=float)
+    total_cash = float(np.nansum(getattr(cash_series, "values", [])))
+
     if np.isfinite(total_cost) and not np.isclose(total_cost, 0.0):
         total_pl_pct = (total_pl / total_cost) * 100.0
     else:
         total_pl_pct = float("nan")
 
-    return PortfolioTotals(total_val, total_cost, total_pl, total_pl_pct)
+    return PortfolioTotals(total_val, total_cost, total_pl, total_pl_pct, total_cash)
 
 
 def detect_currency(sym: str, tipo: str | None) -> str:
