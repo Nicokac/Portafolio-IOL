@@ -179,6 +179,7 @@ def record_opportunities_report(
     discard_ratio: Optional[Any] = None,
     highlighted_sectors: Optional[Any] = None,
     counts_by_origin: Optional[Any] = None,
+    **extra_metrics: Any,
 ) -> None:
     """Persist cache usage metrics for the opportunities screening."""
 
@@ -210,6 +211,28 @@ def record_opportunities_report(
     origins = _normalize_origin_counts(counts_by_origin)
     if origins is not None:
         entry["counts_by_origin"] = origins
+
+    if extra_metrics:
+        extras: Dict[str, Any] = {}
+        for key, value in extra_metrics.items():
+            normalized_key = str(key)
+            # ``None`` values offer no insight and would just clutter the payload.
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple, set, frozenset)):
+                extras[normalized_key] = [
+                    item for item in value if item is not None
+                ]
+            elif isinstance(value, dict):
+                extras[normalized_key] = {
+                    str(sub_key): sub_value
+                    for sub_key, sub_value in value.items()
+                    if sub_value is not None
+                }
+            else:
+                extras[normalized_key] = value
+        if extras:
+            entry.setdefault("extra_metrics", {}).update(extras)
 
     store["opportunities"] = entry
 

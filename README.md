@@ -6,9 +6,9 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.22)
+## Quick-start (release 0.3.23)
 
-La versión **0.3.22** afina el onboarding con recordatorios visibles de la release en todas las
+La versión **0.3.23** afina el onboarding con recordatorios visibles de la release en todas las
 superficies críticas (login, sidebar y pestañas principales) y mantiene las mejoras de telemetría y
 caché de los cortes anteriores. Sigue estos pasos para reproducir el flujo completo en minutos y
 validar los ajustes introducidos en esta publicación:
@@ -26,7 +26,7 @@ validar los ajustes introducidos en esta publicación:
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar mostrará el número de versión `0.3.22`, confirmando que la actualización
+   La cabecera del sidebar mostrará el número de versión `0.3.23`, confirmando que la actualización
    quedó aplicada. Al mismo tiempo, el mini-dashboard superior renderizará tarjetas con el valor
    total de la cartera, la variación diaria y el cash disponible usando los datos stub incluidos.
 3. **Lanza un screening con presets personalizados y revisa la telemetría.**
@@ -50,7 +50,7 @@ validar los ajustes introducidos en esta publicación:
 - La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
 - El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
 
-**Comportamiento del caché (0.3.22).** Cuando guardas un preset, la aplicación persiste la
+**Comportamiento del caché (0.3.23).** Cuando guardas un preset, la aplicación persiste la
 combinación de filtros y el resultado del último screening asociado. Al relanzarlo, el panel de
 telemetría ahora etiqueta cada corrida con un identificador incremental y agrega una tabla de
 componentes (descarga, normalización, render) para comparar tiempos:
@@ -64,7 +64,7 @@ componentes (descarga, normalización, render) para comparar tiempos:
   que reutiliza inmediatamente los resultados previos, dispara el contador de *cache hits* y confirma
   la integridad del guardado.
 
-Estas novedades convierten a la release 0.3.22 en la referencia para validar onboarding, telemetría
+Estas novedades convierten a la release 0.3.23 en la referencia para validar onboarding, telemetría
 y caché cooperativa: toda la UI recuerda la versión activa y los presets continúan recortando los
 tiempos de iteración al dejar a la vista el impacto de cada cambio.
 
@@ -278,9 +278,9 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.22".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.23".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.22)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.23)** que lista el estado de los servicios monitoreados, de modo que puedas validar de un vistazo la disponibilidad de las dependencias clave antes de operar.
 
 ## Requisitos de sistema
 
