@@ -6,7 +6,6 @@ import math
 import re
 import time
 from collections import OrderedDict
-from functools import lru_cache
 from threading import Lock
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from numbers import Number
@@ -21,26 +20,8 @@ except ImportError:  # pragma: no cover - fallback handled at runtime
     run_screener_yahoo = None  # type: ignore[assignment]
 
 from shared.errors import AppError
-from shared.settings import (
-    settings as shared_settings,
-    fred_api_base_url,
-    fred_api_key,
-    fred_api_rate_limit_per_minute,
-    fred_sector_series,
-    macro_api_provider,
-    macro_sector_fallback,
-    world_bank_api_base_url,
-    world_bank_api_key,
-    world_bank_api_rate_limit_per_minute,
-    world_bank_sector_series,
-)
-from infrastructure.macro import (
-    FredClient,
-    MacroAPIError,
-    MacroSeriesObservation,
-    WorldBankClient,
-)
 from services.health import record_macro_api_usage, record_opportunities_report
+from services.macro_adapter import MacroAdapter
 
 LOGGER = logging.getLogger(__name__)
 
@@ -101,120 +82,6 @@ def _store_cached_result(key: tuple, result: Mapping[str, object], elapsed_ms: f
 def _clear_opportunities_cache() -> None:
     with _OPPORTUNITIES_CACHE_LOCK:
         _OPPORTUNITIES_CACHE.clear()
-
-
-def _provider_sequence() -> List[str]:
-    raw = str(macro_api_provider or "fred")
-    tokens = [token.strip() for token in raw.split(",") if token.strip()]
-    sequence: List[str] = []
-    seen: set[str] = set()
-
-    def _append(name: str) -> None:
-        normalized = name.casefold()
-        if not normalized or normalized in seen:
-            return
-        sequence.append(normalized)
-        seen.add(normalized)
-
-    _append("fred")
-    for token in tokens:
-        if token.casefold() == "default":
-            continue
-        _append(token)
-    return sequence
-
-
-def _format_provider_display(provider: str) -> str:
-    mapping = {
-        "fred": "FRED",
-        "worldbank": "World Bank",
-    }
-    normalized = provider.casefold()
-    return mapping.get(normalized, provider)
-
-
-@lru_cache(maxsize=4)
-def _macro_series_lookup(provider: str) -> Dict[str, str]:
-    mapping: Dict[str, str] = {}
-    normalized = provider.casefold()
-    if normalized == "worldbank":
-        source = world_bank_sector_series
-    else:
-        source = fred_sector_series
-    for raw_label, raw_series in source.items():
-        label = str(raw_label or "").strip()
-        series_id = str(raw_series or "").strip()
-        if not label or not series_id:
-            continue
-        mapping[label.casefold()] = series_id
-    return mapping
-
-
-@lru_cache(maxsize=1)
-def _macro_fallback_lookup() -> Dict[str, Dict[str, Any]]:
-    normalized: Dict[str, Dict[str, Any]] = {}
-    for raw_label, entry in macro_sector_fallback.items():
-        if not isinstance(entry, Mapping):
-            continue
-        label = str(raw_label or "").strip()
-        if not label:
-            continue
-        value = entry.get("value")
-        try:
-            numeric_value = float(value)
-        except (TypeError, ValueError):
-            continue
-        as_of_raw = entry.get("as_of")
-        as_of = None
-        if as_of_raw is not None:
-            text = str(as_of_raw).strip()
-            if text:
-                as_of = text
-        normalized[label.casefold()] = {"value": numeric_value, "as_of": as_of}
-    return normalized
-
-
-@lru_cache(maxsize=4)
-def _get_macro_client(provider: str):
-    normalized = provider.casefold()
-    user_agent = getattr(shared_settings, "USER_AGENT", "Portafolio-IOL/1.0 (+app)")
-
-    if normalized == "fred":
-        api_key = fred_api_key
-        if not api_key:
-            return None
-        try:
-            rate_limit = int(fred_api_rate_limit_per_minute)
-        except (TypeError, ValueError):
-            rate_limit = 0
-        try:
-            return FredClient(
-                api_key,
-                base_url=fred_api_base_url,
-                calls_per_minute=max(rate_limit, 0),
-                user_agent=user_agent,
-            )
-        except Exception as exc:  # pragma: no cover - defensive guard
-            LOGGER.exception("Unable to build FRED client: %s", exc)
-            return None
-
-    if normalized == "worldbank":
-        try:
-            rate_limit = int(world_bank_api_rate_limit_per_minute)
-        except (TypeError, ValueError):
-            rate_limit = 0
-        try:
-            return WorldBankClient(
-                api_key=world_bank_api_key,
-                base_url=world_bank_api_base_url,
-                calls_per_minute=max(rate_limit, 0),
-                user_agent=user_agent,
-            )
-        except Exception as exc:  # pragma: no cover - defensive guard
-            LOGGER.exception("Unable to build World Bank client: %s", exc)
-            return None
-
-    return None
 
 
 def _format_macro_value(value: float) -> str:
@@ -279,46 +146,6 @@ def _apply_macro_entries(
     return metrics
 
 
-def _build_observation_entries(
-    observations: Mapping[str, MacroSeriesObservation]
-) -> Dict[str, Dict[str, Any]]:
-    entries: Dict[str, Dict[str, Any]] = {}
-    for sector, observation in observations.items():
-        if not isinstance(observation, MacroSeriesObservation):
-            continue
-        entries[sector] = {
-            "value": observation.value,
-            "as_of": observation.as_of,
-        }
-    return entries
-
-
-def _build_sector_entries(
-    sectors: Sequence[str], lookup: Mapping[str, Mapping[str, Any]]
-) -> Dict[str, Mapping[str, Any]]:
-    entries: Dict[str, Mapping[str, Any]] = {}
-    for sector in sectors:
-        entry = lookup.get(sector.casefold())
-        if entry:
-            entries[sector] = entry
-    return entries
-
-
-def _build_series_mapping(
-    provider: str, sectors: Sequence[str]
-) -> Tuple[Dict[str, str], List[str]]:
-    lookup = _macro_series_lookup(provider)
-    mapping: Dict[str, str] = {}
-    missing: List[str] = []
-    for sector in sectors:
-        series_id = lookup.get(sector.casefold())
-        if series_id:
-            mapping[sector] = series_id
-        else:
-            missing.append(sector)
-    return mapping, missing
-
-
 def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, Any]]:
     notes: List[str] = []
     metrics: Dict[str, Any] = {}
@@ -341,154 +168,54 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
     if not sectors:
         return notes, metrics
 
-    fallback_lookup = _macro_fallback_lookup()
-    provider_attempts: List[Dict[str, Any]] = []
-    failure_notes: List[str] = []
-    success_provider: Optional[str] = None
-    success_display = ""
-    missing_series_for_success: List[str] = []
-    last_reason: Optional[str] = None
+    adapter = MacroAdapter()
+    result = adapter.fetch(sectors)
 
-    for provider in _provider_sequence():
-        provider_display = _format_provider_display(provider)
-        attempt: Dict[str, Any] = {
-            "provider": provider,
-            "label": provider_display,
-        }
+    provider_attempts = [dict(attempt) for attempt in result.attempts]
+    metrics["macro_provider_attempts"] = provider_attempts
 
-        if provider == "fred" and not fred_api_key:
-            reason = "FRED sin credenciales configuradas"
-            attempt["status"] = "disabled"
-            attempt["detail"] = reason
-            provider_attempts.append(attempt)
-            failure_notes.append(f"{provider_display} no disponible: {reason}")
-            last_reason = reason
-            continue
+    latest_entry = result.latest or {"provider": result.provider or "unknown"}
+    latest_entry.setdefault("label", latest_entry.get("provider_label") or result.provider_label)
+    latest_entry.setdefault("provider_label", latest_entry.get("label"))
+    latest_entry.setdefault("ts", time.time())
 
-        client = _get_macro_client(provider)
-        if client is None:
-            reason = f"{provider_display} no disponible"
-            attempt["status"] = "disabled"
-            attempt["detail"] = reason
-            provider_attempts.append(attempt)
-            failure_notes.append(reason)
-            last_reason = reason
-            continue
-
-        mapping, missing_series = _build_series_mapping(provider, sectors)
-        if missing_series:
-            attempt["missing_series"] = sorted(set(missing_series))
-        if not mapping:
-            reason = "no hay series configuradas para los sectores seleccionados"
-            attempt["status"] = "error"
-            attempt["detail"] = reason
-            provider_attempts.append(attempt)
-            failure_notes.append(f"{provider_display}: {reason}")
-            last_reason = reason
-            continue
-
-        start = time.perf_counter()
-        try:
-            observations = client.get_latest_observations(mapping)
-        except MacroAPIError as exc:
-            elapsed_ms = (time.perf_counter() - start) * 1000.0
-            reason = str(exc)
-            attempt["status"] = "error"
-            attempt["detail"] = reason
-            attempt["elapsed_ms"] = elapsed_ms
-            provider_attempts.append(attempt)
-            failure_notes.append(f"{provider_display} no disponible: {reason}")
-            last_reason = reason
-            continue
-
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        observation_entries = _build_observation_entries(observations)
-        if not observation_entries:
-            reason = f"{provider_display} no devolvió observaciones válidas"
-            attempt["status"] = "error"
-            attempt["detail"] = reason
-            attempt["elapsed_ms"] = elapsed_ms
-            provider_attempts.append(attempt)
-            failure_notes.append(reason)
-            last_reason = reason
-            continue
-
-        metrics.update(_apply_macro_entries(df, observation_entries))
-        metrics["macro_source"] = provider
-        if missing_series:
-            missing_series_for_success = sorted(set(missing_series))
-            if missing_series_for_success:
-                metrics["macro_missing_series"] = missing_series_for_success
-        attempt["status"] = "success"
-        attempt["elapsed_ms"] = elapsed_ms
-        provider_attempts.append(attempt)
-        success_provider = provider
-        success_display = provider_display
-        last_reason = None
-        break
-
-    if success_provider is None:
-        entries = _build_sector_entries(sectors, fallback_lookup)
-        fallback_attempt: Dict[str, Any] = {
-            "provider": "fallback",
-            "label": "Fallback",
-            "fallback": True,
-        }
-        if entries:
-            fallback_metrics = _apply_macro_entries(df, entries)
+    if result.provider:
+        metrics.update(_apply_macro_entries(df, result.entries))
+        metrics["macro_source"] = result.provider
+        if result.missing_series:
+            missing_series = sorted(set(result.missing_series))
+            metrics["macro_missing_series"] = missing_series
+        notes.extend(result.notes)
+        reference_dates = metrics.get("macro_reference_dates")
+        display_label = result.provider_label or result.provider
+        if reference_dates and isinstance(reference_dates, list):
+            notes.append(
+                f"Datos macro ({display_label}) actualizados al: "
+                + ", ".join(reference_dates)
+            )
+        else:
+            notes.append(f"Datos macro ({display_label}) incorporados.")
+        if result.missing_series:
+            notes.append("Sin series asociadas para: " + ", ".join(sorted(set(result.missing_series))))
+    else:
+        notes.extend(result.notes)
+        reason = result.last_reason
+        fallback_entries = result.fallback_entries
+        if fallback_entries:
+            fallback_metrics = _apply_macro_entries(df, fallback_entries)
             fallback_metrics["macro_source"] = "fallback"
             metrics.update(fallback_metrics)
-            fallback_attempt["status"] = "success"
-            if last_reason:
-                fallback_attempt["detail"] = last_reason
-                note_reason = f" ({last_reason})"
+            if reason:
+                notes.append(f"Datos macro mediante fallback configurado ({reason}).")
             else:
-                note_reason = ""
-            notes.extend(failure_notes)
-            notes.append(f"Datos macro mediante fallback configurado{note_reason}.")
+                notes.append("Datos macro mediante fallback configurado.")
         else:
-            fallback_attempt["status"] = "unavailable"
-            if last_reason:
-                fallback_attempt["detail"] = last_reason
-                notes.extend(failure_notes)
-                notes.append(f"Datos macro no disponibles: {last_reason}")
-            else:
-                notes.extend(failure_notes)
-                notes.append("Datos macro no disponibles")
             metrics.setdefault("macro_source", "unavailable")
+            if reason:
+                notes.append(f"Datos macro no disponibles: {reason}")
+            else:
+                notes.append("Datos macro no disponibles")
 
-        provider_attempts.append(fallback_attempt)
-        metrics["macro_provider_attempts"] = provider_attempts
-        latest_entry = dict(provider_attempts[-1]) if provider_attempts else {"provider": "fallback"}
-        latest_entry.setdefault("label", fallback_attempt.get("label"))
-        latest_entry["ts"] = time.time()
-        record_macro_api_usage(
-            attempts=provider_attempts,
-            notes=notes,
-            metrics=metrics,
-            latest=latest_entry,
-        )
-        return notes, metrics
-
-    notes.extend(failure_notes)
-    reference_dates = metrics.get("macro_reference_dates")
-    if reference_dates and isinstance(reference_dates, list):
-        notes.append(
-            f"Datos macro ({success_display}) actualizados al: "
-            + ", ".join(reference_dates)
-        )
-    else:
-        notes.append(f"Datos macro ({success_display}) incorporados.")
-
-    if missing_series_for_success:
-        notes.append(
-            "Sin series asociadas para: " + ", ".join(missing_series_for_success)
-        )
-
-    metrics["macro_provider_attempts"] = provider_attempts
-    latest_entry = dict(provider_attempts[-1]) if provider_attempts else {"provider": success_provider or "unknown"}
-    latest_entry.setdefault("label", success_display)
-    latest_entry["ts"] = time.time()
     record_macro_api_usage(
         attempts=provider_attempts,
         notes=notes,

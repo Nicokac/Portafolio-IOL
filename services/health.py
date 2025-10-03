@@ -18,6 +18,7 @@ _MARKET_DATA_INCIDENTS_KEY = "market_data_incidents"
 _MARKET_DATA_INCIDENT_LIMIT = 20
 _LATENCY_FAST_THRESHOLD_MS = 250.0
 _LATENCY_MEDIUM_THRESHOLD_MS = 750.0
+_PROVIDER_HISTORY_LIMIT = 8
 
 
 def _store() -> Dict[str, Any]:
@@ -252,12 +253,67 @@ def record_macro_api_usage(
                 provider_stats.get("error_count", 0) or 0
             ) + 1
 
+        history_raw = provider_stats.get("history")
+        if isinstance(history_raw, deque):
+            history = deque(history_raw, maxlen=_PROVIDER_HISTORY_LIMIT)
+        elif isinstance(history_raw, Iterable) and not isinstance(
+            history_raw, (bytes, bytearray, str)
+        ):
+            history = deque(history_raw, maxlen=_PROVIDER_HISTORY_LIMIT)
+        else:
+            history = deque(maxlen=_PROVIDER_HISTORY_LIMIT)
+        if status_value != "success" or fallback_flag:
+            history.append(
+                {
+                    "status": status_value,
+                    "detail": detail_value,
+                    "fallback": fallback_flag,
+                    "elapsed_ms": elapsed_value,
+                    "missing_series": missing_series,
+                    "ts": latest_payload.get("ts", now),
+                }
+            )
+        provider_stats["history"] = list(history)
+
+        total = int(provider_stats.get("total", 0) or 0)
+        provider_stats["count"] = total
+        provider_stats["status_counts"] = {
+            str(key): int(value) for key, value in status_counts.items()
+        }
+        provider_stats["status_ratios"] = _compute_ratio_map(status_counts, total)
+
+        error_total = int(provider_stats.get("error_count", 0) or 0)
+        provider_stats["error_count"] = error_total
+        provider_stats["error_ratio"] = (error_total / total) if total else 0.0
+
+        fallback_total = int(provider_stats.get("fallback_count", 0) or 0)
+        provider_stats["fallback_count"] = fallback_total
+        provider_stats["fallback_ratio"] = (fallback_total / total) if total else 0.0
+
+        latency_raw = provider_stats.get("latency_buckets")
+        if isinstance(latency_raw, Mapping):
+            latency_data = dict(latency_raw)
+        else:
+            latency_data = {}
+        counts_raw = latency_data.get("counts")
+        if isinstance(counts_raw, Mapping):
+            counts = {str(key): int(counts_raw.get(key, 0) or 0) for key in counts_raw}
+        else:
+            counts = {}
+        latency_data["counts"] = counts
+        latency_data["total"] = total
+        latency_data["ratios"] = _compute_ratio_map(counts, total)
+        provider_stats["latency_buckets"] = latency_data
+
         providers[provider_key] = provider_stats
 
     for entry in normalized_attempts:
         _update_provider_stats(entry)
 
     macro_data["providers"] = providers
+    overall = _aggregate_provider_overall(providers)
+    if overall:
+        macro_data["overall"] = overall
     store["macro_api"] = macro_data
 
 
@@ -370,9 +426,95 @@ def _increment_latency_bucket(stats: Dict[str, Any], prefix: str, value: Optiona
         buckets = dict(raw_buckets)
     else:
         buckets = {}
+    counts_raw = buckets.get("counts")
+    if isinstance(counts_raw, Mapping):
+        counts = dict(counts_raw)
+    else:
+        counts = {}
     bucket = _classify_latency_bucket(value)
-    buckets[bucket] = int(buckets.get(bucket, 0) or 0) + 1
+    counts[bucket] = int(counts.get(bucket, 0) or 0) + 1
+    buckets["counts"] = counts
     stats[f"{prefix}_buckets"] = buckets
+
+
+def _compute_ratio_map(counts: Mapping[str, Any], total: int) -> Dict[str, float]:
+    if not isinstance(counts, Mapping) or not total:
+        return {}
+    ratios: Dict[str, float] = {}
+    for raw_key, raw_value in counts.items():
+        key = str(raw_key).strip()
+        if not key:
+            continue
+        numeric = _as_optional_float(raw_value)
+        if numeric is None:
+            continue
+        ratios[key] = float(numeric) / total
+    return ratios
+
+
+def _aggregate_provider_overall(providers: Mapping[str, Any]) -> Dict[str, Any]:
+    if not isinstance(providers, Mapping):
+        return {}
+
+    total = 0
+    status_counts: Dict[str, int] = {}
+    latency_counts: Dict[str, int] = {}
+    error_total = 0
+    fallback_total = 0
+
+    for stats in providers.values():
+        if not isinstance(stats, Mapping):
+            continue
+        count_value = stats.get("count") or stats.get("total")
+        count = _as_optional_int(count_value)
+        if count is None or count <= 0:
+            continue
+        total += count
+
+        raw_status = stats.get("status_counts")
+        if isinstance(raw_status, Mapping):
+            for key, value in raw_status.items():
+                try:
+                    status_counts[str(key)] = status_counts.get(str(key), 0) + int(value)
+                except (TypeError, ValueError):
+                    continue
+
+        try:
+            error_total += int(stats.get("error_count", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+        try:
+            fallback_total += int(stats.get("fallback_count", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+
+        latency = stats.get("latency_buckets")
+        if isinstance(latency, Mapping):
+            counts_map = latency.get("counts")
+            if isinstance(counts_map, Mapping):
+                for key, value in counts_map.items():
+                    try:
+                        latency_counts[str(key)] = latency_counts.get(str(key), 0) + int(value)
+                    except (TypeError, ValueError):
+                        continue
+
+    if total <= 0:
+        return {}
+
+    return {
+        "count": total,
+        "status_counts": status_counts,
+        "status_ratios": _compute_ratio_map(status_counts, total),
+        "error_count": error_total,
+        "error_ratio": error_total / total if total else 0.0,
+        "fallback_count": fallback_total,
+        "fallback_ratio": fallback_total / total if total else 0.0,
+        "latency_buckets": {
+            "counts": latency_counts,
+            "ratios": _compute_ratio_map(latency_counts, total),
+            "total": total,
+        },
+    }
 
 
 def record_opportunities_report(

@@ -100,6 +100,25 @@ def _dummy_metrics() -> dict[str, Any]:
         "fx_api": {"status": "error", "error": "boom", "elapsed_ms": 250.5, "ts": None},
         "fx_cache": {"mode": "hit", "age": 12.3, "ts": None},
         "macro_api": {
+            "attempts": [
+                {
+                    "provider": "fred",
+                    "provider_label": "FRED",
+                    "status": "error",
+                    "elapsed_ms": 890.0,
+                    "detail": "rate limit",
+                    "fallback": False,
+                    "ts": None,
+                },
+                {
+                    "provider": "ecb",
+                    "provider_label": "ECB",
+                    "status": "success",
+                    "elapsed_ms": 120.0,
+                    "fallback": False,
+                    "ts": None,
+                },
+            ],
             "latest": {
                 "provider": "fred",
                 "provider_label": "FRED",
@@ -268,6 +287,7 @@ def test_format_helpers_use_shared_formatter(health_sidebar, _dummy_metrics) -> 
 
     assert captured  # formatter used
     assert fx_lines and macro_lines and latency_lines and history_lines
+    assert any("Historial de intentos" in line for line in macro_lines)
     assert "universo 120→48" in opportunities_note
     assert "descartes 60%" in opportunities_note
     assert "sectores: Energy, Utilities" in opportunities_note
