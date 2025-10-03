@@ -1,21 +1,32 @@
-"""Notification service integration for section badges."""
+"""Notification services and helpers for section badges."""
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping, MutableMapping
 
 import requests
 
 from infrastructure.http.session import build_session
-from shared.settings import settings
+from shared.settings import (
+    settings,
+    earnings_upcoming_days as _default_earnings_threshold,
+    risk_badge_threshold as _default_risk_threshold,
+    technical_signal_threshold as _default_technical_threshold,
+)
+from shared.time_provider import TimeProvider
+from copy import deepcopy
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Helpers para coerción y parsing
+# ---------------------------------------------------------------------------
+
 def _coerce_bool(value: Any) -> bool:
     """Best-effort conversion of arbitrary payload values to ``bool``."""
-
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
@@ -35,6 +46,37 @@ def _coerce_bool(value: Any) -> bool:
     return False
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _is_greater_or_equal(value: float, threshold: float) -> bool:
+    try:
+        return float(value) >= float(threshold)
+    except (TypeError, ValueError):
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Flags simples basados en payload remoto
+# ---------------------------------------------------------------------------
+
 @dataclass(frozen=True)
 class NotificationFlags:
     """Boolean flags signalling additional attention required in each section."""
@@ -46,11 +88,9 @@ class NotificationFlags:
     @classmethod
     def from_payload(cls, payload: Mapping[str, Any] | None) -> "NotificationFlags":
         """Create flags from an API payload."""
-
         if not isinstance(payload, Mapping):
             return cls()
 
-        # Some APIs wrap the actual flags under a ``"flags"`` or ``"data"`` key.
         raw_flags: Any = payload
         for key in ("flags", "data", "results"):
             if isinstance(payload.get(key), Mapping):
@@ -64,16 +104,10 @@ class NotificationFlags:
             raw_flags.get("risk_alert", raw_flags.get("risk", raw_flags.get("riesgo")))
         )
         technical = _coerce_bool(
-            raw_flags.get(
-                "technical_signal",
-                raw_flags.get("technical", raw_flags.get("tecnico")),
-            )
+            raw_flags.get("technical_signal", raw_flags.get("technical", raw_flags.get("tecnico")))
         )
         earnings = _coerce_bool(
-            raw_flags.get(
-                "upcoming_earnings",
-                raw_flags.get("earnings", raw_flags.get("earnings_upcoming")),
-            )
+            raw_flags.get("upcoming_earnings", raw_flags.get("earnings", raw_flags.get("earnings_upcoming")))
         )
 
         return cls(
@@ -106,10 +140,9 @@ class NotificationsService:
     def get_flags(self) -> NotificationFlags:
         """Return the latest notification flags.
 
-        Network or parsing errors are swallowed after logging and return empty flags so
-        the UI can continue rendering without disruption.
+        Network or parsing errors are swallowed after logging and return empty flags
+        so the UI can continue rendering without disruption.
         """
-
         if not self._base_url:
             return NotificationFlags()
 
@@ -120,9 +153,7 @@ class NotificationsService:
             return NotificationFlags()
 
         if response.status_code >= 400:
-            logger.warning(
-                "Notification endpoint responded with status %s", response.status_code
-            )
+            logger.warning("Notification endpoint responded with status %s", response.status_code)
             return NotificationFlags()
 
         try:
@@ -134,7 +165,130 @@ class NotificationsService:
         return NotificationFlags.from_payload(payload)
 
 
+# ---------------------------------------------------------------------------
+# Builder de badges enriquecidos desde métricas locales
+# ---------------------------------------------------------------------------
+
+def build_notification_badges(
+    *,
+    risk_metrics: Mapping[str, Any] | float | int | None,
+    technical_indicators: Mapping[str, Any] | None,
+    earnings_calendar: Iterable[Mapping[str, Any]] | None,
+    risk_threshold: float | None = None,
+    technical_threshold: float | None = None,
+    earnings_days_threshold: int | None = None,
+) -> dict[str, Any]:
+    """Return badge flags derived from analytics data."""
+
+    risk_threshold = float(risk_threshold if risk_threshold is not None else _default_risk_threshold)
+    technical_threshold = float(technical_threshold if technical_threshold is not None else _default_technical_threshold)
+    earnings_days_threshold = int(earnings_days_threshold if earnings_days_threshold is not None else _default_earnings_threshold)
+
+    risk_value = _extract_risk_value(risk_metrics)
+    risk_active = bool(risk_value is not None and _is_greater_or_equal(risk_value, risk_threshold))
+
+    bullish_count, bearish_count = _extract_signal_counts(technical_indicators)
+    technical_active = bool(max(bullish_count, bearish_count) >= technical_threshold)
+    if technical_active:
+        if bullish_count >= bearish_count and bullish_count >= technical_threshold:
+            technical_direction: str | None = "bullish"
+        elif bearish_count >= technical_threshold:
+            technical_direction = "bearish"
+        else:
+            technical_direction = None
+            technical_active = False
+    else:
+        technical_direction = None
+
+    next_event = _find_next_earnings_event(earnings_calendar)
+    earnings_active = bool(
+        next_event is not None and next_event.get("days_until") is not None and next_event["days_until"] <= earnings_days_threshold
+    )
+
+    return {
+        "risk": {"active": risk_active, "value": risk_value, "threshold": risk_threshold},
+        "technical": {
+            "active": technical_active,
+            "direction": technical_direction,
+            "counts": {"bullish": bullish_count, "bearish": bearish_count},
+            "threshold": technical_threshold,
+        },
+        "earnings": {"active": earnings_active, "next_event": next_event, "threshold_days": earnings_days_threshold},
+    }
+
+
+def _extract_risk_value(data: Mapping[str, Any] | float | int | None) -> float | None:
+    if data is None:
+        return None
+    if isinstance(data, Mapping):
+        for key in ("score", "value", "volatility", "risk", "beta"):
+            raw = data.get(key)
+            numeric = _to_float(raw)
+            if numeric is not None:
+                return numeric
+        return None
+    return _to_float(data)
+
+
+def _extract_signal_counts(data: Mapping[str, Any] | None) -> tuple[int, int]:
+    if not isinstance(data, Mapping):
+        return 0, 0
+    signals: Mapping[str, Any] = data["signals"] if "signals" in data and isinstance(data["signals"], Mapping) else data
+    bullish = _to_int(signals.get("bullish"))
+    bearish = _to_int(signals.get("bearish"))
+    return bullish, bearish
+
+
+def _find_next_earnings_event(calendar: Iterable[Mapping[str, Any]] | None) -> MutableMapping[str, Any] | None:
+    if not calendar:
+        return None
+    closest: MutableMapping[str, Any] | None = None
+    min_days: float | None = None
+    for entry in calendar:
+        if not isinstance(entry, Mapping):
+            continue
+        days = _coerce_days_until(entry)
+        if days is None or days < 0:
+            continue
+        if min_days is None or days < min_days:
+            closest = deepcopy(dict(entry))
+            closest["days_until"] = int(days)
+            min_days = days
+    return closest
+
+
+def _coerce_days_until(entry: Mapping[str, Any]) -> float | None:
+    raw = entry.get("days_until")
+    numeric = _to_float(raw)
+    if numeric is not None:
+        return numeric
+    raw_date = entry.get("date")
+    event_date = _parse_date(raw_date)
+    if event_date is None:
+        return None
+    now = TimeProvider.now_datetime().date()
+    delta = event_date - now
+    return float(delta.days)
+
+
+def _parse_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        return parsed.date()
+    return None
+
+
 __all__ = [
     "NotificationFlags",
     "NotificationsService",
+    "build_notification_badges",
 ]

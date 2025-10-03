@@ -55,6 +55,14 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
        streamlit run app.py
        ```
 
+- **Las notificaciones internas no aparecen tras refrescar el dashboard.**
+  - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Datos actualizados" ni el mensaje de cierre de sesión.
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.26.1` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Resolución:**
+    1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
+    2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
+    3. Si trabajas con el stub de pruebas, revisa `tests/conftest.py` y asegura que exponga un logger o impresión equivalente para simular la notificación.
+
 - **El contenedor Docker termina con error de configuración.**
   - **Síntomas:** Los logs muestran fallos de variables obligatorias (`IOL_TOKENS_KEY` ausente) o problemas de permisos con `tokens_iol.json`.
   - **Diagnóstico rápido:** Inspecciona el archivo `.env` que usas con `docker run --env-file` y confirma rutas montadas.

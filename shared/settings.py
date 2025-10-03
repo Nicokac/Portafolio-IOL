@@ -34,6 +34,11 @@ max_results: int = settings.max_results
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
+# Notification thresholds
+risk_badge_threshold: float = getattr(settings, "RISK_BADGE_THRESHOLD", 0.75)
+technical_signal_threshold: float = getattr(settings, "TECHNICAL_SIGNAL_THRESHOLD", 2)
+earnings_upcoming_days: int = getattr(settings, "EARNINGS_UPCOMING_DAYS", 7)
+
 # Backwards compatibility for legacy imports
 YAHOO_FUNDAMENTALS_TTL: int = yahoo_fundamentals_ttl
 YAHOO_QUOTES_TTL: int = yahoo_quotes_ttl
@@ -93,6 +98,9 @@ __all__ = [
     "YAHOO_QUOTES_TTL",
     "MIN_SCORE_THRESHOLD",
     "MAX_RESULTS",
+    "risk_badge_threshold",
+    "technical_signal_threshold",
+    "earnings_upcoming_days",
     "FEATURE_OPPORTUNITIES_TAB",
     "macro_api_provider",
     "fred_api_key",
