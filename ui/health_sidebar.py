@@ -14,6 +14,84 @@ from shared.version import __version__
 format_note = shared_notes.format_note
 
 
+_YFINANCE_PROVIDER_LABELS = {
+    "yfinance": "Datos de Yahoo Finance",
+    "fallback": "Fallback local",
+    "error": "Error o sin datos",
+}
+
+_YFINANCE_PROVIDER_SHORT = {
+    "yfinance": "YF",
+    "fallback": "FB",
+    "error": "ERR",
+}
+
+_YFINANCE_STATUS_LABELS = {
+    "success": "OK",
+    "ok": "OK",
+    "hit": "OK",
+    "fallback": "Fallback",
+    "error": "Error",
+    "failed": "Error",
+    "timeout": "Timeout",
+    "missing": "Sin datos",
+}
+
+_YFINANCE_ERROR_STATUSES = {"error", "failed", "timeout"}
+
+
+def _sanitize_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_status_key(value: Any) -> str:
+    text = _sanitize_text(value)
+    return text.casefold() if text else ""
+
+
+def _extract_yfinance_history(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    history_raw = data.get("history")
+    entries: list[Mapping[str, Any]] = []
+    if isinstance(history_raw, Iterable) and not isinstance(
+        history_raw, (str, bytes, bytearray)
+    ):
+        for entry in history_raw:
+            if isinstance(entry, Mapping):
+                entries.append(entry)
+    return entries
+
+
+def _compress_yfinance_history(
+    entries: Sequence[Mapping[str, Any]], *, limit: int = 5
+) -> Optional[str]:
+    if not entries:
+        return None
+
+    recent = entries[-limit:]
+    tokens: list[str] = []
+    for entry in recent:
+        provider_value = _sanitize_text(entry.get("provider")) or "desconocido"
+        provider_key = provider_value.casefold()
+        label = _YFINANCE_PROVIDER_SHORT.get(provider_key, provider_value[:3].upper())
+        status_key = _normalize_status_key(entry.get("result") or entry.get("status"))
+        fallback_flag = bool(entry.get("fallback"))
+        if status_key in _YFINANCE_ERROR_STATUSES:
+            icon = "⚠️"
+        elif fallback_flag:
+            icon = "🛟"
+        else:
+            icon = "✅"
+        tokens.append(f"{icon}{label}")
+
+    if not tokens:
+        return None
+
+    return "Historial: " + " · ".join(tokens)
+
+
 def _format_timestamp(ts: Optional[float]) -> str:
     if not ts:
         return "Sin registro"
@@ -38,17 +116,79 @@ def _format_iol_status(data: Optional[dict]) -> str:
 def _format_yfinance_status(data: Optional[dict]) -> str:
     if not data:
         return "_Sin consultas registradas._"
-    source = data.get("source") or "desconocido"
-    mapping = {
-        "yfinance": ("✅", "Datos de Yahoo Finance"),
-        "fallback": ("ℹ️", "Fallback local"),
-        "error": ("⚠️", "Error o sin datos"),
-    }
-    icon, label = mapping.get(source, ("ℹ️", f"Fuente: {source}"))
-    ts = _format_timestamp(data.get("ts"))
-    detail = data.get("detail")
-    detail_txt = f" — {detail}" if detail else ""
-    return format_note(f"{icon} {label} • {ts}{detail_txt}")
+    history_entries = _extract_yfinance_history(data)
+    latest_entry: Mapping[str, Any] | dict[str, Any]
+    if history_entries:
+        latest_entry = history_entries[-1]
+    else:
+        latest_entry = data
+
+    provider_value = (
+        _sanitize_text(latest_entry.get("provider"))
+        or _sanitize_text(data.get("latest_provider"))
+        or _sanitize_text(data.get("source"))
+        or "desconocido"
+    )
+    provider_key = provider_value.casefold()
+    provider_label = _YFINANCE_PROVIDER_LABELS.get(
+        provider_key, f"Fuente: {provider_value}"
+    )
+
+    fallback_value = latest_entry.get("fallback")
+    if fallback_value is None:
+        fallback_value = data.get("fallback")
+    if fallback_value is None:
+        fallback_flag = provider_key != "yfinance"
+    else:
+        fallback_flag = bool(fallback_value)
+
+    result_raw = (
+        latest_entry.get("result")
+        or latest_entry.get("status")
+        or data.get("latest_result")
+        or data.get("result")
+        or data.get("status")
+    )
+    result_key = _normalize_status_key(result_raw)
+    if not result_key:
+        result_key = "fallback" if fallback_flag else "success"
+
+    if result_key in _YFINANCE_ERROR_STATUSES:
+        icon = "⚠️"
+    elif fallback_flag:
+        icon = "🛟"
+    else:
+        icon = "✅"
+
+    status_label = _YFINANCE_STATUS_LABELS.get(
+        result_key, result_key.title() if result_key else "Desconocido"
+    )
+
+    timestamp_value = latest_entry.get("ts") if isinstance(latest_entry, Mapping) else None
+    if timestamp_value is None:
+        timestamp_value = data.get("ts")
+    ts_text = _format_timestamp(timestamp_value)
+
+    detail_value = None
+    if isinstance(latest_entry, Mapping):
+        detail_value = latest_entry.get("detail")
+    if detail_value is None:
+        detail_value = data.get("detail")
+    detail_text = _sanitize_text(detail_value)
+    detail_suffix = f" — {detail_text}" if detail_text else ""
+
+    fallback_badge = " [Fallback]" if fallback_flag else ""
+    history_summary = _compress_yfinance_history(history_entries)
+
+    parts = [
+        f"{icon} {provider_label}{fallback_badge}",
+        f"• {ts_text}",
+        f"• Resultado: {status_label}{detail_suffix}",
+    ]
+    if history_summary:
+        parts.append(f"• {history_summary}")
+
+    return format_note(" ".join(parts))
 
 
 def _format_fx_api_status(data: Optional[dict]) -> str:

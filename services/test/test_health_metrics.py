@@ -15,6 +15,48 @@ def _reset_state(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_record_yfinance_usage_tracks_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_state(monkeypatch)
+
+    limit = health_service._PROVIDER_HISTORY_LIMIT
+    base_events: list[tuple[str, str, bool, str]] = []
+    providers = ["yfinance", "fallback", "error"]
+    for index in range(limit + 2):
+        provider = providers[index % len(providers)]
+        status = "error" if provider == "error" else "success"
+        fallback = provider == "fallback"
+        base_events.append((provider, status, fallback, f"entry-{index}"))
+    base_events.append(("error", "error", False, f"entry-{len(base_events)}"))
+
+    timestamps = (float(index) for index in range(len(base_events)))
+    monkeypatch.setattr(health_service.time, "time", lambda: next(timestamps))
+
+    for provider, status, fallback, detail in base_events:
+        health_service.record_yfinance_usage(
+            provider,
+            detail=detail,
+            status=status,
+            fallback=fallback,
+        )
+
+    metrics = health_service.get_health_metrics()
+    yf_metrics = metrics.get("yfinance") or {}
+    history = yf_metrics.get("history") or []
+
+    assert yf_metrics.get("latest_provider") == "error"
+    assert yf_metrics.get("latest_result") == "error"
+    assert yf_metrics.get("detail") == base_events[-1][3]
+    assert yf_metrics.get("fallback") is False
+    assert len(history) == limit
+    assert history[-1]["provider"] == "error"
+    assert history[-1]["result"] == "error"
+    assert history[-1]["detail"] == base_events[-1][3]
+    assert any(entry.get("fallback") for entry in history)
+
+    expected_tail = [event[0] for event in base_events][-limit:]
+    assert [entry.get("provider") for entry in history] == expected_tail
+
+
 def test_record_macro_api_usage_accumulates_stats(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
