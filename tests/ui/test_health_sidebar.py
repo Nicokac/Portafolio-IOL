@@ -92,6 +92,39 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     assert any("Cotizaciones" in text and "sin datos" in text for text in markdown_calls)
 
 
+def test_render_health_sidebar_with_yfinance_history(
+    health_sidebar, _dummy_metrics
+) -> None:
+    metrics = dict(_dummy_metrics)
+    metrics["yfinance"] = {
+        "source": "error",
+        "detail": "HTTP 500",
+        "ts": 30.0,
+        "latest_provider": "error",
+        "latest_result": "error",
+        "fallback": False,
+        "history": [
+            {"provider": "yfinance", "result": "success", "fallback": False, "ts": 10.0},
+            {"provider": "fallback", "result": "success", "fallback": True, "ts": 20.0},
+            {
+                "provider": "error",
+                "result": "error",
+                "fallback": False,
+                "ts": 30.0,
+                "detail": "HTTP 500",
+            },
+        ],
+    }
+
+    _render(health_sidebar, metrics)
+
+    markdown_calls = health_sidebar.st.sidebar.markdowns
+    note = next(text for text in markdown_calls if "Historial:" in text)
+    assert "Error o sin datos" in note
+    assert "Resultado: Error" in note
+    assert "Historial: ✅YF · 🛟FB · ⚠️ERR" in note
+
+
 @pytest.fixture
 def _dummy_metrics() -> dict[str, Any]:
     return {

@@ -43,14 +43,72 @@ def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
     }
 
 
-def record_yfinance_usage(source: str, *, detail: Optional[str] = None) -> None:
+def _ensure_history_deque(raw_history: Any, *, limit: int) -> Deque[Dict[str, Any]]:
+    """Return a deque that can be safely reused to store provider history."""
+
+    if isinstance(raw_history, deque) and raw_history.maxlen == limit:
+        return raw_history
+
+    history: Deque[Dict[str, Any]] = deque(maxlen=limit)
+    if isinstance(raw_history, Iterable) and not isinstance(
+        raw_history, (str, bytes, bytearray)
+    ):
+        for entry in raw_history:
+            normalized = _normalize_provider_event(entry)
+            if normalized is not None:
+                history.append(normalized)
+    return history
+
+
+def record_yfinance_usage(
+    source: str,
+    *,
+    detail: Optional[str] = None,
+    status: Optional[str] = None,
+    fallback: Optional[bool] = None,
+) -> None:
     """Persist whether Yahoo Finance or a fallback served the last request."""
+
+    provider = str(source or "unknown").strip() or "unknown"
+    now = time.time()
+    detail_text = _clean_detail(detail)
+    fallback_flag = bool(fallback) if fallback is not None else provider.casefold() != "yfinance"
+    status_text_raw = str(status or "").strip().casefold()
+    if not status_text_raw:
+        status_text_raw = "fallback" if fallback_flag else "success"
+
     store = _store()
-    store["yfinance"] = {
-        "source": source,
-        "detail": _clean_detail(detail),
-        "ts": time.time(),
+    existing = store.get("yfinance")
+    data: Dict[str, Any]
+    if isinstance(existing, Mapping):
+        data = dict(existing)
+    else:
+        data = {}
+
+    history = _ensure_history_deque(data.get("history"), limit=_PROVIDER_HISTORY_LIMIT)
+    event: Dict[str, Any] = {
+        "provider": provider,
+        "result": status_text_raw,
+        "fallback": fallback_flag,
+        "ts": now,
     }
+    if detail_text:
+        event["detail"] = detail_text
+    history.append(event)
+
+    data["source"] = provider
+    data["ts"] = now
+    data["history"] = history
+    data["fallback"] = fallback_flag
+    data["latest_provider"] = provider
+    data["latest_result"] = status_text_raw
+    data["result"] = status_text_raw
+    if detail_text is not None:
+        data["detail"] = detail_text
+    elif "detail" in data:
+        del data["detail"]
+
+    store["yfinance"] = data
 
 
 def record_market_data_incident(
@@ -369,6 +427,109 @@ def _as_optional_float(value: Any) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_provider_event(entry: Any) -> Optional[Dict[str, Any]]:
+    """Normalize provider history entries into a serializable mapping."""
+
+    if not isinstance(entry, Mapping):
+        return None
+
+    provider_raw = entry.get("provider") or entry.get("source") or "unknown"
+    provider_text = str(provider_raw or "unknown").strip() or "unknown"
+
+    result_raw = (
+        entry.get("result")
+        or entry.get("status")
+        or entry.get("latest_result")
+        or entry.get("mode")
+    )
+    result_text = str(result_raw).strip() if result_raw is not None else None
+
+    fallback_raw = entry.get("fallback")
+    fallback_flag = bool(fallback_raw) if fallback_raw is not None else False
+
+    ts_value = _as_optional_float(entry.get("ts"))
+    detail_text = _clean_detail(entry.get("detail"))
+
+    normalized: Dict[str, Any] = {
+        "provider": provider_text,
+        "fallback": fallback_flag,
+    }
+    if result_text:
+        normalized["result"] = result_text
+    if ts_value is not None:
+        normalized["ts"] = ts_value
+    if detail_text:
+        normalized["detail"] = detail_text
+
+    return normalized
+
+
+def _serialize_provider_history(raw_history: Any) -> list[Dict[str, Any]]:
+    if not raw_history:
+        return []
+
+    if isinstance(raw_history, deque):
+        iterable = list(raw_history)
+    elif isinstance(raw_history, Iterable) and not isinstance(
+        raw_history, (str, bytes, bytearray)
+    ):
+        iterable = list(raw_history)
+    else:
+        return []
+
+    serialized: list[Dict[str, Any]] = []
+    for entry in iterable:
+        normalized = _normalize_provider_event(entry)
+        if normalized is not None:
+            serialized.append(normalized)
+    return serialized[-_PROVIDER_HISTORY_LIMIT:]
+
+
+def _serialize_provider_metrics(raw_metrics: Any) -> Any:
+    if raw_metrics is None:
+        return None
+    if not isinstance(raw_metrics, Mapping):
+        return raw_metrics
+
+    data = dict(raw_metrics)
+
+    source_raw = raw_metrics.get("source")
+    if isinstance(source_raw, str):
+        data["source"] = source_raw
+    elif source_raw is not None:
+        data["source"] = str(source_raw)
+
+    detail_text = _clean_detail(raw_metrics.get("detail"))
+    if detail_text is not None:
+        data["detail"] = detail_text
+    elif "detail" in data:
+        del data["detail"]
+
+    fallback_value = raw_metrics.get("fallback")
+    if fallback_value is not None:
+        data["fallback"] = bool(fallback_value)
+
+    latest_provider = raw_metrics.get("latest_provider") or raw_metrics.get("source")
+    if isinstance(latest_provider, str):
+        data["latest_provider"] = latest_provider
+    elif "latest_provider" in data:
+        del data["latest_provider"]
+
+    latest_result = (
+        raw_metrics.get("latest_result")
+        or raw_metrics.get("result")
+        or raw_metrics.get("status")
+    )
+    if isinstance(latest_result, str):
+        data["latest_result"] = latest_result
+    elif "latest_result" in data:
+        del data["latest_result"]
+
+    data["history"] = _serialize_provider_history(raw_metrics.get("history"))
+
+    return data
 
 
 def _normalize_sectors(value: Any) -> Optional[list[str]]:
@@ -847,27 +1008,43 @@ def get_health_metrics() -> Dict[str, Any]:
                     provider_summary["error_ratio"] = error_count / total_count
                 overall_errors += error_count
 
+                raw_history = raw_stats.get("history")
+                if isinstance(raw_history, Iterable) and not isinstance(
+                    raw_history, (str, bytes, bytearray)
+                ):
+                    history_entries: list[Dict[str, Any]] = []
+                    for entry in raw_history:
+                        if isinstance(entry, Mapping):
+                            history_entries.append(dict(entry))
+                    if history_entries:
+                        provider_summary["history"] = history_entries
+
                 raw_buckets = raw_stats.get("latency_buckets")
+                bucket_counts: Dict[str, int] = {}
+                bucket_total = 0
                 if isinstance(raw_buckets, Mapping):
-                    bucket_counts: Dict[str, int] = {}
-                    bucket_total = 0
+                    counts_section = raw_buckets.get("counts")
+                    if isinstance(counts_section, Mapping):
+                        source_counts: Mapping[str, Any] = counts_section
+                    else:
+                        source_counts = raw_buckets
                     for bucket in ("fast", "medium", "slow", "missing"):
-                        count = _as_optional_int(raw_buckets.get(bucket))
+                        count = _as_optional_int(source_counts.get(bucket))
                         if count is None or count < 0:
                             continue
                         bucket_counts[bucket] = count
                         bucket_total += count
                         overall_buckets[bucket] = overall_buckets.get(bucket, 0) + count
-                    if bucket_counts and bucket_total:
-                        provider_summary["latency_buckets"] = {
-                            "counts": bucket_counts,
-                            "total": bucket_total,
-                            "ratios": {
-                                name: count / bucket_total
-                                for name, count in bucket_counts.items()
-                                if bucket_total
-                            },
-                        }
+                if bucket_counts and bucket_total:
+                    provider_summary["latency_buckets"] = {
+                        "counts": bucket_counts,
+                        "total": bucket_total,
+                        "ratios": {
+                            name: count / bucket_total
+                            for name, count in bucket_counts.items()
+                            if bucket_total
+                        },
+                    }
 
                 providers[provider_name] = provider_summary
 
@@ -908,7 +1085,7 @@ def get_health_metrics() -> Dict[str, Any]:
 
     return {
         "iol_refresh": store.get("iol_refresh"),
-        "yfinance": store.get("yfinance"),
+        "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "fx_api": store.get("fx_api"),
         "fx_cache": store.get("fx_cache"),
