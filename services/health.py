@@ -14,6 +14,8 @@ _HEALTH_KEY = "health_metrics"
 _OPPORTUNITIES_HISTORY_KEY = "opportunities_history"
 _OPPORTUNITIES_STATS_KEY = "opportunities_stats"
 _OPPORTUNITIES_HISTORY_LIMIT = 5
+_MARKET_DATA_INCIDENTS_KEY = "market_data_incidents"
+_MARKET_DATA_INCIDENT_LIMIT = 20
 _LATENCY_FAST_THRESHOLD_MS = 250.0
 _LATENCY_MEDIUM_THRESHOLD_MS = 750.0
 
@@ -48,6 +50,34 @@ def record_yfinance_usage(source: str, *, detail: Optional[str] = None) -> None:
         "detail": _clean_detail(detail),
         "ts": time.time(),
     }
+
+
+def record_market_data_incident(
+    *,
+    adapter: str,
+    provider: str,
+    status: str,
+    detail: Optional[str] = None,
+    fallback: bool | None = None,
+) -> None:
+    """Persist incidents for market data adapters."""
+
+    entry = {
+        "adapter": str(adapter),
+        "provider": str(provider),
+        "status": str(status),
+        "ts": time.time(),
+    }
+    detail_text = _clean_detail(detail)
+    if detail_text:
+        entry["detail"] = detail_text
+    if fallback is not None:
+        entry["fallback"] = bool(fallback)
+
+    store = _store()
+    incidents = list(store.get(_MARKET_DATA_INCIDENTS_KEY, []))
+    incidents.append(entry)
+    store[_MARKET_DATA_INCIDENTS_KEY] = incidents[-_MARKET_DATA_INCIDENT_LIMIT:]
 
 
 def record_fx_api_response(
@@ -737,6 +767,7 @@ def get_health_metrics() -> Dict[str, Any]:
     return {
         "iol_refresh": store.get("iol_refresh"),
         "yfinance": store.get("yfinance"),
+        "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "fx_api": store.get("fx_api"),
         "fx_cache": store.get("fx_cache"),
         "macro_api": _summarize_macro(store.get("macro_api")),
@@ -756,5 +787,6 @@ __all__ = [
     "record_portfolio_load",
     "record_quote_load",
     "record_opportunities_report",
+    "record_market_data_incident",
     "record_yfinance_usage",
 ]

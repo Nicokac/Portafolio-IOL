@@ -147,13 +147,12 @@ def test_fetch_with_indicators_respects_monkeypatched_ttl(monkeypatch):
 
     with reload_ta_with(monkeypatch, "yahoo_quotes_ttl", 0) as (ta_module, mp):
         mp.setattr(ta_module, "map_to_us_ticker", lambda sym: sym)
-        mp.setattr(ta_module, "record_yfinance_usage", lambda *_, **__: None)
 
-        class DummyYF:
+        class DummyAdapter:
             def __init__(self) -> None:
                 self.calls = 0
 
-            def download(self, ticker, **kwargs):
+            def fetch(self, symbol, **kwargs):
                 self.calls += 1
                 idx = pd.date_range("2021-01-01", periods=60, freq="D")
                 values = list(range(60))
@@ -168,8 +167,8 @@ def test_fetch_with_indicators_respects_monkeypatched_ttl(monkeypatch):
                     index=idx,
                 )
 
-        dummy_yf = DummyYF()
-        mp.setattr(ta_module, "yf", dummy_yf)
+        dummy_adapter = DummyAdapter()
+        mp.setattr(ta_module, "get_ohlc_adapter", lambda: dummy_adapter)
 
         class DummyRSI:
             def __init__(self, close, window, fillna):
@@ -234,7 +233,7 @@ def test_fetch_with_indicators_respects_monkeypatched_ttl(monkeypatch):
         first = ta_module.fetch_with_indicators("AAPL")
         second = ta_module.fetch_with_indicators("AAPL")
 
-        assert dummy_yf.calls == 2
+        assert dummy_adapter.calls == 2
         assert not first.empty
         assert not second.empty
 

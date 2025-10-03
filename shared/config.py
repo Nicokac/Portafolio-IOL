@@ -2,7 +2,7 @@
 from __future__ import annotations
 import os, json
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 from dotenv import load_dotenv
 from functools import lru_cache
 import logging
@@ -172,6 +172,38 @@ class Settings:
             os.getenv("STUB_MAX_RUNTIME_WARN", cfg.get("STUB_MAX_RUNTIME_WARN", 0.25))
         )
 
+        primary_raw = os.getenv(
+            "OHLC_PRIMARY_PROVIDER", cfg.get("OHLC_PRIMARY_PROVIDER", "alpha_vantage")
+        )
+        primary_text = str(primary_raw or "").strip().lower()
+        self.OHLC_PRIMARY_PROVIDER: str = primary_text or "alpha_vantage"
+
+        raw_secondary = self.secret_or_env(
+            "OHLC_SECONDARY_PROVIDERS", cfg.get("OHLC_SECONDARY_PROVIDERS")
+        )
+        fallback_secondaries = [] if self.OHLC_PRIMARY_PROVIDER == "polygon" else ["polygon"]
+        parsed_secondaries = self._parse_provider_list(
+            raw_secondary,
+            fallback=fallback_secondaries,
+        )
+        self.OHLC_SECONDARY_PROVIDERS: list[str] = [
+            provider for provider in parsed_secondaries if provider != self.OHLC_PRIMARY_PROVIDER
+        ]
+
+        self.ALPHA_VANTAGE_API_KEY: str | None = self.secret_or_env(
+            "ALPHA_VANTAGE_API_KEY", cfg.get("ALPHA_VANTAGE_API_KEY")
+        )
+        self.ALPHA_VANTAGE_BASE_URL: str = os.getenv(
+            "ALPHA_VANTAGE_BASE_URL",
+            cfg.get("ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query"),
+        )
+        self.POLYGON_API_KEY: str | None = self.secret_or_env(
+            "POLYGON_API_KEY", cfg.get("POLYGON_API_KEY")
+        )
+        self.POLYGON_BASE_URL: str = os.getenv(
+            "POLYGON_BASE_URL", cfg.get("POLYGON_BASE_URL", "https://api.polygon.io")
+        )
+
         flag_value = os.getenv(
             "FEATURE_OPPORTUNITIES_TAB",
             cfg.get("FEATURE_OPPORTUNITIES_TAB", "true"),
@@ -222,6 +254,32 @@ class Settings:
             except json.JSONDecodeError:
                 return raw
         return raw
+
+    def _parse_provider_list(
+        self, raw: Any, *, fallback: Iterable[str] | None = None
+    ) -> list[str]:
+        parsed = self._parse_jsonish(raw)
+        if isinstance(parsed, str):
+            candidates_iter: Iterable[str] = [
+                item.strip() for item in parsed.split(",") if item.strip()
+            ]
+        elif isinstance(parsed, Iterable) and not isinstance(parsed, (bytes, bytearray, str)):
+            candidates_iter = parsed
+        else:
+            candidates_iter = []
+
+        normalized: list[str] = []
+        for item in candidates_iter:
+            name = str(item or "").strip().lower()
+            if name and name not in normalized:
+                normalized.append(name)
+
+        if not normalized and fallback is not None:
+            for item in fallback:
+                name = str(item or "").strip().lower()
+                if name and name not in normalized:
+                    normalized.append(name)
+        return normalized
 
     def _parse_sector_series(self, raw: Any) -> Dict[str, str]:
         parsed = self._parse_jsonish(raw)

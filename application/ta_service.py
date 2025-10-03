@@ -1,7 +1,6 @@
 # application\ta_service.py
 from __future__ import annotations
 import logging
-from pathlib import Path
 from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.cache import cache
@@ -14,6 +13,7 @@ from shared.settings import (
 from shared.utils import _to_float
 from services.health import record_yfinance_usage
 from services.fmp_client import get_fmp_client
+from services.ohlc_adapter import get_ohlc_adapter
 
 import numpy as np
 import pandas as pd
@@ -214,13 +214,12 @@ def fetch_with_indicators(
     'BB_L','BB_M','BB_U','RSI','MACD','MACD_SIGNAL','MACD_HIST','ATR',
     'STOCH_K','STOCH_D','ICHI_CONV','ICHI_BASE','ICHI_A','ICHI_B']
 
-    En caso de que `yfinance` produzca un `HTTPError` o un `Timeout`,
-    se intenta cargar un archivo de respaldo en
-    ``infrastructure/cache/ta_fallback.csv``. Si no existe, se
-    devuelve un `DataFrame` vacío como placeholder.
+    Utiliza el adaptador OHLC configurado para consultar proveedores
+    externos con fallback y cache propio. Si todos los proveedores
+    fallan y no hay cache disponible, devuelve un DataFrame vacío.
     """
-    if yf is None or RSIIndicator is None:
-        raise RuntimeError("Las librerías 'yfinance' y/o 'ta' no están disponibles.")
+    if RSIIndicator is None:
+        raise RuntimeError("La librería 'ta' no está disponible.")
 
     try:
         ticker = map_to_us_ticker(simbolo)
@@ -228,56 +227,15 @@ def fetch_with_indicators(
         logger.info("No se pudo mapear %s a ticker US utilizable.", simbolo)
         raise
 
+    adapter = get_ohlc_adapter()
     try:
-        hist = yf.download(
-            ticker,
-            period=period,
-            interval=interval,
-            auto_adjust=False,
-            progress=False,
-            group_by="column",  # ayuda a evitar multiindex por ticker
-            threads=False,
-        )
-    except (HTTPError, Timeout) as e:
-        logger.warning(
-            "yfinance error (%s): %s. Usando fallback local.", ticker, e
-        )
-        fallback = (
-            Path(__file__).resolve().parent.parent
-            / "infrastructure"
-            / "cache"
-            / "ta_fallback.csv"
-        )
-        if fallback.exists():
-            try:
-                hist = pd.read_csv(fallback, index_col=0, parse_dates=True)
-            except Exception as err:
-                logger.error("No se pudo leer el fallback %s: %s", fallback, err)
-                record_yfinance_usage(
-                    "error",
-                    detail=f"{ticker}: fallback inválido ({err})",
-                )
-                return pd.DataFrame()
-            else:
-                record_yfinance_usage(
-                    "fallback",
-                    detail=f"{ticker}: {e}",
-                )
-        else:
-            logger.error("No se encontró el archivo de fallback en %s", fallback)
-            record_yfinance_usage(
-                "error",
-                detail=f"{ticker}: fallback ausente ({e})",
-            )
-            return pd.DataFrame()
-    except Exception as e:
-        logger.error("yfinance error (%s): %s", ticker, e)
-        record_yfinance_usage("error", detail=f"{ticker}: {e}")
+        hist = adapter.fetch(ticker, period=period, interval=interval)
+    except Exception as exc:
+        logger.error("Error al obtener OHLC para %s: %s", ticker, exc)
         raise RuntimeError(
-            f"Error al descargar datos de yfinance para {ticker}"
-        ) from e
-    else:
-        record_yfinance_usage("yfinance", detail=ticker)
+            f"Error al descargar datos de mercado para {ticker}"
+        ) from exc
+
     if hist is None or hist.empty:
         logger.warning(
             "No hay datos históricos para %s, devolviendo placeholder vacío.",

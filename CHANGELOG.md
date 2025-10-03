@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.27] - 2025-11-05
+
+### Added
+- Monitor de resiliencia en el health sidebar que expone el último proveedor exitoso, la secuencia de
+  degradación (`primario → secundario → fallback`) y las insignias de recuperación asociadas.
+
+### Changed
+- Centralización de timeouts, backoff y códigos de error para los clientes de APIs macro y de
+  portafolio, asegurando que los fallback registrados en telemetría conserven la procedencia y la
+  latencia de cada intento.
+- Notificaciones internas (`st.toast`) actualizadas para informar cuando un proveedor externo vuelve
+  a estar disponible tras un incidente, manteniendo trazabilidad directamente en la UI.
+
+### Documentation
+- README y guías alineadas con la release 0.3.27: quick-start renovado, escenarios de resiliencia
+  multi-API, fecha de publicación y recordatorios para verificar la versión visible en header/footer.
+
 ## [0.3.26.1] - 2025-10-26
 
 ### Added

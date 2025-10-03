@@ -78,6 +78,16 @@ fmp_base_url: str = getattr(
     settings, "FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"
 )
 fmp_timeout: float = getattr(settings, "FMP_TIMEOUT", 5.0)
+ohlc_primary_provider: str = getattr(settings, "OHLC_PRIMARY_PROVIDER", "alpha_vantage")
+ohlc_secondary_providers: list[str] = list(
+    getattr(settings, "OHLC_SECONDARY_PROVIDERS", []) or []
+)
+alpha_vantage_api_key: str | None = getattr(settings, "ALPHA_VANTAGE_API_KEY", None)
+alpha_vantage_base_url: str = getattr(
+    settings, "ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query"
+)
+polygon_api_key: str | None = getattr(settings, "POLYGON_API_KEY", None)
+polygon_base_url: str = getattr(settings, "POLYGON_BASE_URL", "https://api.polygon.io")
 
 __all__ = [
     "settings",
@@ -120,4 +130,10 @@ __all__ = [
     "fmp_api_key",
     "fmp_base_url",
     "fmp_timeout",
+    "ohlc_primary_provider",
+    "ohlc_secondary_providers",
+    "alpha_vantage_api_key",
+    "alpha_vantage_base_url",
+    "polygon_api_key",
+    "polygon_base_url",
 ]

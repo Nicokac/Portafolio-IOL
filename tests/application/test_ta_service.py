@@ -110,26 +110,30 @@ def _build_price_frame(periods: int = 40) -> pd.DataFrame:
 
 def _setup_indicator_stubs(monkeypatch: pytest.MonkeyPatch, *, frame: pd.DataFrame | None = None):
     frame = frame or _build_price_frame()
-    download_calls = {"count": 0}
 
-    def fake_download(*args: Any, **kwargs: Any) -> pd.DataFrame:
-        download_calls["count"] += 1
-        return frame.copy()
+    class DummyAdapter:
+        def __init__(self) -> None:
+            self.count = 0
 
-    monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(download=fake_download))
+        def fetch(self, symbol: str, **kwargs: Any) -> pd.DataFrame:
+            self.count += 1
+            return frame.copy()
+
+    dummy_adapter = DummyAdapter()
+
+    monkeypatch.setattr(ta_mod, "get_ohlc_adapter", lambda: dummy_adapter)
     monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
-    monkeypatch.setattr(ta_mod, "record_yfinance_usage", lambda *a, **k: None)
     monkeypatch.setattr(ta_mod, "RSIIndicator", _DummyRSI)
     monkeypatch.setattr(ta_mod, "MACD", _DummyMACD)
     monkeypatch.setattr(ta_mod, "AverageTrueRange", _DummyATR)
     monkeypatch.setattr(ta_mod, "StochasticOscillator", _DummyStochastic)
     monkeypatch.setattr(ta_mod, "IchimokuIndicator", _DummyIchimoku)
 
-    return download_calls
+    return dummy_adapter
 
 
 def test_indicators_for_returns_enriched_dataframe_and_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = _setup_indicator_stubs(monkeypatch)
+    adapter = _setup_indicator_stubs(monkeypatch)
     svc = TAService()
 
     df_ind = svc.indicators_for("GGAL", period="3mo", interval="1d")
@@ -163,7 +167,7 @@ def test_indicators_for_returns_enriched_dataframe_and_uses_cache(monkeypatch: p
     # Cache should prevent a second download for identical parameters
     again = svc.indicators_for("GGAL", period="3mo", interval="1d")
     pd.testing.assert_frame_equal(df_ind, again)
-    assert calls["count"] == 1
+    assert adapter.count == 1
 
 
 def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -382,8 +386,6 @@ def test_portfolio_history_is_cached_and_renames_columns(monkeypatch: pytest.Mon
 
     monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(download=fake_download))
     monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
-    monkeypatch.setattr(ta_mod, "record_yfinance_usage", lambda *a, **k: None)
-
     svc = TAService()
     df_first = svc.portfolio_history(simbolos=["GGAL"], period="1mo")
     df_second = svc.portfolio_history(simbolos=["GGAL"], period="1mo")
