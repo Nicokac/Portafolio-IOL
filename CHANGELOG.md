@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.26.1] - 2025-10-26
+
+### Added
+- Notificaciones internas en la UI basadas en `st.toast` para confirmar refrescos y cierres de sesión,
+  consolidando feedback inmediato para los analistas que operan desde el dashboard.
+
+### Changed
+- Sincronización del número de versión 0.3.26.1 entre `pyproject.toml`, `shared.version` y las superficies
+  visibles (header, footer, sidebar y tests) para mantener la trazabilidad de la release.
+
+### Documentation
+- README, guías y quick-start alineados con la release 0.3.26.1, detallando el flujo de notificaciones
+  internas y los pasos para validar la numeración visible.
+
 ## [0.3.26] - 2025-10-19
 
 ### Changed

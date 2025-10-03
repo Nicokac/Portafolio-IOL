@@ -41,6 +41,9 @@ consideraciones para extender o depurar estas pruebas:
   simular la interacción del usuario desde los tests sin depender de `streamlit.testing`.
 - Si se añade nuevo comportamiento en la UI que invoque APIs de Streamlit no cubiertas, amplia el
   stub agregando el método correspondiente y registrando su uso.
+- Para validar las notificaciones internas (`st.toast`), monkeypatchea la función como en
+  `application/test/test_login_flow.py` y aserta sobre las banderas de `session_state`
+  (`show_refresh_toast`, `logout_done`) o sobre el stub personalizado que definas.
 
 Gracias a esta infraestructura, las suites pueden ejecutarse en entornos mínimos (CI headless,
 containers livianos) sin requerir dependencias binarias de Streamlit.
