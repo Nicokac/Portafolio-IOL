@@ -29,6 +29,14 @@ pytest
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
 usa los stubs deterministas para mantener resultados reproducibles.
 
+### Suites legacy
+
+La carpeta `tests/legacy/` contiene casos heredados que duplican escenarios ya cubiertos en la suite principal. Se excluye de la recolección estándar para mantener los tiempos de CI. Si necesitas auditarlos manualmente, ejecútalos de forma explícita:
+
+```bash
+pytest tests/legacy
+```
+
 ### Stubs de Streamlit y control de fixtures
 
 Las suites de UI y sidebar utilizan un stub definido en `tests/conftest.py` que emula las

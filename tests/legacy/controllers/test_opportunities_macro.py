@@ -3,6 +3,10 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+# NOTE: Estas pruebas viven en la suite legacy mientras migramos sus escenarios
+# a `tests/controllers/test_opportunities_controller.py`. Mantenerlas permite
+# auditar la lógica previa hasta que consolidemos los duplicados y quitemos el
+# uso del helper `_enrich_with_macro_context` en tests nuevos.
 from controllers import opportunities
 from services.macro_adapter import MacroFetchResult
 
