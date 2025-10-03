@@ -17,6 +17,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.27.1] - 2025-11-07
+
+### Changed
+- Persistencia del health sidebar reforzada para conservar la última secuencia de degradación y los
+  contadores de resiliencia aun después de recargar la sesión, evitando inconsistencias entre la UI
+  y la telemetría de backend.
+
+### Documentation
+- Se documentó la configuración de claves (Alpha Vantage, Polygon, FMP, FRED y World Bank) y los
+  pasos para validar el fallback jerárquico desde el health sidebar, alineando README y guías de
+  troubleshooting con la nueva release.
+
+### Tests
+- Se estabilizaron las suites que validan la degradación multinivel (`tests/test_version_display.py`
+  y escenarios macro) con fixtures de claves deterministas para asegurar la cobertura de
+  resiliencia en CI.
+
 ## [0.3.27] - 2025-11-05
 
 ### Added

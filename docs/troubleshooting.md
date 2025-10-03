@@ -2,6 +2,54 @@
 
 Esta guía resume los síntomas más comunes que reportan usuarios y QA al operar con Portafolio IOL, junto con los pasos recomendados para diagnosticarlos y resolverlos. Cada bloque distingue los incidentes funcionales de portafolio de los técnicos/infraestructura.
 
+## Claves API
+
+- **Falta una clave y los servicios quedan en `disabled`.**
+  - **Síntomas:** El health sidebar indica `disabled` para Alpha Vantage/Polygon/FMP/FRED/World Bank y el log muestra `Missing API key`.
+  - **Diagnóstico rápido:** Confirma que las variables `ALPHA_VANTAGE_API_KEY`, `POLYGON_API_KEY`, `FMP_API_KEY`, `FRED_API_KEY` y `WORLD_BANK_API_KEY` estén definidas en `.env`, `config.json` o `secrets.toml`.
+  - **Resolución:**
+    1. Declara cada clave en el backend correspondiente. Para validar rápidamente qué detecta la aplicación ejecuta:
+       ```bash
+       python - <<'PY'
+       from pprint import pprint
+       from shared import settings
+
+       pprint({
+           "ALPHA_VANTAGE_API_KEY": settings.alpha_vantage_api_key,
+           "POLYGON_API_KEY": settings.polygon_api_key,
+           "FMP_API_KEY": settings.fmp_api_key,
+           "FRED_API_KEY": settings.fred_api_key,
+           "WORLD_BANK_API_KEY": settings.world_bank_api_key,
+       })
+       PY
+       ```
+    2. Si una clave no aplica (por ejemplo, sin Polygon), elimina al proveedor del orden configurado (`OHLC_PRIMARY_PROVIDER`, `OHLC_SECONDARY_PROVIDERS`, `MACRO_API_PROVIDER`) para evitar intentos fallidos.
+    3. Reinicia la app y verifica en el health sidebar que el proveedor cambie a `success` o `fallback` según corresponda.
+
+- **Claves inconsistentes entre entornos.**
+  - **Síntomas:** En local la app funciona pero en CI aparece `unauthorized`.
+  - **Diagnóstico rápido:** Revisa el pipeline para confirmar que se estén inyectando los secretos y que los jobs exporten las variables antes de lanzar la app o los tests.
+  - **Resolución:**
+    1. Replica la configuración de `.env` en el servicio de secretos de CI (GitHub Actions, GitLab, etc.).
+    2. Asegura que los pasos de despliegue establezcan las variables antes de ejecutar `streamlit run app.py` o `pytest`.
+
+## Health sidebar y resiliencia
+
+- **El timeline de resiliencia no persiste tras un rerun.**
+  - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.27.1 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Resolución:**
+    1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
+    2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
+
+- **La jerarquía de fallback no coincide con las notas del screening.**
+  - **Síntomas:** El health sidebar marca como último éxito un proveedor distinto del mostrado en las notas (`Datos macro (World Bank)` etc.).
+  - **Diagnóstico rápido:** Ejecuta nuevamente el flujo descrito en el README y habilita `LOG_HEALTH_DEBUG=1` para registrar cada escalón de la degradación.
+  - **Resolución:**
+    1. Forza un escenario de fallo (deshabilita la clave primaria) y valida que el log muestre `primary=error`, `secondary=success`.
+    2. Si el orden no se respeta, revisa `config.json` y los valores de `MACRO_API_PROVIDER`, `OHLC_PRIMARY_PROVIDER` y `OHLC_SECONDARY_PROVIDERS` para confirmar la jerarquía.
+    3. Reporta el caso adjuntando el log y una captura del health sidebar si la inconsistencia persiste.
+
 ## Portafolio y datos de mercado
 
 - **La app falla con `NameError: name 'apply_filters' is not defined`.**
@@ -57,7 +105,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.27` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.27.1` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
