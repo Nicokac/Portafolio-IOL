@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.25.1] - 2025-10-03
 
 ### Fixed
+- Se corrigió la función `drawdown_series` en `application/risk_service.py` para manejar correctamente series vacías y calcular drawdowns acumulados, eliminando el `IndentationError` que impedía iniciar la aplicación.
 - Se corrigió un `IndentationError` en `application/risk_service.py` causado por un bloque `if` sin cuerpo en la función `drawdown_series`.
 - La función ahora retorna un `pd.Series` vacío cuando no hay datos de entrada, previniendo bloqueos en inicialización y permitiendo flujos consistentes en métricas de riesgo.
 - La app vuelve a iniciar correctamente tras el reboot con la release 0.3.25.

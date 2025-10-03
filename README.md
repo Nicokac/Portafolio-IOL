@@ -6,12 +6,16 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Quick-start (release 0.3.25.1)
+
+La versión **0.3.25.1** mantiene la cobertura macro multinivel y corrige la métrica de drawdown para que los tableros de riesgo arranquen sin errores tras reinicios:
 ## Quick-start (release 0.3.25.1 — 2025-10-03)
 
 La versión **0.3.25.1** refuerza la cobertura macro y la observabilidad de cada proveedor:
 - El **cliente World Bank** amplía el fallback multinivel (FRED → World Bank → fallback estático), manteniendo la columna `macro_outlook` cuando FRED queda inhabilitado o llega al límite de rate limiting.
-- El **health sidebar** ahora agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
+- El **health sidebar** agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
 - Las notas del screening registran la secuencia de proveedores consultados (FRED, World Bank, fallback) con sus estados y latencias, alineando la telemetría mostrada en la UI con los datos persistidos en `services.health`.
+- Los cálculos de riesgo utilizan `drawdown_series` corregido, evitando excepciones en frío y dejando listos los gráficos históricos para los portafolios con datos simulados o reales.
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
