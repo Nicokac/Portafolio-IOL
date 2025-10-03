@@ -20,13 +20,13 @@ def get_settings() -> UISettings:
 
 def apply_settings(settings: UISettings) -> None:
     """Apply settings to the Streamlit page."""
-    st.set_page_config(
-        page_title="IOL — Portafolio en vivo (solo lectura)",
-        layout=settings.layout,
-    )
+    if hasattr(st, "set_page_config"):
+        st.set_page_config(
+            page_title="IOL — Portafolio en vivo (solo lectura)",
+            layout=settings.layout,
+        )
     pal = get_palette(settings.theme)
-    st.markdown(
-        f"""
+    style_block = f"""
         <style>
         :root {{
             color-scheme: {settings.theme};
@@ -36,14 +36,16 @@ def apply_settings(settings: UISettings) -> None:
             --color-negative: {pal.negative};
             --color-accent: {pal.accent};
         }}
-        html, body, [data-testid="stAppViewContainer"] {{
+        html, body, [data-testid=\"stAppViewContainer\"] {{
             background-color: var(--color-bg);
             color: var(--color-text);
         }}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    """
+    try:
+        st.markdown(style_block, unsafe_allow_html=True)
+    except TypeError:
+        st.markdown(style_block)
 
 def init_ui() -> UISettings:
     """Convenience helper to obtain current settings and apply them."""

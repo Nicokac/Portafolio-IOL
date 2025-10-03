@@ -17,6 +17,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.26] - 2025-10-19
+
+### Changed
+- El login y el dashboard principal reutilizan el helper `shared.version` para mostrar "Versión 0.3.26"
+  con la hora actualizada por `TimeProvider`, garantizando que el encabezado y el footer compartan
+  la misma metadata visible.
+- El health sidebar consolida la cronología de screenings con badges de cache hit/miss y métricas de
+  fallback sincronizadas con los contadores globales, evitando discrepancias entre la vista tabular y
+  los totales expuestos en la parte superior del panel.
+
+### Fixed
+- `ui.ui_settings.apply_settings` ahora verifica la disponibilidad de `st.set_page_config` antes de
+  invocarlo, permitiendo ejecutar suites locales con stubs de Streamlit que no exponen ese método.
+- `app.py` define stubs de compatibilidad (`st.stop`, `st.container`, `st.columns`) cuando la API de
+  Streamlit no los ofrece, destrabando los tests que importan la app en entornos fuera de Streamlit.
+
+### Documentation
+- README actualizado con el quick-start de la release 0.3.26, incluyendo instrucciones para verificar
+  la versión visible en header/footer y resúmenes renovados de telemetría.
+
+### Tests
+- Las suites `tests/test_version_display.py` y `tests/test_version_sync.py` se mantienen alineadas con
+  la numeración 0.3.26 para validar el helper de versión y la visibilidad en la UI.
+
 ## [0.3.25.1] - 2025-10-03
 
 ### Fixed

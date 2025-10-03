@@ -8,7 +8,28 @@ import time
 import logging
 from uuid import uuid4
 
+from collections.abc import Sequence
+from contextlib import nullcontext
+
 import streamlit as st
+
+if not hasattr(st, "stop"):
+    st.stop = lambda: None  # type: ignore[attr-defined]
+
+if not hasattr(st, "container"):
+    st.container = lambda: nullcontext()  # type: ignore[attr-defined]
+
+if not hasattr(st, "columns"):
+    def _dummy_columns(spec: Sequence[int] | int | None = None, *args, **kwargs):
+        if isinstance(spec, int):
+            count = max(spec, 1)
+        elif isinstance(spec, Sequence):
+            count = max(len(spec), 1)
+        else:
+            count = 2
+        return tuple(nullcontext() for _ in range(count))
+
+    st.columns = _dummy_columns  # type: ignore[attr-defined]
 
 from shared.config import configure_logging, ensure_tokens_key
 from shared.settings import FEATURE_OPPORTUNITIES_TAB
