@@ -19,6 +19,7 @@ from controllers.portfolio.portfolio import render_portfolio_section
 import controllers.portfolio.charts as charts_mod
 from application.portfolio_service import PortfolioTotals
 from domain.models import Controls
+from shared.favorite_symbols import FavoriteSymbols
 from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
@@ -49,6 +50,21 @@ class _ContextManager:
     def selectbox(self, *args: Any, **kwargs: Any) -> Any:
         return self._owner.selectbox(*args, **kwargs)
 
+    def plotly_chart(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.plotly_chart(*args, **kwargs)
+
+    def info(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.info(*args, **kwargs)
+
+    def metric(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.metric(*args, **kwargs)
+
+    def line_chart(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.line_chart(*args, **kwargs)
+
+    def bar_chart(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.bar_chart(*args, **kwargs)
+
 
 class FakeStreamlit:
     """Minimal Streamlit stub capturing the interactions we care about."""
@@ -66,6 +82,7 @@ class FakeStreamlit:
         self.successes: list[str] = []
         self.plot_calls: list[dict[str, Any]] = []
         self.line_charts: list[pd.DataFrame] = []
+        self.bar_charts: list[dict[str, Any]] = []
         self.metrics: list[tuple[Any, Any, Any]] = []
         self.markdowns: list[dict[str, Any]] = []
 
@@ -115,6 +132,9 @@ class FakeStreamlit:
     def expander(self, label: str):  # noqa: ANN001 - mimics streamlit signature
         return _ContextManager(self)
 
+    def spinner(self, *_: Any, **__: Any) -> _ContextManager:
+        return _ContextManager(self)
+
     # ---- Feedback widgets ---------------------------------------------
     def subheader(self, text: str) -> None:
         self.subheaders.append(text)
@@ -139,6 +159,12 @@ class FakeStreamlit:
 
     def line_chart(self, data: pd.DataFrame) -> None:
         self.line_charts.append(data)
+
+    def bar_chart(self, data: pd.DataFrame, **kwargs: Any) -> None:
+        self.bar_charts.append({"data": data, "kwargs": kwargs})
+
+    def write(self, *_: Any, **__: Any) -> None:
+        return None
 
     def metric(self, label: str, value: Any, delta: Any | None = None) -> None:
         self.metrics.append((label, value, delta))
@@ -317,6 +343,163 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     basic.assert_not_called()
 
 
+def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controllers.portfolio.risk as risk_mod
+
+    fake_st = FakeStreamlit(radio_sequence=[], selectbox_defaults={
+        "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
+        "Escenario": "Leve",
+    })
+    risk_mod.st = fake_st
+
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    df_view = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [100.0, 200.0]})
+
+    def fake_history(simbolos=None, period="1y"):
+        if simbolos == ["S&P 500 (^GSPC)"] or simbolos == ["^GSPC"]:
+            return pd.DataFrame({"^GSPC": [100.0, 102.0, 101.0, 103.0]})
+        return pd.DataFrame({"A": [10.0, 10.5, 10.2, 10.8], "B": [20.0, 19.5, 20.5, 21.0]})
+
+    tasvc = SimpleNamespace(portfolio_history=fake_history)
+
+    fake_port_ret = pd.Series([0.01, -0.02, 0.03])
+    asset_vols = pd.Series({"A": 0.12, "B": 0.09})
+    asset_drawdowns = pd.Series({"A": -0.2, "B": -0.1})
+    port_drawdown = -0.25
+
+    monkeypatch.setattr(
+        risk_mod,
+        "compute_returns",
+        lambda prices: prices.pct_change().dropna(),
+    )
+    monkeypatch.setattr(
+        risk_mod,
+        "compute_risk_metrics",
+        lambda *a, **k: (
+            0.2,
+            1.1,
+            0.05,
+            pd.Series({"A": 0.6, "B": 0.4}),
+            fake_port_ret,
+            asset_vols,
+            asset_drawdowns,
+            port_drawdown,
+        ),
+    )
+
+    drawdown_series_output = pd.Series([-0.01, -0.05], name="drawdown")
+    monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: drawdown_series_output)
+
+    class DummyFigure:
+        def __init__(self, tag: str) -> None:
+            self.tag = tag
+
+        def update_layout(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_traces(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_xaxes(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_yaxes(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def add_vline(self, **_: Any) -> "DummyFigure":
+            return self
+
+    monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: DummyFigure("volatility_dist"))
+
+    def dummy_line(data, **kwargs):
+        tag = "portfolio_drawdown" if data is drawdown_series_output else "rolling_vol"
+        return DummyFigure(tag)
+
+    monkeypatch.setattr(risk_mod.px, "line", dummy_line)
+
+    class DummyScatter(DummyFigure):
+        pass
+
+    monkeypatch.setattr(risk_mod.px, "scatter", lambda *a, **k: DummyScatter("beta_scatter"))
+    monkeypatch.setattr(
+        risk_mod.px,
+        "histogram",
+        lambda *a, **k: DummyFigure("returns_hist"),
+    )
+
+    pm = risk_mod
+    pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
+
+    tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
+    assert {"volatility_dist", "portfolio_drawdown", "beta_scatter"}.issubset(tags)
+
+
+def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controllers.portfolio.risk as risk_mod
+
+    fake_st = FakeStreamlit(radio_sequence=[], selectbox_defaults={
+        "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
+        "Escenario": "Leve",
+    })
+    risk_mod.st = fake_st
+
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0]})
+    tasvc = SimpleNamespace(
+        portfolio_history=lambda simbolos=None, period="1y": pd.DataFrame(
+            {"A": [10.0, 10.0, 10.0], "^GSPC": [100.0, 101.0, 102.0]}
+        )
+    )
+
+    monkeypatch.setattr(
+        risk_mod,
+        "compute_returns",
+        lambda prices: prices.pct_change().dropna(),
+    )
+    monkeypatch.setattr(
+        risk_mod,
+        "compute_risk_metrics",
+        lambda *a, **k: (
+            0.0,
+            float("nan"),
+            0.0,
+            pd.Series({"A": 1.0}),
+            pd.Series([0.0, 0.0]),
+            pd.Series(dtype=float),
+            pd.Series(dtype=float),
+            0.0,
+        ),
+    )
+    monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: pd.Series(dtype=float))
+    class DummyFigure:
+        def __init__(self, tag: str) -> None:
+            self.tag = tag
+
+        def update_layout(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_traces(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_xaxes(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def update_yaxes(self, **_: Any) -> "DummyFigure":
+            return self
+
+        def add_vline(self, **_: Any) -> "DummyFigure":
+            return self
+
+    monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: DummyFigure("volatility_dist"))
+
+    pm = risk_mod
+    pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
+
+    assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
 def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
     fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]
