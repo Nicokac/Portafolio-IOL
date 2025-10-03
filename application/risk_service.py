@@ -9,6 +9,8 @@ __all__ = [
     "portfolio_returns",
     "annualized_volatility",
     "beta",
+    "drawdown",
+    "max_drawdown",
     "historical_var",
     "markowitz_optimize",
     "monte_carlo_simulation",
@@ -38,12 +40,56 @@ def annualized_volatility(returns: pd.Series, periods_per_year: int = 252) -> fl
     return float(returns.std() * np.sqrt(periods_per_year))
 
 
-def beta(portfolio_returns: pd.Series, benchmark_returns: pd.Series) -> float:
-    """Beta de la cartera respecto a un benchmark."""
-    if len(portfolio_returns) != len(benchmark_returns) or len(portfolio_returns) == 0:
+def beta(
+    portfolio_returns: pd.Series,
+    benchmark_returns: pd.Series,
+    *,
+    min_periods: int | None = None,
+) -> float:
+    """Beta de la cartera respecto a un benchmark configurable."""
+
+    if portfolio_returns is None or benchmark_returns is None:
         return float("nan")
-    cov = np.cov(portfolio_returns, benchmark_returns)
-    return float(cov[0, 1] / cov[1, 1])
+
+    port = pd.Series(portfolio_returns).dropna()
+    bench = pd.Series(benchmark_returns).dropna()
+
+    if len(port) != len(bench) or len(port) == 0:
+        return float("nan")
+
+    if min_periods is not None and (
+        len(port) < int(min_periods) or len(bench) < int(min_periods)
+    ):
+        return float("nan")
+
+    cov = np.cov(port, bench)
+    denom = cov[1, 1]
+    if denom == 0:
+        return float("nan")
+    return float(cov[0, 1] / denom)
+
+
+def drawdown(returns: pd.Series) -> pd.Series:
+    """Serie de *drawdown* acumulado a partir de rendimientos porcentuales."""
+
+    if returns is None or len(returns) == 0:
+        return pd.Series(dtype=float)
+
+    series = pd.Series(returns).fillna(0.0)
+    equity = (1 + series).cumprod()
+    running_max = equity.cummax()
+    dd = equity.divide(running_max).subtract(1.0)
+    dd.name = "drawdown"
+    return dd
+
+
+def max_drawdown(returns: pd.Series) -> float:
+    """Retorna el *maximum drawdown* (valor mínimo de la serie de drawdown)."""
+
+    dd = drawdown(returns)
+    if dd.empty:
+        return 0.0
+    return float(dd.min())
 
 
 def historical_var(returns: pd.Series, confidence: float = 0.95) -> float:
