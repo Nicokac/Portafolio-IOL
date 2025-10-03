@@ -6,6 +6,29 @@ import sys
 from typing import Any
 
 
+class _DummyStreamlitSecretNotFoundError(KeyError):
+    """Minimal replacement for streamlit.runtime.secrets error type."""
+
+
+class _DummySecrets(dict):
+    """Secrets mapping that keeps the stub core in sync."""
+
+    def __init__(self, initial: dict[str, Any] | None = None, *, core: "_DummyStreamlitCore | None" = None) -> None:
+        super().__init__(initial or {})
+        if core is None:
+            core = globals().get("_streamlit_core")
+        self._core = core
+        if self._core is not None:
+            self._core._register_secrets(self)
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return super().__getitem__(key)
+        except KeyError:  # pragma: no cover - compatibility branch
+            raise _DummyStreamlitSecretNotFoundError(str(key)) from None
+
+
+
 class _DummySidebar:
     def __init__(self) -> None:
         self.reset()
@@ -113,7 +136,8 @@ class _DummyStreamlitCore:
     def __init__(self) -> None:
         self.sidebar = _DummySidebar()
         self.session_state: dict[str, Any] = {}
-        self.secrets: dict[str, Any] = {}
+        self._secrets_obj: _DummySecrets | None = None
+        self.secrets = _DummySecrets(core=self)
         self._calls: list[dict[str, Any]] = []
         self._all_records: list[dict[str, Any]] = []
         self._context_stack: list[list[dict[str, Any]]] = [self._calls]
@@ -125,13 +149,25 @@ class _DummyStreamlitCore:
     def reset(self) -> None:
         self.sidebar.reset()
         self.session_state.clear()
-        self.secrets.clear()
+        if isinstance(self.secrets, _DummySecrets):
+            self.secrets.clear()
+            self.secrets._core = self
+        else:  # pragma: no cover - compatibility branch
+            self.secrets = _DummySecrets(core=self)
         self._calls.clear()
         self._all_records.clear()
         self._context_stack = [self._calls]
         self._button_returns.clear()
         self._checkbox_returns.clear()
         self._form_returns.clear()
+
+    # Internal wiring ----------------------------------------------------
+    def _register_secrets(self, secrets: _DummySecrets) -> None:
+        self._secrets_obj = secrets
+        self.secrets = secrets
+        module = globals().get("_streamlit_module")
+        if module is not None:
+            module.secrets = secrets
 
     def set_button_result(self, key: str, value: bool) -> None:
         self._button_returns[key] = bool(value)
@@ -469,6 +505,19 @@ def __getattr__(name: str):
 _streamlit_module.__getattr__ = __getattr__  # type: ignore[attr-defined]
 
 sys.modules.setdefault("streamlit", _streamlit_module)
+
+_streamlit_runtime_module = ModuleType("streamlit.runtime")
+_streamlit_runtime_secrets_module = ModuleType("streamlit.runtime.secrets")
+_streamlit_runtime_secrets_module.Secrets = _DummySecrets  # type: ignore[attr-defined]
+_streamlit_runtime_secrets_module.StreamlitSecretNotFoundError = (
+    _DummyStreamlitSecretNotFoundError
+)
+_streamlit_runtime_module.secrets = _streamlit_runtime_secrets_module  # type: ignore[attr-defined]
+
+_streamlit_module.runtime = SimpleNamespace(secrets=_streamlit_runtime_secrets_module)
+
+sys.modules.setdefault("streamlit.runtime", _streamlit_runtime_module)
+sys.modules.setdefault("streamlit.runtime.secrets", _streamlit_runtime_secrets_module)
 
 
 class _DummyAltairExpr:
