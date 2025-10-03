@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from itertools import combinations
+from typing import Dict
+
 import numpy as np
 import pandas as pd
-from typing import Dict
 
 __all__ = [
     "compute_returns",
@@ -10,14 +12,15 @@ __all__ = [
     "annualized_volatility",
     "beta",
     "drawdown",
+    "drawdown_series",
     "max_drawdown",
     "historical_var",
+    "expected_shortfall",
+    "rolling_correlations",
     "markowitz_optimize",
     "monte_carlo_simulation",
     "apply_stress",
     "asset_risk_breakdown",
-    "max_drawdown",
-    "drawdown_series",
 ]
 
 
@@ -129,6 +132,48 @@ def historical_var(returns: pd.Series, confidence: float = 0.95) -> float:
     return float(-q)
 
 
+def expected_shortfall(returns: pd.Series, confidence: float = 0.95) -> float:
+    """Conditional VaR / Expected Shortfall for the given confidence level."""
+
+    if returns is None or len(returns) == 0:
+        return 0.0
+
+    series = pd.Series(returns).dropna()
+    if series.empty:
+        return 0.0
+
+    threshold = series.quantile(1 - confidence)
+    tail = series[series <= threshold]
+    if tail.empty:
+        return 0.0
+
+    return float(-tail.mean())
+
+
+def rolling_correlations(returns: pd.DataFrame, window: int) -> pd.DataFrame:
+    """Compute rolling correlations between all asset pairs for a given window."""
+
+    if returns is None or returns.empty or window <= 1:
+        return pd.DataFrame()
+
+    df = returns.sort_index().dropna(how="all")
+    if df.empty or df.shape[1] < 2:
+        return pd.DataFrame()
+
+    window = int(window)
+    result = {}
+    for a, b in combinations(df.columns, 2):
+        pair_key = f"{a}↔{b}"
+        result[pair_key] = df[a].rolling(window).corr(df[b])
+
+    if not result:
+        return pd.DataFrame()
+
+    rcorr = pd.DataFrame(result)
+    rcorr = rcorr.dropna(how="all")
+    return rcorr
+
+
 def asset_risk_breakdown(returns: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     """Return annualised volatility and max drawdown per asset."""
     if returns is None or returns.empty:
@@ -186,14 +231,3 @@ def apply_stress(
     s = pd.Series(shocks).reindex(prices.index).fillna(0.0)
     stressed = prices * (1 + s)
     return float((stressed * w).sum())
-
-
-def drawdown_series(returns: pd.Series) -> pd.Series:
-    """Calcula la serie de *drawdown* acumulado a partir de rendimientos diarios."""
-    if returns is None or returns.empty:
-        return pd.Series(dtype=float)
-
-    cumulative = (1 + returns).cumprod()
-    running_max = cumulative.cummax()
-    drawdowns = (cumulative - running_max) / running_max
-    return drawdowns

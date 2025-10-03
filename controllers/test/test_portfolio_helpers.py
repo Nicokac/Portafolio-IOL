@@ -269,6 +269,7 @@ def test_compute_risk_metrics():
     expected_vol = risk_mod.annualized_volatility(expected_port_ret)
     expected_beta = risk_mod.beta(expected_port_ret, bench_ret)
     expected_var = risk_mod.historical_var(expected_port_ret)
+    expected_cvar = risk_mod.expected_shortfall(expected_port_ret)
     expected_opt_w = risk_mod.markowitz_optimize(returns_df)
     expected_asset_vols, expected_asset_drawdowns = risk_mod.asset_risk_breakdown(
         returns_df
@@ -279,6 +280,7 @@ def test_compute_risk_metrics():
         vol,
         b,
         var_95,
+        cvar_95,
         opt_w,
         port_ret,
         asset_vols,
@@ -290,6 +292,7 @@ def test_compute_risk_metrics():
     assert vol == pytest.approx(expected_vol)
     assert b == pytest.approx(expected_beta)
     assert var_95 == pytest.approx(expected_var)
+    assert cvar_95 == pytest.approx(expected_cvar)
     pd.testing.assert_series_equal(opt_w, expected_opt_w)
     pd.testing.assert_series_equal(asset_vols, expected_asset_vols)
     pd.testing.assert_series_equal(asset_drawdowns, expected_asset_drawdowns)
@@ -532,7 +535,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
 
     monkeypatch.setattr(risk_mod.st, "expander", fake_expander)
 
-    col_metrics = [SimpleNamespace(metric=MagicMock()) for _ in range(4)]
+    col_metrics = [SimpleNamespace(metric=MagicMock()) for _ in range(5)]
     vol_col = SimpleNamespace(plotly_chart=MagicMock(), info=MagicMock())
     draw_col = SimpleNamespace(plotly_chart=MagicMock(), info=MagicMock())
     scatter_col = SimpleNamespace(plotly_chart=MagicMock(), info=MagicMock())
@@ -564,10 +567,11 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     monkeypatch.setattr(
         risk_mod,
         "compute_risk_metrics",
-        lambda r, b, w: (
+        lambda r, b, w, var_confidence=0.95: (
             0.2,
             1.1,
             0.03,
+            0.04,
             opt_w,
             fake_port_ret,
             asset_vols,
@@ -608,6 +612,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.05)
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "markdown", lambda *a, **k: None)
 
     def fake_history(simbolos=None, period=None):
         if simbolos == ["^GSPC"]:
@@ -616,7 +621,9 @@ def test_render_risk_analysis_valid_data(monkeypatch):
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
-    select_values = iter([["A", "B"], "1y", "S&P 500 (^GSPC)", "Leve"])
+    select_values = iter(
+        [["A", "B"], "1y", "3 meses (63)", "S&P 500 (^GSPC)", "95%", "Leve"]
+    )
 
     def fake_selectbox(label, options, index=0, **kwargs):
         try:
@@ -628,6 +635,9 @@ def test_render_risk_analysis_valid_data(monkeypatch):
         return val
 
     monkeypatch.setattr(risk_mod.st, "selectbox", fake_selectbox)
+    monkeypatch.setattr(
+        risk_mod, "rolling_correlations", lambda *a, **k: pd.DataFrame({"A↔B": [0.1, 0.2]})
+    )
 
     pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
 
@@ -644,6 +654,10 @@ def test_render_risk_analysis_valid_data(monkeypatch):
         "3.00%",
     )
     assert col_metrics[3].metric.call_args[0] == (
+        "CVaR 5%",
+        "4.00%",
+    )
+    assert col_metrics[4].metric.call_args[0] == (
         "Drawdown máximo",
         "-25.00%",
     )
@@ -675,7 +689,7 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
         risk_mod.st,
         "columns",
         lambda n: ([SimpleNamespace(metric=MagicMock()) for _ in range(n)]
-        if n == 4
+        if n == 5
         else (dummy_col, dummy_col) if n == 2 else (dummy_col,)),
     )
 
@@ -697,6 +711,7 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
             0.1,
             1.0,
             0.02,
+            0.03,
             pd.Series({"A": 1.0}),
             pd.Series([0.01, -0.02]),
             pd.Series(dtype=float),
@@ -706,8 +721,9 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
     )
     monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: pd.Series(dtype=float))
     monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod.st, "markdown", lambda *a, **k: None)
 
-    select_values = iter([["A"], "1y", "S&P 500 (^GSPC)", "Leve"])
+    select_values = iter([["A"], "1y", "S&P 500 (^GSPC)", "95%", "Leve"])
     monkeypatch.setattr(
         risk_mod.st,
         "selectbox",

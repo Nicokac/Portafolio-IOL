@@ -12,6 +12,8 @@ from application.risk_service import (
     annualized_volatility,
     beta,
     historical_var,
+    expected_shortfall,
+    rolling_correlations,
     markowitz_optimize,
     monte_carlo_simulation,
     apply_stress,
@@ -27,16 +29,27 @@ from shared.errors import AppError
 logger = logging.getLogger(__name__)
 
 
-def compute_risk_metrics(returns_df, bench_ret, weights):
+def compute_risk_metrics(returns_df, bench_ret, weights, *, var_confidence: float = 0.95):
     """Compute core risk metrics for the portfolio."""
     port_ret = returns_df.mul(weights, axis=1).sum(axis=1)
     vol = annualized_volatility(port_ret)
     b = beta(port_ret, bench_ret)
-    var_95 = historical_var(port_ret)
+    var_value = historical_var(port_ret, confidence=var_confidence)
+    cvar_value = expected_shortfall(port_ret, confidence=var_confidence)
     opt_w = markowitz_optimize(returns_df)
     asset_vols, asset_drawdowns = asset_risk_breakdown(returns_df)
     port_drawdown = max_drawdown(port_ret)
-    return vol, b, var_95, opt_w, port_ret, asset_vols, asset_drawdowns, port_drawdown
+    return (
+        vol,
+        b,
+        var_value,
+        cvar_value,
+        opt_w,
+        port_ret,
+        asset_vols,
+        asset_drawdowns,
+        port_drawdown,
+    )
 
 
 def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
@@ -92,6 +105,7 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
                 return
+        returns_for_corr = compute_returns(hist_df)
         fig = plot_correlation_heatmap(hist_df)
         if fig:
             st.plotly_chart(
@@ -109,6 +123,44 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                 Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
                 """
             )
+            if returns_for_corr.shape[1] >= 2:
+                window_options = {"1 mes (21)": 21, "3 meses (63)": 63, "6 meses (126)": 126}
+                selected_window_label = st.selectbox(
+                    "Ventana para correlaciones móviles",
+                    list(window_options.keys()),
+                    index=1,
+                    key="rolling_corr_window",
+                )
+                selected_window = window_options[selected_window_label]
+                rolling_df = rolling_correlations(returns_for_corr, selected_window)
+                if not rolling_df.empty:
+                    roll_fig = px.line(
+                        rolling_df,
+                        labels={"index": "Fecha", "value": "Correlación", "variable": "Par"},
+                    )
+                    roll_fig = _apply_layout(
+                        roll_fig,
+                        title=f"Correlaciones móviles ({selected_window} ruedas)",
+                    )
+                    st.plotly_chart(
+                        roll_fig,
+                        width="stretch",
+                        key="rolling_corr_chart",
+                        config=PLOTLY_CONFIG,
+                    )
+                    latest = rolling_df.dropna(how="all").tail(1)
+                    if not latest.empty:
+                        latest_tidy = (
+                            latest.T.reset_index().rename(columns={"index": "Par", latest.index[-1]: "Correlación"})
+                        )
+                        st.markdown(
+                            latest_tidy.to_html(index=False, float_format="{:.2f}".format),
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.info(
+                        "No se pudieron calcular correlaciones móviles con la ventana seleccionada."
+                    )
         else:
             st.warning(
                 f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación."
@@ -190,18 +242,33 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     )
                     return
 
+                confidence_options = {"90%": 0.90, "95%": 0.95, "99%": 0.99}
+                selected_conf_label = st.selectbox(
+                    "Nivel de confianza para VaR/CVaR",
+                    list(confidence_options.keys()),
+                    index=1,
+                    key="var_confidence_select",
+                )
+                var_confidence = confidence_options[selected_conf_label]
+
                 (
                     vol,
                     b,
-                    var_95,
+                    var_value,
+                    cvar_value,
                     opt_w,
                     port_ret,
                     asset_vols,
                     asset_drawdowns,
                     port_drawdown,
-                ) = compute_risk_metrics(returns_df, bench_ret, weights)
+                ) = compute_risk_metrics(
+                    returns_df,
+                    bench_ret,
+                    weights,
+                    var_confidence=var_confidence,
+                )
 
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric(
                     "Volatilidad anualizada",
                     f"{vol:.2%}" if vol == vol else "N/A",
@@ -210,11 +277,16 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     f"Beta vs {benchmark_choice}",
                     f"{b:.2f}" if b == b else "N/A",
                 )
+                tail_pct = (1 - var_confidence) * 100
                 c3.metric(
-                    "VaR 5%",
-                    f"{var_95:.2%}" if var_95 == var_95 else "N/A",
+                    f"VaR {tail_pct:.0f}%",
+                    f"{var_value:.2%}" if var_value == var_value else "N/A",
                 )
                 c4.metric(
+                    f"CVaR {tail_pct:.0f}%",
+                    f"{cvar_value:.2%}" if cvar_value == cvar_value else "N/A",
+                )
+                c5.metric(
                     "Drawdown máximo",
                     f"{port_drawdown:.2%}" if port_drawdown == port_drawdown else "N/A",
                 )
@@ -291,14 +363,21 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                         "La volatilidad refleja la variabilidad de los retornos; aquí se muestra en una ventana móvil de 30 días."
                     )
 
-                with st.expander("Distribución de retornos y VaR"):
-                    var_threshold = np.quantile(port_ret, 0.05)
+                with st.expander("Distribución de retornos, VaR y CVaR"):
+                    var_threshold = np.quantile(port_ret, 1 - var_confidence)
+                    cvar_threshold = -cvar_value
                     fig_var = px.histogram(port_ret, nbins=50)
                     fig_var.add_vline(
                         x=var_threshold,
                         line_color="red",
-                        annotation_text="VaR 5%",
+                        annotation_text=f"VaR {tail_pct:.0f}%",
                         annotation_position="top left",
+                    )
+                    fig_var.add_vline(
+                        x=cvar_threshold,
+                        line_color="orange",
+                        annotation_text=f"CVaR {tail_pct:.0f}%",
+                        annotation_position="top right",
                     )
                     st.plotly_chart(
                         fig_var,
@@ -306,7 +385,10 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(
-                        "La línea roja indica el VaR al 5%, representando la pérdida máxima esperada con 95% de confianza."
+                        (
+                            "Las líneas indican los niveles de pérdida esperada: VaR (rojo) y CVaR (naranja)"
+                            f" para un nivel de confianza del {var_confidence:.0%}."
+                        )
                     )
 
                 with st.expander("Beta vs retorno"):
