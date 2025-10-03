@@ -13,6 +13,7 @@ if str(ROOT_DIR) not in sys.path:
 
 
 from controllers.portfolio.charts import generate_basic_charts
+from ui.charts import plot_bubble_pl_vs_costo
 from services.portfolio_view import PortfolioContributionMetrics
 from ui.charts import plot_portfolio_timeline, plot_contribution_heatmap
 
@@ -46,6 +47,32 @@ def test_generate_basic_charts_produces_figures():
         assert isinstance(fig, go.Figure), f"Expected {name} to be a Plotly figure"
 
 
+def test_plot_bubble_with_benchmark_dataset():
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AL30", "^GSPC"],
+            "valor_actual": [1500.0, 0.0],
+            "riesgo": [0.22, 0.18],
+            "pl": [120.0, 0.0],
+            "categoria": ["Activo", "Benchmark"],
+            "es_benchmark": [False, True],
+            "tipo": ["Accion", "Benchmark"],
+        }
+    )
+
+    fig = plot_bubble_pl_vs_costo(
+        df,
+        x_axis="riesgo",
+        y_axis="pl",
+        category_col="categoria",
+        benchmark_col="es_benchmark",
+    )
+
+    assert isinstance(fig, go.Figure)
+    names = {trace.name for trace in fig.data}
+    assert {"Activo", "Benchmark"}.issubset(names)
+    assert fig.layout.shapes
+    assert any(getattr(shape, "type", None) == "line" for shape in fig.layout.shapes)
 def test_plot_portfolio_timeline_handles_history():
     history = pd.DataFrame(
         {
