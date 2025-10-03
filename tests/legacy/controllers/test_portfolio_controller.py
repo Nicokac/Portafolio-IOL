@@ -5,6 +5,9 @@ from unittest.mock import MagicMock, patch, ANY
 import pandas as pd
 import pytest
 
+# NOTE: Casos heredados previos a la refactorización de `tests/controllers/`.
+# Se conservan aquí para comparaciones manuales hasta completar la migración
+# definitiva del controlador de portafolio.
 from controllers.portfolio import (
     PortfolioMetrics,
     PortfolioViewModel,

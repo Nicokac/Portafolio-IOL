@@ -4,6 +4,9 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 import plotly.express as px
 
+# NOTE: Helpers legacy mantenidos temporalmente para comparar con la suite
+# moderna de portfolio. Una vez validada la cobertura en `tests/controllers/`
+# estos escenarios se eliminarán.
 from controllers import portfolio as pm
 import controllers.portfolio.load_data as load_mod
 import controllers.portfolio.filters as filters_mod

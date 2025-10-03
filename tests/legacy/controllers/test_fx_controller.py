@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+# NOTE: Suite legacy mantenida sólo para auditorías puntuales del flujo antiguo
+# de FX. La cobertura activa se encuentra en `tests/controllers/` y estos casos
+# se eliminarán una vez que confirmemos la paridad de escenarios.
 from controllers.fx import render_fx_section
 
 

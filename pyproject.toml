@@ -6,3 +6,6 @@ version = "0.3.27.1"  # Keep shared.version.DEFAULT_VERSION aligned with this va
 markers = [
     "live_yahoo: Tests that call the live Yahoo Finance API (enable with RUN_LIVE_YF=1)",
 ]
+norecursedirs = [
+    "tests/legacy",
+]
