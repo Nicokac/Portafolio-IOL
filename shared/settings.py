@@ -73,6 +73,16 @@ world_bank_api_rate_limit_per_minute: int = getattr(
 world_bank_sector_series: Dict[str, str] = getattr(
     settings, "WORLD_BANK_SECTOR_SERIES", {}
 )
+ohlc_primary_provider: str = getattr(settings, "OHLC_PRIMARY_PROVIDER", "alpha_vantage")
+ohlc_secondary_providers: list[str] = list(
+    getattr(settings, "OHLC_SECONDARY_PROVIDERS", []) or []
+)
+alpha_vantage_api_key: str | None = getattr(settings, "ALPHA_VANTAGE_API_KEY", None)
+alpha_vantage_base_url: str = getattr(
+    settings, "ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query"
+)
+polygon_api_key: str | None = getattr(settings, "POLYGON_API_KEY", None)
+polygon_base_url: str = getattr(settings, "POLYGON_BASE_URL", "https://api.polygon.io")
 
 __all__ = [
     "settings",
@@ -112,4 +122,10 @@ __all__ = [
     "world_bank_api_base_url",
     "world_bank_api_rate_limit_per_minute",
     "world_bank_sector_series",
+    "ohlc_primary_provider",
+    "ohlc_secondary_providers",
+    "alpha_vantage_api_key",
+    "alpha_vantage_base_url",
+    "polygon_api_key",
+    "polygon_base_url",
 ]
