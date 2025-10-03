@@ -6,13 +6,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.27)
+## Quick-start (release 0.3.27.1)
 
-La versión **0.3.27** fortifica la capa de APIs y los mecanismos de resiliencia: centraliza la configuración de timeouts y backoff, monitorea la disponibilidad de cada proveedor y publica la salud consolidada en todas las superficies visibles.
-## Quick-start (release 0.3.27 — 2025-11-05)
+La versión **0.3.27.1** fortifica la capa de APIs y los mecanismos de resiliencia: centraliza la configuración de timeouts y backoff, monitorea la disponibilidad de cada proveedor y publica la salud consolidada en todas las superficies visibles.
+## Quick-start (release 0.3.27.1 — 2025-11-07)
 
-La versión **0.3.27** destaca cuatro ejes principales:
-- El **header del login y del dashboard** reutiliza el helper centralizado de versión para mostrar `Versión 0.3.27` junto con la hora de Argentina y una insignia del estado actual de las APIs configuradas.
+La versión **0.3.27.1** destaca cuatro ejes principales:
+- El **header del login y del dashboard** reutiliza el helper centralizado de versión para mostrar `Versión 0.3.27.1` junto con la hora de Argentina y una insignia del estado actual de las APIs configuradas.
 - El **health sidebar** incorpora un monitor de resiliencia con badges de cache hit/miss, ratios de fallback y buckets de latencia sincronizados con los contadores globales, resaltando la última respuesta exitosa por proveedor.
 - El menú **⚙️ Acciones** del dashboard publica notificaciones internas (`st.toast`) cuando la aplicación se recupera de un fallback y cuando los proveedores externos vuelven a estar disponibles, dejando trazabilidad para los analistas.
 - Las notas del screening y el resumen de riesgo muestran la secuencia de degradación aplicada (proveedor primario, secundario, fallback estático) junto con los identificadores de la nueva telemetría consolidada.
@@ -32,7 +32,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.27` junto con
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.27.1` junto con
    el timestamp generado por `TimeProvider`, confirmando que la actualización quedó aplicada. El menú
    **⚙️ Acciones** mostrará un toast "Proveedor primario restablecido" cuando ejecutes **⟳ Refrescar**
    tras un fallback, dejando registro inmediato de la recuperación documentada en esta release.
@@ -57,6 +57,18 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
      contadores sincronizados de aciertos/fallback y la procedencia más resiliente disponible.
 4. **Valida el fallback multinivel de datos macro.** Arranca con `MACRO_API_PROVIDER="fred,worldbank"` y deja sin definir `FRED_API_KEY` para forzar el salto al segundo proveedor. Declara una serie World Bank (`WORLD_BANK_SECTOR_SERIES='{"Energy": "EG.USE.PCAP.KG.OE"}'`) y ejecuta un screening: las notas mostrarán "Datos macro (World Bank)" y el health sidebar actualizará los contadores de éxito, fallbacks y buckets de latencia para ese proveedor. Si luego quitas también la clave de World Bank o las series configuradas, la secuencia finalizará en el fallback estático y registrará el motivo en la misma telemetría.
 
+### Validar el fallback jerárquico desde el health sidebar
+
+1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La release 0.3.27.1 preserva la
+   última secuencia de degradación en `st.session_state`, por lo que verás los mismos datos incluso después de un `Rerun`.
+2. Ejecuta nuevamente **⟳ Refrescar** desde el menú **⚙️ Acciones** y observa el timeline: debe listar `primario → secundario →
+   fallback` con la marca temporal de cada intento y la insignia que indica si la recuperación fue completa o parcial.
+3. En la sección **Último proveedor exitoso** verifica que el identificador coincida con las notas del screening y que la latencia
+   agregada conserve el valor reportado durante la degradación. Si fuerzas un error manual (por ejemplo, quitando todas las claves),
+   el bloque mostrará `Fallback estático` junto con el mensaje explicativo persistente.
+4. Consulta la guía de soporte para escenarios extendidos y flujos de depuración en
+   [docs/troubleshooting.md#fallback-jerarquico-desde-health-sidebar](docs/troubleshooting.md#fallback-jerarquico-desde-health-sidebar).
+
 **Notas clave del flujo**
 
 - El mini-dashboard inicial resume valor de la cartera, variación diaria y cash disponible con formato de tarjetas, y se actualiza automáticamente después de cada screening.
@@ -65,13 +77,35 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
 - La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
 - El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
 
-**Resiliencia de APIs (0.3.27).** Cuando guardas un preset, la aplicación persiste la combinación de filtros y el resultado del último screening asociado. Al relanzarlo, la telemetría agrega la procedencia del dato (primario, secundario, fallback estático) y clasifica la recuperación según la estrategia aplicada:
+**Resiliencia de APIs (0.3.27.1).** Cuando guardas un preset, la aplicación persiste la combinación de filtros y el resultado del último screening asociado. Al relanzarlo, la telemetría agrega la procedencia del dato (primario, secundario, fallback estático) y clasifica la recuperación según la estrategia aplicada:
 
 - Si los filtros no cambiaron y el proveedor primario respondió, se muestra una insignia "⚡ Resultado servido desde caché" en la tabla y la telemetría reduce el runtime (<1 s en stub, ≈2 s en Yahoo) al evitar descargas redundantes, resaltando en verde el ahorro neto respecto de la corrida anterior.
 - Si el proveedor primario falla pero existe un secundario configurado, la UI muestra "🛡️ Fallback activado" y el health sidebar registra el tiempo adicional invertido en la degradación controlada.
 - Cuando todos los proveedores remotos fallan, la secuencia finaliza en el fallback estático con la leyenda "📦 Snapshot de contingencia" y el contador de resiliencia incrementa el total de recuperaciones exitosas sin datos frescos.
 
-Estas novedades convierten a la release 0.3.27 en la referencia para validar onboarding, telemetría y resiliencia multi-API: toda la UI recuerda la versión activa, expone KPIs agregados de disponibilidad en el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando los tiempos de iteración al dejar a la vista el impacto de cada cambio.
+Estas novedades convierten a la release 0.3.27.1 en la referencia para validar onboarding, telemetría y resiliencia multi-API: toda la UI recuerda la versión activa, expone KPIs agregados de disponibilidad en el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando los tiempos de iteración al dejar a la vista el impacto de cada cambio.
+
+## Configuración de claves API
+
+La release 0.3.27.1 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets`. Antes de
+ejecutar la aplicación en modo live, define las claves según el proveedor habilitado. Si una clave falta, el health sidebar registrará
+el evento como `disabled` y la degradación continuará con el siguiente proveedor disponible.
+
+### Variables mínimas por proveedor
+
+- **Alpha Vantage** (`ALPHA_VANTAGE_API_KEY`): requerida para los históricos OHLC en `services.ohlc_adapter`. Puedes opcionalmente
+  ajustar `ALPHA_VANTAGE_BASE_URL` para entornos de prueba.
+- **Polygon** (`POLYGON_API_KEY`): habilita los precios intradía y los agregados en vivo; respeta el orden de `MACRO_API_PROVIDER`
+  cuando figura como proveedor secundario de mercado. Usa `POLYGON_BASE_URL` para entornos aislados.
+- **Financial Modeling Prep (FMP)** (`FMP_API_KEY`): alimenta ratios fundamentales y `application.ta_service`. Opcionalmente regula
+  `FMP_TIMEOUT` y `FMP_BASE_URL` para ensayos offline.
+- **FRED** (`FRED_API_KEY` y `FRED_SECTOR_SERIES`): primer escalón de datos macro; sin esta clave el intento queda marcado como
+  `disabled` y se recurre al siguiente proveedor configurado.
+- **World Bank** (`WORLD_BANK_API_KEY` y `WORLD_BANK_SECTOR_SERIES`): respaldo macro tras FRED; cuando falta se documenta como
+  `unavailable` y se activa el fallback estático configurado en `MACRO_SECTOR_FALLBACK`.
+
+Guarda las claves sensibles en `.env` o en `~/.streamlit/secrets.toml` e integra su carga en tus pipelines de CI/CD (ver
+[docs/troubleshooting.md#claves-api](docs/troubleshooting.md#claves-api) para detalles y validaciones automatizadas).
 
 ## Persistencia de favoritos
 
@@ -176,7 +210,7 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.27)
+##### Escenarios de fallback macro (0.3.27.1)
 
 1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El monitor de resiliencia del health sidebar incrementa los contadores de éxito, actualiza los buckets de latencia del proveedor secundario y agrega la insignia "Fallback cubierto".
 2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente, incluyendo el identificador `contingency_snapshot` en la telemetría.
@@ -325,11 +359,11 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.27".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.27.1".
 
 El menú **⚙️ Acciones** refuerza la seguridad operativa al anunciar con toasts cada vez que se refrescan los datos o se completa el cierre de sesión, dejando constancia en la propia UI sin depender de logs externos.
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.27)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.27.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
 
 ### Interpretación del health sidebar (KPIs agregados)
 
