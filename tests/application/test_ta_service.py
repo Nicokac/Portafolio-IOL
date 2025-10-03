@@ -192,6 +192,25 @@ def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.Monk
         "earningsQuarterlyGrowth": 0.25,
     }
 
+    class DummyFMP:
+        api_key = "demo"
+
+        def get_ratios_ttm(self, symbol: str):
+            return {
+                "netProfitMarginTTM": 0.24,
+                "grossProfitMarginTTM": 0.48,
+                "ebitdaMarginTTM": 0.35,
+                "netDebtToEBITDATTM": 1.8,
+                "dividendPayoutRatioTTM": 0.32,
+                "quickRatioTTM": 1.2,
+                "currentRatioTTM": 1.6,
+                "interestCoverageTTM": 7.2,
+                "debtEquityRatioTTM": 1.3,
+            }
+
+        def get_key_metrics_ttm(self, symbol: str):
+            return {}
+
     class DummyTicker:
         def __init__(self, ticker: str) -> None:
             self.info = info.copy()
@@ -199,6 +218,7 @@ def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
     monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
+    monkeypatch.setattr(ta_mod, "get_fmp_client", lambda: DummyFMP())
 
     fundamentals = ta_mod.get_fundamental_data("TEST")
     assert fundamentals["return_on_equity"] == pytest.approx(18.0)
@@ -207,6 +227,13 @@ def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.Monk
     assert fundamentals["operating_margin"] == pytest.approx(30.0)
     assert fundamentals["fcf_yield"] == pytest.approx(5.0)
     assert fundamentals["interest_coverage"] == pytest.approx(6.4)
+    assert fundamentals["net_margin_ttm"] == pytest.approx(24.0)
+    assert fundamentals["gross_margin"] == pytest.approx(48.0)
+    assert fundamentals["ebitda_margin"] == pytest.approx(35.0)
+    assert fundamentals["debt_to_ebitda"] == pytest.approx(1.8)
+    assert fundamentals["payout_ratio"] == pytest.approx(32.0)
+    assert fundamentals["quick_ratio"] == pytest.approx(1.2)
+    assert fundamentals["current_ratio"] == pytest.approx(1.6)
 
     df = ta_mod.portfolio_fundamentals(["TEST"])
     assert not df.empty
@@ -217,6 +244,131 @@ def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.Monk
     assert row["operating_margin"] == pytest.approx(30.0)
     assert row["fcf_yield"] == pytest.approx(5.0)
     assert row["interest_coverage"] == pytest.approx(6.4)
+    assert row["net_margin_ttm"] == pytest.approx(24.0)
+    assert row["gross_margin"] == pytest.approx(48.0)
+    assert row["ebitda_margin"] == pytest.approx(35.0)
+    assert row["debt_to_ebitda"] == pytest.approx(1.8)
+    assert row["payout_ratio"] == pytest.approx(32.0)
+    assert row["quick_ratio"] == pytest.approx(1.2)
+    assert row["current_ratio"] == pytest.approx(1.6)
+
+
+def test_get_fundamental_data_uses_fmp_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {
+        "shortName": "FALLBACK",
+        "sector": "Industrials",
+        "website": "https://fallback.example",
+        "marketCap": 2500,
+        "trailingPE": 20.0,
+        "dividendRate": 0.0,
+        "previousClose": 50.0,
+        "priceToBook": 2.5,
+        "debtToEquity": None,
+        "returnOnEquity": 0.05,
+        "profitMargins": None,
+        "returnOnAssets": 0.04,
+        "operatingMargins": 0.12,
+        "freeCashflow": None,
+        "enterpriseValue": None,
+        "interestCoverage": None,
+        "revenueGrowth": None,
+        "earningsQuarterlyGrowth": None,
+    }
+
+    class DummyFMP:
+        api_key = "demo"
+
+        def get_ratios_ttm(self, symbol: str):
+            return {
+                "netProfitMarginTTM": 0.255,
+                "grossProfitMarginTTM": 0.41,
+                "ebitdaMarginTTM": 0.28,
+                "netDebtToEBITDATTM": 1.05,
+                "dividendPayoutRatioTTM": 0.15,
+                "quickRatioTTM": 1.1,
+                "currentRatioTTM": 1.4,
+                "interestCoverageTTM": 7.5,
+                "debtEquityRatioTTM": 1.08,
+            }
+
+        def get_key_metrics_ttm(self, symbol: str):
+            return {}
+
+    class DummyTicker:
+        def __init__(self, ticker: str) -> None:
+            self.info = info.copy()
+            self.sustainability = None
+
+    monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
+    monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
+    monkeypatch.setattr(ta_mod, "get_fmp_client", lambda: DummyFMP())
+
+    fundamentals = ta_mod.get_fundamental_data("FALLBACK")
+    assert fundamentals["profit_margin"] == pytest.approx(25.5)
+    assert fundamentals["interest_coverage"] == pytest.approx(7.5)
+    assert fundamentals["debt_to_equity"] == pytest.approx(1.08)
+    assert fundamentals["net_margin_ttm"] == pytest.approx(25.5)
+    assert fundamentals["debt_to_ebitda"] == pytest.approx(1.05)
+
+    df = ta_mod.portfolio_fundamentals(["FALLBACK"])
+    row = df.iloc[0]
+    assert row["profit_margin"] == pytest.approx(25.5)
+    assert row["interest_coverage"] == pytest.approx(7.5)
+    assert row["debt_to_equity"] == pytest.approx(1.08)
+    assert row["net_margin_ttm"] == pytest.approx(25.5)
+    assert row["debt_to_ebitda"] == pytest.approx(1.05)
+
+
+def test_fmp_failures_do_not_break_fundamental_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {
+        "shortName": "BROKEN",
+        "sector": "Finance",
+        "website": "https://broken.example",
+        "marketCap": 900,
+        "trailingPE": 10.0,
+        "dividendRate": 0.2,
+        "previousClose": 5.0,
+        "priceToBook": 1.1,
+        "debtToEquity": 0.8,
+        "returnOnEquity": 0.12,
+        "profitMargins": 0.18,
+        "returnOnAssets": 0.06,
+        "operatingMargins": 0.2,
+        "freeCashflow": 400.0,
+        "enterpriseValue": 8000.0,
+        "interestCoverage": 4.0,
+        "revenueGrowth": 0.05,
+        "earningsQuarterlyGrowth": 0.1,
+    }
+
+    class BrokenFMP:
+        api_key = "demo"
+
+        def get_ratios_ttm(self, symbol: str):  # pragma: no cover - intentionally failing
+            raise RuntimeError("ratios down")
+
+        def get_key_metrics_ttm(self, symbol: str):  # pragma: no cover - intentionally failing
+            raise RuntimeError("metrics down")
+
+    class DummyTicker:
+        def __init__(self, ticker: str) -> None:
+            self.info = info.copy()
+            self.sustainability = None
+
+    monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
+    monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
+    monkeypatch.setattr(ta_mod, "get_fmp_client", lambda: BrokenFMP())
+
+    fundamentals = ta_mod.get_fundamental_data("BROKEN")
+    assert fundamentals["profit_margin"] == pytest.approx(18.0)
+    assert fundamentals["net_margin_ttm"] is None
+    assert fundamentals["debt_to_ebitda"] is None
+
+    df = ta_mod.portfolio_fundamentals(["BROKEN"])
+    row = df.iloc[0]
+    assert row["profit_margin"] == pytest.approx(18.0)
+    assert row["net_margin_ttm"] is None
+    assert row["debt_to_ebitda"] is None
 
 
 def test_portfolio_history_is_cached_and_renames_columns(monkeypatch: pytest.MonkeyPatch) -> None:

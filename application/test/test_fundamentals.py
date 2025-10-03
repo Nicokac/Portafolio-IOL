@@ -25,8 +25,17 @@ def test_portfolio_fundamentals_basic(monkeypatch):
                 "earningsQuarterlyGrowth": 0.2,
             }
             self.sustainability = pd.DataFrame({"Value": [42]}, index=["totalEsg"])
+    class DummyFMP:
+        api_key = "demo"
+
+        def get_ratios_ttm(self, symbol: str):
+            return {}
+
+        def get_key_metrics_ttm(self, symbol: str):
+            return {}
     monkeypatch.setattr(tas, "map_to_us_ticker", fake_map)
     monkeypatch.setattr(tas, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
+    monkeypatch.setattr(tas, "get_fmp_client", lambda: DummyFMP())
     tas.portfolio_fundamentals.cache_clear()
     df = tas.portfolio_fundamentals(["AAA"])
     assert not df.empty
