@@ -82,6 +82,14 @@ def _bollinger_pandas(close: pd.Series, window: int = 20, std: float = 2.0):
     return lower, ma, upper
 
 
+def _to_percent(value) -> float | None:
+    """Convierte valores decimales (0.12) a porcentajes (12.0)."""
+    val = _to_float(value)
+    if val is None:
+        return None
+    return val * 100.0
+
+
 # -----------------------
 # Fetch + indicadores
 # -----------------------
@@ -389,8 +397,19 @@ def get_fundamental_data(ticker: str) -> dict:
 
         plausible_yield = None if yield_val > MAX_PLAUSIBLE_YIELD else yield_val
 
-        roe = info.get("returnOnEquity")
-        margin = info.get("profitMargins")
+        roe = _to_percent(info.get("returnOnEquity"))
+        margin = _to_percent(info.get("profitMargins"))
+        roa = _to_percent(info.get("returnOnAssets"))
+        operating_margin = _to_percent(info.get("operatingMargins"))
+        free_cash_flow = _to_float(info.get("freeCashflow"))
+        enterprise_value = _to_float(info.get("enterpriseValue"))
+        fcf_yield = None
+        if (
+            free_cash_flow is not None
+            and enterprise_value not in (None, 0)
+        ):
+            fcf_yield = (free_cash_flow / enterprise_value) * 100.0
+        interest_coverage = _to_float(info.get("interestCoverage"))
         data = {
             "name": info.get("shortName", "N/A"),
             "sector": info.get("sector", "N/A"),
@@ -399,8 +418,12 @@ def get_fundamental_data(ticker: str) -> dict:
             "pe_ratio": info.get("trailingPE"),
             "dividend_yield": plausible_yield,
             "price_to_book": info.get("priceToBook"),
-            "return_on_equity": roe * 100 if roe is not None else None,
-            "profit_margin": margin * 100 if margin is not None else None,
+            "return_on_equity": roe,
+            "profit_margin": margin,
+            "return_on_assets": roa,
+            "operating_margin": operating_margin,
+            "fcf_yield": fcf_yield,
+            "interest_coverage": interest_coverage,
             "debt_to_equity": info.get("debtToEquity"),
         }
         return data
@@ -437,6 +460,19 @@ def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
             if isinstance(sustain, pd.DataFrame) and not sustain.empty:
                 if "Value" in sustain.columns and "totalEsg" in sustain.index:
                     esg_score = _to_float(sustain.loc["totalEsg", "Value"])
+            roe = _to_percent(info.get("returnOnEquity"))
+            profit_margin = _to_percent(info.get("profitMargins"))
+            roa = _to_percent(info.get("returnOnAssets"))
+            operating_margin = _to_percent(info.get("operatingMargins"))
+            free_cash_flow = _to_float(info.get("freeCashflow"))
+            enterprise_value = _to_float(info.get("enterpriseValue"))
+            fcf_yield = None
+            if (
+                free_cash_flow is not None
+                and enterprise_value not in (None, 0)
+            ):
+                fcf_yield = (free_cash_flow / enterprise_value) * 100.0
+            interest_coverage = _to_float(info.get("interestCoverage"))
             rows.append(
                 {
                     "symbol": sym,
@@ -445,8 +481,12 @@ def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
                     "market_cap": info.get("marketCap"),
                     "pe_ratio": info.get("trailingPE"),
                     "price_to_book": info.get("priceToBook"),
-                    "return_on_equity": info.get("returnOnEquity"),
-                    "profit_margin": info.get("profitMargins"),
+                    "return_on_equity": roe,
+                    "profit_margin": profit_margin,
+                    "return_on_assets": roa,
+                    "operating_margin": operating_margin,
+                    "fcf_yield": fcf_yield,
+                    "interest_coverage": interest_coverage,
                     "debt_to_equity": info.get("debtToEquity"),
                     "revenue_growth": info.get("revenueGrowth"),
                     "earnings_growth": info.get("earningsQuarterlyGrowth"),

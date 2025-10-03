@@ -24,10 +24,14 @@ def test_render_fundamental_data_normal_flow():
         "website": "https://acme.com",
         "market_cap": 1000,
         "pe_ratio": 10,
-        "dividend_yield": 0.02,
+        "dividend_yield": 2.5,
         "price_to_book": 1.5,
-        "return_on_equity": 0.1,
-        "profit_margin": 0.15,
+        "return_on_equity": 12.0,
+        "profit_margin": 15.0,
+        "return_on_assets": 9.0,
+        "operating_margin": 30.0,
+        "fcf_yield": 5.0,
+        "interest_coverage": 4.5,
         "debt_to_equity": 0.5,
     }
     with patch.object(fundamentals, "st", new=MagicMock()) as st:
@@ -43,6 +47,13 @@ def test_render_fundamental_data_normal_flow():
     df_arg = st.table.call_args[0][0]
     assert isinstance(df_arg, pd.DataFrame)
     assert len(df_arg) == len(fundamentals.INDICATORS)
+    rows = {row["Indicador"]: row["Valor"] for row in df_arg.to_dict("records")}
+    assert rows["ROE"] == "12.00 %"
+    assert rows["Margen Neto"] == "15.00 %"
+    assert rows["ROA"] == "9.00 %"
+    assert rows["Margen Operativo"] == "30.00 %"
+    assert rows["FCF Yield"] == "5.00 %"
+    assert rows["Cobertura de Intereses"] == "4.50×"
     st.divider.assert_called_once()
 
 
@@ -62,6 +73,10 @@ def test_render_fundamental_ranking_filters_sector_and_detects_warnings():
             "pe_ratio": [10, 20, 15],
             "revenue_growth": [5, 10, 8],
             "earnings_growth": [-1, 2, 3],
+            "return_on_assets": [9.0, 6.0, 7.0],
+            "operating_margin": [25.0, 15.0, 10.0],
+            "fcf_yield": [4.0, 3.0, 2.0],
+            "interest_coverage": [4.0, 5.0, 6.0],
             "esg_score": [25, 40, 50],
         }
     )
@@ -72,6 +87,9 @@ def test_render_fundamental_ranking_filters_sector_and_detects_warnings():
     filtered = st.dataframe.call_args[0][0]
     assert (filtered["sector"] == "Tech").all()
     assert list(filtered["market_cap"]) == [200, 100]
+    metric_options = st.selectbox.call_args_list[1].args[1]
+    assert "return_on_assets" in metric_options
+    assert "fcf_yield" in metric_options
     st.warning.assert_has_calls(
         [
             call("Alerta: crecimiento de ganancias negativo en algunos activos."),
