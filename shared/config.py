@@ -79,6 +79,18 @@ class Settings:
             )
         )
 
+        # --- Financial Modeling Prep ---
+        self.FMP_API_KEY: str | None = self.secret_or_env(
+            "FMP_API_KEY", cfg.get("FMP_API_KEY")
+        )
+        self.FMP_BASE_URL: str = os.getenv(
+            "FMP_BASE_URL",
+            cfg.get("FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"),
+        )
+        self.FMP_TIMEOUT: float = float(
+            os.getenv("FMP_TIMEOUT", cfg.get("FMP_TIMEOUT", 5.0))
+        )
+
         default_markets = ["NASDAQ", "NYSE", "AMEX"]
         sentinel = object()
         raw_markets: Any = os.getenv("OPPORTUNITIES_TARGET_MARKETS", sentinel)

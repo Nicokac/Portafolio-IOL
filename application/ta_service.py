@@ -13,6 +13,7 @@ from shared.settings import (
 )
 from shared.utils import _to_float
 from services.health import record_yfinance_usage
+from services.fmp_client import get_fmp_client
 
 import numpy as np
 import pandas as pd
@@ -88,6 +89,96 @@ def _to_percent(value) -> float | None:
     if val is None:
         return None
     return val * 100.0
+
+
+def _is_missing_value(value) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(np.isnan(value))
+    except TypeError:
+        return False
+
+
+_FMP_FIELD_MAP: dict[str, tuple[str, str]] = {
+    "debt_to_ebitda": ("netDebtToEBITDATTM", "ratio"),
+    "net_margin_ttm": ("netProfitMarginTTM", "percent"),
+    "ebitda_margin": ("ebitdaMarginTTM", "percent"),
+    "payout_ratio": ("dividendPayoutRatioTTM", "percent"),
+    "quick_ratio": ("quickRatioTTM", "ratio"),
+    "current_ratio": ("currentRatioTTM", "ratio"),
+    "gross_margin": ("grossProfitMarginTTM", "percent"),
+    "interest_coverage": ("interestCoverageTTM", "ratio"),
+    "debt_to_equity": ("debtEquityRatioTTM", "ratio"),
+}
+
+_FMP_FALLBACK_MAP: dict[str, str] = {
+    "profit_margin": "net_margin_ttm",
+    "interest_coverage": "interest_coverage",
+    "debt_to_equity": "debt_to_equity",
+}
+
+_FMP_EXTRA_FIELDS = [
+    "debt_to_ebitda",
+    "net_margin_ttm",
+    "ebitda_margin",
+    "payout_ratio",
+    "quick_ratio",
+    "current_ratio",
+    "gross_margin",
+]
+
+
+def _extract_fmp_metrics(ticker: str) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    try:
+        client = get_fmp_client()
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.debug("No se pudo inicializar el cliente FMP: %s", exc)
+        return metrics
+
+    if client is None or not getattr(client, "api_key", None):
+        return metrics
+
+    combined: dict[str, object] = {}
+    try:
+        ratios = client.get_ratios_ttm(ticker) or {}
+        if isinstance(ratios, dict):
+            combined.update(ratios)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.debug("FMP ratios error %s: %s", ticker, exc)
+
+    try:
+        key_metrics = client.get_key_metrics_ttm(ticker) or {}
+        if isinstance(key_metrics, dict):
+            combined.update(key_metrics)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.debug("FMP key metrics error %s: %s", ticker, exc)
+
+    for target, (source, kind) in _FMP_FIELD_MAP.items():
+        raw_val = combined.get(source)
+        val = _to_float(raw_val)
+        if val is None:
+            continue
+        metrics[target] = val * 100.0 if kind == "percent" else val
+
+    return metrics
+
+
+def _enrich_with_fmp(base: dict[str, object], ticker: str) -> dict[str, object]:
+    fmp_metrics = _extract_fmp_metrics(ticker)
+    enriched = dict(base)
+
+    for dest, source in _FMP_FALLBACK_MAP.items():
+        if _is_missing_value(enriched.get(dest)):
+            val = fmp_metrics.get(source)
+            if val is not None:
+                enriched[dest] = val
+
+    for field in _FMP_EXTRA_FIELDS:
+        enriched[field] = fmp_metrics.get(field)
+
+    return enriched
 
 
 # -----------------------
@@ -426,7 +517,7 @@ def get_fundamental_data(ticker: str) -> dict:
             "interest_coverage": interest_coverage,
             "debt_to_equity": info.get("debtToEquity"),
         }
-        return data
+        return _enrich_with_fmp(data, ticker)
     except Exception as e:
         logging.error(f"Error al obtener datos fundamentales para {ticker}: {e}")
         return {"error": f"No se pudo contactar a la API para {ticker}."}
@@ -473,26 +564,25 @@ def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
             ):
                 fcf_yield = (free_cash_flow / enterprise_value) * 100.0
             interest_coverage = _to_float(info.get("interestCoverage"))
-            rows.append(
-                {
-                    "symbol": sym,
-                    "name": info.get("shortName"),
-                    "sector": info.get("sector"),
-                    "market_cap": info.get("marketCap"),
-                    "pe_ratio": info.get("trailingPE"),
-                    "price_to_book": info.get("priceToBook"),
-                    "return_on_equity": roe,
-                    "profit_margin": profit_margin,
-                    "return_on_assets": roa,
-                    "operating_margin": operating_margin,
-                    "fcf_yield": fcf_yield,
-                    "interest_coverage": interest_coverage,
-                    "debt_to_equity": info.get("debtToEquity"),
-                    "revenue_growth": info.get("revenueGrowth"),
-                    "earnings_growth": info.get("earningsQuarterlyGrowth"),
-                    "esg_score": esg_score,
-                }
-            )
+            row = {
+                "symbol": sym,
+                "name": info.get("shortName"),
+                "sector": info.get("sector"),
+                "market_cap": info.get("marketCap"),
+                "pe_ratio": info.get("trailingPE"),
+                "price_to_book": info.get("priceToBook"),
+                "return_on_equity": roe,
+                "profit_margin": profit_margin,
+                "return_on_assets": roa,
+                "operating_margin": operating_margin,
+                "fcf_yield": fcf_yield,
+                "interest_coverage": interest_coverage,
+                "debt_to_equity": info.get("debtToEquity"),
+                "revenue_growth": info.get("revenueGrowth"),
+                "earnings_growth": info.get("earningsQuarterlyGrowth"),
+                "esg_score": esg_score,
+            }
+            rows.append(_enrich_with_fmp(row, ticker))
         except Exception as e:
             logger.warning("fundamental error %s: %s", sym, e)
     return pd.DataFrame(rows)

@@ -73,6 +73,11 @@ world_bank_api_rate_limit_per_minute: int = getattr(
 world_bank_sector_series: Dict[str, str] = getattr(
     settings, "WORLD_BANK_SECTOR_SERIES", {}
 )
+fmp_api_key: str | None = getattr(settings, "FMP_API_KEY", None)
+fmp_base_url: str = getattr(
+    settings, "FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"
+)
+fmp_timeout: float = getattr(settings, "FMP_TIMEOUT", 5.0)
 
 __all__ = [
     "settings",
@@ -112,4 +117,7 @@ __all__ = [
     "world_bank_api_base_url",
     "world_bank_api_rate_limit_per_minute",
     "world_bank_sector_series",
+    "fmp_api_key",
+    "fmp_base_url",
+    "fmp_timeout",
 ]
