@@ -13,6 +13,9 @@ __all__ = [
     "markowitz_optimize",
     "monte_carlo_simulation",
     "apply_stress",
+    "asset_risk_breakdown",
+    "max_drawdown",
+    "drawdown_series",
 ]
 
 
@@ -38,6 +41,26 @@ def annualized_volatility(returns: pd.Series, periods_per_year: int = 252) -> fl
     return float(returns.std() * np.sqrt(periods_per_year))
 
 
+def drawdown_series(returns: pd.Series) -> pd.Series:
+    """Compute drawdown series (in percentage terms) from returns."""
+    if returns is None or len(returns) == 0:
+        return pd.Series(dtype=float)
+    cumulative = (1 + returns.fillna(0.0)).cumprod()
+    peaks = cumulative.cummax()
+    drawdowns = cumulative / peaks - 1.0
+    return drawdowns
+
+
+def max_drawdown(returns: pd.Series) -> float:
+    """Maximum drawdown (minimum cumulative drop) for a return series."""
+    if returns is None or len(returns) == 0:
+        return 0.0
+    dd = drawdown_series(returns)
+    if dd.empty:
+        return 0.0
+    return float(dd.min())
+
+
 def beta(portfolio_returns: pd.Series, benchmark_returns: pd.Series) -> float:
     """Beta de la cartera respecto a un benchmark."""
     if len(portfolio_returns) != len(benchmark_returns) or len(portfolio_returns) == 0:
@@ -52,6 +75,20 @@ def historical_var(returns: pd.Series, confidence: float = 0.95) -> float:
         return 0.0
     q = np.quantile(returns, 1 - confidence)
     return float(-q)
+
+
+def asset_risk_breakdown(returns: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Return annualised volatility and max drawdown per asset."""
+    if returns is None or returns.empty:
+        empty = pd.Series(dtype=float)
+        return empty, empty
+
+    vols = returns.std().fillna(0.0) * np.sqrt(252)
+    cumulative = (1 + returns.fillna(0.0)).cumprod()
+    peaks = cumulative.cummax()
+    drawdowns = cumulative.divide(peaks).sub(1.0)
+    max_dd = drawdowns.min().fillna(0.0)
+    return vols, max_dd
 
 
 def markowitz_optimize(returns: pd.DataFrame, risk_free: float = 0.0) -> pd.Series:
