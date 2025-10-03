@@ -45,11 +45,13 @@ consideraciones para extender o depurar estas pruebas:
 Gracias a esta infraestructura, las suites pueden ejecutarse en entornos mínimos (CI headless,
 containers livianos) sin requerir dependencias binarias de Streamlit.
 
-Para acotar la ejecución a un paquete o archivo en particular, indica la ruta:
+Para acotar la ejecución a subconjuntos específicos, puedes lanzar `pytest` con rutas o filtros
+frecuentes:
 
-```bash
-pytest controllers/test/test_opportunities_controller.py
-```
+- `pytest controllers/test/test_opportunities_controller.py`: ejecuta sólo las pruebas del
+  controlador de oportunidades.
+- `pytest tests/ui/test_portfolio_ui.py -k risk`: limita la ejecución a los escenarios que cubren
+  las visualizaciones de riesgo renderizadas en la UI.
 
 ## Pruebas con APIs en vivo
 

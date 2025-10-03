@@ -13,6 +13,7 @@ PACKAGES=(
   python-dotenv
   iolConn
   plotly
+  matplotlib
   kaleido
   cryptography
   yfinance
@@ -26,4 +27,4 @@ python -m pip install --upgrade "${PACKAGES[@]}"
 pytest
 
 # Freeze the exact versions back into requirements.txt
-python -m pip freeze | grep -i -E '^(streamlit|pandas|numpy|requests|python-dotenv|iolConn|plotly|kaleido|cryptography|yfinance|ta)==' > requirements.txt
+python -m pip freeze | grep -i -E '^(streamlit|pandas|numpy|requests|python-dotenv|iolConn|plotly|matplotlib|kaleido|cryptography|yfinance|ta)==' > requirements.txt

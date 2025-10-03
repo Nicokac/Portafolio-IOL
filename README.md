@@ -9,6 +9,9 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 ## Quick-start (release 0.3.25.1)
 
 La versión **0.3.25.1** mantiene la cobertura macro multinivel y corrige la métrica de drawdown para que los tableros de riesgo arranquen sin errores tras reinicios:
+## Quick-start (release 0.3.25.1 — 2025-10-03)
+
+La versión **0.3.25.1** refuerza la cobertura macro y la observabilidad de cada proveedor:
 - El **cliente World Bank** amplía el fallback multinivel (FRED → World Bank → fallback estático), manteniendo la columna `macro_outlook` cuando FRED queda inhabilitado o llega al límite de rate limiting.
 - El **health sidebar** agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
 - Las notas del screening registran la secuencia de proveedores consultados (FRED, World Bank, fallback) con sus estados y latencias, alineando la telemetría mostrada en la UI con los datos persistidos en `services.health`.
@@ -607,6 +610,8 @@ bash scripts/update_dependencies.sh
 ```
 
 El script actualiza los paquetes a sus últimas versiones, ejecuta las pruebas y, si todo pasa, escribe las nuevas versiones en `requirements.txt`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
+
+La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; a partir de ahora `matplotlib` queda instalada automáticamente al ejecutar `pip install -r requirements.txt`, por lo que no hace falta agregarla manualmente antes de correr ese flujo.
 
 ## Políticas de sesión y manejo de tokens
 

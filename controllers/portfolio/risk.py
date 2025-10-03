@@ -15,8 +15,11 @@ from application.risk_service import (
     markowitz_optimize,
     monte_carlo_simulation,
     apply_stress,
+    asset_risk_breakdown,
+    max_drawdown,
+    drawdown_series,
 )
-from ui.charts import plot_correlation_heatmap
+from ui.charts import plot_correlation_heatmap, _apply_layout
 from ui.export import PLOTLY_CONFIG
 from shared.errors import AppError
 
@@ -31,7 +34,9 @@ def compute_risk_metrics(returns_df, bench_ret, weights):
     b = beta(port_ret, bench_ret)
     var_95 = historical_var(port_ret)
     opt_w = markowitz_optimize(returns_df)
-    return vol, b, var_95, opt_w, port_ret
+    asset_vols, asset_drawdowns = asset_risk_breakdown(returns_df)
+    port_drawdown = max_drawdown(port_ret)
+    return vol, b, var_95, opt_w, port_ret, asset_vols, asset_drawdowns, port_drawdown
 
 
 def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
@@ -120,7 +125,6 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                 prices_df = tasvc.portfolio_history(
                     simbolos=portfolio_symbols, period="1y"
                 )
-                bench_df = tasvc.portfolio_history(simbolos=["^GSPC"], period="1y")
             except AppError as err:
                 st.error(str(err))
                 return
@@ -132,13 +136,12 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
                 return
-        if prices_df.empty or bench_df.empty:
+        if prices_df.empty:
             st.info(
                 "No se pudieron obtener datos históricos para calcular métricas de riesgo."
             )
         else:
             returns_df = compute_returns(prices_df)
-            bench_ret = compute_returns(bench_df).squeeze()
             weights = (
                 df_view.set_index("simbolo")["valor_actual"].astype(float)
                 .reindex(returns_df.columns)
@@ -150,23 +153,125 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     "No hay suficientes datos para calcular métricas de riesgo."
                 )
             else:
-                vol, b, var_95, opt_w, port_ret = compute_risk_metrics(
-                    returns_df, bench_ret, weights
+                benchmark_labels = {
+                    "S&P 500 (^GSPC)": "^GSPC",
+                    "MERVAL": "MERVAL",
+                    "Nasdaq (^IXIC)": "^IXIC",
+                    "Dow Jones (^DJI)": "^DJI",
+                }
+                benchmark_choice = st.selectbox(
+                    "Benchmark para beta y drawdown",
+                    list(benchmark_labels.keys()),
+                    index=0,
+                    key="risk_benchmark_select",
                 )
+                benchmark_symbol = benchmark_labels[benchmark_choice]
 
-                c1, c2, c3 = st.columns(3)
+                try:
+                    bench_df = tasvc.portfolio_history(
+                        simbolos=[benchmark_symbol], period="1y"
+                    )
+                except AppError as err:
+                    st.error(str(err))
+                    return
+                except Exception:
+                    logger.exception(
+                        "Error al obtener benchmark para análisis de riesgo",
+                    )
+                    st.error(
+                        "No se pudieron obtener datos históricos para el benchmark seleccionado.",
+                    )
+                    return
+
+                bench_ret = compute_returns(bench_df).squeeze()
+                if bench_ret.empty:
+                    st.info(
+                        "El benchmark seleccionado no tiene datos suficientes para calcular beta."
+                    )
+                    return
+
+                (
+                    vol,
+                    b,
+                    var_95,
+                    opt_w,
+                    port_ret,
+                    asset_vols,
+                    asset_drawdowns,
+                    port_drawdown,
+                ) = compute_risk_metrics(returns_df, bench_ret, weights)
+
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric(
                     "Volatilidad anualizada",
                     f"{vol:.2%}" if vol == vol else "N/A",
                 )
                 c2.metric(
-                    "Beta vs S&P 500",
+                    f"Beta vs {benchmark_choice}",
                     f"{b:.2f}" if b == b else "N/A",
                 )
                 c3.metric(
                     "VaR 5%",
                     f"{var_95:.2%}" if var_95 == var_95 else "N/A",
                 )
+                c4.metric(
+                    "Drawdown máximo",
+                    f"{port_drawdown:.2%}" if port_drawdown == port_drawdown else "N/A",
+                )
+
+                vol_draw_cols = st.columns(2)
+                if not asset_vols.empty:
+                    vol_df = (
+                        asset_vols.sort_values(ascending=False)
+                        .rename("Volatilidad")
+                        .reset_index()
+                        .rename(columns={"index": "Símbolo"})
+                    )
+                    fig_vol_dist = px.bar(
+                        vol_df,
+                        x="Símbolo",
+                        y="Volatilidad",
+                        color="Símbolo",
+                    )
+                    fig_vol_dist = _apply_layout(
+                        fig_vol_dist,
+                        title="Distribución de volatilidades",
+                        show_legend=False,
+                    )
+                    vol_draw_cols[0].plotly_chart(
+                        fig_vol_dist,
+                        width="stretch",
+                        config=PLOTLY_CONFIG,
+                    )
+                else:
+                    vol_draw_cols[0].info(
+                        "No hay datos suficientes para calcular volatilidad por activo.",
+                    )
+
+                drawdown_series_port = drawdown_series(port_ret)
+                if not drawdown_series_port.empty:
+                    fig_drawdown = px.line(
+                        drawdown_series_port,
+                        labels={
+                            "index": "Fecha",
+                            "value": "Drawdown",
+                        },
+                    )
+                    fig_drawdown = _apply_layout(
+                        fig_drawdown,
+                        title="Evolución del drawdown del portafolio",
+                        show_legend=False,
+                        y0_line=True,
+                    )
+                    vol_draw_cols[1].plotly_chart(
+                        fig_drawdown,
+                        width="stretch",
+                        config=PLOTLY_CONFIG,
+                    )
+                else:
+                    vol_draw_cols[1].info(
+                        "No hay datos suficientes para calcular drawdown del portafolio.",
+                    )
 
                 with st.expander("Volatilidad - evolución"):
                     rolling_vol = port_ret.rolling(30).std() * np.sqrt(252)
@@ -203,6 +308,64 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
                     st.caption(
                         "La línea roja indica el VaR al 5%, representando la pérdida máxima esperada con 95% de confianza."
                     )
+
+                with st.expander("Beta vs retorno"):
+                    scatter_cols = st.columns(1)
+                    if returns_df.empty or bench_ret.empty:
+                        scatter_cols[0].info(
+                            "No hay datos suficientes para calcular beta por activo."
+                        )
+                    else:
+                        avg_returns = returns_df.mean().fillna(0.0) * 252
+                        betas = returns_df.apply(lambda s: beta(s, bench_ret), axis=0)
+                        scatter_df = pd.DataFrame(
+                            {
+                                "Beta": betas,
+                                "Retorno anualizado": avg_returns,
+                            }
+                        )
+                        scatter_df["Símbolo"] = scatter_df.index
+                        if favorites:
+                            favorite_set = {favorites.normalize(sym) for sym in favorites.list()}
+                        else:
+                            favorite_set = set()
+                        scatter_df["Favorito"] = scatter_df["Símbolo"].apply(
+                            lambda sym: sym in favorite_set
+                        )
+                        scatter_df["Tamaño"] = np.where(
+                            scatter_df["Favorito"],
+                            18,
+                            10,
+                        )
+                        scatter_df = scatter_df.replace([np.inf, -np.inf], np.nan).dropna()
+                        if scatter_df.empty:
+                            scatter_cols[0].info(
+                                "No hay datos suficientes para graficar beta vs retorno.",
+                            )
+                        else:
+                            fig_scatter = px.scatter(
+                                scatter_df,
+                                x="Beta",
+                                y="Retorno anualizado",
+                                size="Tamaño",
+                                color="Favorito",
+                                hover_name="Símbolo",
+                                text="Símbolo",
+                                color_discrete_map={
+                                    True: "gold",
+                                    False: "#636EFA",
+                                },
+                            )
+                            fig_scatter.update_traces(marker=dict(line=dict(width=1, color="#2a2a2a")))
+                            fig_scatter = _apply_layout(
+                                fig_scatter,
+                                title="Beta vs retorno anualizado",
+                            )
+                            scatter_cols[0].plotly_chart(
+                                fig_scatter,
+                                width="stretch",
+                                config=PLOTLY_CONFIG,
+                            )
 
                 with st.expander("Optimización de portafolio (Markowitz)"):
                     opt_df = pd.DataFrame({"ticker": opt_w.index, "weight": opt_w.values})
