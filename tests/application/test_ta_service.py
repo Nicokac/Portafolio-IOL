@@ -23,9 +23,13 @@ def _reset_caches():
     """Ensure decorated helpers start from a clean cache for each test."""
     ta_mod.fetch_with_indicators.cache_clear()
     ta_mod.get_portfolio_history.cache_clear()
+    ta_mod.get_fundamental_data.cache_clear()
+    ta_mod.portfolio_fundamentals.cache_clear()
     yield
     ta_mod.fetch_with_indicators.cache_clear()
     ta_mod.get_portfolio_history.cache_clear()
+    ta_mod.get_fundamental_data.cache_clear()
+    ta_mod.portfolio_fundamentals.cache_clear()
 
 
 class _DummyRSI:
@@ -160,6 +164,55 @@ def test_indicators_for_returns_enriched_dataframe_and_uses_cache(monkeypatch: p
     again = svc.indicators_for("GGAL", period="3mo", interval="1d")
     pd.testing.assert_frame_equal(df_ind, again)
     assert calls["count"] == 1
+
+
+def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    info = {
+        "shortName": "TEST",
+        "sector": "Tech",
+        "website": "https://example.com",
+        "marketCap": 1000,
+        "trailingPE": 12.0,
+        "dividendRate": 0.4,
+        "previousClose": 10.0,
+        "priceToBook": 1.5,
+        "debtToEquity": 1.1,
+        "returnOnEquity": 0.18,
+        "profitMargins": 0.22,
+        "returnOnAssets": 0.09,
+        "operatingMargins": 0.3,
+        "freeCashflow": 800.0,
+        "enterpriseValue": 16000.0,
+        "interestCoverage": 6.4,
+        "revenueGrowth": 0.12,
+        "earningsQuarterlyGrowth": 0.25,
+    }
+
+    class DummyTicker:
+        def __init__(self, ticker: str) -> None:
+            self.info = info.copy()
+            self.sustainability = None
+
+    monkeypatch.setattr(ta_mod, "map_to_us_ticker", lambda sym: sym)
+    monkeypatch.setattr(ta_mod, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
+
+    fundamentals = ta_mod.get_fundamental_data("TEST")
+    assert fundamentals["return_on_equity"] == pytest.approx(18.0)
+    assert fundamentals["profit_margin"] == pytest.approx(22.0)
+    assert fundamentals["return_on_assets"] == pytest.approx(9.0)
+    assert fundamentals["operating_margin"] == pytest.approx(30.0)
+    assert fundamentals["fcf_yield"] == pytest.approx(5.0)
+    assert fundamentals["interest_coverage"] == pytest.approx(6.4)
+
+    df = ta_mod.portfolio_fundamentals(["TEST"])
+    assert not df.empty
+    row = df.iloc[0]
+    assert row["return_on_equity"] == pytest.approx(18.0)
+    assert row["profit_margin"] == pytest.approx(22.0)
+    assert row["return_on_assets"] == pytest.approx(9.0)
+    assert row["operating_margin"] == pytest.approx(30.0)
+    assert row["fcf_yield"] == pytest.approx(5.0)
+    assert row["interest_coverage"] == pytest.approx(6.4)
 
 
 def test_portfolio_history_is_cached_and_renames_columns(monkeypatch: pytest.MonkeyPatch) -> None:

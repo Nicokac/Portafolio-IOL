@@ -46,6 +46,30 @@ INDICATORS = {
         "desc": "Porcentaje de ganancia neta sobre las ventas.",
         "url": "https://www.investopedia.com/terms/p/profitmargin.asp",
     },
+    "return_on_assets": {
+        "label": "ROA",
+        "format": format_percent,
+        "desc": "Retorno sobre los activos totales promedio.",
+        "url": "https://www.investopedia.com/terms/r/returnonassets.asp",
+    },
+    "operating_margin": {
+        "label": "Margen Operativo",
+        "format": format_percent,
+        "desc": "Ganancia operativa como porcentaje de los ingresos.",
+        "url": "https://www.investopedia.com/terms/o/operatingmargin.asp",
+    },
+    "fcf_yield": {
+        "label": "FCF Yield",
+        "format": format_percent,
+        "desc": "Rendimiento del flujo de caja libre sobre el valor de la empresa.",
+        "url": "https://www.investopedia.com/terms/f/free-cash-flow-yield.asp",
+    },
+    "interest_coverage": {
+        "label": "Cobertura de Intereses",
+        "format": lambda v: "—" if _is_none_nan_inf(v) else f"{float(v):.2f}×",
+        "desc": "Cuántas veces la ganancia operativa cubre los gastos financieros.",
+        "url": "https://www.investopedia.com/terms/i/interestcoverageratio.asp",
+    },
     "debt_to_equity": {
         "label": "Deuda/Patrimonio",
         "format": lambda v: "—" if _is_none_nan_inf(v) else f"{float(v):.2f}",
@@ -95,7 +119,17 @@ def render_fundamental_ranking(df: pd.DataFrame):
 
     metric = st.selectbox(
         "Ordenar por",
-        ["market_cap", "pe_ratio", "revenue_growth", "earnings_growth", "esg_score"],
+        [
+            "market_cap",
+            "pe_ratio",
+            "revenue_growth",
+            "earnings_growth",
+            "return_on_assets",
+            "operating_margin",
+            "fcf_yield",
+            "interest_coverage",
+            "esg_score",
+        ],
         index=0,
     )
     df_sorted = df.sort_values(by=metric, ascending=False)
@@ -121,6 +155,10 @@ def render_sector_comparison(df: pd.DataFrame):
         "price_to_book",
         "return_on_equity",
         "profit_margin",
+        "return_on_assets",
+        "operating_margin",
+        "fcf_yield",
+        "interest_coverage",
         "debt_to_equity",
     ]
     metric = st.selectbox("Métrica", metrics)
