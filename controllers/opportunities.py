@@ -459,10 +459,14 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
 
         provider_attempts.append(fallback_attempt)
         metrics["macro_provider_attempts"] = provider_attempts
+        latest_entry = dict(provider_attempts[-1]) if provider_attempts else {"provider": "fallback"}
+        latest_entry.setdefault("label", fallback_attempt.get("label"))
+        latest_entry["ts"] = time.time()
         record_macro_api_usage(
             attempts=provider_attempts,
             notes=notes,
             metrics=metrics,
+            latest=latest_entry,
         )
         return notes, metrics
 
@@ -482,10 +486,14 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
         )
 
     metrics["macro_provider_attempts"] = provider_attempts
+    latest_entry = dict(provider_attempts[-1]) if provider_attempts else {"provider": success_provider or "unknown"}
+    latest_entry.setdefault("label", success_display)
+    latest_entry["ts"] = time.time()
     record_macro_api_usage(
         attempts=provider_attempts,
         notes=notes,
         metrics=metrics,
+        latest=latest_entry,
     )
 
     return notes, metrics

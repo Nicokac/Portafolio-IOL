@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence
+from typing import Mapping, Sequence
 
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from domain.models import Controls
+from services.portfolio_view import PortfolioViewSnapshot
 
 
 _DEFAULT_TABS: tuple[str, ...] = (
@@ -48,20 +49,19 @@ def get_portfolio_tabs() -> tuple[str, ...]:
 
 def build_portfolio_viewmodel(
     *,
-    df_pos: pd.DataFrame,
+    snapshot: PortfolioViewSnapshot | None,
     controls: Controls,
-    cli,
-    portfolio_service,
     fx_rates: Mapping[str, float] | None,
     all_symbols: Sequence[str] | None,
-    apply_filters_fn: Callable[[pd.DataFrame, Controls, object, object], pd.DataFrame],
 ) -> PortfolioViewModel:
-    """Build the portfolio view-model based on current controls and data."""
+    """Build the portfolio view-model based on cached portfolio data."""
 
-    df_view = apply_filters_fn(df_pos, controls, cli, portfolio_service)
-    df_view = df_view if isinstance(df_view, pd.DataFrame) else pd.DataFrame()
-
-    totals = calculate_totals(df_view)
+    if snapshot is None:
+        df_view = pd.DataFrame()
+        totals = calculate_totals(None)
+    else:
+        df_view = snapshot.df_view if isinstance(snapshot.df_view, pd.DataFrame) else pd.DataFrame()
+        totals = snapshot.totals if isinstance(snapshot.totals, PortfolioTotals) else calculate_totals(df_view)
 
     ccl_rate = None
     if fx_rates:

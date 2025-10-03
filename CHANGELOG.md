@@ -17,6 +17,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.25.1] - 2025-10-03
+
+### Fixed
+- Se corrigió un `IndentationError` en `application/risk_service.py` causado por un bloque `if` sin cuerpo en la función `drawdown_series`.
+- La función ahora retorna un `pd.Series` vacío cuando no hay datos de entrada, previniendo bloqueos en inicialización y permitiendo flujos consistentes en métricas de riesgo.
+- La app vuelve a iniciar correctamente tras el reboot con la release 0.3.25.
+
+### Tests
+- Cobertura extendida para validar el manejo de series vacías en `drawdown_series`.
+
+## [0.3.24.2] - 2025-10-10
+
+### Fixed
+- Se corrigió el `NameError` en `render_portfolio_section` al eliminar la referencia
+  obsoleta a `apply_filters` y delegar la construcción del view-model al servicio
+  cacheado de portafolio.
+- `record_macro_api_usage` vuelve a registrar la última ejecución macro sin depender
+  de variables temporales inexistentes, evitando el `NameError latest_entry` y
+  propagando correctamente las métricas hacia el sidebar de salud.
+
+### Changed
+- `build_portfolio_viewmodel` ahora recibe un `PortfolioViewSnapshot` en lugar de
+  ejecutar filtros manualmente, alineando la nueva capa de cache con los
+  controladores.
+
+### Tests
+- Se actualizaron las suites de portafolio para simular el servicio de view-model
+  cacheado y validar el flujo completo tras el refactor.
+- Los tests de métricas de salud se adaptaron al nuevo contrato de macro
+  (intentos normalizados + entrada más reciente) para cubrir el fix.
+
 ## [0.3.24.1] - 2025-10-09
 
 ### Tests
