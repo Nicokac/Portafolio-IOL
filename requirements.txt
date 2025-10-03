@@ -6,6 +6,7 @@ requests==2.31.0
 python-dotenv==1.1.1
 iolConn==0.4.2
 plotly==6.3.0
+matplotlib==3.10.6
 kaleido==1.1.0
 tomli==2.0.1
 # Utilidades varias

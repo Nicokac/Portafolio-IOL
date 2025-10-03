@@ -607,6 +607,8 @@ bash scripts/update_dependencies.sh
 
 El script actualiza los paquetes a sus últimas versiones, ejecuta las pruebas y, si todo pasa, escribe las nuevas versiones en `requirements.txt`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
 
+La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; a partir de ahora `matplotlib` queda instalada automáticamente al ejecutar `pip install -r requirements.txt`, por lo que no hace falta agregarla manualmente antes de correr ese flujo.
+
 ## Políticas de sesión y manejo de tokens
 
 Cada sesión de usuario genera un identificador aleatorio almacenado en `st.session_state["session_id"]`, que debe mantenerse constante para aislar los recursos cacheados.
