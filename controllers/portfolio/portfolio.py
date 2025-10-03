@@ -72,6 +72,8 @@ def render_portfolio_section(container, cli, fx_rates):
                 ccl_rate,
                 favorites=favorites,
                 totals=viewmodel.totals,
+                historical_total=viewmodel.historical_total,
+                contribution_metrics=viewmodel.contributions,
             )
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)

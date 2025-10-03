@@ -134,6 +134,134 @@ def plot_dist_por_tipo(df: pd.DataFrame):
         fig.update_yaxes(title=None, tickformat=",")
     return _apply_layout(fig, show_legend=False)
 
+
+def plot_portfolio_timeline(history_df: pd.DataFrame | None):
+    """Plot the historical evolution of the portfolio totals."""
+
+    if history_df is None or history_df.empty:
+        return None
+
+    df = history_df.copy()
+    time_col = "timestamp"
+    if time_col not in df.columns:
+        return None
+
+    if not pd.api.types.is_datetime64_any_dtype(df[time_col]):
+        df[time_col] = pd.to_datetime(df[time_col], unit="s", errors="coerce")
+
+    df = df.dropna(subset=[time_col])
+    if df.empty:
+        return None
+
+    value_cols = [
+        col
+        for col in ["total_value", "total_cost", "total_pl"]
+        if col in df.columns
+    ]
+    if not value_cols:
+        return None
+
+    df = df.sort_values(time_col)
+    melted = df.melt(
+        id_vars=[time_col],
+        value_vars=value_cols,
+        var_name="metric",
+        value_name="value",
+    )
+    melted = melted.dropna(subset=["value"])
+    if melted.empty:
+        return None
+
+    metrics = melted["metric"].astype(str).unique().tolist()
+    color_map = _symbol_color_map(metrics)
+
+    fig = px.line(
+        melted,
+        x=time_col,
+        y="value",
+        color="metric",
+        color_discrete_map=color_map,
+        markers=True,
+    )
+
+    if SHOW_AXIS_TITLES:
+        fig.update_xaxes(title="Fecha")
+        fig.update_yaxes(title="Valor", tickformat=",")
+    else:
+        fig.update_xaxes(title=None)
+        fig.update_yaxes(title=None, tickformat=",")
+
+    fig.update_traces(mode="lines+markers")
+    return _apply_layout(fig, show_legend=True)
+
+
+def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str = "valor_actual_pct"):
+    """Render a heatmap of contributions grouped by type and symbol."""
+
+    if by_symbol is None or by_symbol.empty:
+        return None
+
+    required = {"tipo", "simbolo", value_col}
+    if not required.issubset(by_symbol.columns):
+        return None
+
+    df = by_symbol.copy()
+    df["tipo"] = df["tipo"].astype(str).replace({"": "Sin tipo"})
+    df["simbolo"] = df["simbolo"].astype(str).replace({"": "Sin símbolo"})
+    df[value_col] = pd.to_numeric(df[value_col], errors="coerce").fillna(0.0)
+
+    pivot = (
+        df.pivot_table(
+            index="tipo",
+            columns="simbolo",
+            values=value_col,
+            aggfunc="sum",
+            fill_value=0.0,
+        )
+        .sort_index()
+    )
+
+    if pivot.empty:
+        return None
+
+    tipos = pivot.index.tolist()
+    symbols = pivot.columns.tolist()
+
+    if pivot.values.size == 0:
+        return None
+
+    type_color_map = _color_discrete_map(pd.DataFrame({"tipo": tipos}))
+    palette = list(dict.fromkeys(type_color_map.get(t, "#636EFA") for t in tipos))
+    if len(palette) < 2:
+        palette = palette * 2
+    colorscale = [
+        (i / (len(palette) - 1), color)
+        for i, color in enumerate(palette)
+    ]
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=pivot.values,
+                x=symbols,
+                y=tipos,
+                colorscale=colorscale,
+                colorbar=dict(title="% valorizado" if value_col.endswith("pct") else value_col),
+                hovertemplate="Tipo: %{y}<br>Símbolo: %{x}<br>Valor: %{z:.2f}%<extra></extra>",
+            )
+        ]
+    )
+
+    if SHOW_AXIS_TITLES:
+        fig.update_xaxes(title="Símbolo")
+        fig.update_yaxes(title="Tipo")
+    else:
+        fig.update_xaxes(title=None)
+        fig.update_yaxes(title=None)
+
+    return _apply_layout(fig, show_legend=False)
+
+
 # =================
 # Gráficos avanzados
 # =================

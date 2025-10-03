@@ -1,5 +1,6 @@
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
@@ -8,12 +9,15 @@ from ui.tables import render_totals, render_table
 from ui.export import PLOTLY_CONFIG
 from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts import (
+    _apply_layout,
     plot_pl_topn,
     plot_donut_tipo,
     plot_dist_por_tipo,
     plot_pl_daily_topn,
     plot_bubble_pl_vs_costo,
     plot_heat_pl_pct,
+    plot_portfolio_timeline,
+    plot_contribution_heatmap,
 )
 
 
@@ -33,6 +37,8 @@ def render_basic_section(
     ccl_rate,
     totals=None,
     favorites: FavoriteSymbols | None = None,
+    historical_total=None,
+    contribution_metrics=None,
 ):
     """Render totals, table and basic charts for the portfolio."""
     favorites = favorites or get_persistent_favorites()
@@ -139,6 +145,82 @@ def render_basic_section(
         )
     else:
         st.info("Aún no hay datos de P/L diario.")
+
+    st.subheader("Evolución histórica del portafolio")
+    timeline_fig = plot_portfolio_timeline(historical_total)
+    if timeline_fig is not None:
+        st.plotly_chart(
+            timeline_fig,
+            width="stretch",
+            key="portfolio_timeline",
+            config=PLOTLY_CONFIG,
+        )
+        st.caption(
+            "Sigue cómo varían tus totales (valor, costo y P/L) con el tiempo para detectar tendencias y cambios relevantes."
+        )
+    else:
+        st.info("Aún no hay suficientes datos históricos del portafolio.")
+
+    st.subheader("Contribución por símbolo y tipo")
+    by_symbol = getattr(contribution_metrics, "by_symbol", None)
+    heatmap_fig = plot_contribution_heatmap(by_symbol)
+    if heatmap_fig is not None:
+        st.plotly_chart(
+            heatmap_fig,
+            width="stretch",
+            key="portfolio_contribution_heatmap",
+            config=PLOTLY_CONFIG,
+        )
+        st.caption(
+            "Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera."
+        )
+    else:
+        st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
+
+    by_type = getattr(contribution_metrics, "by_type", None)
+    if isinstance(by_type, pd.DataFrame) and not by_type.empty:
+        display_cols = [
+            col
+            for col in ["tipo", "valor_actual", "valor_actual_pct", "pl", "pl_pct"]
+            if col in by_type.columns
+        ]
+        df_table = by_type[display_cols].copy()
+        for col in df_table.columns:
+            if col == "tipo":
+                df_table[col] = df_table[col].astype(str)
+            elif col.endswith("_pct"):
+                df_table[col] = df_table[col].apply(
+                    lambda v: f"{float(v):.2f}%" if pd.notna(v) else "—"
+                )
+            else:
+                df_table[col] = df_table[col].apply(
+                    lambda v: f"{float(v):,.0f}" if pd.notna(v) else "—"
+                )
+
+        table_fig = go.Figure(
+            data=[
+                go.Table(
+                    header=dict(
+                        values=[col.replace("_", " ").title() for col in df_table.columns],
+                        fill_color="rgba(0,0,0,0)",
+                        align="left",
+                    ),
+                    cells=dict(
+                        values=[df_table[col].tolist() for col in df_table.columns],
+                        align="left",
+                    ),
+                )
+            ]
+        )
+        table_fig = _apply_layout(table_fig, show_legend=False)
+        st.plotly_chart(
+            table_fig,
+            width="stretch",
+            key="portfolio_contribution_table",
+            config=PLOTLY_CONFIG,
+        )
+    else:
+        st.info("No hay datos agregados por tipo para mostrar en tabla.")
 
 
 RISK_METRIC_OPTIONS = {
