@@ -46,6 +46,9 @@ def test_record_macro_api_usage_accumulates_stats(
     assert fred.get("status_counts", {}).get("error") == 1
     assert fred.get("error_count") == 1
     assert fred.get("error_ratio") == pytest.approx(0.5)
+    history = fred.get("history") or []
+    assert history and history[-1]["status"] == "error"
+    assert history[-1]["detail"] == "boom"
 
     latency_counts = fred.get("latency_buckets", {}).get("counts") or {}
     assert latency_counts.get("fast") == 1
@@ -54,6 +57,8 @@ def test_record_macro_api_usage_accumulates_stats(
     ecb = providers.get("ecb") or {}
     assert ecb.get("fallback_count") == 1
     assert ecb.get("fallback_ratio") == pytest.approx(1.0)
+    ecb_history = ecb.get("history") or []
+    assert any(entry.get("fallback") for entry in ecb_history)
 
     overall = macro.get("overall") or {}
     assert overall.get("count") == 3

@@ -110,6 +110,81 @@ def _format_latency_section(portfolio: Optional[dict], quotes: Optional[dict]) -
     ]
 
 
+def _format_macro_history(
+    attempts: Optional[Iterable[Mapping[str, Any]]],
+    *,
+    limit: int = 5,
+) -> Iterable[str]:
+    if not attempts:
+        return []
+
+    recent: list[Mapping[str, Any]] = []
+    for entry in attempts:
+        if isinstance(entry, Mapping):
+            recent.append(entry)
+    if not recent:
+        return []
+
+    lines: list[str] = []
+    for attempt in reversed(recent[-limit:]):
+        status = str(
+            attempt.get("status_normalized")
+            or attempt.get("status")
+            or "unknown"
+        ).casefold()
+        label = str(
+            attempt.get("provider_label")
+            or attempt.get("label")
+            or attempt.get("provider")
+            or "desconocido"
+        )
+        ts = _format_timestamp(attempt.get("ts"))
+        elapsed = attempt.get("elapsed_ms")
+        if isinstance(elapsed, (int, float)):
+            elapsed_txt = f"{float(elapsed):.0f} ms"
+        else:
+            elapsed_txt = "s/d"
+        detail = attempt.get("detail")
+        detail_txt = f" — {detail}" if detail else ""
+        missing_raw = attempt.get("missing_series")
+        missing: list[str] = []
+        if isinstance(missing_raw, str):
+            candidate = missing_raw.strip()
+            if candidate:
+                missing = [candidate]
+        elif isinstance(missing_raw, Iterable) and not isinstance(
+            missing_raw, (bytes, bytearray, str)
+        ):
+            missing = [str(item).strip() for item in missing_raw if str(item).strip()]
+        missing_txt = f" • sin series: {', '.join(missing)}" if missing else ""
+        fallback_flag = bool(attempt.get("fallback"))
+
+        icon_map = {
+            "success": "✅",
+            "error": "⚠️",
+            "disabled": "⛔️",
+            "unavailable": "❌",
+        }
+        icon = icon_map.get(status, "ℹ️")
+        if fallback_flag and status == "success":
+            icon = "ℹ️"
+        if status == "success" and not fallback_flag:
+            status_label = "OK"
+        elif fallback_flag:
+            status_label = "Fallback"
+        else:
+            status_label = status.title()
+
+        lines.append(
+            format_note(
+                f"{icon} {label}: {status_label} • {ts} ({elapsed_txt})"
+                f"{detail_txt}{missing_txt}"
+            )
+        )
+
+    return lines
+
+
 def _format_macro_latency(buckets: Optional[Mapping[str, Any]]) -> Optional[str]:
     if not isinstance(buckets, Mapping):
         return None
@@ -281,6 +356,11 @@ def _format_macro_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
         if not isinstance(summary, Mapping):
             continue
         lines.append(_format_macro_provider(summary))
+
+    history_lines = list(_format_macro_history(data.get("attempts")))
+    if history_lines:
+        lines.append("_Historial de intentos recientes:_")
+        lines.extend(history_lines)
 
     return lines or ["_Sin datos macro registrados._"]
 

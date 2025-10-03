@@ -78,6 +78,25 @@ class Settings:
                 cfg.get("FRED_API_RATE_LIMIT_PER_MINUTE", 120),
             )
         )
+        raw_worldbank_series = self.secret_or_env(
+            "WORLD_BANK_SECTOR_SERIES", cfg.get("WORLD_BANK_SECTOR_SERIES")
+        )
+        self.WORLD_BANK_SECTOR_SERIES: Dict[str, str] = self._parse_sector_series(
+            raw_worldbank_series
+        )
+        self.WORLD_BANK_API_KEY: str | None = self.secret_or_env(
+            "WORLD_BANK_API_KEY", cfg.get("WORLD_BANK_API_KEY")
+        )
+        self.WORLD_BANK_API_BASE_URL: str = os.getenv(
+            "WORLD_BANK_API_BASE_URL",
+            cfg.get("WORLD_BANK_API_BASE_URL", "https://api.worldbank.org/v2"),
+        )
+        self.WORLD_BANK_API_RATE_LIMIT_PER_MINUTE: int = int(
+            os.getenv(
+                "WORLD_BANK_API_RATE_LIMIT_PER_MINUTE",
+                cfg.get("WORLD_BANK_API_RATE_LIMIT_PER_MINUTE", 60),
+            )
+        )
 
         default_markets = ["NASDAQ", "NYSE", "AMEX"]
         sentinel = object()
