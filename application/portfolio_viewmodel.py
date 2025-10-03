@@ -8,7 +8,10 @@ import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from domain.models import Controls
-from services.portfolio_view import PortfolioViewSnapshot
+from services.portfolio_view import (
+    PortfolioContributionMetrics,
+    PortfolioViewSnapshot,
+)
 
 
 _DEFAULT_TABS: tuple[str, ...] = (
@@ -39,6 +42,8 @@ class PortfolioViewModel:
     controls: Controls
     metrics: PortfolioMetrics
     tab_options: tuple[str, ...]
+    historical_total: pd.DataFrame
+    contributions: PortfolioContributionMetrics
 
 
 def get_portfolio_tabs() -> tuple[str, ...]:
@@ -59,9 +64,23 @@ def build_portfolio_viewmodel(
     if snapshot is None:
         df_view = pd.DataFrame()
         totals = calculate_totals(None)
+        historical_total = pd.DataFrame(
+            columns=["timestamp", "total_value", "total_cost", "total_pl"]
+        )
+        contributions = PortfolioContributionMetrics.empty()
     else:
         df_view = snapshot.df_view if isinstance(snapshot.df_view, pd.DataFrame) else pd.DataFrame()
         totals = snapshot.totals if isinstance(snapshot.totals, PortfolioTotals) else calculate_totals(df_view)
+        historical_total = (
+            snapshot.historical_total
+            if isinstance(snapshot.historical_total, pd.DataFrame)
+            else pd.DataFrame(columns=["timestamp", "total_value", "total_cost", "total_pl"])
+        )
+        contributions = (
+            snapshot.contribution_metrics
+            if isinstance(snapshot.contribution_metrics, PortfolioContributionMetrics)
+            else PortfolioContributionMetrics.empty()
+        )
 
     ccl_rate = None
     if fx_rates:
@@ -80,4 +99,6 @@ def build_portfolio_viewmodel(
         controls=controls,
         metrics=metrics,
         tab_options=get_portfolio_tabs(),
+        historical_total=historical_total,
+        contributions=contributions,
     )

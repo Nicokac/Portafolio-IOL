@@ -14,9 +14,16 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from controllers.portfolio.charts import render_basic_section
 from controllers.portfolio.portfolio import render_portfolio_section
+import controllers.portfolio.charts as charts_mod
+from application.portfolio_service import PortfolioTotals
 from domain.models import Controls
 from shared.favorite_symbols import FavoriteSymbols
+from services.portfolio_view import (
+    PortfolioContributionMetrics,
+    PortfolioViewSnapshot,
+)
 
 
 class _DummyContainer:
@@ -77,11 +84,26 @@ class FakeStreamlit:
         self.line_charts: list[pd.DataFrame] = []
         self.bar_charts: list[dict[str, Any]] = []
         self.metrics: list[tuple[Any, Any, Any]] = []
+        self.markdowns: list[dict[str, Any]] = []
 
     # ---- Core widgets -------------------------------------------------
-    def radio(self, label: str, *, options: Sequence[int], format_func, index: int, horizontal: bool) -> int:
+    def radio(
+        self,
+        label: str,
+        *,
+        options: Sequence[int],
+        format_func,
+        index: int = 0,
+        horizontal: bool,
+        **kwargs: Any,
+    ) -> int:
         value = next(self._radio_iter)
-        self.radio_calls.append({"label": label, "options": list(options), "index": index})
+        record = {"label": label, "options": list(options), "index": index}
+        key = kwargs.get("key")
+        if key is not None:
+            record["key"] = key
+            self.session_state[key] = value
+        self.radio_calls.append(record)
         return value
 
     def selectbox(self, label: str, options: Sequence[Any], index: int = 0, key: str | None = None, **_: Any) -> Any:
@@ -147,6 +169,9 @@ class FakeStreamlit:
     def metric(self, label: str, value: Any, delta: Any | None = None) -> None:
         self.metrics.append((label, value, delta))
 
+    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
+        self.markdowns.append({"body": body, "unsafe": unsafe_allow_html})
+
     def columns_context(self, layout: Sequence[Any]) -> None:  # pragma: no cover - helper for compatibility
         return None
 
@@ -167,6 +192,20 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
 
     def _configure(fake_st: FakeStreamlit, *, df_view: pd.DataFrame | None = None, all_symbols: list[str] | None = None):
         portfolio_mod.st = fake_st
+        monkeypatch.setattr(portfolio_mod, "render_favorite_badges", lambda *a, **k: None)
+        monkeypatch.setattr(portfolio_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+        class _FavoritesStub:
+            def sort_options(self, options):
+                return list(options)
+
+            def default_index(self, options):
+                return 0 if options else 0
+
+            def format_symbol(self, sym):
+                return sym
+
+        monkeypatch.setattr(portfolio_mod, "get_persistent_favorites", lambda: _FavoritesStub())
         monkeypatch.setattr(portfolio_mod, "PortfolioService", lambda: MagicMock())
         monkeypatch.setattr(portfolio_mod, "TAService", lambda: MagicMock())
 
@@ -195,7 +234,19 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "render_ui_controls", lambda: None)
 
         df_view = df_view or pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [1200.0]})
-        monkeypatch.setattr(portfolio_mod, "apply_filters", lambda *a, **k: df_view)
+
+        def _fake_snapshot(*_args, **_kwargs):
+            return PortfolioViewSnapshot(
+                df_view=df_view,
+                totals=PortfolioTotals(0.0, 0.0, 0.0, float("nan"), 0.0),
+                apply_elapsed=0.0,
+                totals_elapsed=0.0,
+                generated_at=0.0,
+                historical_total=pd.DataFrame(),
+                contribution_metrics=PortfolioContributionMetrics.empty(),
+            )
+
+        monkeypatch.setattr(portfolio_mod.view_model_service, "get_portfolio_view", _fake_snapshot)
 
         basic = MagicMock()
         advanced = MagicMock()
@@ -449,3 +500,165 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
     pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
 
     assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
+def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[])
+    fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]
+    monkeypatch.setattr(charts_mod, "st", fake_st)
+    monkeypatch.setattr(
+        charts_mod,
+        "compute_symbol_risk_metrics",
+        lambda *a, **k: pd.DataFrame(),
+    )
+    monkeypatch.setattr(charts_mod, "plot_bubble_pl_vs_costo", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "plot_heat_pl_pct", lambda *a, **k: None)
+
+    df = pd.DataFrame(
+        {
+            "simbolo": ["GGAL"],
+            "tipo": ["Accion"],
+            "valor_actual": [1000.0],
+            "costo": [800.0],
+            "pl": [200.0],
+            "pl_%": [0.25],
+            "pl_d": [5.0],
+        }
+    )
+
+    charts_mod.render_advanced_analysis(df, tasvc=None)
+
+    labels = [call["label"] for call in fake_st.selectbox_calls]
+    assert "Período de métricas" in labels
+    assert "Métrica de riesgo" in labels
+    assert "Benchmark" in labels
+def test_render_basic_section_renders_timeline_and_heatmap(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[])
+
+    import controllers.portfolio.charts as charts_mod
+
+    class DummyFavorites:
+        def sort_options(self, options):
+            return list(options)
+
+        def default_index(self, options):
+            return 0 if options else 0
+
+        def format_symbol(self, sym):
+            return sym
+
+    favorites_stub = DummyFavorites()
+
+    monkeypatch.setattr(charts_mod, "st", fake_st)
+    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
+
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["GGAL", "AL30"],
+            "tipo": ["ACCION", "BONO"],
+            "valor_actual": [1200.0, 800.0],
+            "pl": [200.0, 50.0],
+            "pl_d": [10.0, 5.0],
+        }
+    )
+    controls = SimpleNamespace(order_by="valor_actual", desc=True, top_n=5, show_usd=False)
+    history = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-01", periods=3, freq="D"),
+            "total_value": [1500.0, 1600.0, 1700.0],
+            "total_cost": [1400.0, 1400.0, 1400.0],
+        }
+    )
+    contributions = PortfolioContributionMetrics(
+        by_symbol=pd.DataFrame(
+            {
+                "tipo": ["ACCION", "BONO"],
+                "simbolo": ["GGAL", "AL30"],
+                "valor_actual": [1200.0, 800.0],
+                "costo": [1000.0, 750.0],
+                "pl": [200.0, 50.0],
+                "pl_d": [10.0, 5.0],
+                "valor_actual_pct": [60.0, 40.0],
+                "pl_pct": [80.0, 20.0],
+            }
+        ),
+        by_type=pd.DataFrame(
+            {
+                "tipo": ["ACCION", "BONO"],
+                "valor_actual": [1200.0, 800.0],
+                "costo": [1000.0, 750.0],
+                "pl": [200.0, 50.0],
+                "pl_d": [10.0, 5.0],
+                "valor_actual_pct": [60.0, 40.0],
+                "pl_pct": [80.0, 20.0],
+            }
+        ),
+    )
+
+    render_basic_section(
+        df_view,
+        controls,
+        ccl_rate=1000.0,
+        totals=None,
+        favorites=None,
+        historical_total=history,
+        contribution_metrics=contributions,
+    )
+
+    plotted_keys = {call["kwargs"].get("key") for call in fake_st.plot_calls}
+    assert {"portfolio_timeline", "portfolio_contribution_heatmap", "portfolio_contribution_table"}.issubset(
+        plotted_keys
+    )
+    assert not any("históricos" in msg for msg in fake_st.warnings)
+
+
+def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[])
+
+    import controllers.portfolio.charts as charts_mod
+
+    class DummyFavorites:
+        def sort_options(self, options):
+            return list(options)
+
+        def default_index(self, options):
+            return 0 if options else 0
+
+        def format_symbol(self, sym):
+            return sym
+
+    favorites_stub = DummyFavorites()
+
+    monkeypatch.setattr(charts_mod, "st", fake_st)
+    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
+
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["GGAL"],
+            "tipo": ["ACCION"],
+            "valor_actual": [1200.0],
+            "pl": [200.0],
+            "pl_d": [10.0],
+        }
+    )
+    controls = SimpleNamespace(order_by="valor_actual", desc=True, top_n=5, show_usd=False)
+
+    render_basic_section(
+        df_view,
+        controls,
+        ccl_rate=1000.0,
+        totals=None,
+        favorites=None,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=PortfolioContributionMetrics.empty(),
+    )
+
+    info_messages = " ".join(fake_st.warnings)
+    assert "históricos" in info_messages
+    assert "contribución" in info_messages
