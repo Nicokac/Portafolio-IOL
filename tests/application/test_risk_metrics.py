@@ -79,3 +79,51 @@ def test_beta_returns_nan_when_benchmark_variance_zero() -> None:
     bench = pd.Series([0.0, 0.0, 0.0])
 
     assert np.isnan(rs.beta(port, bench))
+
+
+def test_expected_shortfall_matches_tail_mean() -> None:
+    """Expected shortfall should average the tail beyond the VaR threshold."""
+
+    returns = pd.Series([0.02, -0.03, 0.01, -0.05, 0.04, -0.01])
+    confidence = 0.95
+    threshold = returns.quantile(1 - confidence)
+    tail = returns[returns <= threshold]
+    expected = float(-(tail.mean()))
+
+    result = rs.expected_shortfall(returns, confidence=confidence)
+    assert result == pytest.approx(expected)
+
+
+def test_expected_shortfall_handles_empty_series() -> None:
+    """Empty inputs should produce a neutral CVaR."""
+
+    assert rs.expected_shortfall(pd.Series(dtype=float)) == 0.0
+
+
+def test_rolling_correlations_computes_pairs() -> None:
+    """Rolling correlations should return a column per pair."""
+
+    idx = pd.date_range("2024-01-01", periods=5, freq="D")
+    returns = pd.DataFrame({
+        "A": [0.01, 0.02, -0.01, 0.03, 0.00],
+        "B": [0.00, 0.01, -0.02, 0.02, 0.01],
+    }, index=idx)
+
+    result = rs.rolling_correlations(returns, window=3)
+    expected = returns["A"].rolling(3).corr(returns["B"])
+
+    assert list(result.columns) == ["A↔B"]
+    expected = expected.dropna()
+    expected.name = "A↔B"
+    pd.testing.assert_series_equal(
+        result["A↔B"],
+        expected,
+    )
+
+
+def test_rolling_correlations_requires_enough_assets() -> None:
+    """Rolling correlations should bail out with insufficient data."""
+
+    single = pd.DataFrame({"A": [0.01, 0.02, -0.01]})
+    empty = rs.rolling_correlations(single, window=3)
+    assert empty.empty

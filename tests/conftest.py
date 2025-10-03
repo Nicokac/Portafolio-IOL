@@ -162,8 +162,11 @@ class _DummyStreamlitCore:
     def caption(self, text: object) -> None:
         self._record("caption", text=str(text))
 
-    def markdown(self, text: object) -> None:
-        self._record("markdown", text=str(text))
+    def markdown(self, text: object, *, unsafe_allow_html: bool = False) -> None:
+        self._record("markdown", text=str(text), unsafe=bool(unsafe_allow_html))
+
+    def plotly_chart(self, fig: object, **kwargs: Any) -> None:
+        self._record("plotly_chart", fig=fig, kwargs=kwargs)
 
     def write(self, text: object) -> None:
         self._record("write", text=text)
@@ -179,6 +182,10 @@ class _DummyStreamlitCore:
 
     def success(self, text: object) -> None:
         self._record("success", text=str(text))
+
+    def stop(self) -> None:
+        self._record("stop")
+        raise RuntimeError("streamlit.stop called")
 
     def spinner(self, text: object) -> _DummyContext:
         entry = self._record("spinner", text=str(text))

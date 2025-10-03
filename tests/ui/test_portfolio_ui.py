@@ -346,10 +346,15 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
 def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) -> None:
     import controllers.portfolio.risk as risk_mod
 
-    fake_st = FakeStreamlit(radio_sequence=[], selectbox_defaults={
-        "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
-        "Escenario": "Leve",
-    })
+    fake_st = FakeStreamlit(
+        radio_sequence=[],
+        selectbox_defaults={
+            "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
+            "Escenario": "Leve",
+            "Ventana para correlaciones móviles": "3 meses (63)",
+            "Nivel de confianza para VaR/CVaR": "95%",
+        },
+    )
     risk_mod.st = fake_st
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
@@ -374,23 +379,32 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         "compute_returns",
         lambda prices: prices.pct_change().dropna(),
     )
-    monkeypatch.setattr(
-        risk_mod,
-        "compute_risk_metrics",
-        lambda *a, **k: (
+    def fake_compute(*args, **kwargs):
+        assert kwargs.get("var_confidence") == 0.95
+        return (
             0.2,
             1.1,
             0.05,
+            0.07,
             pd.Series({"A": 0.6, "B": 0.4}),
             fake_port_ret,
             asset_vols,
             asset_drawdowns,
             port_drawdown,
-        ),
-    )
+        )
+
+    monkeypatch.setattr(risk_mod, "compute_risk_metrics", fake_compute)
 
     drawdown_series_output = pd.Series([-0.01, -0.05], name="drawdown")
     monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: drawdown_series_output)
+
+    rolling_corr_output = pd.DataFrame(
+        {
+            "A↔B": [0.1, 0.2, 0.3],
+        },
+        index=pd.date_range("2024-01-01", periods=3, freq="D"),
+    )
+    monkeypatch.setattr(risk_mod, "rolling_correlations", lambda *_: rolling_corr_output)
 
     class DummyFigure:
         def __init__(self, tag: str) -> None:
@@ -414,7 +428,12 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: DummyFigure("volatility_dist"))
 
     def dummy_line(data, **kwargs):
-        tag = "portfolio_drawdown" if data is drawdown_series_output else "rolling_vol"
+        if data is drawdown_series_output:
+            tag = "portfolio_drawdown"
+        elif data is rolling_corr_output:
+            tag = "rolling_corr"
+        else:
+            tag = "rolling_vol"
         return DummyFigure(tag)
 
     monkeypatch.setattr(risk_mod.px, "line", dummy_line)
@@ -433,27 +452,33 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
 
     tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
-    assert {"volatility_dist", "portfolio_drawdown", "beta_scatter"}.issubset(tags)
+    assert {"volatility_dist", "portfolio_drawdown", "beta_scatter", "rolling_corr"}.issubset(tags)
+    assert any("CVaR" in label for label, *_ in fake_st.metrics)
 
 
 def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch) -> None:
     import controllers.portfolio.risk as risk_mod
 
-    fake_st = FakeStreamlit(radio_sequence=[], selectbox_defaults={
-        "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
-        "Escenario": "Leve",
-    })
+    fake_st = FakeStreamlit(
+        radio_sequence=[],
+        selectbox_defaults={
+            "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
+            "Escenario": "Leve",
+            "Nivel de confianza para VaR/CVaR": "95%",
+        },
+    )
     risk_mod.st = fake_st
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
     df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0]})
-    tasvc = SimpleNamespace(
-        portfolio_history=lambda simbolos=None, period="1y": pd.DataFrame(
-            {"A": [10.0, 10.0, 10.0], "^GSPC": [100.0, 101.0, 102.0]}
-        )
-    )
+    def single_history(simbolos=None, period="1y"):
+        if simbolos and simbolos[0] == "^GSPC":
+            return pd.DataFrame({"^GSPC": [100.0, 101.0, 102.0]})
+        return pd.DataFrame({"A": [10.0, 10.0, 10.0]})
+
+    tasvc = SimpleNamespace(portfolio_history=single_history)
 
     monkeypatch.setattr(
         risk_mod,
@@ -466,6 +491,7 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
         lambda *a, **k: (
             0.0,
             float("nan"),
+            0.0,
             0.0,
             pd.Series({"A": 1.0}),
             pd.Series([0.0, 0.0]),

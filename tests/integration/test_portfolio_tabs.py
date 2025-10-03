@@ -17,7 +17,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from controllers.portfolio import portfolio as portfolio_mod
 from domain.models import Controls
-from services.portfolio_view import PortfolioViewSnapshot
+from services.portfolio_view import PortfolioViewSnapshot, PortfolioContributionMetrics
 
 
 class _Column:
@@ -41,6 +41,12 @@ class _Column:
 
     def metric(self, *args, **kwargs):  # noqa: ANN002 - proxy helper
         return self._owner.metric(*args, **kwargs)
+
+    def plotly_chart(self, *args, **kwargs):  # noqa: ANN002 - proxy helper
+        return self._owner.plotly_chart(*args, **kwargs)
+
+    def info(self, *args, **kwargs):  # noqa: ANN002 - proxy helper
+        return self._owner.info(*args, **kwargs)
 
 
 class _Spinner:
@@ -167,11 +173,21 @@ class _FakeStreamlit:
     def dataframe(self, data, **_: object) -> None:  # noqa: ANN001 - mimic streamlit signature
         self.table = data
 
+    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
+        self.captions.append(str(body))
+
     def line_chart(self, data: pd.DataFrame) -> None:
         self.line_charts.append(data)
 
-    def metric(self, label: str, value: object, delta: object | None = None) -> None:
-        self.metrics.append((label, value, delta))
+    def metric(
+        self,
+        label: str,
+        value: object,
+        delta: object | None = None,
+        *,
+        help: object | None = None,
+    ) -> None:
+        self.metrics.append((label, value, delta, help))
 
     def text_input(self, label: str, value: str = "", **_: object) -> str:
         self.text_inputs.append({"label": label, "value": value})
@@ -301,6 +317,8 @@ def _snapshot(df_view: pd.DataFrame) -> PortfolioViewSnapshot:
         apply_elapsed=0.001,
         totals_elapsed=0.0005,
         generated_at=0.0,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=PortfolioContributionMetrics.empty(),
     )
 
 
