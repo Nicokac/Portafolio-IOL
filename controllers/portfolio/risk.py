@@ -21,8 +21,10 @@ from application.risk_service import (
     max_drawdown,
     drawdown_series,
 )
+from services.notifications import NotificationFlags
 from ui.charts import plot_correlation_heatmap, _apply_layout
 from ui.export import PLOTLY_CONFIG
+from ui.notifications import render_risk_badge
 from shared.errors import AppError
 
 
@@ -52,7 +54,13 @@ def compute_risk_metrics(returns_df, bench_ret, weights, *, var_confidence: floa
     )
 
 
-def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
+def render_risk_analysis(
+    df_view,
+    tasvc,
+    favorites: FavoriteSymbols | None = None,
+    *,
+    notifications: NotificationFlags | None = None,
+):
     """Render correlation and risk analysis for the portfolio."""
     favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis de Correlación del Portafolio")
@@ -171,6 +179,10 @@ def render_risk_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = Non
         )
 
     st.subheader("Análisis de Riesgo")
+    if notifications and notifications.risk_alert:
+        render_risk_badge(
+            help_text="Se detectaron eventos de riesgo relevantes para tus posiciones recientes.",
+        )
     if portfolio_symbols:
         with st.spinner("Descargando históricos…"):
             try:

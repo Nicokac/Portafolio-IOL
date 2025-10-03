@@ -45,6 +45,14 @@ class Settings:
         # --- Identidad / headers ---
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
+        # --- Servicios auxiliares ---
+        self.NOTIFICATIONS_URL: str | None = self.secret_or_env(
+            "NOTIFICATIONS_URL", cfg.get("NOTIFICATIONS_URL")
+        )
+        self.NOTIFICATIONS_TIMEOUT: float = float(
+            os.getenv("NOTIFICATIONS_TIMEOUT", cfg.get("NOTIFICATIONS_TIMEOUT", 3.0))
+        )
+
         # --- Macro data providers ---
         self.MACRO_API_PROVIDER: str = os.getenv(
             "MACRO_API_PROVIDER", cfg.get("MACRO_API_PROVIDER", "fred")
