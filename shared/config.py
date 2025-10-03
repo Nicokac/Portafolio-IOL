@@ -135,6 +135,18 @@ class Settings:
             os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80))
         )
         self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 20)))
+        self.RISK_BADGE_THRESHOLD: float = float(
+            os.getenv("RISK_BADGE_THRESHOLD", cfg.get("RISK_BADGE_THRESHOLD", 0.75))
+        )
+        self.TECHNICAL_SIGNAL_THRESHOLD: float = float(
+            os.getenv(
+                "TECHNICAL_SIGNAL_THRESHOLD",
+                cfg.get("TECHNICAL_SIGNAL_THRESHOLD", 2),
+            )
+        )
+        self.EARNINGS_UPCOMING_DAYS: int = int(
+            os.getenv("EARNINGS_UPCOMING_DAYS", cfg.get("EARNINGS_UPCOMING_DAYS", 7))
+        )
 
         self.STUB_MAX_RUNTIME_WARN: float = float(
             os.getenv("STUB_MAX_RUNTIME_WARN", cfg.get("STUB_MAX_RUNTIME_WARN", 0.25))
