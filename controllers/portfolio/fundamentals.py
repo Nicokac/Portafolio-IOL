@@ -1,4 +1,5 @@
 import logging
+
 import streamlit as st
 
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
@@ -7,16 +8,28 @@ from ui.fundamentals import (
     render_fundamental_ranking,
     render_sector_comparison,
 )
+from services.notifications import NotificationFlags
 from shared.errors import AppError
+from ui.notifications import render_earnings_badge
 
 
 logger = logging.getLogger(__name__)
 
 
-def render_fundamental_analysis(df_view, tasvc, favorites: FavoriteSymbols | None = None):
+def render_fundamental_analysis(
+    df_view,
+    tasvc,
+    favorites: FavoriteSymbols | None = None,
+    *,
+    notifications: NotificationFlags | None = None,
+):
     """Render fundamental analysis section."""
     favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis fundamental del portafolio")
+    if notifications and notifications.upcoming_earnings:
+        render_earnings_badge(
+            help_text="Algunas empresas de tu portafolio reportan resultados en los próximos días.",
+        )
     symbols = (
         sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
         if not df_view.empty

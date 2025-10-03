@@ -27,6 +27,8 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
+notifications_url: str | None = getattr(settings, "NOTIFICATIONS_URL", None)
+notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
@@ -81,6 +83,8 @@ __all__ = [
     "max_quote_workers",
     "yahoo_fundamentals_ttl",
     "yahoo_quotes_ttl",
+    "notifications_url",
+    "notifications_timeout",
     "min_score_threshold",
     "max_results",
     "stub_max_runtime_warn",

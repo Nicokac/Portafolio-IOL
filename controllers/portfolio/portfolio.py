@@ -14,7 +14,9 @@ from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
 from shared.favorite_symbols import get_persistent_favorites
+from services.notifications import NotificationFlags, NotificationsService
 from services.portfolio_view import PortfolioViewModelService
+from ui.notifications import render_technical_badge, tab_badge_suffix
 
 from .load_data import load_portfolio_data
 from .charts import render_basic_section, render_advanced_analysis
@@ -23,6 +25,26 @@ from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
 
 view_model_service = PortfolioViewModelService()
+notifications_service = NotificationsService()
+
+
+def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[str]:
+    """Return updated tab labels including badge suffixes for active flags."""
+
+    updated = list(tab_labels)
+    if flags.risk_alert and len(updated) > 2:
+        suffix = tab_badge_suffix("risk")
+        if suffix.strip() and suffix.strip() not in updated[2]:
+            updated[2] = f"{updated[2]}{suffix}"
+    if flags.upcoming_earnings and len(updated) > 3:
+        suffix = tab_badge_suffix("earnings")
+        if suffix.strip() and suffix.strip() not in updated[3]:
+            updated[3] = f"{updated[3]}{suffix}"
+    if flags.technical_signal and len(updated) > 4:
+        suffix = tab_badge_suffix("technical")
+        if suffix.strip() and suffix.strip() not in updated[4]:
+            updated[4] = f"{updated[4]}{suffix}"
+    return updated
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -52,7 +74,8 @@ def render_portfolio_section(container, cli, fx_rates):
             all_symbols=all_symbols,
         )
 
-        tab_labels = list(viewmodel.tab_options)
+        notifications = notifications_service.get_flags()
+        tab_labels = _apply_tab_badges(list(viewmodel.tab_options), notifications)
 
         tab_idx = st.radio(
             "Secciones",
@@ -78,11 +101,25 @@ def render_portfolio_section(container, cli, fx_rates):
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)
         elif tab_idx == 2:
-            render_risk_analysis(df_view, tasvc, favorites=favorites)
+            render_risk_analysis(
+                df_view,
+                tasvc,
+                favorites=favorites,
+                notifications=notifications,
+            )
         elif tab_idx == 3:
-            render_fundamental_analysis(df_view, tasvc, favorites=favorites)
+            render_fundamental_analysis(
+                df_view,
+                tasvc,
+                favorites=favorites,
+                notifications=notifications,
+            )
         else:
             st.subheader("Indicadores técnicos por activo")
+            if notifications.technical_signal:
+                render_technical_badge(
+                    help_text="Tenés señales técnicas recientes para revisar en tus activos favoritos.",
+                )
             render_favorite_badges(
                 favorites,
                 empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
