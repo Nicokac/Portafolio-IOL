@@ -6,7 +6,7 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.25.1)
+## Quick-start (release 0.3.25.1 — 2025-10-03)
 
 La versión **0.3.25.1** refuerza la cobertura macro y la observabilidad de cada proveedor:
 - El **cliente World Bank** amplía el fallback multinivel (FRED → World Bank → fallback estático), manteniendo la columna `macro_outlook` cuando FRED queda inhabilitado o llega al límite de rate limiting.
