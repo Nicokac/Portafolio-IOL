@@ -6,12 +6,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.24.1)
+## Quick-start (release 0.3.25.1)
 
-La versión **0.3.24.1** refuerza la cobertura macro y la observabilidad de cada proveedor:
+La versión **0.3.25.1** mantiene la cobertura macro multinivel y corrige la métrica de drawdown para que los tableros de riesgo arranquen sin errores tras reinicios:
 - El **cliente World Bank** amplía el fallback multinivel (FRED → World Bank → fallback estático), manteniendo la columna `macro_outlook` cuando FRED queda inhabilitado o llega al límite de rate limiting.
-- El **health sidebar** ahora agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
+- El **health sidebar** agrega métricas macro con totales de éxito/error, ratio de fallbacks y buckets de latencia tanto por proveedor como en el resumen general.
 - Las notas del screening registran la secuencia de proveedores consultados (FRED, World Bank, fallback) con sus estados y latencias, alineando la telemetría mostrada en la UI con los datos persistidos en `services.health`.
+- Los cálculos de riesgo utilizan `drawdown_series` corregido, evitando excepciones en frío y dejando listos los gráficos históricos para los portafolios con datos simulados o reales.
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
@@ -28,7 +29,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar mostrará el número de versión `0.3.24.1`, confirmando que la actualización
+   La cabecera del sidebar mostrará el número de versión `0.3.25.1`, confirmando que la actualización
    quedó aplicada. Abre la pestaña **Empresas con oportunidad**, activa la casilla **Mostrar
    resumen del screening** y ejecuta una búsqueda con los datos stub incluidos para ver las nuevas
    tarjetas de KPIs: universo analizado, candidatos finales y sectores activos (con deltas de
@@ -57,7 +58,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
 - La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
 - El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
 
-**Comportamiento del caché (0.3.24.1).** Cuando guardas un preset, la aplicación persiste la
+**Comportamiento del caché (0.3.25.1).** Cuando guardas un preset, la aplicación persiste la
 combinación de filtros y el resultado del último screening asociado. Al relanzarlo, el panel de
 telemetría ahora etiqueta cada corrida con un identificador incremental y agrega una tabla de
 componentes (descarga, normalización, render) para comparar tiempos:
@@ -71,7 +72,7 @@ componentes (descarga, normalización, render) para comparar tiempos:
   que reutiliza inmediatamente los resultados previos, dispara el contador de *cache hits* y confirma
   la integridad del guardado.
 
-Estas novedades convierten a la release 0.3.24.1 en la referencia para validar onboarding, telemetría
+Estas novedades convierten a la release 0.3.25.1 en la referencia para validar onboarding, telemetría
 y caché cooperativa: toda la UI recuerda la versión activa, expone KPIs agregados de rendimiento en
 el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando
 los tiempos de iteración al dejar a la vista el impacto de cada cambio.
@@ -179,7 +180,7 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.24.1)
+##### Escenarios de fallback macro (0.3.25.1)
 
 1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El resumen macro del health sidebar incrementa los contadores de éxito y actualiza los buckets de latencia para el nuevo proveedor.
 2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente.
@@ -328,9 +329,9 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.24.1".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.25.1".
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.24.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia y reutilización, incluyendo el resumen macro con World Bank.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.25.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia y reutilización, incluyendo el resumen macro con World Bank.
 
 ### Interpretación del health sidebar (KPIs agregados)
 

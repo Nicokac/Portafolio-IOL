@@ -13,6 +13,7 @@ __all__ = [
     "markowitz_optimize",
     "monte_carlo_simulation",
     "apply_stress",
+    "drawdown_series",
 ]
 
 
@@ -97,3 +98,14 @@ def apply_stress(
     s = pd.Series(shocks).reindex(prices.index).fillna(0.0)
     stressed = prices * (1 + s)
     return float((stressed * w).sum())
+
+
+def drawdown_series(returns: pd.Series) -> pd.Series:
+    """Calcula la serie de *drawdown* acumulado a partir de rendimientos diarios."""
+    if returns is None or returns.empty:
+        return pd.Series(dtype=float)
+
+    cumulative = (1 + returns).cumprod()
+    running_max = cumulative.cummax()
+    drawdowns = (cumulative - running_max) / running_max
+    return drawdowns
