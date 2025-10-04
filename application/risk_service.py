@@ -5,12 +5,16 @@ import logging
 from typing import Dict
 
 import numpy as np
+from numpy.random import SeedSequence
 import pandas as pd
 
 
 LOGGER = logging.getLogger(__name__)
 
+default_rng: np.random.Generator = np.random.default_rng(SeedSequence())
+
 __all__ = [
+    "default_rng",
     "compute_returns",
     "portfolio_returns",
     "annualized_volatility",
@@ -284,9 +288,8 @@ def monte_carlo_simulation(
 
     def _sample(size: int) -> np.ndarray | None:
         try:
-            if rng is None:
-                return np.random.multivariate_normal(mean, cov, size=(size, horizon))
-            return rng.multivariate_normal(mean, cov, size=(size, horizon))
+            generator = default_rng if rng is None else rng
+            return generator.multivariate_normal(mean, cov, size=(size, horizon))
         except (np.linalg.LinAlgError, ValueError):
             return None
 

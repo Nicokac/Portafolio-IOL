@@ -30,6 +30,27 @@ pytest
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
 usa los stubs deterministas para mantener resultados reproducibles.
 
+### Generadores aleatorios reproducibles
+
+El módulo `application.risk_service` expone un generador persistente `default_rng`, inicializado con
+`numpy.random.SeedSequence`, para todas las simulaciones Monte Carlo. Durante las pruebas podés
+inyectar tu propio generador pasando el parámetro `rng` a `monte_carlo_simulation`, por ejemplo:
+
+```python
+from numpy.random import SeedSequence, default_rng
+
+result = monte_carlo_simulation(
+    returns,
+    weights,
+    n_sims=1024,
+    horizon=64,
+    rng=default_rng(SeedSequence(2024)),
+)
+```
+
+De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
+los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
+
 ## CI Checklist (0.3.30.1)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
