@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.28.1] - 2025-11-18
+
+### Changed
+- Hardening de pipelines CI: sincronización de versionado entre `pyproject.toml`, `shared.version`
+  y superficies visibles, más validaciones adicionales de telemetría para detectar desalineaciones
+  en los contadores persistentes.
+
+### Documentation
+- README, guías de pruebas y troubleshooting actualizadas para reflejar la release 0.3.28.1 como
+  parche de hardening/CI y mantener vigentes los flujos de snapshots, exportaciones y observabilidad.
+
+### Tests
+- Recordatorios de ejecución en CI ajustados para garantizar que las suites utilicen la numeración
+  0.3.28.1 en banners, stubs y verificaciones de versionado.
+
 ## [0.3.28] - 2025-11-15
 
 ### Added
