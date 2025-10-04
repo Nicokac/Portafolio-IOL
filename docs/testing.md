@@ -87,6 +87,31 @@ Para reproducir la telemetría manualmente:
    Revisa `exports/manual_check.json` y confirma que el bloque `summary.snapshot_hits` coincida con
    el valor mostrado en el health sidebar.
 
+### Configuración del backend de snapshots en CI
+
+El módulo `services.snapshots` permite elegir el backend a través de variables de entorno. En
+pipelines efímeros se recomienda declarar explícitamente estas variables para evitar que los
+artefactos se escriban en el workspace compartido:
+
+- `SNAPSHOT_BACKEND`: acepta `json`, `sqlite` o `null`. Usa `null` para habilitar
+  `NullSnapshotStorage` y desactivar por completo la persistencia durante los tests.
+- `SNAPSHOT_STORAGE_PATH`: ruta absoluta donde se almacenarán los archivos de snapshots cuando se
+  utiliza un backend basado en disco. En runners como GitHub Actions puedes apuntar a
+  `$RUNNER_TEMP/portfolio_snapshots.json` para generar los archivos en un directorio temporal que se
+  limpia automáticamente.
+
+Tras cada ejecución conviene borrar cualquier archivo residual para mantener el entorno limpio:
+
+```bash
+rm -f data/snapshots.json data/snapshots.db
+find "$RUNNER_TEMP" -maxdepth 1 -type f -name "portfolio_snapshots.*" -delete
+```
+
+Las fixtures de `pytest` que dependen de snapshots (por ejemplo, en `tests/services/test_snapshots.py`
+y `tests/integration/test_snapshot_export_flow.py`) reconfiguran el backend hacia `tmp_path` o
+`NullSnapshotStorage` y restauran la configuración global al finalizar cada caso. Si añadís nuevos
+escenarios que persistan snapshots, reutiliza el mismo patrón para no contaminar otros tests.
+
 ## Pruebas con APIs en vivo
 
 Los tests marcados como `live_yahoo` consultan Yahoo Finance y se consideran opcionales. Para

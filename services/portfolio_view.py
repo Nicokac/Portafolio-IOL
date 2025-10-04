@@ -186,8 +186,16 @@ class PortfolioViewModelService:
         self._dataset_key: str | None = None
         self._filters_key: str | None = None
         self._history_records: list[dict[str, float]] = []
-        self._snapshot_storage = snapshot_backend or snapshot_service
         self._snapshot_kind = "portfolio"
+        self.configure_snapshot_backend(snapshot_backend)
+
+    def configure_snapshot_backend(self, snapshot_backend: Any | None) -> None:
+        """Configure the storage backend used to persist portfolio snapshots."""
+
+        if snapshot_backend is None:
+            self._snapshot_storage = snapshot_service
+        else:
+            self._snapshot_storage = snapshot_backend
 
     def _update_history(self, totals: PortfolioTotals) -> pd.DataFrame:
         entry = _history_row(time.time(), totals)
@@ -284,6 +292,8 @@ class PortfolioViewModelService:
             try:
                 records = list_fn(self._snapshot_kind, limit=500, order="asc")
                 persisted_history = _history_df_from_snapshot_records(records)
+                if isinstance(persisted_history, pd.DataFrame) and persisted_history.empty:
+                    persisted_history = None
             except Exception:
                 logger.exception("No se pudo construir la historia persistida del portafolio")
 
