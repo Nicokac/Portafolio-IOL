@@ -270,6 +270,15 @@ class IOLClient(IIOLProvider):
 
         return (last - prev_close) / prev_close * 100
 
+    @classmethod
+    def _normalize_quote_payload(cls, data: Any) -> Dict[str, Optional[float]]:
+        if not isinstance(data, dict):
+            return {"last": None, "chg_pct": None}
+
+        last = cls._parse_price_fields(data)
+        chg_pct = cls._parse_chg_pct_fields(data, last)
+        return {"last": last, "chg_pct": chg_pct}
+
     # ------------------------------------------------------------------
     # Quotes
     # ------------------------------------------------------------------
@@ -297,39 +306,58 @@ class IOLClient(IIOLProvider):
         *,
         mercado: str | None = None,
         simbolo: str | None = None,
-    ) -> Dict[str, Optional[float]]:
+    ) -> Optional[Dict[str, Optional[float]]]:
         resolved_market = (mercado if mercado is not None else market or "bcba").lower()
         resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
-        params = {"panel": panel} if panel else None
-        url = f"{self.api_base}/marketdata/{resolved_market}/{resolved_symbol}/Cotizacion"
+        base_url = getattr(self, "_base", self.api_base).rstrip("/")
+        url = f"{base_url}/marketdata/{resolved_market}/{resolved_symbol}"
+        url = f"{url}/{panel}" if panel else f"{url}/Cotizacion"
 
         try:
-            response = self._request("GET", url, params=params)
+            response = self._request("GET", url)
+            if response is None:
+                logger.warning(
+                    "get_quote sin respuesta %s:%s (%s)",
+                    resolved_market,
+                    resolved_symbol,
+                    "response=None",
+                )
+                return None
+            raise_for_status = getattr(response, "raise_for_status", None)
+            if callable(raise_for_status):
+                raise_for_status()
         except InvalidCredentialsError:
             raise
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            if status_code == 500:
+                logger.warning("IOL 500 → omitiendo símbolo %s:%s", resolved_market, resolved_symbol)
+                return None
+            raise
         except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning("get_quote request error %s:%s -> %s", resolved_market, resolved_symbol, exc)
-            return {"last": None, "chg_pct": None}
+            logger.warning(
+                "get_quote sin respuesta %s:%s (%s)",
+                resolved_market,
+                resolved_symbol,
+                exc,
+            )
+            return None
 
-        if response is None:
-            logger.warning("get_quote sin respuesta %s:%s", resolved_market, resolved_symbol)
-            return {"last": None, "chg_pct": None}
+        status_code = getattr(response, "status_code", "n/a")
+        logger.debug("IOLClient.get_quote -> %s [%s]", url, status_code)
 
         try:
             data = response.json() or {}
         except ValueError as exc:
-            logger.warning("get_quote JSON inválido %s:%s -> %s", resolved_market, resolved_symbol, exc)
-            return {"last": None, "chg_pct": None}
+            logger.warning(
+                "get_quote sin respuesta %s:%s (%s)",
+                resolved_market,
+                resolved_symbol,
+                exc,
+            )
+            return None
 
-        if not isinstance(data, dict):
-            logger.warning("get_quote estructura inválida %s:%s", resolved_market, resolved_symbol)
-            return {"last": None, "chg_pct": None}
-
-        last = self._parse_price_fields(data)
-        chg_pct = self._parse_chg_pct_fields(data, last)
-        if chg_pct is None:
-            logger.warning("chg_pct indeterminado para %s:%s", resolved_market, resolved_symbol)
-        return {"last": last, "chg_pct": chg_pct}
+        return self._normalize_quote_payload(data)
 
     def get_quotes_bulk(
         self,
@@ -375,6 +403,15 @@ class IOLClient(IIOLProvider):
                 key = future_map[future]
                 try:
                     result[key] = future.result()
+                except requests.HTTPError as exc:
+                    response = exc.response
+                    if response is not None and response.status_code == 500:
+                        market, symbol = key
+                        logger.warning(
+                            "IOL 500 → omitiendo símbolo %s:%s", market, symbol
+                        )
+                        continue
+                    raise
                 except Exception as exc:  # pragma: no cover - defensive guard
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], exc)
                     result[key] = {"last": None, "chg_pct": None}
