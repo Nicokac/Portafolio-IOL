@@ -9,7 +9,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
 
 
 # Keep in sync with ``pyproject.toml``'s ``project.version``.
-DEFAULT_VERSION: str = "0.3.30.1"
+DEFAULT_VERSION: str = "0.3.30.2"
 PROJECT_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 

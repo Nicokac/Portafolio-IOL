@@ -24,8 +24,9 @@ from .ports import IIOLProvider
 
 logger = logging.getLogger(__name__)
 
+API_BASE_URL = "https://api.invertironline.com/api/v2"
 PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
-PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
+PORTFOLIO_URL = f"{API_BASE_URL}/portafolio"
 
 REQ_TIMEOUT = 30
 RETRIES = 1
@@ -61,6 +62,7 @@ class IOLClient(IIOLProvider):
 
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
+        self.api_base = API_BASE_URL
 
         self.iol_market: Optional[Iol] = None
         self._market_ready = False
@@ -287,27 +289,46 @@ class IOLClient(IIOLProvider):
 
         return self._parse_price_fields(data) if isinstance(data, dict) else None
 
-    def get_quote(self, *, mercado: str, simbolo: str) -> Dict[str, Optional[float]]:
-        mercado = (mercado or "bcba").lower()
-        simbolo = (simbolo or "").upper()
+    def get_quote(
+        self,
+        market: str | None = None,
+        symbol: str | None = None,
+        panel: str | None = None,
+        *,
+        mercado: str | None = None,
+        simbolo: str | None = None,
+    ) -> Dict[str, Optional[float]]:
+        resolved_market = (mercado if mercado is not None else market or "bcba").lower()
+        resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
+        params = {"panel": panel} if panel else None
+        url = f"{self.api_base}/marketdata/{resolved_market}/{resolved_symbol}"
+
         try:
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
-        except NoAuthException:
-            self._market_ready = False
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
-        except Exception as exc:
-            logger.warning("get_quote error %s:%s -> %s", mercado, simbolo, exc)
+            response = self._request("GET", url, params=params)
+        except InvalidCredentialsError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning("get_quote request error %s:%s -> %s", resolved_market, resolved_symbol, exc)
+            return {"last": None, "chg_pct": None}
+
+        if response is None:
+            logger.warning("get_quote sin respuesta %s:%s", resolved_market, resolved_symbol)
+            return {"last": None, "chg_pct": None}
+
+        try:
+            data = response.json() or {}
+        except ValueError as exc:
+            logger.warning("get_quote JSON inválido %s:%s -> %s", resolved_market, resolved_symbol, exc)
             return {"last": None, "chg_pct": None}
 
         if not isinstance(data, dict):
+            logger.warning("get_quote estructura inválida %s:%s", resolved_market, resolved_symbol)
             return {"last": None, "chg_pct": None}
 
         last = self._parse_price_fields(data)
         chg_pct = self._parse_chg_pct_fields(data, last)
         if chg_pct is None:
-            logger.warning("chg_pct indeterminado para %s:%s", mercado, simbolo)
+            logger.warning("chg_pct indeterminado para %s:%s", resolved_market, resolved_symbol)
         return {"last": last, "chg_pct": chg_pct}
 
     def get_quotes_bulk(
