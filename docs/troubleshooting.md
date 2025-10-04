@@ -4,9 +4,9 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.28.1, enfocada en hardening/CI para reforzar los
+> Nota: Esta guía corresponde a la release 0.3.29, enfocada en hardening/CI para reforzar los
 > pipelines automáticos y las verificaciones de integridad sin alterar los flujos funcionales
-> documentados en la serie 0.3.28.
+> documentados en la serie 0.3.29.
 
 - **Falta una clave y los servicios quedan en `disabled`.**
   - **Síntomas:** El health sidebar indica `disabled` para Alpha Vantage/Polygon/FMP/FRED/World Bank y el log muestra `Missing API key`.
@@ -41,7 +41,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.28.1 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.29 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
@@ -64,7 +64,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   - **Resolución:**
     1. Crea manualmente el directorio (`mkdir -p ~/.portafolio_iol/snapshots`) y asigna permisos de escritura al usuario que ejecuta Streamlit.
     2. Asegura que ningún job de CI limpie el directorio entre corridas si necesitas comparar métricas persistentes; monta un volumen dedicado al ejecutar contenedores.
-    3. Reinicia la app y lanza dos screenings con los mismos filtros. El contador `snapshot_hits` debería incrementarse en la segunda corrida y `scripts/export_analysis.py` reflejará el valor en `summary.snapshot_hits`.
+    3. Reinicia la app y lanza dos screenings con los mismos filtros. El contador `snapshot_hits` debería incrementarse en la segunda corrida y, al exportar con `scripts/export_analysis.py`, el archivo `kpis.csv` mostrará los KPI actualizados con la marca temporal correspondiente.
 
 - **La jerarquía de fallback no coincide con las notas del screening.**
   - **Síntomas:** El health sidebar marca como último éxito un proveedor distinto del mostrado en las notas (`Datos macro (World Bank)` etc.).
@@ -129,7 +129,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.28.1` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.29` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
@@ -146,13 +146,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   - **Síntomas:** El script termina con `FileNotFoundError` o `PermissionError` al escribir en `exports/`.
   - **Diagnóstico rápido:** Comprueba que la ruta indicada en `--output` exista y que el usuario tenga permisos de escritura. Ejecuta:
     ```bash
-    python scripts/export_analysis.py --output /tmp/probe.csv --format csv
+    python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats csv --output /tmp/exports_probe
     ```
     para descartar un problema con rutas relativas.
   - **Resolución:**
     1. Crea el directorio de destino (`mkdir -p exports`) o usa una ruta absoluta accesible.
     2. Verifica que `pandas` esté instalado en el entorno (`pip install -r requirements.txt`).
-    3. Si necesitas incorporar indicadores técnicos en la exportación, añade `--include-technicals`; si falta alguna columna en el resultado, confirma que `run_screener_stub` siga intacto y que no se hayan modificado los nombres esperados.
+    3. Si necesitas ampliar el contenido, utiliza `--metrics help` o `--charts help` para revisar las claves disponibles y vuelve a ejecutar el comando con las opciones deseadas.
 
 - **Los tests con Yahoo (`pytest -m live_yahoo`) fallan por rate limiting.**
   - **Síntomas:** `pytest` reporta `HTTPError` o `Timeout` al consultar Yahoo Finance.
