@@ -88,6 +88,7 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
         return view_outputs.pop(0)
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply_filters)
+    monkeypatch.setattr("services.portfolio_view.max_drawdown", lambda returns: 0.0)
 
     backend = snapshot_storage(backend="json")
 

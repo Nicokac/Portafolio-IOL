@@ -17,21 +17,10 @@ from application.risk_service import (
     annualized_volatility,
     beta,
     compute_returns,
+    max_drawdown,
 )
 
 logger = logging.getLogger(__name__)
-
-def _max_drawdown_from_returns(returns: pd.Series) -> float:
-    """Compute maximum drawdown given a return series."""
-
-    if returns is None or returns.empty:
-        return 0.0
-
-    wealth = (1 + returns).cumprod()
-    running_max = wealth.cummax()
-    drawdowns = wealth / running_max - 1
-    return float(drawdowns.min())
-
 
 def compute_symbol_risk_metrics(
     tasvc,
@@ -84,7 +73,7 @@ def compute_symbol_risk_metrics(
             continue
 
         vol = annualized_volatility(sym_returns)
-        dd = _max_drawdown_from_returns(sym_returns)
+        dd = max_drawdown(sym_returns)
 
         is_benchmark = sym == benchmark
         if is_benchmark:
