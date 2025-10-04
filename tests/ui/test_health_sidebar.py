@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import importlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,53 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
                 "missing_count": 0,
             }
         },
+        "risk_incidents": {
+            "total": 3,
+            "fallback_count": 1,
+            "fallback_ratio": 1.0 / 3.0,
+            "by_severity": {
+                "warning": {
+                    "label": "Advertencias",
+                    "count": 2,
+                    "fallback_count": 1,
+                    "fallback_ratio": 0.5,
+                },
+                "critical": {"label": "Críticas", "count": 1},
+            },
+            "by_category": {
+                "liquidity": {
+                    "label": "Liquidez",
+                    "count": 2,
+                    "fallback_count": 1,
+                    "fallback_ratio": 0.5,
+                    "severity_counts": {"warning": 2},
+                    "last_severity": "warning",
+                    "last_ts": 42.0,
+                    "last_detail": "Spread alto",
+                    "last_fallback": True,
+                    "last_source": "Adapter X",
+                    "last_tags": ["ALERT"],
+                },
+                "credit": {
+                    "label": "Crédito",
+                    "count": 1,
+                    "fallback_count": 0,
+                    "severity_counts": {"critical": 1},
+                    "last_severity": "critical",
+                    "last_ts": 30.0,
+                    "last_detail": "Default detectado",
+                },
+            },
+            "latest": {
+                "category": "liquidez",
+                "severity": "warning",
+                "ts": 42.0,
+                "detail": "Spread alto",
+                "fallback": True,
+                "source": "Adapter X",
+                "tags": ["ALERT"],
+            },
+        },
         "adapter_fallbacks": {
             "adapters": {
                 "macroadapter": {
@@ -100,10 +147,24 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     assert any("Portafolio" in text and "200" in text for text in markdown_calls)
     assert any("Cotizaciones" in text and "350" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
+    assert any("🚨 Incidencias 3" in text for text in markdown_calls)
+    assert any("Fallbacks 1/3 (33%)" in text for text in markdown_calls)
+    assert any("Última incidencia en liquidez" in text for text in markdown_calls)
 
     expanders = health_sidebar.st.get_records("expander")
     assert any(entry.get("label") == "Latencias por pestaña" for entry in expanders)
     assert any(entry.get("label") == "Fallbacks por adaptador" for entry in expanders)
+    risk_expander = next(
+        entry for entry in expanders if entry.get("label") == "Detalle de incidencias de riesgo"
+    )
+    risk_texts = [
+        child.get("text")
+        for child in risk_expander.get("children", [])
+        if isinstance(child, Mapping) and child.get("type") == "markdown"
+    ]
+    assert any("Liquidez — 2 incidencias" in text for text in risk_texts)
+    assert any("Fallbacks 🛟 1/2 (50%)" in text for text in risk_texts)
+    assert any("tags: ALERT" in text for text in risk_texts)
 
 
 def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
@@ -138,6 +199,7 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     assert any(text.startswith("- Portafolio: sin registro") for text in markdown_calls)
     assert any("Cotizaciones" in text and "sin datos" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
+    assert "_Sin incidencias de riesgo registradas._" in markdown_calls
 
 
 def test_render_health_sidebar_with_yfinance_history(

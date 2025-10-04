@@ -22,6 +22,8 @@ _PROVIDER_HISTORY_LIMIT = 8
 _TAB_LATENCIES_KEY = "tab_latencies"
 _TAB_LATENCY_HISTORY_LIMIT = 32
 _ADAPTER_FALLBACK_KEY = "adapter_fallbacks"
+_RISK_INCIDENTS_KEY = "risk_incidents"
+_RISK_INCIDENT_HISTORY_LIMIT = 50
 
 _PROVIDER_LABELS = {
     "alpha_vantage": "Alpha Vantage",
@@ -165,6 +167,223 @@ def record_market_data_incident(
     incidents = list(store.get(_MARKET_DATA_INCIDENTS_KEY, []))
     incidents.append(entry)
     store[_MARKET_DATA_INCIDENTS_KEY] = incidents[-_MARKET_DATA_INCIDENT_LIMIT:]
+
+
+def record_risk_incident(
+    *,
+    category: str,
+    severity: str = "warning",
+    detail: Optional[str] = None,
+    fallback: bool | None = None,
+    source: Optional[str] = None,
+    tags: Optional[Iterable[str]] = None,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Persist structured information about detected risk incidents."""
+
+    now = time.time()
+    category_text = str(category or "unknown").strip() or "unknown"
+    severity_raw = str(severity or "unknown").strip() or "unknown"
+    severity_key = severity_raw.casefold() or "unknown"
+    detail_text = _clean_detail(detail)
+    source_text = _clean_detail(source)
+
+    if tags is not None:
+        tag_list = []
+        for tag in tags:
+            text = str(tag).strip()
+            if text:
+                tag_list.append(text)
+        if not tag_list:
+            tag_list = None
+    else:
+        tag_list = None
+
+    metadata_payload: Optional[Dict[str, Any]] = None
+    if isinstance(metadata, Mapping):
+        metadata_payload = {}
+        for key, value in metadata.items():
+            key_text = str(key).strip()
+            if not key_text:
+                continue
+            metadata_payload[key_text] = value
+        if not metadata_payload:
+            metadata_payload = None
+
+    fallback_flag: Optional[bool]
+    if fallback is None:
+        fallback_flag = None
+    else:
+        fallback_flag = bool(fallback)
+
+    entry: Dict[str, Any] = {
+        "category": category_text,
+        "severity": severity_key,
+        "severity_label": severity_raw,
+        "ts": now,
+    }
+    if detail_text:
+        entry["detail"] = detail_text
+    if fallback_flag is not None:
+        entry["fallback"] = fallback_flag
+    if source_text:
+        entry["source"] = source_text
+    if tag_list:
+        entry["tags"] = tag_list
+    if metadata_payload is not None:
+        entry["metadata"] = metadata_payload
+
+    store = _store()
+    raw_risk = store.get(_RISK_INCIDENTS_KEY)
+    if isinstance(raw_risk, Mapping):
+        risk_data = dict(raw_risk)
+    else:
+        risk_data = {}
+
+    total = int(risk_data.get("total", 0) or 0) + 1
+    risk_data["total"] = total
+
+    fallback_total = int(risk_data.get("fallback_count", 0) or 0)
+    if fallback_flag:
+        fallback_total += 1
+    risk_data["fallback_count"] = fallback_total
+    risk_data["fallback_ratio"] = (fallback_total / total) if total else 0.0
+
+    raw_categories = risk_data.get("by_category")
+    if isinstance(raw_categories, Mapping):
+        categories: Dict[str, Any] = {
+            str(key): dict(value)
+            for key, value in raw_categories.items()
+            if isinstance(value, Mapping)
+        }
+    else:
+        categories = {}
+
+    category_stats = categories.get(category_text, {})
+    if not isinstance(category_stats, Mapping):
+        category_stats = {}
+    else:
+        category_stats = dict(category_stats)
+
+    category_total = int(category_stats.get("count", 0) or 0) + 1
+    category_stats["label"] = category_stats.get("label") or category_text
+    category_stats["count"] = category_total
+
+    category_fallback = int(category_stats.get("fallback_count", 0) or 0)
+    if fallback_flag:
+        category_fallback += 1
+    category_stats["fallback_count"] = category_fallback
+    category_stats["fallback_ratio"] = (
+        category_fallback / category_total if category_total else 0.0
+    )
+
+    severity_counts_raw = category_stats.get("severity_counts")
+    if isinstance(severity_counts_raw, Mapping):
+        severity_counts = {
+            str(key): int(value)
+            for key, value in severity_counts_raw.items()
+            if _as_optional_int(value) is not None
+        }
+    else:
+        severity_counts = {}
+    severity_counts[severity_key] = int(severity_counts.get(severity_key, 0)) + 1
+    category_stats["severity_counts"] = severity_counts
+    category_stats["severity_ratios"] = _compute_ratio_map(
+        severity_counts, category_total
+    )
+
+    category_stats["last_severity"] = severity_key
+    category_stats["last_ts"] = now
+    if detail_text:
+        category_stats["last_detail"] = detail_text
+    if fallback_flag is not None:
+        category_stats["last_fallback"] = fallback_flag
+    if source_text:
+        category_stats["last_source"] = source_text
+    if tag_list:
+        category_stats["last_tags"] = tag_list
+
+    categories[category_text] = category_stats
+    risk_data["by_category"] = categories
+
+    raw_severities = risk_data.get("by_severity")
+    if isinstance(raw_severities, Mapping):
+        severities: Dict[str, Any] = {
+            str(key): dict(value)
+            for key, value in raw_severities.items()
+            if isinstance(value, Mapping)
+        }
+    else:
+        severities = {}
+
+    severity_stats = severities.get(severity_key, {})
+    if not isinstance(severity_stats, Mapping):
+        severity_stats = {}
+    else:
+        severity_stats = dict(severity_stats)
+
+    severity_total = int(severity_stats.get("count", 0) or 0) + 1
+    severity_stats["label"] = severity_stats.get("label") or severity_raw
+    severity_stats["count"] = severity_total
+
+    severity_fallback = int(severity_stats.get("fallback_count", 0) or 0)
+    if fallback_flag:
+        severity_fallback += 1
+    severity_stats["fallback_count"] = severity_fallback
+    severity_stats["fallback_ratio"] = (
+        severity_fallback / severity_total if severity_total else 0.0
+    )
+
+    categories_by_severity_raw = severity_stats.get("categories")
+    if isinstance(categories_by_severity_raw, Mapping):
+        categories_by_severity = {
+            str(key): int(value)
+            for key, value in categories_by_severity_raw.items()
+            if _as_optional_int(value) is not None
+        }
+    else:
+        categories_by_severity = {}
+    categories_by_severity[category_text] = (
+        int(categories_by_severity.get(category_text, 0)) + 1
+    )
+    severity_stats["categories"] = categories_by_severity
+    severity_stats["category_ratios"] = _compute_ratio_map(
+        categories_by_severity, severity_total
+    )
+    severity_stats["last_ts"] = now
+    severity_stats["last_category"] = category_text
+
+    severities[severity_key] = severity_stats
+    risk_data["by_severity"] = severities
+
+    latest_entry = dict(entry)
+    risk_data["latest"] = latest_entry
+
+    raw_latest_by_category = risk_data.get("latest_by_category")
+    if isinstance(raw_latest_by_category, Mapping):
+        latest_by_category: Dict[str, Any] = {
+            str(key): dict(value)
+            for key, value in raw_latest_by_category.items()
+            if isinstance(value, Mapping)
+        }
+    else:
+        latest_by_category = {}
+    latest_by_category[category_text] = latest_entry
+    risk_data["latest_by_category"] = latest_by_category
+
+    history_raw = risk_data.get("history")
+    if isinstance(history_raw, deque):
+        history = history_raw
+    elif isinstance(history_raw, Iterable) and not isinstance(
+        history_raw, (str, bytes, bytearray)
+    ):
+        history = deque(history_raw, maxlen=_RISK_INCIDENT_HISTORY_LIMIT)
+    else:
+        history = deque(maxlen=_RISK_INCIDENT_HISTORY_LIMIT)
+    history.append(latest_entry)
+    risk_data["history"] = history
+
+    store[_RISK_INCIDENTS_KEY] = risk_data
 
 
 def record_fx_api_response(
@@ -618,6 +837,71 @@ def _normalize_provider_event(entry: Any) -> Optional[Dict[str, Any]]:
         normalized["ts"] = ts_value
     if detail_text:
         normalized["detail"] = detail_text
+
+    return normalized
+
+
+def _normalize_risk_entry(entry: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(entry, Mapping):
+        return None
+
+    category = entry.get("category") or entry.get("label") or "unknown"
+    category_text = str(category).strip() or "unknown"
+
+    severity_value = entry.get("severity") or entry.get("severity_label") or "unknown"
+    severity_text = str(severity_value).strip() or "unknown"
+    severity_key = severity_text.casefold() or "unknown"
+
+    ts_value = _as_optional_float(entry.get("ts"))
+    detail_text = _clean_detail(entry.get("detail"))
+
+    fallback_raw = entry.get("fallback")
+    fallback_flag = None if fallback_raw is None else bool(fallback_raw)
+
+    source_text = _clean_detail(entry.get("source"))
+
+    tags_list: Optional[list[str]] = None
+    raw_tags = entry.get("tags")
+    if isinstance(raw_tags, Iterable) and not isinstance(
+        raw_tags, (str, bytes, bytearray)
+    ):
+        collected: list[str] = []
+        for tag in raw_tags:
+            text = str(tag).strip()
+            if text:
+                collected.append(text)
+        if collected:
+            tags_list = collected
+
+    metadata_payload: Optional[Dict[str, Any]] = None
+    raw_metadata = entry.get("metadata")
+    if isinstance(raw_metadata, Mapping):
+        metadata_payload = {}
+        for key, value in raw_metadata.items():
+            key_text = str(key).strip()
+            if not key_text:
+                continue
+            metadata_payload[key_text] = value
+        if not metadata_payload:
+            metadata_payload = None
+
+    normalized: Dict[str, Any] = {
+        "category": category_text,
+        "severity": severity_key,
+        "severity_label": severity_text,
+    }
+    if ts_value is not None:
+        normalized["ts"] = ts_value
+    if detail_text:
+        normalized["detail"] = detail_text
+    if fallback_flag is not None:
+        normalized["fallback"] = fallback_flag
+    if source_text:
+        normalized["source"] = source_text
+    if tags_list:
+        normalized["tags"] = tags_list
+    if metadata_payload is not None:
+        normalized["metadata"] = metadata_payload
 
     return normalized
 
@@ -1309,6 +1593,156 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return {"adapters": adapters, "providers": provider_totals}
 
+    def _summarize_risk(raw_risk: Any) -> Dict[str, Any]:
+        if not isinstance(raw_risk, Mapping):
+            return {}
+
+        summary: Dict[str, Any] = {}
+
+        total = _as_optional_int(raw_risk.get("total"))
+        if total is not None and total >= 0:
+            summary["total"] = total
+
+        fallback_total = _as_optional_int(raw_risk.get("fallback_count"))
+        if fallback_total is not None and fallback_total >= 0:
+            summary["fallback_count"] = fallback_total
+            if total:
+                summary["fallback_ratio"] = fallback_total / total
+
+        raw_severities = raw_risk.get("by_severity")
+        severities_summary: Dict[str, Any] = {}
+        if isinstance(raw_severities, Mapping):
+            for key, raw_stats in raw_severities.items():
+                if not isinstance(raw_stats, Mapping):
+                    continue
+                count = _as_optional_int(raw_stats.get("count")) or 0
+                entry: Dict[str, Any] = {"count": count}
+                label = raw_stats.get("label")
+                if isinstance(label, str) and label.strip():
+                    entry["label"] = label.strip()
+                fallback_count = _as_optional_int(raw_stats.get("fallback_count")) or 0
+                if fallback_count:
+                    entry["fallback_count"] = fallback_count
+                if count:
+                    entry["fallback_ratio"] = fallback_count / count
+                categories_raw = raw_stats.get("categories")
+                if isinstance(categories_raw, Mapping):
+                    categories_counts: Dict[str, int] = {}
+                    total_categories = 0
+                    for cat_key, value in categories_raw.items():
+                        numeric = _as_optional_int(value)
+                        if numeric is None or numeric < 0:
+                            continue
+                        categories_counts[str(cat_key)] = numeric
+                        total_categories += numeric
+                    if categories_counts:
+                        entry["categories"] = categories_counts
+                        entry["category_ratios"] = _compute_ratio_map(
+                            categories_counts, total_categories
+                        )
+                last_ts = _as_optional_float(raw_stats.get("last_ts"))
+                if last_ts is not None:
+                    entry["last_ts"] = last_ts
+                last_category = raw_stats.get("last_category")
+                if isinstance(last_category, str) and last_category.strip():
+                    entry["last_category"] = last_category.strip()
+                severities_summary[str(key)] = entry
+        if severities_summary:
+            summary["by_severity"] = severities_summary
+
+        raw_categories = raw_risk.get("by_category")
+        categories_summary: Dict[str, Any] = {}
+        if isinstance(raw_categories, Mapping):
+            for key, raw_stats in raw_categories.items():
+                if not isinstance(raw_stats, Mapping):
+                    continue
+                count = _as_optional_int(raw_stats.get("count")) or 0
+                entry: Dict[str, Any] = {"count": count}
+                label = raw_stats.get("label")
+                if isinstance(label, str) and label.strip():
+                    entry["label"] = label.strip()
+                fallback_count = _as_optional_int(raw_stats.get("fallback_count")) or 0
+                if fallback_count:
+                    entry["fallback_count"] = fallback_count
+                if count:
+                    entry["fallback_ratio"] = fallback_count / count
+                severity_counts_raw = raw_stats.get("severity_counts")
+                if isinstance(severity_counts_raw, Mapping):
+                    severity_counts: Dict[str, int] = {}
+                    for severity_name, value in severity_counts_raw.items():
+                        numeric = _as_optional_int(value)
+                        if numeric is None or numeric < 0:
+                            continue
+                        severity_counts[str(severity_name)] = numeric
+                    if severity_counts:
+                        entry["severity_counts"] = severity_counts
+                        entry["severity_ratios"] = _compute_ratio_map(
+                            severity_counts, count
+                        )
+                last_ts = _as_optional_float(raw_stats.get("last_ts"))
+                if last_ts is not None:
+                    entry["last_ts"] = last_ts
+                last_detail = _clean_detail(raw_stats.get("last_detail"))
+                if last_detail:
+                    entry["last_detail"] = last_detail
+                last_severity = raw_stats.get("last_severity")
+                if isinstance(last_severity, str) and last_severity.strip():
+                    entry["last_severity"] = last_severity.strip()
+                last_fallback = raw_stats.get("last_fallback")
+                if last_fallback is not None:
+                    entry["last_fallback"] = bool(last_fallback)
+                last_source = _clean_detail(raw_stats.get("last_source"))
+                if last_source:
+                    entry["last_source"] = last_source
+                last_tags = raw_stats.get("last_tags")
+                if isinstance(last_tags, Iterable) and not isinstance(
+                    last_tags, (str, bytes, bytearray)
+                ):
+                    collected_tags = [
+                        str(tag).strip()
+                        for tag in last_tags
+                        if str(tag).strip()
+                    ]
+                    if collected_tags:
+                        entry["last_tags"] = collected_tags
+                categories_summary[str(key)] = entry
+        if categories_summary:
+            summary["by_category"] = categories_summary
+
+        latest = raw_risk.get("latest")
+        normalized_latest = _normalize_risk_entry(latest)
+        if normalized_latest:
+            summary["latest"] = normalized_latest
+
+        raw_latest_by_category = raw_risk.get("latest_by_category")
+        if isinstance(raw_latest_by_category, Mapping):
+            latest_by_category: Dict[str, Any] = {}
+            for key, value in raw_latest_by_category.items():
+                normalized_entry = _normalize_risk_entry(value)
+                if normalized_entry:
+                    latest_by_category[str(key)] = normalized_entry
+            if latest_by_category:
+                summary["latest_by_category"] = latest_by_category
+
+        history_raw = raw_risk.get("history")
+        history_entries: list[Dict[str, Any]] = []
+        if isinstance(history_raw, deque):
+            iterable_history = list(history_raw)
+        elif isinstance(history_raw, Iterable) and not isinstance(
+            history_raw, (str, bytes, bytearray)
+        ):
+            iterable_history = list(history_raw)
+        else:
+            iterable_history = []
+        for entry in iterable_history:
+            normalized_entry = _normalize_risk_entry(entry)
+            if normalized_entry:
+                history_entries.append(normalized_entry)
+        if history_entries:
+            summary["history"] = history_entries
+
+        return summary
+
     def _summarize_macro(raw_macro: Any) -> Dict[str, Any]:
         if not isinstance(raw_macro, Mapping):
             return {}
@@ -1459,6 +1893,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "iol_refresh": store.get("iol_refresh"),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
+        "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
         "fx_api": store.get("fx_api"),
         "fx_cache": store.get("fx_cache"),
         "macro_api": _summarize_macro(store.get("macro_api")),
@@ -1483,5 +1918,6 @@ __all__ = [
     "record_quote_load",
     "record_opportunities_report",
     "record_market_data_incident",
+    "record_risk_incident",
     "record_yfinance_usage",
 ]
