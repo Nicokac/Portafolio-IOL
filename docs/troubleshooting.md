@@ -146,13 +146,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   - **Síntomas:** El script termina con `FileNotFoundError` o `PermissionError` al escribir en `exports/`.
   - **Diagnóstico rápido:** Comprueba que la ruta indicada en `--output` exista y que el usuario tenga permisos de escritura. Ejecuta:
     ```bash
-    python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats csv --output /tmp/exports_probe
+    python scripts/export_analysis.py --output /tmp/probe --format csv
     ```
     para descartar un problema con rutas relativas.
   - **Resolución:**
     1. Crea el directorio de destino (`mkdir -p exports`) o usa una ruta absoluta accesible.
     2. Verifica que `pandas` esté instalado en el entorno (`pip install -r requirements.txt`).
-    3. Si necesitas ampliar el contenido, utiliza `--metrics help` o `--charts help` para revisar las claves disponibles y vuelve a ejecutar el comando con las opciones deseadas.
+    3. Revisa que `analysis.zip` y los CSV (`kpis.csv`, `positions.csv`, etc.) se generen dentro del subdirectorio del snapshot; si falta alguna columna en el resultado, confirma que `run_screener_stub` siga intacto y que no se hayan modificado los nombres esperados.
 
 - **Los tests con Yahoo (`pytest -m live_yahoo`) fallan por rate limiting.**
   - **Síntomas:** `pytest` reporta `HTTPError` o `Timeout` al consultar Yahoo Finance.

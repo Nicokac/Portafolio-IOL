@@ -29,8 +29,14 @@ from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
 
-view_model_service = PortfolioViewModelService()
+view_model_service = PortfolioViewModelService(snapshot_backend=snapshot_service)
 notifications_service = NotificationsService()
+
+
+def configure_snapshot_backend(snapshot_backend: Any | None) -> None:
+    """Override the snapshot backend used by the cached portfolio service."""
+
+    view_model_service.configure_snapshot_backend(snapshot_backend)
 
 
 def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[str]:

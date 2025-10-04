@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from domain.models import Controls
+from services import snapshots
 from services.portfolio_view import PortfolioViewModelService
 
 
@@ -38,8 +39,31 @@ def _frame(total_value: float) -> pd.DataFrame:
     return scaled
 
 
+@pytest.fixture
+def snapshot_storage(tmp_path):
+    from shared.settings import settings as _settings
+
+    backend_default = getattr(_settings, "snapshot_backend", "json")
+    path_default = getattr(_settings, "snapshot_storage_path", None)
+
+    def _configure(*, backend: str = "null", path: Path | None = None):
+        storage_path = path
+        if storage_path is None and backend not in {"null", "none", "disabled"}:
+            if backend in {"sqlite", "sqlite3"}:
+                storage_path = tmp_path / "snapshots.db"
+            else:
+                storage_path = tmp_path / "snapshots.json"
+        snapshots.configure_storage(backend=backend, path=storage_path)
+        return snapshots
+
+    try:
+        yield _configure
+    finally:
+        snapshots.configure_storage(backend=backend_default, path=path_default)
+
+
 @pytest.mark.parametrize("totals", [(200.0, 230.0)])
-def test_snapshot_history_supports_comparisons(monkeypatch, totals) -> None:
+def test_snapshot_history_supports_comparisons(monkeypatch, totals, snapshot_storage) -> None:
     initial_total, refreshed_total = totals
 
     frames = [_frame(initial_total), _frame(refreshed_total)]
@@ -49,7 +73,9 @@ def test_snapshot_history_supports_comparisons(monkeypatch, totals) -> None:
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply)
 
-    service = PortfolioViewModelService()
+    backend = snapshot_storage(backend="null")
+
+    service = PortfolioViewModelService(snapshot_backend=backend)
     controls = Controls()
     positions = pd.DataFrame({"simbolo": ["AL30"], "mercado": ["BCBA"]})
 

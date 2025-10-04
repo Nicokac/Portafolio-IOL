@@ -199,3 +199,40 @@ def test_apply_stress_combines_weights_and_shocks() -> None:
     result = rs.apply_stress(prices, weights, shocks)
 
     assert result == pytest.approx(expected_value)
+
+
+def test_markowitz_optimize_degrades_on_singular_covariance() -> None:
+    """Singular covariance matrices should yield NaN weights instead of crashing."""
+
+    # Identical assets force a singular covariance matrix
+    returns = pd.DataFrame({
+        "A": [0.01, 0.02, -0.01, 0.015],
+        "B": [0.01, 0.02, -0.01, 0.015],
+    })
+
+    weights = rs.markowitz_optimize(returns)
+
+    assert isinstance(weights, pd.Series)
+    assert list(weights.index) == list(returns.columns)
+    assert weights.isna().all()
+
+
+def test_monte_carlo_simulation_handles_invalid_covariance(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Monte Carlo should return a safe series when the covariance is invalid."""
+
+    returns = pd.DataFrame({
+        "A": [0.01, -0.02, 0.015],
+        "B": [0.005, -0.01, 0.02],
+    })
+    weights = pd.Series({"A": 0.6, "B": 0.4})
+
+    def _raise(*args, **kwargs):
+        raise np.linalg.LinAlgError("not positive definite")
+
+    monkeypatch.setattr(np.random, "multivariate_normal", _raise)
+
+    result = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+
+    assert isinstance(result, pd.Series)
+    assert result.size == 1
+    assert result.isna().all()
