@@ -3,11 +3,11 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+import sys
 import zipfile
 import xml.etree.ElementTree as ET
 from importlib import util
 from pathlib import Path
-import sys
 
 import pandas as pd
 import pytest
@@ -119,6 +119,37 @@ def test_main_generates_csv_and_zip_exports(tmp_path: Path) -> None:
     assert "snapshot" in summary_df.columns
     assert summary_df.loc[0, "snapshot"] == "sample"
     assert "total_value" in summary_df.columns
+
+
+def test_cli_generates_excel_without_streamlit_cache(tmp_path: Path) -> None:
+    snapshots_dir = tmp_path / "snapshots"
+    _write_sample_snapshot(snapshots_dir)
+
+    output_dir = tmp_path / "exports"
+    repo_root = Path(__file__).resolve().parents[2]
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "scripts.export_analysis",
+            "--input",
+            str(snapshots_dir),
+            "--output",
+            str(output_dir),
+            "--format",
+            "excel",
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+
+    excel_path = output_dir / "sample" / "analysis.xlsx"
+    assert excel_path.exists()
 
 
 def test_main_generates_excel_with_charts(tmp_path: Path) -> None:
