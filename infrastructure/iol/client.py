@@ -273,11 +273,153 @@ class IOLClient(IIOLProvider):
     @classmethod
     def _normalize_quote_payload(cls, data: Any) -> Dict[str, Optional[float]]:
         if not isinstance(data, dict):
-            return {"last": None, "chg_pct": None}
+            return {"last": None, "chg_pct": None, "asof": None, "provider": None}
 
         last = cls._parse_price_fields(data)
         chg_pct = cls._parse_chg_pct_fields(data, last)
-        return {"last": last, "chg_pct": chg_pct}
+
+        asof: Optional[str]
+        asof_value = data.get("asof")
+        if asof_value is None:
+            for candidate in (
+                "fechaHora",  # legacy IOL
+                "fecha",  # v2 payloads
+                "timestamp",
+                "time",
+                "date",
+                "ts",
+            ):
+                asof_value = data.get(candidate)
+                if asof_value:
+                    break
+        if hasattr(asof_value, "isoformat"):
+            asof = asof_value.isoformat()
+        elif isinstance(asof_value, (int, float)):
+            asof = str(float(asof_value))
+        elif isinstance(asof_value, str):
+            asof = asof_value.strip() or None
+        else:
+            asof = None
+
+        provider_raw = data.get("provider")
+        if isinstance(provider_raw, str):
+            provider = provider_raw.strip() or None
+        elif provider_raw is None:
+            provider = "iol"
+        else:
+            provider = str(provider_raw)
+
+        return {"last": last, "chg_pct": chg_pct, "asof": asof, "provider": provider}
+
+    # ------------------------------------------------------------------
+    # Quotes helpers
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _map_symbol_for_adapter(market: str, symbol: str) -> str:
+        market_key = (market or "").strip().lower()
+        ticker = (symbol or "").strip().upper()
+        if not ticker:
+            return ticker
+        if market_key not in {"bcba", "merv"}:
+            return ticker
+        try:
+            from shared.config import get_config
+
+            cfg = get_config()
+        except Exception:  # pragma: no cover - defensive guard
+            return ticker
+
+        mapping = cfg.get("cedear_to_us") if isinstance(cfg, dict) else None
+        if isinstance(mapping, dict):
+            mapped = mapping.get(ticker)
+            if isinstance(mapped, str) and mapped.strip():
+                return mapped.strip().upper()
+        return ticker
+
+    @staticmethod
+    def _normalize_ohlc_payload(frame: Any, provider: str) -> Dict[str, Optional[float]]:
+        try:
+            import pandas as pd  # type: ignore
+        except Exception:  # pragma: no cover - defensive import
+            pd = None  # type: ignore
+
+        if pd is None or frame is None:
+            return {"last": None, "chg_pct": None, "asof": None, "provider": None}
+
+        try:
+            df = frame if isinstance(frame, pd.DataFrame) else None
+        except Exception:  # pragma: no cover - defensive guard
+            df = None
+        if df is None or df.empty:
+            return {"last": None, "chg_pct": None, "asof": None, "provider": None}
+
+        df_sorted = df.sort_index()
+        last_row = df_sorted.iloc[-1]
+        last_close = _to_float(last_row.get("Close"))
+        if last_close is None:
+            return {"last": None, "chg_pct": None, "asof": None, "provider": None}
+
+        prev_close = None
+        if len(df_sorted.index) >= 2:
+            prev_close = _to_float(df_sorted.iloc[-2].get("Close"))
+        chg_pct = None
+        if prev_close not in (None, 0):
+            chg_pct = (last_close - prev_close) / prev_close * 100.0
+
+        timestamp = df_sorted.index[-1]
+        if hasattr(timestamp, "isoformat"):
+            asof = timestamp.isoformat()
+        else:
+            asof = str(timestamp)
+
+        provider_key = str(provider or "").strip().lower()
+        if provider_key == "alpha_vantage":
+            provider_key = "av"
+
+        return {
+            "last": last_close,
+            "chg_pct": chg_pct,
+            "asof": asof,
+            "provider": provider_key or None,
+        }
+
+    def _fallback_quote_via_ohlc(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        panel: str | None = None,
+    ) -> Dict[str, Optional[float]] | None:
+        mapped_symbol = self._map_symbol_for_adapter(market, symbol)
+        params = {"period": "1mo", "interval": "1d"}
+        try:
+            from services.ohlc_adapter import OHLCAdapter
+
+            adapter = OHLCAdapter()
+            frame = adapter.fetch(mapped_symbol, **params)
+            provider_name: Optional[str] = None
+            cache_key = adapter._make_cache_key(mapped_symbol, params)  # type: ignore[attr-defined]
+            cache_store = getattr(adapter, "_cache", {})
+            entry = cache_store.get(cache_key) if isinstance(cache_store, dict) else None
+            if entry is not None:
+                provider_name = getattr(entry, "provider", None)
+            payload = self._normalize_ohlc_payload(frame, provider_name or "")
+            if payload["last"] is not None:
+                logger.info(
+                    "IOLClient fallback OHLCAdapter %s:%s -> %s",
+                    market,
+                    symbol,
+                    payload.get("provider"),
+                )
+                return payload
+        except Exception as exc:
+            logger.warning(
+                "IOLClient OHLCAdapter fallback failed %s:%s -> %s",
+                market,
+                symbol,
+                exc,
+            )
+        return None
 
     # ------------------------------------------------------------------
     # Quotes
@@ -322,7 +464,12 @@ class IOLClient(IIOLProvider):
                     resolved_symbol,
                     "response=None",
                 )
-                return None
+                fallback = self._fallback_quote_via_ohlc(
+                    resolved_market, resolved_symbol, panel=panel
+                )
+                if fallback is not None:
+                    return fallback
+                return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
             raise_for_status = getattr(response, "raise_for_status", None)
             if callable(raise_for_status):
                 raise_for_status()
@@ -354,7 +501,17 @@ class IOLClient(IIOLProvider):
                         fallback_exc,
                         exc_info=True,
                     )
-                    return {"last": None, "chg_pct": None}
+                    fallback = self._fallback_quote_via_ohlc(
+                        resolved_market, resolved_symbol, panel=panel
+                    )
+                    if fallback is not None:
+                        return fallback
+                    return {
+                        "last": None,
+                        "chg_pct": None,
+                        "asof": None,
+                        "provider": "stale",
+                    }
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.warning(
@@ -363,7 +520,12 @@ class IOLClient(IIOLProvider):
                 resolved_symbol,
                 exc,
             )
-            return None
+            fallback = self._fallback_quote_via_ohlc(
+                resolved_market, resolved_symbol, panel=panel
+            )
+            if fallback is not None:
+                return fallback
+            return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
 
         status_code = getattr(response, "status_code", "n/a")
         logger.debug("IOLClient.get_quote -> %s [%s]", url, status_code)
@@ -377,9 +539,17 @@ class IOLClient(IIOLProvider):
                 resolved_symbol,
                 exc,
             )
-            return None
+            fallback = self._fallback_quote_via_ohlc(
+                resolved_market, resolved_symbol, panel=panel
+            )
+            if fallback is not None:
+                return fallback
+            return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
 
-        return self._normalize_quote_payload(data)
+        payload = self._normalize_quote_payload(data)
+        if payload.get("provider") is None:
+            payload["provider"] = "iol"
+        return payload
 
     def get_quotes_bulk(
         self,

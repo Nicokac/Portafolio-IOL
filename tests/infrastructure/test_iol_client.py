@@ -9,6 +9,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
+import types
 
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
@@ -121,7 +123,7 @@ def test_get_quote_returns_last_and_chg_pct(
 
     result = client.get_quote("bcba", "AAPL")
 
-    assert result == {"last": 123.45, "chg_pct": 1.5}
+    assert result == {"last": 123.45, "chg_pct": 1.5, "asof": None, "provider": "iol"}
 
 
 def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,4 +151,64 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
     payload = client.get_quote("bcba", "AAPL")
 
     assert calls["url"].endswith("/Cotizacion")
-    assert payload == {"last": 100.0, "chg_pct": 1.23}
+    assert payload == {"last": 100.0, "chg_pct": 1.23, "asof": None, "provider": "iol"}
+
+
+def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When v2 and legacy fail, the OHLC adapter should provide a payload."""
+
+    class Response500:
+        status_code = 500
+
+        @staticmethod
+        def raise_for_status() -> None:
+            raise requests.HTTPError(response=SimpleNamespace(status_code=500))
+
+        def json(self) -> dict:
+            return {}
+
+    class LegacyStubClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def get_quote(self, **kwargs):
+            raise RuntimeError("legacy boom")
+
+    fallback_payload = {
+        "last": 150.0,
+        "chg_pct": 1.1,
+        "asof": "2024-01-02T12:00:00",
+        "provider": "av",
+    }
+
+    legacy_module = types.SimpleNamespace(IOLClient=LegacyStubClient)
+    monkeypatch.setitem(sys.modules, "infrastructure.iol.legacy.iol_client", legacy_module)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: Response500())
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
+        "_fallback_quote_via_ohlc",
+        lambda self, market, symbol, panel=None: fallback_payload,
+    )
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    result = client.get_quote("bcba", "GGAL")
+
+    assert result == fallback_payload
+
+
+def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If no provider responds, the payload should be marked as stale."""
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: None)
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
+        "_fallback_quote_via_ohlc",
+        lambda self, market, symbol, panel=None: None,
+    )
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    payload = client.get_quote("bcba", "GGAL")
+
+    assert payload == {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}

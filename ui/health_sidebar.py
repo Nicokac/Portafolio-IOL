@@ -405,6 +405,66 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
     return format_note(" ".join(parts))
 
 
+def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin consultas de cotizaciones registradas._"]
+
+    providers = data.get("providers")
+    if not isinstance(providers, Iterable) or isinstance(providers, (str, bytes, bytearray)):
+        return ["_Sin consultas de cotizaciones registradas._"]
+
+    entries: list[Mapping[str, Any]] = [entry for entry in providers if isinstance(entry, Mapping)]
+    if not entries:
+        return ["_Sin consultas de cotizaciones registradas._"]
+
+    total_val = data.get("total")
+    total_int = int(total_val) if isinstance(total_val, (int, float)) else None
+    stale_total_val = data.get("stale_total")
+    stale_total = int(stale_total_val) if isinstance(stale_total_val, (int, float)) else 0
+
+    header_parts: list[str] = []
+    if total_int is not None:
+        header_parts.append(f"Total {total_int}")
+    if stale_total:
+        header_parts.append(f"Stale {stale_total}")
+
+    lines: list[str] = []
+    if header_parts:
+        lines.append(format_note("📊 " + " • ".join(header_parts)))
+
+    for entry in entries:
+        label = _sanitize_text(entry.get("label")) or str(entry.get("provider") or "desconocido")
+        count_val = entry.get("count")
+        count_int = int(count_val) if isinstance(count_val, (int, float)) else 0
+        stale_count_val = entry.get("stale_count")
+        stale_count = int(stale_count_val) if isinstance(stale_count_val, (int, float)) else 0
+        avg_ms = entry.get("avg_ms")
+        last_ms = entry.get("last_ms")
+        ts_value = entry.get("ts") if isinstance(entry.get("ts"), (int, float)) else None
+        ts_text = _format_timestamp(ts_value)
+        source_text = _sanitize_text(entry.get("source"))
+        stale_last = bool(entry.get("stale_last"))
+
+        icon = "🛟" if stale_last else "✅"
+        if label.casefold() == "error":
+            icon = "⚠️"
+
+        parts = [f"{icon} {label}: {count_int} consultas"]
+        if stale_count:
+            parts.append(f"stale {stale_count}")
+        if isinstance(avg_ms, (int, float)):
+            parts.append(f"prom. {float(avg_ms):.0f} ms")
+        if isinstance(last_ms, (int, float)):
+            parts.append(f"último {float(last_ms):.0f} ms")
+        if source_text:
+            parts.append(f"fuente: {source_text}")
+        parts.append(ts_text)
+
+        lines.append(format_note(" • ".join(parts)))
+
+    return lines
+
+
 def _format_fx_api_status(data: Optional[dict]) -> str:
     if not data:
         return "_Sin llamadas a la API FX._"
@@ -1123,6 +1183,10 @@ def render_health_sidebar() -> None:
 
     sidebar.markdown("#### 📈 Yahoo Finance")
     sidebar.markdown(_format_yfinance_status(metrics.get("yfinance")))
+
+    sidebar.markdown("#### 💹 Cotizaciones")
+    for line in _format_quote_providers(metrics.get("quote_providers")):
+        sidebar.markdown(line)
 
     sidebar.markdown("#### 🌐 Macro / Datos externos")
     for line in _format_macro_section(metrics.get("macro_api")):
