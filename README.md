@@ -48,6 +48,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    pip install -r requirements.txt
    ```
    Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
+   > Las dependencias declaradas viven en `[project.dependencies]` de `pyproject.toml`. Ejecuta `python scripts/sync_requirements.py` cada vez que modifiques esa sección para regenerar `requirements.txt` con las versiones fijadas que usa CI y producción.
 2. **Levanta la aplicación y valida los banners persistentes.** Con el entorno activado ejecuta:
    ```bash
    streamlit run app.py
@@ -518,6 +519,8 @@ El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.29.2)** que lis
 pip install -r requirements.txt
 ```
 
+> El archivo `requirements.txt` se genera con `python scripts/sync_requirements.py` a partir de `[project.dependencies]` en `pyproject.toml`. Cualquier ajuste debe aplicarse en ese archivo y luego sincronizarse para mantener la lista plana que consumen los despliegues.
+
 Para un entorno de desarrollo con herramientas de linting y pruebas:
 
 ```bash
@@ -762,15 +765,23 @@ PY
 
 ## Actualización de dependencias
 
-Las versiones de las dependencias están fijadas en `requirements.txt`. Para actualizarlas de forma segura:
+`pyproject.toml` es ahora la fuente de verdad para las dependencias de producción: todas las versiones quedan fijadas en `[project.dependencies]`. El archivo `requirements.txt` se regenera automáticamente a partir de esa sección para mantener la compatibilidad con los entornos de despliegue y los jobs de CI que consumen listas de paquetes planas.
+
+### Flujo recomendado
 
 ```bash
 bash scripts/update_dependencies.sh
 ```
 
-El script actualiza los paquetes a sus últimas versiones, ejecuta las pruebas y, si todo pasa, escribe las nuevas versiones en `requirements.txt`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
+El script actualiza los paquetes a sus últimas versiones disponibles, ejecuta la suite de pruebas, sincroniza los pines en `pyproject.toml` y finalmente recrea `requirements.txt` con `python scripts/sync_requirements.py`. Este proceso también se ejecuta mensualmente mediante [GitHub Actions](.github/workflows/dependency-update.yml).
 
-La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; a partir de ahora `matplotlib` queda instalada automáticamente al ejecutar `pip install -r requirements.txt`, por lo que no hace falta agregarla manualmente antes de correr ese flujo.
+### Ajustes manuales
+
+1. Edita `[project.dependencies]` en `pyproject.toml` y guarda los cambios.
+2. Regenera la lista plana para CI: `python scripts/sync_requirements.py`.
+3. Reinstala las dependencias en tu entorno virtual (`pip install -r requirements.txt`) y ejecuta las suites necesarias.
+
+La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; `matplotlib` y `kaleido` se incluyen automáticamente al instalar `requirements.txt`, por lo que no hace falta agregarlos manualmente antes de correr ese flujo.
 
 ## Políticas de sesión y manejo de tokens
 
