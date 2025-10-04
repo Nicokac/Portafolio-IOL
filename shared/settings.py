@@ -37,6 +37,7 @@ STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 # Snapshot storage configuration
 snapshot_backend: str = getattr(settings, "snapshot_backend", "json")
 snapshot_storage_path: str | None = getattr(settings, "snapshot_storage_path", None)
+snapshot_retention: int | None = getattr(settings, "snapshot_retention", None)
 
 # Notification thresholds
 risk_badge_threshold: float = getattr(settings, "RISK_BADGE_THRESHOLD", 0.75)
@@ -115,6 +116,7 @@ __all__ = [
     "STUB_MAX_RUNTIME_WARN",
     "snapshot_backend",
     "snapshot_storage_path",
+    "snapshot_retention",
     "YAHOO_FUNDAMENTALS_TTL",
     "YAHOO_QUOTES_TTL",
     "MIN_SCORE_THRESHOLD",

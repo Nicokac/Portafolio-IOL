@@ -15,6 +15,7 @@ records and compute comparisons between arbitrary entries.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 import json
 import logging
@@ -82,11 +83,25 @@ class _NullSnapshotStorage(_BaseSnapshotStorage):
 class _JSONSnapshotStorage(_BaseSnapshotStorage):
     """Persist snapshots in a JSON document stored on disk."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, retention: int | None = None) -> None:
         self.path = path
         self._lock = threading.RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_permissions()
+        self._retention: int | None = None
+        if retention is not None:
+            try:
+                retention_value = int(retention)
+            except (TypeError, ValueError):
+                logger.warning("Valor de retención inválido %s, se ignorará", retention)
+            else:
+                if retention_value > 0:
+                    self._retention = retention_value
+                elif retention_value != 0:
+                    logger.warning(
+                        "La retención de snapshots debe ser positiva, se ignorará: %s",
+                        retention,
+                    )
 
     def _ensure_permissions(self) -> None:
         parent = self.path.parent
@@ -117,9 +132,20 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
         try:
             with tmp_path.open("w", encoding="utf-8") as fh:
                 json.dump(list(rows), fh, ensure_ascii=False)
+                fh.flush()
+                os.fsync(fh.fileno())
             tmp_path.replace(self.path)
         except OSError as err:
             logger.exception("No se pudo escribir %s: %s", self.path, err)
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except OSError as cleanup_err:  # pragma: no cover - best effort cleanup
+                logger.warning(
+                    "No se pudo eliminar archivo temporal %s tras fallo: %s",
+                    tmp_path,
+                    cleanup_err,
+                )
             raise SnapshotStorageError(str(err)) from err
 
     def save_snapshot(self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None):
@@ -133,7 +159,10 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
         with self._lock:
             rows = self._load()
             rows.append(entry)
-            self._dump(rows)
+            rows_to_persist: Sequence[Mapping[str, Any]] = rows
+            if self._retention and len(rows) > self._retention:
+                rows_to_persist = rows[-self._retention :]
+            self._dump(rows_to_persist)
         return entry
 
     def load_snapshot(self, snapshot_id: str):
@@ -282,6 +311,7 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
 
 
 _STORAGE: _BaseSnapshotStorage = _NullSnapshotStorage()
+_AUTO_CONFIGURED = False
 
 
 def current_backend_name() -> str:
@@ -307,10 +337,26 @@ def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str
 
     backend = (backend or "json").strip().lower()
     storage_path = Path(path) if path else None
+    retention_value: int | None = None
+    if retention is not None:
+        try:
+            parsed_retention = int(retention)
+        except (TypeError, ValueError):
+            logger.warning("Valor inválido para retention=%s, se ignorará", retention)
+        else:
+            if parsed_retention > 0:
+                retention_value = parsed_retention
+            elif parsed_retention != 0:
+                logger.warning(
+                    "La retención de snapshots debe ser positiva, se ignorará: %s",
+                    retention,
+                )
 
     try:
         if backend == "json":
-            storage = _JSONSnapshotStorage(storage_path or Path("data/snapshots.json"))
+            storage = _JSONSnapshotStorage(
+                storage_path or Path("data/snapshots.json"), retention=retention_value
+            )
         elif backend in {"sqlite", "sqlite3"}:
             storage = _SQLiteSnapshotStorage(storage_path or Path("data/snapshots.db"))
         elif backend in {"null", "none", "disabled"}:
@@ -346,6 +392,7 @@ def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str
 def save_snapshot(kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None) -> Mapping[str, Any]:
     """Persist a snapshot and return the stored record."""
 
+    _ensure_configured()
     payload = _to_plain_mapping(payload)
     metadata = _to_plain_mapping(metadata)
     try:
@@ -358,6 +405,7 @@ def save_snapshot(kind: str, payload: SnapshotPayload, metadata: SnapshotMetadat
 def load_snapshot(snapshot_id: str) -> Mapping[str, Any] | None:
     """Load a snapshot by identifier."""
 
+    _ensure_configured()
     try:
         return _STORAGE.load_snapshot(snapshot_id)
     except SnapshotStorageError:
@@ -370,6 +418,7 @@ def list_snapshots(
 ) -> Sequence[Mapping[str, Any]]:
     """Return historical snapshots for the requested kind."""
 
+    _ensure_configured()
     try:
         return _STORAGE.list_snapshots(kind, limit=limit, order=order)
     except SnapshotStorageError:
@@ -388,8 +437,19 @@ def compare_snapshots(id_a: str, id_b: str) -> Mapping[str, Any] | None:
     if not id_a or not id_b:
         return None
 
-    snap_a = load_snapshot(id_a)
-    snap_b = load_snapshot(id_b)
+    _ensure_configured()
+    try:
+        return _compare_snapshots_with_storage(_STORAGE, id_a, id_b)
+    except SnapshotStorageError:
+        logger.exception("Error al comparar snapshots %s vs %s", id_a, id_b)
+        raise
+
+
+def _compare_snapshots_with_storage(
+    storage: _BaseSnapshotStorage, id_a: str, id_b: str
+) -> Mapping[str, Any] | None:
+    snap_a = storage.load_snapshot(id_a)
+    snap_b = storage.load_snapshot(id_b)
     if not snap_a or not snap_b:
         return None
 
@@ -453,11 +513,9 @@ def _auto_configure_from_settings() -> None:
 
         backend = getattr(_settings, "snapshot_backend", "json")
         path = getattr(_settings, "snapshot_storage_path", None)
-        configure_storage(backend=backend, path=path)
+        retention = getattr(_settings, "snapshot_retention", None)
+        configure_storage(backend=backend, path=path, retention=retention)
     except Exception:  # pragma: no cover - safeguards for early imports
         logger.exception("No se pudo inicializar el backend de snapshots, se usará NullStorage")
         configure_storage(backend="null")
-
-
-_auto_configure_from_settings()
 

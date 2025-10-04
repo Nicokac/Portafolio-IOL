@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Callable, Mapping, cast
+from typing import Any, Callable, Iterable, Mapping, cast
 
 import streamlit as st
 
@@ -36,9 +36,6 @@ _NOTIFICATIONS_SERVICE_KEY = "notifications_service"
 _NOTIFICATIONS_FACTORY_KEY = "notifications_service_factory"
 _SNAPSHOT_BACKEND_KEY = "snapshot_backend_override"
 
-_FALLBACK_SESSION_STATE: dict[str, Any] = {}
-
-
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
 
@@ -60,11 +57,7 @@ def _get_service_registry() -> dict[str, Any]:
         if isinstance(registry, dict):
             return registry
 
-    registry = _FALLBACK_SESSION_STATE.get(_SERVICE_REGISTRY_KEY)
-    if not isinstance(registry, dict):
-        registry = {}
-        _FALLBACK_SESSION_STATE[_SERVICE_REGISTRY_KEY] = registry
-    return registry
+    return {}
 
 
 def default_view_model_service_factory() -> PortfolioViewModelService:
@@ -137,6 +130,9 @@ def get_notifications_service(
 def reset_portfolio_services() -> None:
     """Clear cached portfolio services for the current session."""
 
+    if getattr(st, "session_state", None) is None:
+        return
+
     registry = _get_service_registry()
     for key in (
         _VIEW_MODEL_SERVICE_KEY,
@@ -149,6 +145,9 @@ def reset_portfolio_services() -> None:
 
 def configure_snapshot_backend(snapshot_backend: Any | None) -> None:
     """Override the snapshot backend used by the cached portfolio service."""
+
+    if getattr(st, "session_state", None) is None:
+        return
 
     registry = _get_service_registry()
     registry[_SNAPSHOT_BACKEND_KEY] = snapshot_backend
@@ -243,6 +242,287 @@ def _render_snapshot_metrics(comparison: Mapping[str, Any], label: str) -> None:
             col.caption(f"Referencia: {format_money(baseline_val)}")
 
 
+def render_basic_tab(viewmodel, favorites, snapshot) -> None:
+    """Render the summary view for the basic portfolio tab."""
+
+    _render_snapshot_comparison_controls(viewmodel)
+    render_basic_section(
+        viewmodel.positions,
+        viewmodel.controls,
+        viewmodel.metrics.ccl_rate,
+        favorites=favorites,
+        totals=viewmodel.totals,
+        historical_total=viewmodel.historical_total,
+        contribution_metrics=viewmodel.contributions,
+        snapshot=snapshot,
+    )
+
+
+def render_risk_tab(df_view, tasvc: TAService, favorites, notifications: NotificationFlags) -> None:
+    """Render risk analysis information for the given snapshot."""
+
+    render_risk_analysis(
+        df_view,
+        tasvc,
+        favorites=favorites,
+        notifications=notifications,
+    )
+
+
+def render_fundamentals_tab(
+    df_view,
+    tasvc: TAService,
+    favorites,
+    notifications: NotificationFlags,
+) -> None:
+    """Render fundamentals tab using the given data sources."""
+
+    render_fundamental_analysis(
+        df_view,
+        tasvc,
+        favorites=favorites,
+        notifications=notifications,
+    )
+
+
+def render_notifications_panel(
+    favorites,
+    notifications: NotificationFlags,
+    *,
+    ui: Any = st,
+) -> None:
+    """Render badges and indicators for the notifications panel."""
+
+    if notifications.technical_signal:
+        render_technical_badge(
+            help_text="Tenés señales técnicas recientes para revisar en tus activos favoritos.",
+        )
+    render_favorite_badges(
+        favorites,
+        empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
+    )
+
+
+def _select_first(options: Iterable[str]) -> str | None:
+    for item in options:
+        return item
+    return None
+
+
+def render_technical_tab(
+    tasvc: TAService,
+    favorites,
+    notifications: NotificationFlags,
+    all_symbols: list[str],
+    viewmodel,
+    *,
+    map_symbol: Callable[[str], str] = map_to_us_ticker,
+    ui: Any = st,
+    timer: Callable[[], float] = time.perf_counter,
+    record_latency: Callable[[str, float | None, str], None] = record_tab_latency,
+    plot_chart: Callable[..., Any] = plot_technical_analysis_chart,
+    render_fundamentals: Callable[[Mapping[str, Any]], None] = render_fundamental_data,
+) -> None:
+    """Render the technical indicators tab for a specific symbol selection."""
+
+    ui.subheader("Indicadores técnicos por activo")
+    render_notifications_panel(favorites, notifications, ui=ui)
+    if not all_symbols:
+        ui.info("No hay símbolos en el portafolio para analizar.")
+        return
+    all_symbols_vm = list(viewmodel.metrics.all_symbols)
+    if not all_symbols_vm:
+        ui.info("No hay símbolos en el portafolio para analizar.")
+        return
+
+    options = favorites.sort_options(all_symbols_vm)
+    if not options:
+        options = all_symbols_vm
+    sym = ui.selectbox(
+        "Seleccioná un símbolo (CEDEAR / ETF)",
+        options=options,
+        index=favorites.default_index(options),
+        key="ta_symbol",
+        format_func=favorites.format_symbol,
+    )
+    if not sym:
+        sym = _select_first(options)
+    if not sym:
+        ui.info("No hay símbolos en el portafolio para analizar.")
+        return
+
+    render_favorite_toggle(
+        sym,
+        favorites,
+        key_prefix="ta",
+        help_text="Los favoritos quedan disponibles en todas las secciones.",
+    )
+
+    try:
+        us_ticker = map_symbol(sym)
+    except ValueError:
+        ui.info("No se encontró ticker US para este activo.")
+        return
+
+    try:
+        fundamental_data = tasvc.fundamentals(us_ticker) or {}
+    except AppError as err:
+        ui.error(str(err))
+    except Exception:
+        logger.exception("Error al obtener datos fundamentales para %s", sym)
+        ui.error("No se pudieron obtener datos fundamentales, intente más tarde")
+    else:
+        render_fundamentals(fundamental_data)
+
+    cols = ui.columns([1, 1, 1, 1])
+    with cols[0]:
+        period = ui.selectbox("Período", ["3mo", "6mo", "1y", "2y"], index=1)
+    with cols[1]:
+        interval = ui.selectbox("Intervalo", ["1d", "1h", "30m"], index=0)
+    with cols[2]:
+        sma_fast = ui.number_input(
+            "SMA corta",
+            min_value=5,
+            max_value=100,
+            value=20,
+            step=1,
+        )
+    with cols[3]:
+        sma_slow = ui.number_input(
+            "SMA larga",
+            min_value=10,
+            max_value=250,
+            value=50,
+            step=5,
+        )
+
+    with ui.expander("Parámetros adicionales"):
+        c1, c2, c3 = ui.columns(3)
+        macd_fast = c1.number_input(
+            "MACD rápida", min_value=5, max_value=50, value=12, step=1
+        )
+        macd_slow = c2.number_input(
+            "MACD lenta", min_value=10, max_value=200, value=26, step=1
+        )
+        macd_signal = c3.number_input(
+            "MACD señal", min_value=5, max_value=50, value=9, step=1
+        )
+        c4, c5, c6 = ui.columns(3)
+        atr_win = c4.number_input(
+            "ATR ventana", min_value=5, max_value=200, value=14, step=1
+        )
+        stoch_win = c5.number_input(
+            "Estocástico ventana", min_value=5, max_value=200, value=14, step=1
+        )
+        stoch_smooth = c6.number_input(
+            "Estocástico suavizado", min_value=1, max_value=50, value=3, step=1
+        )
+        c7, c8, c9 = ui.columns(3)
+        ichi_conv = c7.number_input(
+            "Ichimoku conv.", min_value=1, max_value=50, value=9, step=1
+        )
+        ichi_base = c8.number_input(
+            "Ichimoku base", min_value=2, max_value=100, value=26, step=1
+        )
+        ichi_span = c9.number_input(
+            "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
+        )
+
+    indicator_latency: float | None = None
+    try:
+        start_time = timer()
+        df_ind = tasvc.indicators_for(
+            sym,
+            period=period,
+            interval=interval,
+            sma_fast=sma_fast,
+            sma_slow=sma_slow,
+            macd_fast=macd_fast,
+            macd_slow=macd_slow,
+            macd_signal=macd_signal,
+            atr_win=atr_win,
+            stoch_win=stoch_win,
+            stoch_smooth=stoch_smooth,
+            ichi_conv=ichi_conv,
+            ichi_base=ichi_base,
+            ichi_span=ichi_span,
+        )
+        indicator_latency = (timer() - start_time) * 1000.0
+    except AppError as err:
+        if indicator_latency is None:
+            indicator_latency = (timer() - start_time) * 1000.0
+        record_latency("tecnico", indicator_latency, status="error")
+        ui.error(str(err))
+        return
+    except Exception:
+        logger.exception("Error al obtener indicadores técnicos para %s", sym)
+        if indicator_latency is None:
+            indicator_latency = (timer() - start_time) * 1000.0
+        record_latency("tecnico", indicator_latency, status="error")
+        ui.error("No se pudieron obtener indicadores técnicos, intente más tarde")
+        return
+    record_latency("tecnico", indicator_latency, status="success")
+    if df_ind.empty:
+        ui.info("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
+    else:
+        fig = plot_chart(df_ind, sma_fast, sma_slow)
+        ui.plotly_chart(
+            fig,
+            width="stretch",
+            key="ta_chart",
+            config=PLOTLY_CONFIG,
+        )
+        ui.caption(
+            "Gráfico de precio con indicadores técnicos como "
+            "medias móviles, RSI o MACD para detectar tendencias "
+            "y señales."
+        )
+        alerts = tasvc.alerts_for(df_ind)
+        if alerts:
+            for a in alerts:
+                al = a.lower()
+                if "bajista" in al or "sobrecompra" in al:
+                    ui.warning(a)
+                elif "alcista" in al or "sobreventa" in al:
+                    ui.success(a)
+                else:
+                    ui.info(a)
+        else:
+            ui.caption("Sin alertas técnicas en la última vela.")
+
+        ui.subheader("Backtesting")
+        strat = ui.selectbox(
+            "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
+        )
+        backtest_latency: float | None = None
+        try:
+            start_time = timer()
+            bt = tasvc.backtest(df_ind, strategy=strat)
+            backtest_latency = (timer() - start_time) * 1000.0
+        except AppError as err:
+            if backtest_latency is None:
+                backtest_latency = (timer() - start_time) * 1000.0
+            record_latency("tecnico", backtest_latency, status="error")
+            ui.error(str(err))
+            return
+        except Exception:
+            logger.exception("Error al ejecutar backtesting para %s", sym)
+            if backtest_latency is None:
+                backtest_latency = (timer() - start_time) * 1000.0
+            record_latency("tecnico", backtest_latency, status="error")
+            ui.error("No se pudo ejecutar el backtesting, intente más tarde")
+            return
+        record_latency("tecnico", backtest_latency, status="success")
+        if bt.empty:
+            ui.info("Sin datos suficientes para el backtesting.")
+        else:
+            ui.line_chart(bt["equity"])
+            ui.caption(
+                "La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada."
+            )
+            ui.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
+
+
 def render_portfolio_section(
     container,
     cli,
@@ -300,255 +580,23 @@ def render_portfolio_section(
             horizontal=True,
             key="portfolio_tab",
         )
-        controls = viewmodel.controls
-        ccl_rate = viewmodel.metrics.ccl_rate
         df_view = viewmodel.positions
 
         if tab_idx == 0:
-            _render_snapshot_comparison_controls(viewmodel)
-            render_basic_section(
-                df_view,
-                controls,
-                ccl_rate,
-                favorites=favorites,
-                totals=viewmodel.totals,
-                historical_total=viewmodel.historical_total,
-                contribution_metrics=viewmodel.contributions,
-                snapshot=snapshot,
-            )
+            render_basic_tab(viewmodel, favorites, snapshot)
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)
         elif tab_idx == 2:
-            render_risk_analysis(
-                df_view,
-                tasvc,
-                favorites=favorites,
-                notifications=notifications,
-            )
+            render_risk_tab(df_view, tasvc, favorites, notifications)
         elif tab_idx == 3:
-            render_fundamental_analysis(
-                df_view,
-                tasvc,
-                favorites=favorites,
-                notifications=notifications,
-            )
+            render_fundamentals_tab(df_view, tasvc, favorites, notifications)
         else:
-            st.subheader("Indicadores técnicos por activo")
-            if notifications.technical_signal:
-                render_technical_badge(
-                    help_text="Tenés señales técnicas recientes para revisar en tus activos favoritos.",
-                )
-            render_favorite_badges(
+            render_technical_tab(
+                tasvc,
                 favorites,
-                empty_message="⭐ Aún no marcaste favoritos para seguimiento rápido.",
+                notifications,
+                all_symbols,
+                viewmodel,
             )
-            if not all_symbols:
-                st.info("No hay símbolos en el portafolio para analizar.")
-                return
-            all_symbols_vm = list(viewmodel.metrics.all_symbols)
-            if not all_symbols_vm:
-                st.info("No hay símbolos en el portafolio para analizar.")
-            else:
-                options = favorites.sort_options(all_symbols_vm)
-                if not options:
-                    options = all_symbols_vm
-                sym = st.selectbox(
-                    "Seleccioná un símbolo (CEDEAR / ETF)",
-                    options=options,
-                    index=favorites.default_index(options),
-                    key="ta_symbol",
-                    format_func=favorites.format_symbol,
-                )
-                if sym:
-                    render_favorite_toggle(
-                        sym,
-                        favorites,
-                        key_prefix="ta",
-                        help_text="Los favoritos quedan disponibles en todas las secciones.",
-                    )
-                    try:
-                        us_ticker = map_to_us_ticker(sym)
-                    except ValueError:
-                        st.info("No se encontró ticker US para este activo.")
-                    else:
-                        try:
-                            fundamental_data = tasvc.fundamentals(us_ticker) or {}
-                        except AppError as err:
-                            st.error(str(err))
-                        except Exception:
-                            logger.exception(
-                                "Error al obtener datos fundamentales para %s", sym
-                            )
-                            st.error(
-                                "No se pudieron obtener datos fundamentales, intente más tarde"
-                            )
-                        else:
-                            render_fundamental_data(fundamental_data)
-
-                        cols = st.columns([1, 1, 1, 1])
-                        with cols[0]:
-                            period = st.selectbox(
-                                "Período", ["3mo", "6mo", "1y", "2y"], index=1
-                            )
-                        with cols[1]:
-                            interval = st.selectbox(
-                                "Intervalo", ["1d", "1h", "30m"], index=0
-                            )
-                        with cols[2]:
-                            sma_fast = st.number_input(
-                                "SMA corta",
-                                min_value=5,
-                                max_value=100,
-                                value=20,
-                                step=1,
-                            )
-                        with cols[3]:
-                            sma_slow = st.number_input(
-                                "SMA larga",
-                                min_value=10,
-                                max_value=250,
-                                value=50,
-                                step=5,
-                            )
-
-                        with st.expander("Parámetros adicionales"):
-                            c1, c2, c3 = st.columns(3)
-                            macd_fast = c1.number_input(
-                                "MACD rápida", min_value=5, max_value=50, value=12, step=1
-                            )
-                            macd_slow = c2.number_input(
-                                "MACD lenta", min_value=10, max_value=200, value=26, step=1
-                            )
-                            macd_signal = c3.number_input(
-                                "MACD señal", min_value=5, max_value=50, value=9, step=1
-                            )
-                            c4, c5, c6 = st.columns(3)
-                            atr_win = c4.number_input(
-                                "ATR ventana", min_value=5, max_value=200, value=14, step=1
-                            )
-                            stoch_win = c5.number_input(
-                                "Estocástico ventana", min_value=5, max_value=200, value=14, step=1
-                            )
-                            stoch_smooth = c6.number_input(
-                                "Estocástico suavizado", min_value=1, max_value=50, value=3, step=1
-                            )
-                            c7, c8, c9 = st.columns(3)
-                            ichi_conv = c7.number_input(
-                                "Ichimoku conv.", min_value=1, max_value=50, value=9, step=1
-                            )
-                            ichi_base = c8.number_input(
-                                "Ichimoku base", min_value=2, max_value=100, value=26, step=1
-                            )
-                            ichi_span = c9.number_input(
-                                "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
-                            )
-
-                        indicator_latency: float | None = None
-                        try:
-                            start_time = time.perf_counter()
-                            df_ind = tasvc.indicators_for(
-                                sym,
-                                period=period,
-                                interval=interval,
-                                sma_fast=sma_fast,
-                                sma_slow=sma_slow,
-                                macd_fast=macd_fast,
-                                macd_slow=macd_slow,
-                                macd_signal=macd_signal,
-                                atr_win=atr_win,
-                                stoch_win=stoch_win,
-                                stoch_smooth=stoch_smooth,
-                                ichi_conv=ichi_conv,
-                                ichi_base=ichi_base,
-                                ichi_span=ichi_span,
-                            )
-                            indicator_latency = (time.perf_counter() - start_time) * 1000.0
-                        except AppError as err:
-                            if indicator_latency is None:
-                                indicator_latency = (time.perf_counter() - start_time) * 1000.0
-                            record_tab_latency("tecnico", indicator_latency, status="error")
-                            st.error(str(err))
-                            return
-                        except Exception:
-                            logger.exception(
-                                "Error al obtener indicadores técnicos para %s", sym
-                            )
-                            if indicator_latency is None:
-                                indicator_latency = (time.perf_counter() - start_time) * 1000.0
-                            record_tab_latency("tecnico", indicator_latency, status="error")
-                            st.error(
-                                "No se pudieron obtener indicadores técnicos, intente más tarde"
-                            )
-                            return
-                        record_tab_latency("tecnico", indicator_latency, status="success")
-                        if df_ind.empty:
-                            st.info(
-                                "No se pudo descargar histórico para ese símbolo/periodo/intervalo."
-                            )
-                        else:
-                            fig = plot_technical_analysis_chart(
-                                df_ind, sma_fast, sma_slow
-                            )
-                            st.plotly_chart(
-                                fig,
-                                width="stretch",
-                                key="ta_chart",
-                                config=PLOTLY_CONFIG,
-                            )
-                            st.caption(
-                                "Gráfico de precio con indicadores técnicos como "
-                                "medias móviles, RSI o MACD para detectar tendencias "
-                                "y señales."
-                            )
-                            alerts = tasvc.alerts_for(df_ind)
-                            if alerts:
-                                for a in alerts:
-                                    al = a.lower()
-                                    if "bajista" in al or "sobrecompra" in al:
-                                        st.warning(a)
-                                    elif "alcista" in al or "sobreventa" in al:
-                                        st.success(a)
-                                    else:
-                                        st.info(a)
-                            else:
-                                st.caption("Sin alertas técnicas en la última vela.")
-
-                            st.subheader("Backtesting")
-                            strat = st.selectbox(
-                                "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
-                            )
-                            backtest_latency: float | None = None
-                            try:
-                                start_time = time.perf_counter()
-                                bt = tasvc.backtest(df_ind, strategy=strat)
-                                backtest_latency = (time.perf_counter() - start_time) * 1000.0
-                            except AppError as err:
-                                if backtest_latency is None:
-                                    backtest_latency = (time.perf_counter() - start_time) * 1000.0
-                                record_tab_latency("tecnico", backtest_latency, status="error")
-                                st.error(str(err))
-                                return
-                            except Exception:
-                                logger.exception(
-                                    "Error al ejecutar backtesting para %s", sym
-                                )
-                                if backtest_latency is None:
-                                    backtest_latency = (time.perf_counter() - start_time) * 1000.0
-                                record_tab_latency("tecnico", backtest_latency, status="error")
-                                st.error(
-                                    "No se pudo ejecutar el backtesting, intente más tarde"
-                                )
-                                return
-                            record_tab_latency("tecnico", backtest_latency, status="success")
-                            if bt.empty:
-                                st.info("Sin datos suficientes para el backtesting.")
-                            else:
-                                st.line_chart(bt["equity"])
-                                st.caption(
-                                    "La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada."
-                                )
-                                st.metric(
-                                    "Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}"
-                                )
 
         return refresh_secs
