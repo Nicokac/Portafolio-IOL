@@ -91,16 +91,6 @@ def drawdown_series(returns: pd.Series) -> pd.Series:
     return drawdowns
 
 
-def max_drawdown(returns: pd.Series) -> float:
-    """Maximum drawdown (minimum cumulative drop) for a return series."""
-    if returns is None or len(returns) == 0:
-        return 0.0
-    dd = drawdown_series(returns)
-    if dd.empty:
-        return 0.0
-    return float(dd.min())
-
-
 def drawdown(returns: pd.Series) -> pd.Series:
     """Serie de *drawdown* acumulado a partir de rendimientos porcentuales."""
 
@@ -117,6 +107,9 @@ def drawdown(returns: pd.Series) -> pd.Series:
 
 def max_drawdown(returns: pd.Series) -> float:
     """Retorna el *maximum drawdown* (valor mínimo de la serie de drawdown)."""
+
+    if returns is None or len(returns) == 0:
+        return 0.0
 
     dd = drawdown(returns)
     if dd.empty:
@@ -194,7 +187,10 @@ def markowitz_optimize(returns: pd.DataFrame, risk_free: float = 0.0) -> pd.Seri
         return pd.Series(dtype=float)
     mean_ret = returns.mean() * 252
     cov = returns.cov() * 252
-    inv_cov = np.linalg.inv(cov.values)
+    try:
+        inv_cov = np.linalg.inv(cov.values)
+    except (np.linalg.LinAlgError, ValueError):
+        return pd.Series(np.nan, index=returns.columns)
     ones = np.ones(len(mean_ret))
     excess = mean_ret.values - risk_free
     w = inv_cov @ excess
@@ -214,7 +210,10 @@ def monte_carlo_simulation(
     mean = returns.mean().values
     cov = returns.cov().values
     w = weights.reindex(returns.columns).fillna(0.0).values
-    sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))
+    try:
+        sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))
+    except (np.linalg.LinAlgError, ValueError):
+        return pd.Series(np.nan)
     port_paths = np.prod(1 + sims @ w, axis=1) - 1
     return pd.Series(port_paths)
 
