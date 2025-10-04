@@ -8,14 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Puerta de calidad de seguridad en CI que ejecuta `bandit` sobre el código crítico y `pip-audit`
+  sobre los requirements para bloquear vulnerabilidades antes del merge.
 
 ### Changed
 
 ### Fixed
 
 ### Documentation
+- `docs/testing.md` actualizado con los comandos oficiales de auditoría (`bandit` y `pip-audit`) y
+  la exigencia de cobertura configurada por defecto en `pytest`.
 
 ### Tests
+- Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
+  `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
 ## [0.3.30.1] - 2025-12-01
 
