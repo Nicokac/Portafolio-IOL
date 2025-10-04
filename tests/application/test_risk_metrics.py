@@ -7,6 +7,7 @@ from pathlib import Path
 import logging
 
 import numpy as np
+from numpy.random import SeedSequence
 import pandas as pd
 import pytest
 
@@ -186,6 +187,84 @@ def test_monte_carlo_simulation_seed_control() -> None:
     third = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
 
     assert not third.equals(first)
+
+
+def test_monte_carlo_simulation_batches_match_vectorised() -> None:
+    """Batched sampling should produce the same paths as vectorised sampling."""
+
+    returns = pd.DataFrame(
+        {
+            "AL30": [0.015, -0.01, 0.012, 0.02],
+            "GGAL": [0.01, 0.008, -0.004, 0.018],
+            "PAMP": [-0.002, 0.014, 0.006, 0.009],
+        }
+    )
+    weights = pd.Series({"AL30": 0.4, "GGAL": 0.35, "PAMP": 0.25})
+
+    seed = SeedSequence(321)
+    vectorised = rs.monte_carlo_simulation(
+        returns, weights, n_sims=4096, horizon=64, rng=np.random.default_rng(seed)
+    )
+
+    seed = SeedSequence(321)
+    batched = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=4096,
+        horizon=64,
+        rng=np.random.default_rng(seed),
+        batch_size=512,
+    )
+
+    pd.testing.assert_series_equal(vectorised, batched)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "batch_size",
+    [None, 16384],
+    ids=["vectorised", "batched"],
+)
+def test_monte_carlo_simulation_large_sample_stability(batch_size: int | None) -> None:
+    """Large Monte Carlo runs should remain statistically stable.
+
+    Esta prueba verifica que, con n_sims=100k y un horizonte de 260 días,
+    el error muestral se mantiene acotado. En CI admitimos tiempos de ejecución
+    de hasta ~3 segundos; si se supera, considere ajustar ``batch_size`` o
+    reducir temporalmente el escenario.
+    """
+
+    returns = pd.DataFrame(
+        {
+            "AL30": [0.012, -0.008, 0.01, 0.018, -0.004, 0.007],
+            "GGAL": [0.009, 0.011, -0.006, 0.017, 0.003, -0.002],
+            "YPFD": [0.008, -0.005, 0.013, 0.016, -0.007, 0.01],
+        }
+    )
+    weights = pd.Series({"AL30": 0.45, "GGAL": 0.35, "YPFD": 0.20})
+
+    n_sims = 100_000
+    horizon = 260
+
+    result = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=n_sims,
+        horizon=horizon,
+        rng=np.random.default_rng(SeedSequence(2024)),
+        batch_size=batch_size,
+    )
+
+    assert result.size == n_sims
+    assert result.notna().all()
+
+    sample_mean = float(result.mean())
+    sample_std = float(result.std(ddof=0))
+    assert 3.0 < sample_mean < 3.7
+    assert 0.3 < sample_std < 0.6
+
+    grouped = result.to_numpy().reshape(10, -1).mean(axis=1)
+    assert grouped.std(ddof=0) < 6e-3
 
 
 def test_apply_stress_combines_weights_and_shocks() -> None:
