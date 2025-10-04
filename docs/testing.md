@@ -64,6 +64,29 @@ frecuentes:
 - `pytest tests/ui/test_portfolio_ui.py -k risk`: limita la ejecución a los escenarios que cubren
   las visualizaciones de riesgo renderizadas en la UI.
 
+### Validación de snapshots y almacenamiento persistente
+
+La release 0.3.28 introduce contadores de snapshots y telemetría de almacenamiento. Para cubrirlos
+en QA combina pruebas automáticas y verificaciones manuales:
+
+- `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
+  `st.session_state["controls_snapshot"]` y que el estado se limpie correctamente al cerrar sesión.
+- `pytest services/test/test_portfolio_view_model.py`: valida que `PortfolioViewSnapshot` reutilice
+  el cálculo previo cuando el dataset no cambia, asegurando que el contador de hits aumente en la UI.
+- `pytest tests/integration/test_opportunities_flow.py -k snapshot`: smoke test integrado que
+  verifica la creación y el consumo de snapshots durante screenings consecutivos.
+
+Para reproducir la telemetría manualmente:
+
+1. Ejecuta `streamlit run app.py` y lanza dos screenings con los mismos filtros. Observa cómo el
+   bloque **Snapshots y almacenamiento** aumenta `snapshot_hits` en la segunda corrida.
+2. Exporta el análisis enriquecido desde la línea de comandos para validar la paridad con la UI:
+   ```bash
+   python scripts/export_analysis.py --format both --output exports/manual_check.csv
+   ```
+   Revisa `exports/manual_check.json` y confirma que el bloque `summary.snapshot_hits` coincida con
+   el valor mostrado en el health sidebar.
+
 ## Pruebas con APIs en vivo
 
 Los tests marcados como `live_yahoo` consultan Yahoo Finance y se consideran opcionales. Para

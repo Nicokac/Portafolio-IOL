@@ -6,16 +6,25 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.27.1)
+## Quick-start (release 0.3.28)
 
-La versión **0.3.27.1** fortifica la capa de APIs y los mecanismos de resiliencia: centraliza la configuración de timeouts y backoff, monitorea la disponibilidad de cada proveedor y publica la salud consolidada en todas las superficies visibles.
-## Quick-start (release 0.3.27.1 — 2025-11-07)
+La versión **0.3.28** consolida la persistencia de snapshots del portafolio, habilita exportaciones
+enriquecidas listas para compartir y extiende la observabilidad de la plataforma con métricas de
+almacenamiento y telemetría unificadas.
 
-La versión **0.3.27.1** destaca cuatro ejes principales:
-- El **header del login y del dashboard** reutiliza el helper centralizado de versión para mostrar `Versión 0.3.27.1` junto con la hora de Argentina y una insignia del estado actual de las APIs configuradas.
-- El **health sidebar** incorpora un monitor de resiliencia con badges de cache hit/miss, ratios de fallback y buckets de latencia sincronizados con los contadores globales, resaltando la última respuesta exitosa por proveedor.
-- El menú **⚙️ Acciones** del dashboard publica notificaciones internas (`st.toast`) cuando la aplicación se recupera de un fallback y cuando los proveedores externos vuelven a estar disponibles, dejando trazabilidad para los analistas.
-- Las notas del screening y el resumen de riesgo muestran la secuencia de degradación aplicada (proveedor primario, secundario, fallback estático) junto con los identificadores de la nueva telemetría consolidada.
+## Quick-start (release 0.3.28 — 2025-11-15)
+
+La versión **0.3.28** destaca tres ejes principales:
+- El **almacenamiento de snapshots** conserva los resultados del screening y del portafolio entre
+  sesiones. Los controles persistentes del sidebar (`st.session_state["controls_snapshot"]`) y el
+  servicio `PortfolioViewSnapshot` permiten reanudar análisis sin repetir descargas ni recomputar
+  agregados.
+- Las **exportaciones enriquecidas** consolidan la tabla visible, los KPIs y las notas de telemetría
+  en un mismo paquete. El nuevo script `scripts/export_analysis.py` genera CSV/JSON con los mismos
+  datos mostrados en la UI y añade el resumen agregado (`df.attrs["summary"]`).
+- La **observabilidad extendida** agrega métricas de almacenamiento y persistencia al health sidebar.
+  Los contadores de resiliencia ahora muestran los hits de snapshots, los reintentos fallidos y la
+  procedencia del último dato consolidado (primario, secundario o snapshot de contingencia).
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
@@ -28,66 +37,84 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    pip install -r requirements.txt
    ```
    Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
-2. **Levanta la aplicación y valida el dashboard renovado.** Con el entorno activado ejecuta:
+2. **Levanta la aplicación y valida los banners persistentes.** Con el entorno activado ejecuta:
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.27.1` junto con
-   el timestamp generado por `TimeProvider`, confirmando que la actualización quedó aplicada. El menú
-   **⚙️ Acciones** mostrará un toast "Proveedor primario restablecido" cuando ejecutes **⟳ Refrescar**
-   tras un fallback, dejando registro inmediato de la recuperación documentada en esta release.
-   Abre la pestaña **Empresas con oportunidad**, activa la casilla **Mostrar resumen del
-   screening** y ejecuta una búsqueda con los datos stub incluidos para ver las tarjetas de KPIs:
-   universo analizado, candidatos finales y sectores activos (con deltas de descartes y tiempos de
-   cómputo).
-3. **Lanza un screening con presets personalizados y revisa la telemetría ampliada.** Al mismo
-   tiempo, el mini-dashboard superior renderizará tarjetas con el valor total de la cartera, la
-   variación diaria y el cash disponible usando los datos stub incluidos.
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.28` junto con
+   el timestamp generado por `TimeProvider`. Abre el panel **Salud del sistema**: además del estado de
+   cada proveedor verás el bloque **Snapshots y almacenamiento**, que expone la ruta activa del disco,
+   el contador de recuperaciones desde snapshot y la latencia agregada de escritura.
+3. **Lanza un screening con presets personalizados y comprueba la persistencia.**
    - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
-   - Completa los filtros (score mínimo, payout, racha, sectores, indicadores técnicos) y presiona
-     **Guardar preset**. La UI confirmará con un toast "Preset guardado" y el nuevo preset quedará
-     disponible en el selector.
-   - El botón **Comparar presets** despliega una vista dividida que muestra, a la izquierda, el
-     preset base y, a la derecha, el preset recién guardado. Cada columna lista los filtros con
-     resaltados verdes/rojos según subidas o bajadas respecto del original, facilitando la revisión
-     antes de lanzar el barrido definitivo.
-   - Pulsa **Ejecutar screening** para correr con el preset actual. Si repites exactamente los mismos
-     filtros durante la sesión, la telemetría enriquecida del health sidebar mostrará el último modo
-     (hit/miss), el ahorro promedio frente a la caché, la cronología completa de screenings, los
-     contadores sincronizados de aciertos/fallback y la procedencia más resiliente disponible.
-4. **Valida el fallback multinivel de datos macro.** Arranca con `MACRO_API_PROVIDER="fred,worldbank"` y deja sin definir `FRED_API_KEY` para forzar el salto al segundo proveedor. Declara una serie World Bank (`WORLD_BANK_SECTOR_SERIES='{"Energy": "EG.USE.PCAP.KG.OE"}'`) y ejecuta un screening: las notas mostrarán "Datos macro (World Bank)" y el health sidebar actualizará los contadores de éxito, fallbacks y buckets de latencia para ese proveedor. Si luego quitas también la clave de World Bank o las series configuradas, la secuencia finalizará en el fallback estático y registrará el motivo en la misma telemetría.
+   - Guarda el preset y ejecútalo al menos dos veces. Tras la primera corrida, el health sidebar
+     mostrará "Snapshot creado" y `st.session_state["controls_snapshot"]` conservará la combinación de
+     filtros. Al relanzar, valida que la tarjeta de KPIs muestre "⚡ Resultado servido desde snapshot"
+     y que la telemetría reduzca el runtime frente a la corrida inicial.
+   - Desde el menú **⚙️ Acciones** usa **⟳ Refrescar** para forzar un fallback controlado: los contadores
+     de resiliencia distinguirán el origen (`primario`, `secundario`, `snapshot`) y registrarán el uso
+     del almacenamiento persistente como parte de la secuencia.
+4. **Exporta el análisis enriquecido.** Con la app cerrada o en paralelo, ejecuta el script:
+   ```bash
+   python scripts/export_analysis.py --format both --output exports/screener.csv
+   ```
+   El comando genera `exports/screener.csv` con la grilla del screening y `exports/screener.json` con
+   notas, métricas agregadas y distribución sectorial. Abre el JSON para confirmar que el bloque
+   `summary` replica los KPI mostrados en la UI.
 
 ### Validar el fallback jerárquico desde el health sidebar
 
-1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La release 0.3.27.1 preserva la
-   última secuencia de degradación en `st.session_state`, por lo que verás los mismos datos incluso después de un `Rerun`.
-2. Ejecuta nuevamente **⟳ Refrescar** desde el menú **⚙️ Acciones** y observa el timeline: debe listar `primario → secundario →
-   fallback` con la marca temporal de cada intento y la insignia que indica si la recuperación fue completa o parcial.
-3. En la sección **Último proveedor exitoso** verifica que el identificador coincida con las notas del screening y que la latencia
-   agregada conserve el valor reportado durante la degradación. Si fuerzas un error manual (por ejemplo, quitando todas las claves),
-   el bloque mostrará `Fallback estático` junto con el mensaje explicativo persistente.
+1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La
+   release 0.3.28 conserva la última secuencia de degradación y ahora incluye el contador de snapshots
+   reutilizados (`snapshot_hits`).
+2. Ejecuta nuevamente **⟳ Refrescar** desde el menú **⚙️ Acciones** y observa el timeline: debe listar
+   `primario → secundario → snapshot` (o fallback estático si corresponde) con la marca temporal de cada
+   intento y la insignia que indica si la recuperación provino del almacenamiento persistente.
+3. En la sección **Último proveedor exitoso** verifica que el identificador coincida con las notas del
+   screening y que la latencia agregada conserve el valor reportado durante la degradación. Si fuerzas
+   un error manual (por ejemplo, quitando todas las claves), el bloque mostrará `Fallback estático`
+   junto con el detalle del snapshot de contingencia utilizado.
 4. Consulta la guía de soporte para escenarios extendidos y flujos de depuración en
    [docs/troubleshooting.md#fallback-jerarquico-desde-health-sidebar](docs/troubleshooting.md#fallback-jerarquico-desde-health-sidebar).
 
 **Notas clave del flujo**
 
-- El mini-dashboard inicial resume valor de la cartera, variación diaria y cash disponible con formato de tarjetas, y se actualiza automáticamente después de cada screening.
-- El toast "Preset guardado" deja visible el preset recién creado dentro del selector para reutilizarlo en corridas posteriores.
-- Las notificaciones internas del menú **⚙️ Acciones** confirman tanto los refrescos como los cierres de sesión exitosos, y ahora también anuncian la recuperación de los proveedores externos principales.
-- La comparación de presets presenta dos columnas paralelas con indicadores verdes/rojos que señalan qué filtros fueron ajustados antes de confirmar la ejecución definitiva.
-- El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa durante la sesión.
+- El mini-dashboard inicial resume valor de la cartera, variación diaria y cash disponible con formato
+  de tarjetas, y se actualiza automáticamente después de cada screening, reutilizando el snapshot para
+  evitar recomputos innecesarios.
+- El toast "Preset guardado" deja visible el preset recién creado dentro del selector y ahora detalla
+  si se generó un snapshot en disco (`~/.portafolio_iol/snapshots/`).
+- Las notificaciones internas del menú **⚙️ Acciones** confirman tanto los refrescos como las
+  recuperaciones desde snapshot cuando la app entra en modo resiliente.
+- La comparación de presets mantiene las dos columnas paralelas con indicadores verdes/rojos y suma un
+  resumen "Persistencia" que indica cuándo se reutilizó el snapshot previo.
+- El bloque de telemetría enriquecida marca explícitamente los *cache hits*, diferencia el tiempo
+  invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
+  la persistencia de snapshots durante la sesión.
 
-**Resiliencia de APIs (0.3.27.1).** Cuando guardas un preset, la aplicación persiste la combinación de filtros y el resultado del último screening asociado. Al relanzarlo, la telemetría agrega la procedencia del dato (primario, secundario, fallback estático) y clasifica la recuperación según la estrategia aplicada:
+**Resiliencia de APIs (0.3.28).** Cuando guardas un preset, la aplicación persiste la combinación de
+filtros, el último resultado del screening y la procedencia (`primario`, `secundario`, `snapshot`). Al
+relanzarlo, la telemetría agrega la procedencia del dato y clasifica la recuperación según la estrategia
+aplicada:
 
-- Si los filtros no cambiaron y el proveedor primario respondió, se muestra una insignia "⚡ Resultado servido desde caché" en la tabla y la telemetría reduce el runtime (<1 s en stub, ≈2 s en Yahoo) al evitar descargas redundantes, resaltando en verde el ahorro neto respecto de la corrida anterior.
-- Si el proveedor primario falla pero existe un secundario configurado, la UI muestra "🛡️ Fallback activado" y el health sidebar registra el tiempo adicional invertido en la degradación controlada.
-- Cuando todos los proveedores remotos fallan, la secuencia finaliza en el fallback estático con la leyenda "📦 Snapshot de contingencia" y el contador de resiliencia incrementa el total de recuperaciones exitosas sin datos frescos.
+- Si los filtros no cambiaron y el proveedor primario respondió, se muestra una insignia "⚡ Resultado
+  servido desde snapshot" en la tabla y la telemetría reduce el runtime al evitar descargas redundantes,
+  resaltando en verde el ahorro neto respecto de la corrida anterior.
+- Si el proveedor primario falla pero existe un secundario configurado, la UI muestra "🛡️ Fallback
+  activado" y el health sidebar registra el tiempo adicional invertido en la degradación controlada.
+- Cuando todos los proveedores remotos fallan, la secuencia finaliza en el snapshot persistido o en el
+  fallback estático con la leyenda "📦 Snapshot de contingencia" y el contador de resiliencia incrementa
+  el total de recuperaciones exitosas sin datos frescos.
 
-Estas novedades convierten a la release 0.3.27.1 en la referencia para validar onboarding, telemetría y resiliencia multi-API: toda la UI recuerda la versión activa, expone KPIs agregados de disponibilidad en el health sidebar (incluyendo el resumen macro con World Bank) y los presets continúan recortando los tiempos de iteración al dejar a la vista el impacto de cada cambio.
+Estas novedades convierten a la release 0.3.28 en la referencia para validar onboarding, telemetría y
+resiliencia multi-API: toda la UI recuerda la versión activa, expone KPIs agregados de disponibilidad y
+almacenamiento en el health sidebar y las exportaciones enriquecidas aseguran paridad total entre la
+visión en pantalla y los artefactos compartidos.
+
 
 ## Configuración de claves API
 
-La release 0.3.27.1 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets`. Antes de
+La release 0.3.28 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets`. Antes de
 ejecutar la aplicación en modo live, define las claves según el proveedor habilitado. Si una clave falta, el health sidebar registrará
 el evento como `disabled` y la degradación continuará con el siguiente proveedor disponible.
 
@@ -210,7 +237,7 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.27.1)
+##### Escenarios de fallback macro (0.3.28)
 
 1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El monitor de resiliencia del health sidebar incrementa los contadores de éxito, actualiza los buckets de latencia del proveedor secundario y agrega la insignia "Fallback cubierto".
 2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente, incluyendo el identificador `contingency_snapshot` en la telemetría.
@@ -359,11 +386,11 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.27.1".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.28".
 
 El menú **⚙️ Acciones** refuerza la seguridad operativa al anunciar con toasts cada vez que se refrescan los datos o se completa el cierre de sesión, dejando constancia en la propia UI sin depender de logs externos.
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.27.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.28)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
 
 ### Interpretación del health sidebar (KPIs agregados)
 

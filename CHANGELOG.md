@@ -17,6 +17,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.28] - 2025-11-15
+
+### Added
+- Script `scripts/export_analysis.py` para generar exportaciones enriquecidas del screening con
+  resúmenes agregados y notas de telemetría.
+- Métricas de almacenamiento y contadores de snapshots visibles en el health sidebar para rastrear
+  recuperaciones desde el almacenamiento persistente.
+
+### Changed
+- Persistencia de snapshots del portafolio y de los presets del sidebar para acelerar screenings
+  consecutivos y dejar trazabilidad en la telemetría.
+
+### Documentation
+- README actualizado con la narrativa de la release (snapshots persistentes, exportaciones
+  enriquecidas, observabilidad extendida) e instrucciones paso a paso para `scripts/export_analysis.py`.
+- Guías de pruebas y troubleshooting extendidas con escenarios específicos para validar el nuevo
+  almacenamiento y depurar métricas de observabilidad.
+
+### Tests
+- Nuevas recomendaciones de QA para ejecutar suites y escenarios manuales que ejercitan los contadores
+  de snapshots y las rutas de fallback persistente.
+
 ## [0.3.27.1] - 2025-11-07
 
 ### Changed
