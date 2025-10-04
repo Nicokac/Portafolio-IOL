@@ -30,22 +30,31 @@ pytest
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
 usa los stubs deterministas para mantener resultados reproducibles.
 
-## CI Checklist (0.3.29.2)
+## CI Checklist (0.3.30.1)
 
-1. **Suite determinista.** Ejecuta `pytest --maxfail=1 --disable-warnings -q` para validar que las
-   regresiones funcionales se detecten antes de publicar artefactos.
+1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
+   verifica que el resumen final no recolecte casos desde `tests/legacy/`.
 2. **Cobertura obligatoria.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
    y asegúrate de subir `coverage.xml` y el directorio `htmlcov/` como artefactos del job.
-3. **Exportaciones consistentes.** Invoca `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
+3. **Auditoría de importaciones legacy.** Añade un paso que ejecute
+   `rg "infrastructure\.iol\.legacy" application controllers services tests` y marque el pipeline como
+   fallido si aparecen coincidencias fuera de `tests/legacy/` o de fixtures destinados a compatibilidad.
+4. **Exportaciones consistentes.** Invoca `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
    (o reutiliza `tmp_path` en las suites) y revisa que cada snapshot incluya los CSV (`kpis.csv`,
    `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
    `analysis.xlsx` y el resumen `summary.csv` en la raíz del directorio de exportaciones.
-4. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
+5. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
    confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx` y `summary.csv` estén
    adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
 
 ### Suites legacy (deprecated)
 
+La carpeta `tests/legacy/` contiene casos heredados que duplican escenarios ya cubiertos en la suite
+principal. Se excluye de la recolección estándar para mantener los tiempos de CI y sirve como
+histórico para comparar comportamientos. Los flujos modernos deben utilizar
+`services.portfolio_view.PortfolioViewModelService`, `application.portfolio_viewmodel` y los fixtures
+de `tests/conftest.py` (especialmente `streamlit_stub`) en lugar de helpers legacy. Si necesitas
+auditarlos manualmente, ejecútalos de forma explícita:
 El paquete `infrastructure.iol.legacy` permanece disponible únicamente para mantener compatibilidad con integraciones antiguas; su importación ahora emite una advertencia de deprecación y no participa del flujo principal. La carpeta `tests/legacy/` conserva los escenarios originales para auditorías puntuales y continúa excluida de la recolección estándar para preservar los tiempos de CI. Si necesitás ejecutarlos manualmente, hacelo de forma explícita:
 
 ```bash
@@ -81,8 +90,9 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.29.2, orientada a hardening/CI y cobertura, refuerza los contadores de snapshots, la
-telemetría de almacenamiento y la verificación de artefactos en pipelines. Para cubrirlos en QA
+La release 0.3.30.1, enfocada en limpiar duplicados y completar la migración fuera de legacy,
+refuerza los contadores de snapshots, la telemetría de almacenamiento y la verificación de artefactos
+en pipelines. Para cubrirlos en QA
 combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
