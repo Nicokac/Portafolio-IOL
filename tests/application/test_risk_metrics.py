@@ -127,3 +127,75 @@ def test_rolling_correlations_requires_enough_assets() -> None:
     single = pd.DataFrame({"A": [0.01, 0.02, -0.01]})
     empty = rs.rolling_correlations(single, window=3)
     assert empty.empty
+
+
+def test_monte_carlo_simulation_is_reproducible() -> None:
+    """Monte Carlo simulations should honour the random seed and statistics."""
+
+    returns = pd.DataFrame(
+        {
+            "AL30": [0.01, 0.015, -0.005, 0.02],
+            "GGAL": [0.012, -0.01, 0.008, 0.015],
+        }
+    )
+    weights = pd.Series({"AL30": 0.6, "GGAL": 0.4})
+
+    n_sims = 256
+    horizon = 32
+
+    np.random.seed(123)
+    mean = returns.mean().values
+    cov = returns.cov().values
+    w = weights.reindex(returns.columns).fillna(0.0).values
+    sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))
+    expected_paths = np.prod(1 + sims @ w, axis=1) - 1
+    expected = pd.Series(expected_paths)
+
+    np.random.seed(123)
+    result = rs.monte_carlo_simulation(
+        returns, weights, n_sims=n_sims, horizon=horizon
+    )
+
+    pd.testing.assert_series_equal(result, expected)
+    assert result.mean() == pytest.approx(expected.mean())
+    assert result.std() == pytest.approx(expected.std())
+
+
+def test_monte_carlo_simulation_seed_control() -> None:
+    """Resetting the seed should produce identical simulation paths."""
+
+    returns = pd.DataFrame(
+        {
+            "AL30": [0.02, -0.01, 0.015],
+            "GGAL": [-0.005, 0.012, 0.01],
+        }
+    )
+    weights = pd.Series({"AL30": 0.5, "GGAL": 0.5})
+
+    np.random.seed(2024)
+    first = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+
+    np.random.seed(2024)
+    second = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+
+    pd.testing.assert_series_equal(first, second)
+
+    np.random.seed(2025)
+    third = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+
+    assert not third.equals(first)
+
+
+def test_apply_stress_combines_weights_and_shocks() -> None:
+    """`apply_stress` should align indexes and apply percentage shocks."""
+
+    prices = pd.Series({"AL30": 120.0, "GGAL": 80.0, "PAMP": 55.0})
+    weights = pd.Series({"AL30": 0.5, "GGAL": 0.3, "PAMP": 0.2})
+    shocks = {"AL30": -0.1, "GGAL": 0.05, "DLR": 0.2}
+
+    stressed_prices = prices * pd.Series(shocks).reindex(prices.index).fillna(0.0).add(1)
+    expected_value = float((stressed_prices * weights).sum())
+
+    result = rs.apply_stress(prices, weights, shocks)
+
+    assert result == pytest.approx(expected_value)
