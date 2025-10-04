@@ -198,6 +198,14 @@ class Settings:
         self.snapshot_storage_path: str | None = os.getenv(
             "SNAPSHOT_STORAGE_PATH", cfg.get("SNAPSHOT_STORAGE_PATH")
         )
+        raw_retention = os.getenv("SNAPSHOT_RETENTION", cfg.get("SNAPSHOT_RETENTION"))
+        try:
+            self.snapshot_retention: int | None = (
+                int(raw_retention) if raw_retention not in (None, "") else None
+            )
+        except (TypeError, ValueError):
+            logger.warning("Valor inválido para SNAPSHOT_RETENTION: %s", raw_retention)
+            self.snapshot_retention = None
 
         primary_raw = os.getenv(
             "OHLC_PRIMARY_PROVIDER", cfg.get("OHLC_PRIMARY_PROVIDER", "alpha_vantage")

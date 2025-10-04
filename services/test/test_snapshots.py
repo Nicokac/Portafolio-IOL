@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 from services import snapshots
@@ -63,5 +66,55 @@ def test_sqlite_snapshot_backend_persists_and_compares(tmp_path):
         assert comparison is not None
         assert comparison["delta"]["total_value"] == pytest.approx(30.0)
         assert comparison["totals_b"]["total_cost"] == pytest.approx(95.0)
+    finally:
+        snapshots.configure_storage(backend="null")
+
+
+def test_json_snapshot_retention_and_tmp_cleanup(tmp_path, monkeypatch):
+    storage_file = tmp_path / "snapshots.json"
+    snapshots.configure_storage(backend="json", path=storage_file, retention=3)
+
+    try:
+        for idx in range(5):
+            snapshots.save_snapshot(
+                "portfolio",
+                {"totals": {"total_value": float(idx)}},
+                {"seq": idx},
+            )
+
+        stored = json.loads(storage_file.read_text(encoding="utf-8"))
+        assert [entry["metadata"]["seq"] for entry in stored] == [2, 3, 4]
+
+        original_replace = Path.replace
+        calls = {"count": 0}
+
+        def flaky_replace(self, target):
+            if self == storage_file.with_suffix(".tmp") and calls["count"] == 0:
+                calls["count"] += 1
+                raise OSError("boom")
+            return original_replace(self, target)
+
+        monkeypatch.setattr(Path, "replace", flaky_replace, raising=False)
+
+        with pytest.raises(snapshots.SnapshotStorageError):
+            snapshots.save_snapshot(
+                "portfolio",
+                {"totals": {"total_value": 999.0}},
+                {"seq": 999},
+            )
+
+        assert not storage_file.with_suffix(".tmp").exists()
+
+        after_failure = json.loads(storage_file.read_text(encoding="utf-8"))
+        assert [entry["metadata"]["seq"] for entry in after_failure] == [2, 3, 4]
+
+        snapshots.save_snapshot(
+            "portfolio",
+            {"totals": {"total_value": 1000.0}},
+            {"seq": 1000},
+        )
+
+        final_data = json.loads(storage_file.read_text(encoding="utf-8"))
+        assert [entry["metadata"]["seq"] for entry in final_data] == [3, 4, 1000]
     finally:
         snapshots.configure_storage(backend="null")
