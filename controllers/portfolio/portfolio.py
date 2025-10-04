@@ -21,7 +21,7 @@ from services.health import record_tab_latency
 from services.portfolio_view import PortfolioViewModelService
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_suffix
-from shared.utils import format_money
+from shared.utils import _as_float_or_none, format_money
 
 from .load_data import load_portfolio_data
 from .charts import render_basic_section, render_advanced_analysis
@@ -232,22 +232,15 @@ def _render_snapshot_metrics(comparison: Mapping[str, Any], label: str) -> None:
     )
     cols = st.columns(len(metrics))
     for col, (title, key) in zip(cols, metrics):
-        current_val = _as_float((totals_a or {}).get(key))
-        baseline_val = _as_float((totals_b or {}).get(key))
-        delta_val = _as_float((delta or {}).get(key))
+        current_val = _as_float_or_none((totals_a or {}).get(key))
+        baseline_val = _as_float_or_none((totals_b or {}).get(key))
+        delta_val = _as_float_or_none((delta or {}).get(key))
         if current_val is None:
             continue
         delta_text = None if delta_val is None else format_money(delta_val)
         col.metric(title, format_money(current_val), delta=delta_text)
         if baseline_val is not None:
             col.caption(f"Referencia: {format_money(baseline_val)}")
-
-
-def _as_float(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def render_portfolio_section(
