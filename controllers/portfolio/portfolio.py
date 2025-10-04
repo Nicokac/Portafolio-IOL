@@ -539,6 +539,16 @@ def render_portfolio_section(
         view_model_service = get_portfolio_view_service(view_model_service_factory)
         notifications_service = get_notifications_service(notifications_service_factory)
 
+        if snapshot_service.is_null_backend():
+            backend_name = snapshot_service.current_backend_name()
+            st.warning(
+                "El almacenamiento de snapshots está deshabilitado "
+                f"(backend: {backend_name}). Configurá `SNAPSHOT_BACKEND` a "
+                "`json` o `sqlite` en `config.json` (o llamando a "
+                "`services.snapshots.configure_storage`) y verificá los permisos "
+                "definidos en `SNAPSHOT_STORAGE_PATH` para volver a habilitarlo."
+            )
+
         df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
         favorites = get_persistent_favorites()
 

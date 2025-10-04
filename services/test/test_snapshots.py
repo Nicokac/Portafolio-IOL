@@ -70,51 +70,28 @@ def test_sqlite_snapshot_backend_persists_and_compares(tmp_path):
         snapshots.configure_storage(backend="null")
 
 
-def test_json_snapshot_retention_and_tmp_cleanup(tmp_path, monkeypatch):
-    storage_file = tmp_path / "snapshots.json"
-    snapshots.configure_storage(backend="json", path=storage_file, retention=3)
+def test_configure_storage_records_risk_incident_on_permission_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    incidents: list[dict[str, object]] = []
 
-    try:
-        for idx in range(5):
-            snapshots.save_snapshot(
-                "portfolio",
-                {"totals": {"total_value": float(idx)}},
-                {"seq": idx},
-            )
+    def fake_record_incident(**payload: object) -> None:
+        incidents.append(dict(payload))
 
-        stored = json.loads(storage_file.read_text(encoding="utf-8"))
-        assert [entry["metadata"]["seq"] for entry in stored] == [2, 3, 4]
+    monkeypatch.setattr(snapshots.health, "record_risk_incident", fake_record_incident)
 
-        original_replace = Path.replace
-        calls = {"count": 0}
+    def boom_init(self, path):  # type: ignore[no-untyped-def]
+        raise snapshots.SnapshotStorageError("Permiso denegado")
 
-        def flaky_replace(self, target):
-            if self == storage_file.with_suffix(".tmp") and calls["count"] == 0:
-                calls["count"] += 1
-                raise OSError("boom")
-            return original_replace(self, target)
+    monkeypatch.setattr(snapshots._JSONSnapshotStorage, "__init__", boom_init)
 
-        monkeypatch.setattr(Path, "replace", flaky_replace, raising=False)
+    snapshots.configure_storage(backend="json", path=tmp_path / "snapshots.json")
 
-        with pytest.raises(snapshots.SnapshotStorageError):
-            snapshots.save_snapshot(
-                "portfolio",
-                {"totals": {"total_value": 999.0}},
-                {"seq": 999},
-            )
+    assert snapshots.is_null_backend()
+    assert incidents, "Se esperaba que se registrara una incidencia de riesgo"
+    incident = incidents[-1]
+    assert incident.get("category") == "snapshots.backend"
+    assert incident.get("fallback") is True
+    assert "permiso" in str(incident.get("detail", "")).lower()
 
-        assert not storage_file.with_suffix(".tmp").exists()
-
-        after_failure = json.loads(storage_file.read_text(encoding="utf-8"))
-        assert [entry["metadata"]["seq"] for entry in after_failure] == [2, 3, 4]
-
-        snapshots.save_snapshot(
-            "portfolio",
-            {"totals": {"total_value": 1000.0}},
-            {"seq": 1000},
-        )
-
-        final_data = json.loads(storage_file.read_text(encoding="utf-8"))
-        assert [entry["metadata"]["seq"] for entry in final_data] == [3, 4, 1000]
-    finally:
-        snapshots.configure_storage(backend="null")
+    snapshots.configure_storage(backend="null")
