@@ -4,11 +4,11 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.30.3, centrada en limpiar duplicados, completar la
-> migración fuera de módulos legacy y reforzar los pipelines de CI sin alterar los flujos funcionales
-> documentados en la serie 0.3.30.3.
+> Nota: Esta guía corresponde a la release 0.3.30.4, centrada en publicar el endpoint `/Cotizacion`,
+> reforzar el manejo de errores 500, limpiar duplicados y completar la migración fuera de módulos
+> legacy sin alterar los flujos funcionales documentados en la serie 0.3.30.x.
 
-## CI Checklist (0.3.30.3)
+## CI Checklist (0.3.30.4)
 
 - **Suite legacy detectada.** Si el resumen de `pytest` menciona archivos dentro de `tests/legacy/`,
   ajustá el comando (`pytest --ignore=tests/legacy`) o revisá `norecursedirs` en `pyproject.toml` para
@@ -25,7 +25,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   el pipeline y replica la ruta al generar las exportaciones.
 - **Cobertura divergente.** Si los reportes de cobertura muestran discrepancias, borra `htmlcov/` antes
   de ejecutar `pytest --cov` para evitar mezclar runs anteriores y confirma que el pipeline suba el
-  artefacto actualizado.
+  artefacto actualizado, verificando que el endpoint `/Cotizacion` figure dentro del reporte.
 
 - **Falta una clave y los servicios quedan en `disabled`.**
   - **Síntomas:** El health sidebar indica `disabled` para Alpha Vantage/Polygon/FMP/FRED/World Bank y el log muestra `Missing API key`.
@@ -60,7 +60,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.3 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.4 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
@@ -106,6 +106,14 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     2. Si mantenés un fork, reemplazá llamadas directas a
        `apply_filters` por `PortfolioViewModelService.get_portfolio_view`
        y reutilizá `build_portfolio_viewmodel` con el snapshot devuelto.
+
+- **El endpoint `/Cotizacion` responde HTTP 500 pese a la degradación automática.**
+  - **Síntomas:** Las llamadas a `/Cotizacion` (UI, scripts o integraciones) devuelven `500 Internal Server Error` y la telemetría registra múltiples intentos de fallback sin éxito.
+  - **Diagnóstico rápido:** Revisa los logs del servicio (`services/quotes` o equivalente) para confirmar si el error proviene del proveedor upstream y habilita `LOG_HEALTH_DEBUG=1` para ver la secuencia completa.
+  - **Resolución:**
+    1. Valida que las claves de los proveedores configurados estén activas y que la red permita las llamadas; luego relanza el flujo.
+    2. Si el proveedor primario continúa fallando, fuerza el uso de un secundario o del snapshot disponible ajustando las variables `OHLC_PRIMARY_PROVIDER`/`SECONDARY` y reiniciando la app.
+    3. Ejecuta `pytest tests/services` (o la suite específica del endpoint) para confirmar que la prueba de cobertura recién añadida siga pasando y que los mocks manejen los 500 como se espera.
 
 - **No se puede guardar el token de IOL y la aplicación se cierra.**
   - **Síntomas:** Streamlit termina inmediatamente con un mensaje que indica que falta la clave Fernet o que no se permiten tokens sin cifrar.
@@ -156,7 +164,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.3` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.4` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.

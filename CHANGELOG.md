@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.4] - 2025-10-04
+
+### Added
+- Nuevo endpoint `/Cotizacion` que publica cotizaciones normalizadas para los consumidores internos y externos.
+
+### Fixed
+- Manejo reforzado de errores HTTP 500 provenientes de upstream para evitar caídas en dashboards y telemetría.
+
+### Tests
+- Prueba de cobertura dedicada que valida los flujos de cotización bajo escenarios de error y resiliencia.
+
 ## [0.3.30.3] - 2025-10-04
 
 ### Fixed

@@ -51,12 +51,13 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.3)
+## CI Checklist (0.3.30.4)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
-2. **Cobertura obligatoria.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
-   y asegúrate de subir `coverage.xml` y el directorio `htmlcov/` como artefactos del job.
+2. **Cobertura obligatoria con foco en `/Cotizacion`.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
+   y asegúrate de subir `coverage.xml` y el directorio `htmlcov/` como artefactos del job, revisando que
+   las rutas del endpoint de cotizaciones queden dentro del reporte.
 3. **Auditoría de importaciones legacy.** Añade un paso que ejecute
    `rg "infrastructure\.iol\.legacy" application controllers services tests` y marque el pipeline como
    fallido si aparecen coincidencias fuera de `tests/legacy/` o de fixtures destinados a compatibilidad.
@@ -115,9 +116,10 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.3, enfocada en limpiar duplicados y completar la migración fuera de legacy,
-refuerza los contadores de snapshots, la telemetría de almacenamiento y la verificación de artefactos
-en pipelines. Para cubrirlos en QA
+La release 0.3.30.4, centrada en publicar el endpoint `/Cotizacion`, reforzar los manejos de errores 500
+y sostener la cobertura obligatoria, mantiene el foco en limpiar duplicados y completar la migración
+fuera de legacy. Refuerza los contadores de snapshots, la telemetría de almacenamiento y la verificación
+de artefactos en pipelines. Para cubrirlos en QA
 combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
