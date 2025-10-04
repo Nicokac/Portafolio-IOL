@@ -332,7 +332,29 @@ class IOLClient(IIOLProvider):
             status_code = exc.response.status_code if exc.response is not None else None
             if status_code == 500:
                 logger.warning("IOL 500 → omitiendo símbolo %s:%s", resolved_market, resolved_symbol)
-                return None
+                try:
+                    from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
+
+                    legacy_client = LegacyIOLClient(
+                        self.user,
+                        self.password,
+                        tokens_file=getattr(self.auth, "tokens_path", None),
+                        auth=self.auth,
+                    )
+                    return legacy_client.get_quote(
+                        market=resolved_market,
+                        symbol=resolved_symbol,
+                        panel=panel,
+                    )
+                except Exception as fallback_exc:  # pragma: no cover - defensive guard
+                    logger.error(
+                        "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
+                        resolved_market,
+                        resolved_symbol,
+                        fallback_exc,
+                        exc_info=True,
+                    )
+                    return {"last": None, "chg_pct": None}
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.warning(
