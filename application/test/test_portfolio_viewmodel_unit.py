@@ -8,7 +8,7 @@ from application.portfolio_viewmodel import (
     get_portfolio_tabs,
 )
 from domain.models import Controls
-from services.portfolio_view import PortfolioViewSnapshot
+from services.portfolio_view import PortfolioViewSnapshot, PortfolioContributionMetrics
 
 
 def test_build_portfolio_viewmodel_computes_totals_and_metrics():
@@ -25,6 +25,8 @@ def test_build_portfolio_viewmodel_computes_totals_and_metrics():
         apply_elapsed=0.01,
         totals_elapsed=0.005,
         generated_at=0.0,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=PortfolioContributionMetrics.empty(),
     )
 
     vm = build_portfolio_viewmodel(
@@ -32,6 +34,7 @@ def test_build_portfolio_viewmodel_computes_totals_and_metrics():
         controls=controls,
         fx_rates={'ccl': 900.0},
         all_symbols=['AAA'],
+        snapshots_module=_FakeSnapshotSvc(),
     )
 
     pdt.assert_frame_equal(vm.positions, filtered)
@@ -54,6 +57,7 @@ def test_build_portfolio_viewmodel_handles_missing_data():
         controls=controls,
         fx_rates=None,
         all_symbols=None,
+        snapshots_module=_FakeSnapshotSvc(),
     )
 
     assert isinstance(vm.positions, pd.DataFrame)
@@ -62,3 +66,8 @@ def test_build_portfolio_viewmodel_handles_missing_data():
     assert vm.metrics.ccl_rate is None
     assert vm.metrics.all_symbols == ()
     assert vm.controls is controls
+
+
+class _FakeSnapshotSvc:
+    def list_snapshots(self, *_args, **_kwargs):
+        return []
