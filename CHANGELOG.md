@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.3] - 2025-10-04
+
+### Fixed
+- Corrección definitiva del backend de snapshots para asegurar que `_ensure_configured()` se ejecute
+  antes de cualquier lectura en dashboards o pipelines CI, evitando inicializaciones incompletas.
+- Normalización de la firma `IOLClient.get_quote()` y de los flujos de cotizaciones para aceptar
+  `(market, symbol, panel)` sin romper la telemetría ni los consumidores existentes.
+
 ## [0.3.30.2] - 2025-10-04
 
 ### Fixed
