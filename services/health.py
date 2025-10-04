@@ -27,10 +27,17 @@ _RISK_INCIDENT_HISTORY_LIMIT = 50
 
 _PROVIDER_LABELS = {
     "alpha_vantage": "Alpha Vantage",
+    "av": "Alpha Vantage",
     "polygon": "Polygon",
     "fred": "FRED",
     "worldbank": "World Bank",
+    "iol": "IOL v2",
+    "legacy": "IOL Legacy",
+    "stale": "Cache persistente",
+    "cache": "Caché en memoria",
 }
+
+_QUOTE_PROVIDER_HISTORY_LIMIT = 12
 
 
 def _store() -> Dict[str, Any]:
@@ -786,6 +793,65 @@ def record_quote_load(
     }
 
 
+def record_quote_provider_usage(
+    provider: str,
+    *,
+    elapsed_ms: Optional[float],
+    stale: bool,
+    source: Optional[str] = None,
+) -> None:
+    """Track per-provider latency and usage statistics for quotes."""
+
+    provider_label = str(provider or "unknown").strip() or "unknown"
+    provider_key = provider_label.casefold()
+    store = _store()
+    raw_providers = store.get("quote_providers")
+    if isinstance(raw_providers, Mapping):
+        providers = dict(raw_providers)
+    else:
+        providers = {}
+
+    raw_entry = providers.get(provider_key)
+    if isinstance(raw_entry, Mapping):
+        entry = dict(raw_entry)
+    else:
+        entry = {}
+
+    entry["provider"] = provider_key
+    entry["label"] = _PROVIDER_LABELS.get(provider_key, provider_label)
+    entry["count"] = int(entry.get("count", 0) or 0) + 1
+    if stale:
+        entry["stale_count"] = int(entry.get("stale_count", 0) or 0) + 1
+    entry["stale_last"] = bool(stale)
+    detail_source = _clean_detail(source)
+    if detail_source is not None:
+        entry["last_source"] = detail_source
+    elif "last_source" in entry and source is None:
+        # preserve existing label when no source provided
+        pass
+
+    now = time.time()
+    entry["ts"] = now
+
+    if elapsed_ms is not None:
+        elapsed_value = float(elapsed_ms)
+        history_raw = entry.get("elapsed_history")
+        history: list[float] = []
+        if isinstance(history_raw, Iterable) and not isinstance(
+            history_raw, (str, bytes, bytearray)
+        ):
+            for value in history_raw:
+                numeric = _as_optional_float(value)
+                if numeric is not None:
+                    history.append(numeric)
+        history.append(elapsed_value)
+        entry["elapsed_history"] = history[-_QUOTE_PROVIDER_HISTORY_LIMIT:]
+        entry["elapsed_last"] = elapsed_value
+
+    providers[provider_key] = entry
+    store["quote_providers"] = providers
+
+
 def _as_optional_int(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -1482,6 +1548,78 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
+    def _summarize_quote_providers(raw_providers: Any) -> Dict[str, Any]:
+        if not isinstance(raw_providers, Mapping):
+            return {}
+
+        providers: list[Dict[str, Any]] = []
+        total_count = 0
+        stale_total = 0
+
+        for key, entry in raw_providers.items():
+            if not isinstance(entry, Mapping):
+                continue
+
+            count = _as_optional_int(entry.get("count"))
+            if count is None or count <= 0:
+                continue
+
+            stale_count = _as_optional_int(entry.get("stale_count")) or 0
+            total_count += count
+            stale_total += max(stale_count, 0)
+
+            label = str(entry.get("label") or entry.get("provider") or key)
+
+            history_raw = entry.get("elapsed_history")
+            latencies: list[float] = []
+            if isinstance(history_raw, Iterable) and not isinstance(
+                history_raw, (str, bytes, bytearray)
+            ):
+                for value in history_raw:
+                    numeric = _as_optional_float(value)
+                    if numeric is not None:
+                        latencies.append(numeric)
+
+            avg_ms: Optional[float] = None
+            if latencies:
+                avg_ms = sum(latencies) / len(latencies)
+
+            provider_summary: Dict[str, Any] = {
+                "provider": str(key),
+                "label": label,
+                "count": count,
+            }
+            if stale_count:
+                provider_summary["stale_count"] = stale_count
+
+            last_ms = _as_optional_float(entry.get("elapsed_last"))
+            if avg_ms is not None:
+                provider_summary["avg_ms"] = avg_ms
+            if last_ms is not None:
+                provider_summary["last_ms"] = last_ms
+
+            ts_value = _as_optional_float(entry.get("ts"))
+            if ts_value is not None:
+                provider_summary["ts"] = ts_value
+
+            source_detail = _clean_detail(entry.get("last_source"))
+            if source_detail:
+                provider_summary["source"] = source_detail
+
+            if entry.get("stale_last"):
+                provider_summary["stale_last"] = True
+
+            providers.append(provider_summary)
+
+        if not providers:
+            return {}
+
+        providers.sort(key=lambda item: str(item.get("label", "")).casefold())
+        summary = {"providers": providers, "total": total_count}
+        if stale_total:
+            summary["stale_total"] = stale_total
+        return summary
+
     def _summarize_adapter_fallbacks(raw_data: Any) -> Dict[str, Any]:
         if not isinstance(raw_data, Mapping):
             return {}
@@ -1901,6 +2039,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "macro_api": _summarize_macro(store.get("macro_api")),
         "portfolio": store.get("portfolio"),
         "quotes": store.get("quotes"),
+        "quote_providers": _summarize_quote_providers(store.get("quote_providers")),
         "opportunities": store.get("opportunities"),
         "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
         "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
@@ -1918,6 +2057,7 @@ __all__ = [
     "record_tab_latency",
     "record_adapter_fallback",
     "record_quote_load",
+    "record_quote_provider_usage",
     "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",

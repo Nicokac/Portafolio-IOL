@@ -46,6 +46,32 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
             "detail": "cache",
             "ts": 6,
         },
+        "quote_providers": {
+            "total": 6,
+            "stale_total": 1,
+            "providers": [
+                {
+                    "provider": "iol",
+                    "label": "IOL v2",
+                    "count": 4,
+                    "avg_ms": 120.0,
+                    "last_ms": 100.0,
+                    "ts": 7.0,
+                    "source": "live",
+                },
+                {
+                    "provider": "av",
+                    "label": "Alpha Vantage",
+                    "count": 2,
+                    "stale_count": 1,
+                    "avg_ms": 450.0,
+                    "last_ms": 480.0,
+                    "ts": 8.0,
+                    "source": "fallback",
+                    "stale_last": True,
+                },
+            ],
+        },
         "tab_latencies": {
             "tecnico": {
                 "label": "Técnico",
@@ -144,6 +170,8 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     assert any("Fallback local" in text for text in markdown_calls)
     assert any("API FX OK" in text for text in markdown_calls)
     assert any("Uso de caché" in text for text in markdown_calls)
+    assert any("💹 Cotizaciones" in text for text in markdown_calls)
+    assert any("Total 6" in text for text in markdown_calls)
     assert any("Portafolio" in text and "200" in text for text in markdown_calls)
     assert any("Cotizaciones" in text and "350" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
@@ -185,6 +213,7 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
             "detail": "sin datos",
             "ts": None,
         },
+        "quote_providers": {},
         "tab_latencies": {},
         "adapter_fallbacks": {},
     }
@@ -194,6 +223,7 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     markdown_calls = health_sidebar.st.sidebar.markdowns
     assert any("Error al refrescar" in text for text in markdown_calls)
     assert "_Sin consultas registradas._" in markdown_calls
+    assert "_Sin consultas de cotizaciones registradas._" in markdown_calls
     assert any("API FX con errores" in text for text in markdown_calls)
     assert "_Sin uso de caché registrado._" in markdown_calls
     assert any(text.startswith("- Portafolio: sin registro") for text in markdown_calls)

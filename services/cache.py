@@ -1,3 +1,4 @@
+import json
 import logging, time, hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,10 +18,12 @@ from services.health import (
     record_iol_refresh,
     record_portfolio_load,
     record_quote_load,
+    record_quote_provider_usage,
 )
 
 from infrastructure.iol.client import (
     IIOLProvider,
+    IOLClient,
     build_iol_client as _build_iol_client,
 )
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
@@ -40,6 +43,84 @@ logger = logging.getLogger(__name__)
 # In-memory quote cache
 _QUOTE_CACHE: Dict[Tuple[str, str, str | None], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
+_QUOTE_PERSIST_LOCK = Lock()
+_QUOTE_PERSIST_CACHE: Dict[str, Any] | None = None
+
+QUOTE_STALE_TTL_SECONDS = 300.0
+_QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
+
+
+def _quote_cache_key(market: str, symbol: str, panel: str | None) -> str:
+    panel_token = "" if panel in (None, "") else str(panel)
+    return "|".join([market, symbol, panel_token])
+
+
+def _as_optional_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_persisted_quotes() -> Dict[str, Any]:
+    global _QUOTE_PERSIST_CACHE
+    with _QUOTE_PERSIST_LOCK:
+        if _QUOTE_PERSIST_CACHE is not None:
+            return dict(_QUOTE_PERSIST_CACHE)
+        try:
+            text = _QUOTE_PERSIST_PATH.read_text(encoding="utf-8")
+            raw = json.loads(text) or {}
+            if not isinstance(raw, dict):
+                raw = {}
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+        _QUOTE_PERSIST_CACHE = raw
+        return dict(raw)
+
+
+def _store_persisted_quotes(cache: Dict[str, Any]) -> None:
+    global _QUOTE_PERSIST_CACHE
+    with _QUOTE_PERSIST_LOCK:
+        _QUOTE_PERSIST_CACHE = dict(cache)
+        try:
+            _QUOTE_PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _QUOTE_PERSIST_PATH.write_text(
+                json.dumps(_QUOTE_PERSIST_CACHE, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as exc:  # pragma: no cover - defensive guard
+            logger.warning("No se pudo persistir cache de cotizaciones: %s", exc)
+
+
+def _load_persisted_entry(cache_key: str) -> tuple[dict[str, Any], float] | None:
+    cache = _load_persisted_quotes()
+    entry = cache.get(cache_key)
+    if not isinstance(entry, dict):
+        return None
+    data = entry.get("data")
+    ts_value = entry.get("ts")
+    if not isinstance(data, dict):
+        return None
+    ts = _as_optional_float(ts_value)
+    if ts is None:
+        return None
+    return dict(data), ts
+
+
+def _persist_quote(cache_key: str, payload: dict[str, Any], ts: float) -> None:
+    if not isinstance(payload, dict):
+        return
+    if payload.get("last") is None:
+        return
+    normalized = _normalize_quote(payload)
+    if normalized.get("last") is None:
+        return
+    entry = {"data": normalized, "ts": float(ts)}
+    cache = _load_persisted_quotes()
+    cache[cache_key] = entry
+    _store_persisted_quotes(cache)
 
 
 def _purge_expired_quotes(now: float, fallback_ttl: float) -> None:
@@ -91,18 +172,64 @@ def _trigger_logout() -> None:
 def _normalize_quote(raw: dict | None) -> dict:
     """Extract and compute basic quote information."""
 
+    base = {"last": None, "chg_pct": None, "asof": None, "provider": None}
     if not isinstance(raw, dict) or not raw:
-        return {"last": None, "chg_pct": None}
+        return dict(base)
 
-    data = {"last": raw.get("last"), "chg_pct": raw.get("chg_pct")}
-    if data.get("chg_pct") is None:
+    data: dict[str, Any] = dict(base)
+
+    provider_raw = raw.get("provider")
+    if isinstance(provider_raw, str):
+        provider = provider_raw.strip() or None
+    elif provider_raw is None and raw.get("stale"):
+        provider = "stale"
+    elif provider_raw is None:
+        provider = None
+    else:
+        provider = str(provider_raw)
+    data["provider"] = provider
+
+    asof_value = raw.get("asof")
+    if asof_value is None:
+        for key in ("fecha", "fechaHora", "timestamp", "time", "date", "ts"):
+            candidate = raw.get(key)
+            if candidate is not None:
+                asof_value = candidate
+                break
+    if hasattr(asof_value, "isoformat"):
+        data["asof"] = asof_value.isoformat()
+    elif isinstance(asof_value, (int, float)):
+        data["asof"] = str(float(asof_value))
+    elif isinstance(asof_value, str):
+        text = asof_value.strip()
+        data["asof"] = text or None
+
+    raw_last = raw.get("last")
+    if raw_last is None:
+        last_value = IOLClient._parse_price_fields(raw)
+    else:
+        last_value = IOLClient._parse_price_fields({"last": raw_last})
+        if last_value is None:
+            try:
+                last_value = float(raw_last)
+            except (TypeError, ValueError):
+                last_value = None
+    data["last"] = last_value
+
+    raw_chg = raw.get("chg_pct")
+    if isinstance(raw_chg, (int, float)):
+        chg_pct = float(raw_chg)
+    elif isinstance(raw_chg, str):
         try:
-            u = float(raw.get("ultimo"))
-            c = float(raw.get("cierreAnterior"))
-            if c:
-                data["chg_pct"] = (u - c) / c * 100.0
+            chg_pct = float(raw_chg.replace("%", "").strip())
         except (TypeError, ValueError):
-            pass
+            chg_pct = None
+    else:
+        chg_pct = None
+    if chg_pct is None:
+        chg_pct = IOLClient._parse_chg_pct_fields(raw, last_value)
+    data["chg_pct"] = chg_pct
+
     return data
 
 
@@ -126,6 +253,7 @@ def _get_quote_cached(
     norm_market = str(market).lower()
     norm_symbol = str(symbol).upper()
     cache_key = (norm_market, norm_symbol, panel)
+    persist_key = _quote_cache_key(norm_market, norm_symbol, panel)
     try:
         ttl_seconds = float(ttl)
     except (TypeError, ValueError):
@@ -133,6 +261,7 @@ def _get_quote_cached(
     if ttl_seconds < 0:
         ttl_seconds = 0.0
     now = time.time()
+    fetch_start = now
     if ttl_seconds <= 0:
         with _QUOTE_LOCK:
             _QUOTE_CACHE.clear()
@@ -153,7 +282,16 @@ def _get_quote_cached(
                     ts_value = now
                     rec["ts"] = ts_value
                 if rec_ttl > 0 and now - ts_value < rec_ttl:
-                    return rec["data"]
+                    data = dict(rec.get("data", {}))
+                    provider = data.get("provider") or "cache"
+                    record_quote_provider_usage(
+                        provider,
+                        elapsed_ms=0.0,
+                        stale=bool(data.get("stale")),
+                        source="memory",
+                    )
+                    return data
+    q: dict[str, Any] | None = None
     try:
         q = cli.get_quote(norm_market, norm_symbol, panel=panel) or {}
         data = _normalize_quote(q)
@@ -165,16 +303,70 @@ def _get_quote_cached(
             except Exception:
                 pass
         _trigger_logout()
-        data = {"last": None, "chg_pct": None}
+        q = {"provider": "error"}
+        data = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
     except Exception as e:
         logger.warning("get_quote falló para %s:%s -> %s", norm_market, norm_symbol, e)
-        data = {"last": None, "chg_pct": None}
+        q = {"provider": "error"}
+        data = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
     store_time = time.time()
+    elapsed_ms = (store_time - fetch_start) * 1000.0
+
+    stale = bool(q.get("stale")) if isinstance(q, dict) else False
+
+    if data.get("provider") is None and not stale:
+        data["provider"] = "iol"
+
     if ttl_seconds <= 0:
+        provider_name = data.get("provider") or "unknown"
+        record_quote_provider_usage(
+            provider_name,
+            elapsed_ms=elapsed_ms if data.get("last") is not None else None,
+            stale=stale or data.get("last") is None,
+            source="live" if elapsed_ms else "memory",
+        )
         return data
+
+    if data.get("last") is None:
+        persisted = _load_persisted_entry(persist_key)
+        if persisted is not None:
+            cached_data, cached_ts = persisted
+            if QUOTE_STALE_TTL_SECONDS > 0:
+                if store_time - cached_ts <= QUOTE_STALE_TTL_SECONDS:
+                    fallback_data = dict(_normalize_quote(cached_data))
+                    fallback_data["stale"] = True
+                    fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
+                    record_quote_provider_usage(
+                        fallback_data.get("provider") or "stale",
+                        elapsed_ms=None,
+                        stale=True,
+                        source="persistent",
+                    )
+                    return fallback_data
+            elif QUOTE_STALE_TTL_SECONDS == 0:
+                fallback_data = dict(_normalize_quote(cached_data))
+                fallback_data["stale"] = True
+                fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
+                record_quote_provider_usage(
+                    fallback_data.get("provider") or "stale",
+                    elapsed_ms=None,
+                    stale=True,
+                    source="persistent",
+                )
+                return fallback_data
+
     with _QUOTE_LOCK:
         _purge_expired_quotes(store_time, ttl_seconds)
         _QUOTE_CACHE[cache_key] = {"ts": store_time, "ttl": ttl_seconds, "data": data}
+    if data.get("last") is not None and not stale:
+        _persist_quote(persist_key, data, store_time)
+    provider_name = data.get("provider") or "unknown"
+    record_quote_provider_usage(
+        provider_name,
+        elapsed_ms=elapsed_ms if data.get("last") is not None else None,
+        stale=stale or data.get("last") is None,
+        source="live",
+    )
     return data
 
 
@@ -331,7 +523,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 logger.exception(
                     "get_quote failed for %s:%s -> %s", key[0], key[1], e
                 )
-                quote = {"last": None, "chg_pct": None}
+                quote = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
             if isinstance(quote, dict):
                 logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
             out[key] = quote
