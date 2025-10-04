@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import requests
 
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from infrastructure.iol import client as iol_client_module
+from infrastructure.iol.legacy import iol_client as legacy_module
 
 
 class FakeAuth:
@@ -150,3 +152,66 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert calls["url"].endswith("/Cotizacion")
     assert payload == {"last": 100.0, "chg_pct": 1.23}
+
+
+def test_get_quote_falls_back_to_legacy_on_empty_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If _request returns None the client should use the legacy fallback."""
+
+    legacy_calls: dict[str, tuple[str, str, str | None]] = {}
+
+    class LegacyStub:
+        def __init__(self, *_: object, **__: object) -> None:
+            legacy_calls["init"] = ("ok",)
+
+        def get_quote(
+            self, *, market: str, symbol: str, panel: str | None = None
+        ) -> dict[str, float]:
+            legacy_calls["args"] = (market, symbol, panel)
+            return {"last": 10.0, "chg_pct": 2.5}
+
+    monkeypatch.setattr(iol_client_module, "Iol", StubIol)
+    monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: None)
+    monkeypatch.setattr(legacy_module, "IOLClient", LegacyStub)
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+
+    payload = client.get_quote("bcba", "GGAL")
+
+    assert payload == {"last": 10.0, "chg_pct": 2.5}
+    assert legacy_calls["args"] == ("bcba", "GGAL", None)
+
+
+def test_get_quotes_bulk_never_returns_none_with_legacy_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """500 errors should trigger the legacy fallback and return a neutral payload."""
+
+    response = requests.Response()
+    response.status_code = 500
+
+    def failing_request(*_: object, **__: object) -> None:
+        raise requests.HTTPError(response=response)
+
+    class LegacyStub:
+        def __init__(self, *_: object, **__: object) -> None:
+            pass
+
+        def get_quote(
+            self, *, market: str, symbol: str, panel: str | None = None
+        ) -> None:
+            # Simulate the legacy client not having data for the requested symbol
+            return None
+
+    monkeypatch.setattr(iol_client_module, "Iol", StubIol)
+    monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", failing_request)
+    monkeypatch.setattr(legacy_module, "IOLClient", LegacyStub)
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+
+    result = client.get_quotes_bulk([("bcba", "GGAL")], max_workers=1)
+
+    assert result == {("bcba", "GGAL"): {"last": None, "chg_pct": None}}

@@ -123,6 +123,12 @@ class IOLClient(IIOLProvider):
                 time.sleep(BACKOFF_SEC * (attempt + 1))
 
         if last_exc:
+            if (
+                isinstance(last_exc, requests.HTTPError)
+                and last_exc.response is not None
+                and last_exc.response.status_code >= 500
+            ):
+                raise last_exc
             logger.warning("Request %s %s falló: %s", method, url, last_exc)
         return None
 
@@ -322,7 +328,9 @@ class IOLClient(IIOLProvider):
                     resolved_symbol,
                     "response=None",
                 )
-                return None
+                return self._legacy_quote_fallback(
+                    resolved_market, resolved_symbol, panel
+                )
             raise_for_status = getattr(response, "raise_for_status", None)
             if callable(raise_for_status):
                 raise_for_status()
@@ -332,29 +340,7 @@ class IOLClient(IIOLProvider):
             status_code = exc.response.status_code if exc.response is not None else None
             if status_code == 500:
                 logger.warning("IOL 500 → omitiendo símbolo %s:%s", resolved_market, resolved_symbol)
-                try:
-                    from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
-
-                    legacy_client = LegacyIOLClient(
-                        self.user,
-                        self.password,
-                        tokens_file=getattr(self.auth, "tokens_path", None),
-                        auth=self.auth,
-                    )
-                    return legacy_client.get_quote(
-                        market=resolved_market,
-                        symbol=resolved_symbol,
-                        panel=panel,
-                    )
-                except Exception as fallback_exc:  # pragma: no cover - defensive guard
-                    logger.error(
-                        "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
-                        resolved_market,
-                        resolved_symbol,
-                        fallback_exc,
-                        exc_info=True,
-                    )
-                    return {"last": None, "chg_pct": None}
+                return self._legacy_quote_fallback(resolved_market, resolved_symbol, panel)
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.warning(
@@ -380,6 +366,39 @@ class IOLClient(IIOLProvider):
             return None
 
         return self._normalize_quote_payload(data)
+
+    def _legacy_quote_fallback(
+        self,
+        resolved_market: str,
+        resolved_symbol: str,
+        panel: str | None,
+    ) -> Dict[str, Optional[float]]:
+        try:
+            from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
+
+            legacy_client = LegacyIOLClient(
+                self.user,
+                self.password,
+                tokens_file=getattr(self.auth, "tokens_path", None),
+                auth=self.auth,
+            )
+            payload = legacy_client.get_quote(
+                market=resolved_market,
+                symbol=resolved_symbol,
+                panel=panel,
+            )
+            if payload is None:
+                return {"last": None, "chg_pct": None}
+            return payload
+        except Exception as fallback_exc:  # pragma: no cover - defensive guard
+            logger.error(
+                "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
+                resolved_market,
+                resolved_symbol,
+                fallback_exc,
+                exc_info=True,
+            )
+            return {"last": None, "chg_pct": None}
 
     def get_quotes_bulk(
         self,
@@ -424,7 +443,10 @@ class IOLClient(IIOLProvider):
             for future in as_completed(future_map):
                 key = future_map[future]
                 try:
-                    result[key] = future.result()
+                    payload = future.result()
+                    if payload is None:
+                        payload = {"last": None, "chg_pct": None}
+                    result[key] = payload
                 except requests.HTTPError as exc:
                     response = exc.response
                     if response is not None and response.status_code == 500:
