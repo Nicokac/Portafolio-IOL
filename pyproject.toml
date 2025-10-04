@@ -27,6 +27,8 @@ markers = [
     "live_yahoo: Tests that call the live Yahoo Finance API (enable with RUN_LIVE_YF=1)",
     "slow: Performance-sensitive tests that may take several seconds to finish",
 ]
+# Cobertura obligatoria para los paquetes principales del proyecto.
+addopts = "--cov=application --cov=controllers --cov=services"
 # Legacy suite retained únicamente para auditorías del cliente antiguo.
 norecursedirs = [
     "tests/legacy",

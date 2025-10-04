@@ -67,6 +67,10 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
 5. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
    confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx` y `summary.csv` estén
    adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
+6. **Puerta de seguridad.** Ejecuta `bandit -r application controllers services` para auditar llamadas inseguras
+   y `pip-audit --requirement requirements.txt --requirement requirements-dev.txt` para identificar
+   dependencias vulnerables. Ambos comandos deben formar parte del pipeline y bloquear el merge ante
+   hallazgos críticos.
 
 ### Suites legacy (deprecated)
 
