@@ -337,6 +337,7 @@ python scripts/export_analysis.py \
 - El argumento `--formats` (o su alias `--format`) acepta `csv`, `excel` o `both`.
 - Cada snapshot genera un subdirectorio dentro de `--output` con todos los CSV, el ZIP `analysis.zip` y, si corresponde, el Excel `analysis.xlsx`.
 - Se adjunta además `summary.csv` en la raíz con los KPIs crudos (`raw_value`) de cada snapshot para facilitar comparaciones rápidas o integraciones en pipelines.
+- En modo CLI la caché que reutiliza Kaleido es local al proceso y se reinicia en cada ejecución (la app mantiene la caché compartida vía Streamlit).
 
 > Dependencias: asegurate de instalar `kaleido` y `XlsxWriter` (ambos incluidos en `requirements.txt`) para que el script pueda renderizar los gráficos y escribir el Excel correctamente.
 
