@@ -10,6 +10,7 @@ proyecto, incluyendo las verificaciones opcionales que dependen de servicios ext
   ```bash
   pip install -r requirements.txt -r requirements-dev.txt
   ```
+  > `requirements.txt` se sincroniza desde `[project.dependencies]` de `pyproject.toml` con `python scripts/sync_requirements.py`. Asegurate de correrlo si cambiaste las versiones fijadas antes de reinstalar dependencias.
 - No es necesario instalar Streamlit para ejecutar la suite. Los tests incorporan un stub local
   que reemplaza al módulo y provee las APIs utilizadas por la UI.
 - Variables de entorno opcionales para pruebas específicas:

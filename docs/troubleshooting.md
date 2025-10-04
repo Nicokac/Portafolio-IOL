@@ -146,6 +146,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
        pip install -r requirements.txt -r requirements-dev.txt
        streamlit run app.py
        ```
+       > Si modificaste las dependencias en `pyproject.toml`, sincroniza la lista plana con `python scripts/sync_requirements.py` antes de reinstalar.
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
