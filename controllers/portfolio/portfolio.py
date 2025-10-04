@@ -36,9 +36,6 @@ _NOTIFICATIONS_SERVICE_KEY = "notifications_service"
 _NOTIFICATIONS_FACTORY_KEY = "notifications_service_factory"
 _SNAPSHOT_BACKEND_KEY = "snapshot_backend_override"
 
-_FALLBACK_SESSION_STATE: dict[str, Any] = {}
-
-
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
 
@@ -60,11 +57,7 @@ def _get_service_registry() -> dict[str, Any]:
         if isinstance(registry, dict):
             return registry
 
-    registry = _FALLBACK_SESSION_STATE.get(_SERVICE_REGISTRY_KEY)
-    if not isinstance(registry, dict):
-        registry = {}
-        _FALLBACK_SESSION_STATE[_SERVICE_REGISTRY_KEY] = registry
-    return registry
+    return {}
 
 
 def default_view_model_service_factory() -> PortfolioViewModelService:
@@ -137,6 +130,9 @@ def get_notifications_service(
 def reset_portfolio_services() -> None:
     """Clear cached portfolio services for the current session."""
 
+    if getattr(st, "session_state", None) is None:
+        return
+
     registry = _get_service_registry()
     for key in (
         _VIEW_MODEL_SERVICE_KEY,
@@ -149,6 +145,9 @@ def reset_portfolio_services() -> None:
 
 def configure_snapshot_backend(snapshot_backend: Any | None) -> None:
     """Override the snapshot backend used by the cached portfolio service."""
+
+    if getattr(st, "session_state", None) is None:
+        return
 
     registry = _get_service_registry()
     registry[_SNAPSHOT_BACKEND_KEY] = snapshot_backend
