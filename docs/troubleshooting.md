@@ -4,9 +4,22 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.29.1, enfocada en hardening/CI para reforzar los
-> pipelines automáticos y las verificaciones de integridad sin alterar los flujos funcionales
-> documentados en la serie 0.3.29.1.
+> Nota: Esta guía corresponde a la release 0.3.29.2, enfocada en hardening/CI para reforzar los
+> pipelines automáticos, la cobertura y las verificaciones de integridad sin alterar los flujos
+> funcionales documentados en la serie 0.3.29.2.
+
+## CI Checklist (0.3.29.2)
+
+- **Pipelines sin artefactos.** Si un job finaliza sin adjuntar `coverage.xml`, `htmlcov/`, `analysis.zip`,
+  `analysis.xlsx` o `summary.csv`, márcalo como fallido y reejecuta las etapas de `pytest --cov` y
+  `scripts/export_analysis.py`. Los pasos deben apuntar al mismo directorio temporal (`$RUNNER_TEMP` o
+  `tmp_path`).
+- **Rutas inconsistentes de snapshots.** Cuando `scripts/export_analysis.py` no encuentra archivos,
+  revisa la variable `SNAPSHOT_STORAGE_PATH` utilizada durante los tests. Configúrala explícitamente en
+  el pipeline y replica la ruta al generar las exportaciones.
+- **Cobertura divergente.** Si los reportes de cobertura muestran discrepancias, borra `htmlcov/` antes
+  de ejecutar `pytest --cov` para evitar mezclar runs anteriores y confirma que el pipeline suba el
+  artefacto actualizado.
 
 - **Falta una clave y los servicios quedan en `disabled`.**
   - **Síntomas:** El health sidebar indica `disabled` para Alpha Vantage/Polygon/FMP/FRED/World Bank y el log muestra `Missing API key`.
@@ -41,7 +54,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.29.1 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.29.2 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
@@ -136,7 +149,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.29.1` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.29.2` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
@@ -156,8 +169,8 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats csv --output /tmp/probe
     ```
     para descartar un problema con rutas relativas. Verifica que se generen los CSV, el ZIP `analysis.zip`
-    (cuando `--formats` incluya `csv`) y, si seleccionas `excel` o `both`, el archivo `analysis.xlsx` dentro
-    del subdirectorio del snapshot.
+    (cuando `--formats` incluya `csv`), el archivo `analysis.xlsx` y el resumen `summary.csv` dentro del
+    subdirectorio del snapshot o en la raíz del directorio de exportaciones según corresponda.
 - **Los snapshots persisten entre jobs en CI.**
   - **Síntomas:** Un job reutiliza datos de un pipeline anterior y la telemetría marca `snapshot_hits` altos aunque se espera un entorno limpio.
   - **Diagnóstico rápido:** Revisa si las variables `SNAPSHOT_BACKEND` y `SNAPSHOT_STORAGE_PATH` están configuradas en el pipeline.
@@ -168,7 +181,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   - **Resolución:**
     1. Crea el directorio de destino (`mkdir -p exports`) o usa una ruta absoluta accesible.
     2. Verifica que `pandas` esté instalado en el entorno (`pip install -r requirements.txt`).
-    3. Revisa que `analysis.zip` y los CSV (`kpis.csv`, `positions.csv`, etc.) se generen dentro del subdirectorio del snapshot; si falta alguna columna en el resultado, confirma que `run_screener_stub` siga intacto y que no se hayan modificado los nombres esperados.
+    3. Revisa que `analysis.zip`, `analysis.xlsx`, `summary.csv` y los CSV (`kpis.csv`, `positions.csv`, etc.) se generen dentro del subdirectorio del snapshot; si falta alguna columna en el resultado, confirma que `run_screener_stub` siga intacto y que no se hayan modificado los nombres esperados.
 
 - **Los tests con Yahoo (`pytest -m live_yahoo`) fallan por rate limiting.**
   - **Síntomas:** `pytest` reporta `HTTPError` o `Timeout` al consultar Yahoo Finance.
