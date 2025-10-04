@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from datetime import datetime
+from types import SimpleNamespace
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -121,3 +122,31 @@ def test_get_quote_returns_last_and_chg_pct(
     result = client.get_quote("bcba", "AAPL")
 
     assert result == {"last": 123.45, "chg_pct": 1.5}
+
+
+def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """get_quote should request the Cotizacion endpoint and parse the payload."""
+
+    calls: dict[str, str] = {}
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+
+    def fake_request(
+        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
+    ) -> SimpleNamespace:
+        calls["method"] = method
+        calls["url"] = url
+        return SimpleNamespace(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {"ultimoPrecio": 100, "variacionPorcentual": 1.23},
+        )
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
+
+    client = iol_client_module.IOLClient("", "", auth=False)
+
+    payload = client.get_quote("bcba", "AAPL")
+
+    assert calls["url"].endswith("/Cotizacion")
+    assert payload == {"last": 100.0, "chg_pct": 1.23}
