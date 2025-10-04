@@ -153,7 +153,9 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
         "#### 🔐 Conexión IOL",
         shared_notes.format_note(f"✅ Refresh correcto • {formatted[0]} — OK"),
         "#### 📈 Yahoo Finance",
-        shared_notes.format_note(f"ℹ️ Fallback local • {formatted[1]} — respaldo"),
+        shared_notes.format_note(
+            f"🛟 Fallback local [Fallback] • {formatted[1]} • Resultado: Fallback — respaldo"
+        ),
         "#### 💱 FX",
         shared_notes.format_note(
             f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom"
@@ -176,3 +178,62 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
     assert len(provider_stub.calls) == len(timestamps)
     for call, expected in zip(provider_stub.calls, timestamps):
         assert call == pytest.approx(expected)
+
+
+def test_tab_latency_metrics_include_p99_and_budget(
+    streamlit_stub, health_sidebar_module
+) -> None:
+    metrics = {
+        "tab_latencies": {
+            "analisis": {
+                "label": "Análisis",
+                "avg": 180.0,
+                "percentiles": {
+                    "p50": 150.0,
+                    "p90": 200.0,
+                    "p95": 210.0,
+                    "p99": 240.0,
+                },
+                "status_counts": {"success": 5},
+                "status_ratios": {"success": 1.0},
+                "total": 5,
+                "error_count": 0,
+                "error_ratio": 0.0,
+                "error_budget": 0.0,
+                "missing_count": 0,
+            },
+            "riesgos": {
+                "label": "Riesgos",
+                "avg": 420.0,
+                "percentiles": {
+                    "p50": 400.0,
+                    "p90": 450.0,
+                    "p95": 480.0,
+                    "p99": 550.0,
+                },
+                "status_counts": {"success": 6, "error": 4},
+                "status_ratios": {"success": 0.6, "error": 0.4},
+                "total": 10,
+                "error_count": 4,
+                "error_ratio": 0.4,
+                "error_budget": 0.4,
+                "missing_count": 0,
+            },
+        }
+    }
+
+    _run_sidebar(health_sidebar_module, metrics)
+
+    expanders = health_sidebar_module.st.get_records("expander")
+    latency_expander = next(
+        entry for entry in expanders if entry.get("label") == "Latencias por pestaña"
+    )
+    latency_lines = [
+        child.get("text")
+        for child in latency_expander.get("children", [])
+        if isinstance(child, dict) and child.get("type") == "markdown"
+    ]
+
+    assert any("P99 240 ms" in line for line in latency_lines)
+    assert any(":green[Budget 0%]" in line for line in latency_lines)
+    assert any(":red[Budget 40%]" in line for line in latency_lines)
