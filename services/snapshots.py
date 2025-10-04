@@ -20,6 +20,7 @@ from dataclasses import asdict, is_dataclass
 import json
 import logging
 import os
+import sys
 from pathlib import Path
 import sqlite3
 import threading
@@ -33,6 +34,23 @@ logger = logging.getLogger(__name__)
 
 _CONFIG_LOCK = threading.RLock()
 _STORAGE: _BaseSnapshotStorage | None = None  # Lazily configured backend instance
+
+
+def auto_configure_if_needed() -> None:
+    """Ensure a usable backend is configured when running without settings."""
+
+    global _STORAGE
+
+    with _CONFIG_LOCK:
+        storage = _STORAGE
+        needs_configuration = storage is None or getattr(storage, "backend_name", None) == "unconfigured"
+        if not needs_configuration:
+            return
+        try:
+            configure_storage(backend="json")
+        except Exception:  # pragma: no cover - defensive logging path
+            logger.exception("No se pudo autoconfigurar el backend de snapshots")
+
 
 
 def _ensure_configured() -> None:
@@ -335,16 +353,19 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
 def current_backend_name() -> str:
     """Return the identifier for the active snapshot backend."""
 
-    if _STORAGE is None:
+    auto_configure_if_needed()
+
+    storage = _STORAGE
+    if storage is None:
         return "unconfigured"
 
-    if isinstance(_STORAGE, _JSONSnapshotStorage):
+    if isinstance(storage, _JSONSnapshotStorage):
         return "json"
-    if isinstance(_STORAGE, _SQLiteSnapshotStorage):
+    if isinstance(storage, _SQLiteSnapshotStorage):
         return "sqlite"
-    if isinstance(_STORAGE, _NullSnapshotStorage):
+    if isinstance(storage, _NullSnapshotStorage):
         return "null"
-    return type(_STORAGE).__name__
+    return type(storage).__name__
 
 
 def is_null_backend() -> bool:
@@ -563,4 +584,8 @@ def _auto_configure_from_settings() -> None:
     except Exception:  # pragma: no cover - safeguards for early imports
         logger.exception("No se pudo inicializar el backend de snapshots, se usará NullStorage")
         configure_storage(backend="null")
+
+
+if os.getenv("STREAMLIT_RUNTIME") or "streamlit" in sys.modules:
+    auto_configure_if_needed()
 
