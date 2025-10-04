@@ -15,6 +15,7 @@ records and compute comparisons between arbitrary entries.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 import json
 import logging
@@ -308,6 +309,7 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
 
 
 _STORAGE: _BaseSnapshotStorage = _NullSnapshotStorage()
+_AUTO_CONFIGURED = False
 
 
 def configure_storage(
@@ -347,16 +349,122 @@ def configure_storage(
         else:
             raise SnapshotStorageError(f"Backend no soportado: {backend}")
     except SnapshotStorageError:
-        logger.exception("Fallo la configuración del backend de snapshots (%s)", backend)
-        storage = _NullSnapshotStorage()
+        if raise_on_error:
+            raise
+        logger.exception(
+            "Fallo la configuración del backend de snapshots (%s)", backend_name
+        )
+        return _NullSnapshotStorage()
 
-    global _STORAGE
-    _STORAGE = storage
+
+def _ensure_configured() -> None:
+    global _AUTO_CONFIGURED
+    if not _AUTO_CONFIGURED:
+        _auto_configure_from_settings()
+        _AUTO_CONFIGURED = True
+
+
+class SnapshotSession:
+    """Facade that exposes the snapshot helpers for a specific storage backend."""
+
+    def __init__(self, storage: _BaseSnapshotStorage) -> None:
+        self._storage = storage
+
+    @property
+    def storage(self) -> _BaseSnapshotStorage:
+        return self._storage
+
+    def save_snapshot(
+        self,
+        kind: str,
+        payload: SnapshotPayload,
+        metadata: SnapshotMetadata | None = None,
+    ) -> Mapping[str, Any]:
+        payload = _to_plain_mapping(payload)
+        metadata = _to_plain_mapping(metadata)
+        try:
+            return self._storage.save_snapshot(kind, payload, metadata)
+        except SnapshotStorageError:
+            logger.exception("Error al guardar snapshot %s", kind)
+            raise
+
+    def load_snapshot(self, snapshot_id: str) -> Mapping[str, Any] | None:
+        try:
+            return self._storage.load_snapshot(snapshot_id)
+        except SnapshotStorageError:
+            logger.exception("Error al cargar snapshot %s", snapshot_id)
+            raise
+
+    def list_snapshots(
+        self,
+        kind: str | None = None,
+        *,
+        limit: int | None = None,
+        order: str = "desc",
+    ) -> Sequence[Mapping[str, Any]]:
+        try:
+            return self._storage.list_snapshots(kind, limit=limit, order=order)
+        except SnapshotStorageError:
+            logger.exception("Error al listar snapshots kind=%s", kind)
+            raise
+
+    def compare_snapshots(self, id_a: str, id_b: str) -> Mapping[str, Any] | None:
+        try:
+            return _compare_snapshots_with_storage(self._storage, id_a, id_b)
+        except SnapshotStorageError:
+            logger.exception("Error al comparar snapshots %s vs %s", id_a, id_b)
+            raise
+
+
+def configure_storage(
+    *, backend: str | None = None, path: str | os.PathLike[str] | None = None
+) -> None:
+    """Configure the snapshot backend based on the provided parameters."""
+
+    global _STORAGE, _AUTO_CONFIGURED
+    _STORAGE = _resolve_storage(backend=backend, path=path)
+    _AUTO_CONFIGURED = True
+
+
+def create_storage(
+    *,
+    backend: str | None = None,
+    path: str | os.PathLike[str] | None = None,
+    raise_on_error: bool = False,
+) -> _BaseSnapshotStorage:
+    """Instantiate a snapshot backend without mutating the global configuration."""
+
+    return _resolve_storage(
+        backend=backend, path=path, raise_on_error=raise_on_error
+    )
+
+
+@contextmanager
+def temporary_snapshot_storage(
+    *,
+    backend: str | None = None,
+    path: str | os.PathLike[str] | None = None,
+    storage: _BaseSnapshotStorage | None = None,
+    raise_on_error: bool = False,
+):
+    """Yield a :class:`SnapshotSession` without altering the module level storage."""
+
+    storage_instance = storage or create_storage(
+        backend=backend, path=path, raise_on_error=raise_on_error
+    )
+    session = SnapshotSession(storage_instance)
+    try:
+        yield session
+    finally:
+        closer = getattr(storage_instance, "close", None)
+        if callable(closer):
+            closer()
 
 
 def save_snapshot(kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None) -> Mapping[str, Any]:
     """Persist a snapshot and return the stored record."""
 
+    _ensure_configured()
     payload = _to_plain_mapping(payload)
     metadata = _to_plain_mapping(metadata)
     try:
@@ -369,6 +477,7 @@ def save_snapshot(kind: str, payload: SnapshotPayload, metadata: SnapshotMetadat
 def load_snapshot(snapshot_id: str) -> Mapping[str, Any] | None:
     """Load a snapshot by identifier."""
 
+    _ensure_configured()
     try:
         return _STORAGE.load_snapshot(snapshot_id)
     except SnapshotStorageError:
@@ -381,6 +490,7 @@ def list_snapshots(
 ) -> Sequence[Mapping[str, Any]]:
     """Return historical snapshots for the requested kind."""
 
+    _ensure_configured()
     try:
         return _STORAGE.list_snapshots(kind, limit=limit, order=order)
     except SnapshotStorageError:
@@ -399,8 +509,19 @@ def compare_snapshots(id_a: str, id_b: str) -> Mapping[str, Any] | None:
     if not id_a or not id_b:
         return None
 
-    snap_a = load_snapshot(id_a)
-    snap_b = load_snapshot(id_b)
+    _ensure_configured()
+    try:
+        return _compare_snapshots_with_storage(_STORAGE, id_a, id_b)
+    except SnapshotStorageError:
+        logger.exception("Error al comparar snapshots %s vs %s", id_a, id_b)
+        raise
+
+
+def _compare_snapshots_with_storage(
+    storage: _BaseSnapshotStorage, id_a: str, id_b: str
+) -> Mapping[str, Any] | None:
+    snap_a = storage.load_snapshot(id_a)
+    snap_b = storage.load_snapshot(id_b)
     if not snap_a or not snap_b:
         return None
 
@@ -469,7 +590,4 @@ def _auto_configure_from_settings() -> None:
     except Exception:  # pragma: no cover - safeguards for early imports
         logger.exception("No se pudo inicializar el backend de snapshots, se usará NullStorage")
         configure_storage(backend="null")
-
-
-_auto_configure_from_settings()
 
