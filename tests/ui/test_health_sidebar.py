@@ -471,6 +471,20 @@ def test_render_health_sidebar_includes_history_section(health_sidebar, _dummy_m
         assert line in health_sidebar.st.sidebar.markdowns
 
 
+def test_render_health_sidebar_highlights_macro_section(health_sidebar, _dummy_metrics) -> None:
+    _render(health_sidebar, _dummy_metrics)
+
+    macro_lines = [
+        line
+        for line in health_sidebar.st.sidebar.markdowns
+        if "Macro" in line or "Totales macro" in line
+    ]
+    assert macro_lines, "Expected macro section lines to be rendered"
+    assert any("Totales macro" in line for line in macro_lines)
+    assert any("fallback" in line.lower() for line in macro_lines)
+    assert any("Latencia" in line for line in macro_lines)
+
+
 def test_record_opportunities_report_rotates_history(monkeypatch: pytest.MonkeyPatch) -> None:
     import services.health as health_service
 
