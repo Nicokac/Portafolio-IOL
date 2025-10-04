@@ -41,6 +41,7 @@ def test_render_basic_section_captions(monkeypatch):
     monkeypatch.setattr(charts_mod.st, "caption", mock_caption)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     charts_mod.render_basic_section(df, controls, None, favorites=FavoriteSymbols({}))
     captions = [c.args[0] for c in mock_caption.call_args_list]
     expected = [

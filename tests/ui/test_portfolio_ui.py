@@ -639,6 +639,7 @@ def test_render_basic_section_renders_timeline_and_heatmap(monkeypatch: pytest.M
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
 
     df_view = pd.DataFrame(
@@ -724,6 +725,7 @@ def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.Monk
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
 
     df_view = pd.DataFrame(
         {
