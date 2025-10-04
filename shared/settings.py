@@ -34,6 +34,10 @@ max_results: int = settings.max_results
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
+# Snapshot storage configuration
+snapshot_backend: str = getattr(settings, "snapshot_backend", "json")
+snapshot_storage_path: str | None = getattr(settings, "snapshot_storage_path", None)
+
 # Notification thresholds
 risk_badge_threshold: float = getattr(settings, "RISK_BADGE_THRESHOLD", 0.75)
 technical_signal_threshold: float = getattr(settings, "TECHNICAL_SIGNAL_THRESHOLD", 2)
@@ -109,6 +113,8 @@ __all__ = [
     "max_results",
     "stub_max_runtime_warn",
     "STUB_MAX_RUNTIME_WARN",
+    "snapshot_backend",
+    "snapshot_storage_path",
     "YAHOO_FUNDAMENTALS_TTL",
     "YAHOO_QUOTES_TTL",
     "MIN_SCORE_THRESHOLD",

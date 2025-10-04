@@ -4,14 +4,15 @@ import hashlib
 import json
 import logging
 import time
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, asdict
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
+from services import snapshots as snapshot_service
 from application.risk_service import (
     annualized_volatility,
     beta,
@@ -157,6 +158,19 @@ class PortfolioViewSnapshot:
     generated_at: float
     historical_total: pd.DataFrame
     contribution_metrics: PortfolioContributionMetrics
+    storage_id: str | None = None
+    comparison: "SnapshotComparison" | None = None
+
+
+@dataclass(frozen=True)
+class SnapshotComparison:
+    """Resumen de la comparación contra un snapshot histórico."""
+
+    reference_id: str
+    reference_timestamp: float
+    deltas: Mapping[str, float]
+    reference_totals: Mapping[str, float]
+    metadata: Mapping[str, Any]
 
 
 class PortfolioViewModelService:
@@ -167,11 +181,13 @@ class PortfolioViewModelService:
     relevantes.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, snapshot_backend: Any | None = None) -> None:
         self._snapshot: PortfolioViewSnapshot | None = None
         self._dataset_key: str | None = None
         self._filters_key: str | None = None
         self._history_records: list[dict[str, float]] = []
+        self._snapshot_storage = snapshot_backend or snapshot_service
+        self._snapshot_kind = "portfolio"
 
     def _update_history(self, totals: PortfolioTotals) -> pd.DataFrame:
         entry = _history_row(time.time(), totals)
@@ -202,6 +218,76 @@ class PortfolioViewModelService:
             "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
         }
         return json.dumps(payload, sort_keys=True)
+
+    def _persist_snapshot(
+        self,
+        *,
+        df_view: pd.DataFrame,
+        totals: PortfolioTotals,
+        controls: Any,
+        dataset_key: str,
+        filters_key: str,
+        generated_at: float,
+        contribution_metrics: PortfolioContributionMetrics,
+        historical_total: pd.DataFrame,
+    ) -> tuple[str | None, SnapshotComparison | None, pd.DataFrame | None]:
+        backend = getattr(self._snapshot_storage, "save_snapshot", None)
+        list_fn = getattr(self._snapshot_storage, "list_snapshots", None)
+        compare_fn = getattr(self._snapshot_storage, "compare_snapshots", None)
+        if not callable(backend):
+            return None, None, None
+
+        payload = _serialize_snapshot_payload(
+            df_view=df_view,
+            totals=totals,
+            generated_at=generated_at,
+            history=historical_total,
+            contribution_metrics=contribution_metrics,
+        )
+        metadata = {
+            "dataset_key": dataset_key,
+            "filters_key": filters_key,
+            "controls": _safe_asdict(controls),
+        }
+
+        try:
+            saved = backend(self._snapshot_kind, payload, metadata)
+        except Exception:
+            logger.exception("No se pudo persistir el snapshot del portafolio")
+            return None, None, None
+
+        storage_id = saved.get("id") if isinstance(saved, Mapping) else None
+        comparison: SnapshotComparison | None = None
+
+        if callable(compare_fn) and storage_id:
+            try:
+                history = list_fn(self._snapshot_kind, limit=2, order="desc") if callable(list_fn) else []
+                previous = next(
+                    (row for row in history if row.get("id") != storage_id),
+                    None,
+                )
+                if previous and previous.get("id"):
+                    cmp = compare_fn(storage_id, previous["id"])
+                    if isinstance(cmp, Mapping):
+                        comparison = SnapshotComparison(
+                            reference_id=str(previous.get("id")),
+                            reference_timestamp=float(previous.get("created_at") or 0.0),
+                            deltas=_as_mapping(cmp.get("delta")),
+                            reference_totals=_as_mapping(cmp.get("totals_b")),
+                            metadata=_as_mapping(cmp.get("metadata_b")),
+                        )
+            except Exception:
+                logger.exception("No se pudo calcular la comparación del snapshot")
+
+        persisted_history: pd.DataFrame | None = None
+        if callable(list_fn):
+            try:
+                records = list_fn(self._snapshot_kind, limit=500, order="asc")
+                persisted_history = _history_df_from_snapshot_records(records)
+            except Exception:
+                logger.exception("No se pudo construir la historia persistida del portafolio")
+
+        return storage_id, comparison, persisted_history
 
     def invalidate_positions(self, dataset_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambia el dataset base."""
@@ -263,14 +349,31 @@ class PortfolioViewModelService:
         contribution_metrics = _compute_contribution_metrics(df_view)
         history_df = self._update_history(totals)
 
+        generated_ts = time.time()
+        storage_id, comparison, persisted_history = self._persist_snapshot(
+            df_view=df_view,
+            totals=totals,
+            controls=controls,
+            dataset_key=dataset_key,
+            filters_key=filters_key,
+            generated_at=generated_ts,
+            contribution_metrics=contribution_metrics,
+            historical_total=history_df,
+        )
+
+        if persisted_history is not None:
+            history_df = persisted_history
+
         snapshot = PortfolioViewSnapshot(
             df_view=df_view,
             totals=totals,
             apply_elapsed=apply_elapsed,
             totals_elapsed=totals_elapsed,
-            generated_at=time.time(),
+            generated_at=generated_ts,
             historical_total=history_df,
             contribution_metrics=contribution_metrics,
+            storage_id=storage_id,
+            comparison=comparison,
         )
 
         self._snapshot = snapshot
@@ -386,4 +489,102 @@ def _append_history(records: list[dict[str, float]], entry: dict[str, float], ma
     if maxlen and maxlen > 0:
         records = records[-maxlen:]
     return records
+
+
+def _serialize_snapshot_payload(
+    *,
+    df_view: pd.DataFrame,
+    totals: PortfolioTotals,
+    generated_at: float,
+    history: pd.DataFrame,
+    contribution_metrics: PortfolioContributionMetrics,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "generated_at": float(generated_at),
+        "totals": {
+            "total_value": float(totals.total_value),
+            "total_cost": float(totals.total_cost),
+            "total_pl": float(totals.total_pl),
+            "total_pl_pct": float(totals.total_pl_pct),
+            "total_cash": float(totals.total_cash),
+        },
+    }
+
+    payload["df_view"] = _df_to_records(df_view)
+    payload["history"] = _df_to_records(history)
+
+    contrib = {}
+    if isinstance(contribution_metrics, PortfolioContributionMetrics):
+        contrib["by_symbol"] = _df_to_records(contribution_metrics.by_symbol)
+        contrib["by_type"] = _df_to_records(contribution_metrics.by_type)
+    payload["contribution_metrics"] = contrib
+    return payload
+
+
+def _df_to_records(df: pd.DataFrame | None) -> list[dict[str, Any]]:
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return []
+    try:
+        return df.replace({np.nan: None}).to_dict(orient="records")
+    except Exception:
+        return []
+
+
+def _safe_asdict(obj: Any) -> dict[str, Any]:
+    if obj is None:
+        return {}
+    try:
+        return asdict(obj)
+    except TypeError:
+        result: dict[str, Any] = {}
+        for key in dir(obj):
+            if key.startswith("_"):
+                continue
+            try:
+                value = getattr(obj, key)
+            except Exception:
+                continue
+            if callable(value):
+                continue
+            result[key] = value
+        return result
+
+
+def _as_mapping(value: Any) -> dict[str, float]:
+    if isinstance(value, Mapping):
+        result: dict[str, float] = {}
+        for key, val in value.items():
+            try:
+                result[str(key)] = float(val)
+            except (TypeError, ValueError):
+                continue
+        return result
+    return {}
+
+
+def _history_df_from_snapshot_records(records: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
+    history_rows: list[dict[str, float]] = []
+    for row in records:
+        payload = row.get("payload") if isinstance(row, Mapping) else {}
+        totals = {}
+        if isinstance(payload, Mapping):
+            totals = payload.get("totals") or {}
+        ts = row.get("created_at") if isinstance(row, Mapping) else None
+        if not ts and isinstance(payload, Mapping):
+            ts = payload.get("generated_at")
+        entry = {
+            "timestamp": float(ts or 0.0),
+            "total_value": float(_get_numeric(totals, "total_value")),
+            "total_cost": float(_get_numeric(totals, "total_cost")),
+            "total_pl": float(_get_numeric(totals, "total_pl")),
+        }
+        history_rows.append(entry)
+    return _normalize_history_df(history_rows)
+
+
+def _get_numeric(payload: Mapping[str, Any], key: str) -> float:
+    try:
+        return float(payload.get(key, 0.0))
+    except (TypeError, ValueError, AttributeError):
+        return 0.0
 

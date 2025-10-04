@@ -395,9 +395,10 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
 
     assert fake_st.session_state["portfolio_tab"] == 4
     assert fake_st.selectbox_calls
-    first_select = fake_st.selectbox_calls[0]
-    assert first_select["label"] == "Seleccioná un símbolo (CEDEAR / ETF)"
-    assert first_select["options"] == ["GGAL", "AAPL"]
+    symbol_select = next(
+        call for call in fake_st.selectbox_calls if call["label"] == "Seleccioná un símbolo (CEDEAR / ETF)"
+    )
+    assert symbol_select["options"] == ["GGAL", "AAPL"]
     # Ensure advanced analysis helpers were not triggered in this branch
     advanced.assert_not_called()
     basic.assert_not_called()
