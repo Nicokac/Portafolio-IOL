@@ -127,3 +127,55 @@ def test_record_macro_api_usage_tracks_missing_latency(
     fred = providers.get("fred") or {}
     latency_counts = fred.get("latency_buckets", {}).get("counts") or {}
     assert latency_counts.get("missing") == 1
+
+
+def test_record_tab_latency_tracks_statistics(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_state(monkeypatch)
+
+    timestamps = iter(range(10))
+    monkeypatch.setattr(health_service.time, "time", lambda: next(timestamps))
+
+    health_service.record_tab_latency("tecnico", 100.0, status="success")
+    health_service.record_tab_latency("tecnico", 200.0, status="success")
+    health_service.record_tab_latency("tecnico", 500.0, status="error")
+    health_service.record_tab_latency("tecnico", None, status="error")
+
+    metrics = health_service.get_health_metrics()
+    latencies = metrics.get("tab_latencies") or {}
+    tecnico = latencies.get("tecnico") or {}
+
+    assert tecnico.get("count") == 3
+    assert tecnico.get("total") == 4
+    assert tecnico.get("percentiles", {}).get("p50") == pytest.approx(200.0)
+    assert tecnico.get("percentiles", {}).get("p90") == pytest.approx(440.0)
+    assert tecnico.get("status_counts", {}).get("error") == 2
+    assert tecnico.get("error_ratio") == pytest.approx(0.5)
+    assert tecnico.get("missing_count") == 1
+
+
+def test_record_adapter_fallback_accumulates(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_state(monkeypatch)
+
+    timestamps = iter(range(20))
+    monkeypatch.setattr(health_service.time, "time", lambda: next(timestamps))
+
+    health_service.record_adapter_fallback("MacroAdapter", "fred", "error", False)
+    health_service.record_adapter_fallback("MacroAdapter", "worldbank", "success", True)
+    health_service.record_adapter_fallback("MacroAdapter", "worldbank", "success", True)
+    health_service.record_adapter_fallback("OHLCAdapter", "alpha_vantage", "error", False)
+    health_service.record_adapter_fallback("OHLCAdapter", "polygon", "success", True)
+
+    metrics = health_service.get_health_metrics()
+    fallback = metrics.get("adapter_fallbacks") or {}
+    adapters = fallback.get("adapters") or {}
+
+    macro = adapters.get("macroadapter") or {}
+    worldbank = (macro.get("providers") or {}).get("worldbank") or {}
+    assert worldbank.get("fallback_count") == 2
+    assert worldbank.get("fallback_ratio") == pytest.approx(1.0)
+    assert worldbank.get("status_counts", {}).get("success") == 2
+
+    providers = fallback.get("providers") or {}
+    wb_total = providers.get("worldbank") or {}
+    assert wb_total.get("fallback_count") == 2
+    assert wb_total.get("fallback_ratio") == pytest.approx(1.0)

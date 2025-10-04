@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Mapping, Sequence, Tuple
 
 import pandas as pd
 
-from services.health import record_market_data_incident
+from services.health import record_adapter_fallback, record_market_data_incident
 
 
 logger = logging.getLogger(__name__)
@@ -71,8 +71,20 @@ class BaseMarketDataAdapter:
                     status="success",
                     fallback=bool(last_error),
                 )
+                record_adapter_fallback(
+                    adapter=self.incident_source,
+                    provider=provider.name,
+                    status="success",
+                    fallback=bool(last_error),
+                )
                 return frame.copy(deep=True)
             except Exception as exc:  # pragma: no cover - defensive log aggregator
+                record_adapter_fallback(
+                    adapter=self.incident_source,
+                    provider=provider.name,
+                    status="error",
+                    fallback=bool(last_error),
+                )
                 last_error = exc
                 logger.debug(
                     "provider %s failed for %s with params=%s: %s",

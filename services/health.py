@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 import math
-from typing import Any, Deque, Dict, Iterable, Mapping, Optional
+from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 import time
 
 import streamlit as st
@@ -19,6 +19,16 @@ _MARKET_DATA_INCIDENT_LIMIT = 20
 _LATENCY_FAST_THRESHOLD_MS = 250.0
 _LATENCY_MEDIUM_THRESHOLD_MS = 750.0
 _PROVIDER_HISTORY_LIMIT = 8
+_TAB_LATENCIES_KEY = "tab_latencies"
+_TAB_LATENCY_HISTORY_LIMIT = 32
+_ADAPTER_FALLBACK_KEY = "adapter_fallbacks"
+
+_PROVIDER_LABELS = {
+    "alpha_vantage": "Alpha Vantage",
+    "polygon": "Polygon",
+    "fred": "FRED",
+    "worldbank": "World Bank",
+}
 
 
 def _store() -> Dict[str, Any]:
@@ -57,6 +67,24 @@ def _ensure_history_deque(raw_history: Any, *, limit: int) -> Deque[Dict[str, An
             normalized = _normalize_provider_event(entry)
             if normalized is not None:
                 history.append(normalized)
+    return history
+
+
+def _ensure_latency_history(raw_history: Any, *, limit: int) -> Deque[float]:
+    """Return a deque storing float latencies with bounded size."""
+
+    if isinstance(raw_history, deque) and raw_history.maxlen == limit:
+        return raw_history
+
+    history: Deque[float] = deque(maxlen=limit)
+    if isinstance(raw_history, Iterable) and not isinstance(
+        raw_history, (str, bytes, bytearray)
+    ):
+        for value in raw_history:
+            numeric = _as_optional_float(value)
+            if numeric is None:
+                continue
+            history.append(float(numeric))
     return history
 
 
@@ -398,6 +426,134 @@ def record_portfolio_load(
     }
 
 
+def record_tab_latency(
+    tab: str,
+    elapsed_ms: Optional[float],
+    *,
+    status: str = "success",
+) -> None:
+    """Track latency distributions per analytical tab."""
+
+    tab_key_raw = str(tab or "").strip()
+    tab_key = tab_key_raw.casefold() or "unknown"
+    status_key = str(status or "").strip().casefold() or "unknown"
+
+    store = _store()
+    raw_tabs = store.get(_TAB_LATENCIES_KEY)
+    if isinstance(raw_tabs, Mapping):
+        tabs = dict(raw_tabs)
+    else:
+        tabs = {}
+
+    raw_stats = tabs.get(tab_key)
+    if isinstance(raw_stats, Mapping):
+        stats = dict(raw_stats)
+    else:
+        stats = {}
+
+    stats["label"] = tab_key_raw or tab_key.title()
+
+    total_invocations = int(stats.get("total", 0) or 0) + 1
+    stats["total"] = total_invocations
+
+    numeric_latency = _as_optional_float(elapsed_ms)
+    if numeric_latency is not None and math.isfinite(numeric_latency):
+        value = float(numeric_latency)
+        history = _ensure_latency_history(
+            stats.get("history"), limit=_TAB_LATENCY_HISTORY_LIMIT
+        )
+        history.append(value)
+        stats["history"] = history
+        stats["count"] = int(stats.get("count", 0) or 0) + 1
+        stats["sum"] = float(stats.get("sum", 0.0) or 0.0) + value
+        stats["sum_sq"] = float(stats.get("sum_sq", 0.0) or 0.0) + value * value
+        stats["last_elapsed_ms"] = value
+    else:
+        stats["missing_count"] = int(stats.get("missing_count", 0) or 0) + 1
+        stats["last_elapsed_ms"] = None
+
+    status_counts = stats.get("status_counts")
+    if isinstance(status_counts, Mapping):
+        status_counts = dict(status_counts)
+    else:
+        status_counts = {}
+    status_counts[status_key] = int(status_counts.get(status_key, 0) or 0) + 1
+    stats["status_counts"] = status_counts
+
+    if status_key == "error":
+        stats["error_count"] = int(stats.get("error_count", 0) or 0) + 1
+
+    stats["last_status"] = status_key
+    stats["ts"] = time.time()
+
+    tabs[tab_key] = stats
+    store[_TAB_LATENCIES_KEY] = tabs
+
+
+def record_adapter_fallback(
+    adapter: str,
+    provider: str,
+    status: str,
+    fallback: bool,
+) -> None:
+    """Aggregate fallback ratios per adapter/provider combination."""
+
+    adapter_label = str(adapter or "").strip() or "desconocido"
+    adapter_key = adapter_label.casefold()
+    provider_label = str(provider or "").strip() or "desconocido"
+    provider_key = provider_label.casefold()
+    status_key = str(status or "").strip().casefold() or "unknown"
+
+    store = _store()
+    raw_adapters = store.get(_ADAPTER_FALLBACK_KEY)
+    if isinstance(raw_adapters, Mapping):
+        adapters = dict(raw_adapters)
+    else:
+        adapters = {}
+
+    raw_entry = adapters.get(adapter_key)
+    if isinstance(raw_entry, Mapping):
+        entry = dict(raw_entry)
+    else:
+        entry = {}
+
+    entry["label"] = adapter_label
+
+    raw_providers = entry.get("providers")
+    if isinstance(raw_providers, Mapping):
+        providers = dict(raw_providers)
+    else:
+        providers = {}
+
+    raw_stats = providers.get(provider_key)
+    if isinstance(raw_stats, Mapping):
+        stats = dict(raw_stats)
+    else:
+        stats = {}
+
+    stats["label"] = _PROVIDER_LABELS.get(provider_key, provider_label)
+    stats["count"] = int(stats.get("count", 0) or 0) + 1
+
+    status_counts = stats.get("status_counts")
+    if isinstance(status_counts, Mapping):
+        status_counts = dict(status_counts)
+    else:
+        status_counts = {}
+    status_counts[status_key] = int(status_counts.get(status_key, 0) or 0) + 1
+    stats["status_counts"] = status_counts
+
+    if fallback:
+        stats["fallback_count"] = int(stats.get("fallback_count", 0) or 0) + 1
+
+    stats["last_status"] = status_key
+    stats["fallback_last"] = bool(fallback)
+    stats["ts"] = time.time()
+
+    providers[provider_key] = stats
+    entry["providers"] = providers
+    adapters[adapter_key] = entry
+    store[_ADAPTER_FALLBACK_KEY] = adapters
+
 def record_quote_load(
     elapsed_ms: Optional[float], *, source: str, count: Optional[int] = None
 ) -> None:
@@ -611,6 +767,37 @@ def _compute_ratio_map(counts: Mapping[str, Any], total: int) -> Dict[str, float
             continue
         ratios[key] = float(numeric) / total
     return ratios
+
+
+def _compute_percentiles(
+    samples: Sequence[float], points: Sequence[float]
+) -> Dict[str, float]:
+    if not samples:
+        return {}
+
+    ordered = sorted(float(value) for value in samples)
+    if not ordered:
+        return {}
+
+    size = len(ordered)
+    results: Dict[str, float] = {}
+    for point in points:
+        if point <= 0:
+            results[f"p{int(point * 100):02d}"] = ordered[0]
+            continue
+        if point >= 1:
+            results[f"p{int(point * 100):02d}"] = ordered[-1]
+            continue
+        position = (size - 1) * point
+        lower = int(math.floor(position))
+        upper = int(math.ceil(position))
+        if lower == upper:
+            value = ordered[lower]
+        else:
+            weight = position - lower
+            value = ordered[lower] * (1 - weight) + ordered[upper] * weight
+        results[f"p{int(point * 100):02d}"] = value
+    return results
 
 
 def _aggregate_provider_overall(providers: Mapping[str, Any]) -> Dict[str, Any]:
@@ -937,6 +1124,191 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
+    def _summarize_tab_latencies(raw_tabs: Any) -> Dict[str, Any]:
+        if not isinstance(raw_tabs, Mapping):
+            return {}
+
+        summary: Dict[str, Any] = {}
+        for key, raw_stats in raw_tabs.items():
+            if not isinstance(raw_stats, Mapping):
+                continue
+
+            label = str(raw_stats.get("label") or key).strip() or str(key)
+            total_attempts = _as_optional_int(raw_stats.get("total"))
+            if total_attempts is None:
+                total_attempts = 0
+
+            latency_count = _as_optional_int(raw_stats.get("count")) or 0
+            sum_value = _as_optional_float(raw_stats.get("sum")) or 0.0
+            sum_sq_value = _as_optional_float(raw_stats.get("sum_sq")) or 0.0
+            avg = sum_value / latency_count if latency_count else None
+            stdev = None
+            if latency_count and latency_count > 1:
+                variance = max(sum_sq_value / latency_count - (avg or 0.0) ** 2, 0.0)
+                stdev = math.sqrt(variance)
+
+            history_raw = raw_stats.get("history")
+            samples: list[float] = []
+            if isinstance(history_raw, deque):
+                samples = [float(item) for item in history_raw]
+            elif isinstance(history_raw, Iterable) and not isinstance(
+                history_raw, (str, bytes, bytearray)
+            ):
+                for value in history_raw:
+                    numeric = _as_optional_float(value)
+                    if numeric is None:
+                        continue
+                    samples.append(float(numeric))
+
+            percentiles = _compute_percentiles(samples, (0.5, 0.9, 0.95)) if samples else {}
+
+            status_counts_raw = raw_stats.get("status_counts")
+            status_counts: Dict[str, int] = {}
+            if isinstance(status_counts_raw, Mapping):
+                for status_key, value in status_counts_raw.items():
+                    numeric = _as_optional_float(value)
+                    if numeric is None:
+                        continue
+                    status_counts[str(status_key)] = int(numeric)
+
+            summary[key] = {
+                "label": label,
+                "count": latency_count,
+                "total": total_attempts,
+                "avg": avg,
+                "stdev": stdev,
+                "percentiles": percentiles,
+                "status_counts": status_counts,
+                "status_ratios": _compute_ratio_map(status_counts, total_attempts),
+                "error_count": _as_optional_int(raw_stats.get("error_count")) or 0,
+                "error_ratio": (
+                    (_as_optional_int(raw_stats.get("error_count")) or 0) / total_attempts
+                    if total_attempts
+                    else 0.0
+                ),
+                "missing_count": _as_optional_int(raw_stats.get("missing_count")) or 0,
+                "latest": {
+                    "elapsed_ms": _as_optional_float(raw_stats.get("last_elapsed_ms")),
+                    "status": raw_stats.get("last_status"),
+                    "ts": _as_optional_float(raw_stats.get("ts")),
+                },
+            }
+
+        return summary
+
+    def _summarize_adapter_fallbacks(raw_data: Any) -> Dict[str, Any]:
+        if not isinstance(raw_data, Mapping):
+            return {}
+
+        adapters: Dict[str, Any] = {}
+        provider_totals: Dict[str, Dict[str, Any]] = {}
+
+        for adapter_key, raw_entry in raw_data.items():
+            if not isinstance(raw_entry, Mapping):
+                continue
+
+            label = str(raw_entry.get("label") or adapter_key).strip() or str(adapter_key)
+            providers_summary: Dict[str, Any] = {}
+
+            raw_providers = raw_entry.get("providers")
+            if not isinstance(raw_providers, Mapping):
+                continue
+
+            for provider_key, raw_stats in raw_providers.items():
+                if not isinstance(raw_stats, Mapping):
+                    continue
+
+                count = _as_optional_int(raw_stats.get("count")) or 0
+                fallback_count = _as_optional_int(raw_stats.get("fallback_count")) or 0
+                status_counts_raw = raw_stats.get("status_counts")
+                status_counts: Dict[str, int] = {}
+                if isinstance(status_counts_raw, Mapping):
+                    for status_name, value in status_counts_raw.items():
+                        numeric = _as_optional_float(value)
+                        if numeric is None:
+                            continue
+                        status_counts[str(status_name)] = int(numeric)
+
+                total_attempts = count or sum(status_counts.values())
+                provider_label = _PROVIDER_LABELS.get(
+                    str(provider_key).casefold(),
+                    str(raw_stats.get("label") or provider_key).strip() or str(provider_key),
+                )
+
+                entry = {
+                    "label": provider_label,
+                    "count": count,
+                    "fallback_count": fallback_count,
+                    "fallback_ratio": (fallback_count / total_attempts)
+                    if total_attempts
+                    else 0.0,
+                    "status_counts": status_counts,
+                    "status_ratios": _compute_ratio_map(status_counts, total_attempts),
+                    "latest": {
+                        "status": raw_stats.get("last_status"),
+                        "fallback": bool(raw_stats.get("fallback_last")),
+                        "ts": _as_optional_float(raw_stats.get("ts")),
+                    },
+                }
+
+                providers_summary[str(provider_key)] = entry
+
+                aggregate = provider_totals.setdefault(
+                    str(provider_key),
+                    {
+                        "label": provider_label,
+                        "count": 0,
+                        "fallback_count": 0,
+                        "status_counts": {},
+                        "latest": None,
+                    },
+                )
+                aggregate["count"] = int(aggregate.get("count", 0)) + count
+                aggregate["fallback_count"] = int(
+                    aggregate.get("fallback_count", 0)
+                ) + fallback_count
+
+                agg_status = aggregate.get("status_counts")
+                if not isinstance(agg_status, dict):
+                    agg_status = {}
+                for status_name, value in status_counts.items():
+                    agg_status[status_name] = int(agg_status.get(status_name, 0)) + int(value)
+                aggregate["status_counts"] = agg_status
+
+                latest_payload = aggregate.get("latest")
+                current_ts = _as_optional_float(raw_stats.get("ts"))
+                if current_ts is not None:
+                    if not isinstance(latest_payload, Mapping):
+                        aggregate["latest"] = {
+                            "status": raw_stats.get("last_status"),
+                            "fallback": bool(raw_stats.get("fallback_last")),
+                            "ts": current_ts,
+                        }
+                    else:
+                        existing_ts = _as_optional_float(latest_payload.get("ts"))
+                        if existing_ts is None or current_ts >= existing_ts:
+                            aggregate["latest"] = {
+                                "status": raw_stats.get("last_status"),
+                                "fallback": bool(raw_stats.get("fallback_last")),
+                                "ts": current_ts,
+                            }
+
+            if providers_summary:
+                adapters[str(adapter_key)] = {"label": label, "providers": providers_summary}
+
+        for provider_key, aggregate in provider_totals.items():
+            total_attempts = int(aggregate.get("count", 0))
+            status_counts = aggregate.get("status_counts")
+            if not isinstance(status_counts, dict):
+                status_counts = {}
+            aggregate["status_ratios"] = _compute_ratio_map(status_counts, total_attempts)
+            fallback_count = int(aggregate.get("fallback_count", 0))
+            aggregate["fallback_ratio"] = (
+                fallback_count / total_attempts if total_attempts else 0.0
+            )
+
+        return {"adapters": adapters, "providers": provider_totals}
+
     def _summarize_macro(raw_macro: Any) -> Dict[str, Any]:
         if not isinstance(raw_macro, Mapping):
             return {}
@@ -1095,6 +1467,8 @@ def get_health_metrics() -> Dict[str, Any]:
         "opportunities": store.get("opportunities"),
         "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
         "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
+        "tab_latencies": _summarize_tab_latencies(store.get(_TAB_LATENCIES_KEY)),
+        "adapter_fallbacks": _summarize_adapter_fallbacks(store.get(_ADAPTER_FALLBACK_KEY)),
     }
 
 
@@ -1104,6 +1478,8 @@ __all__ = [
     "record_fx_cache_usage",
     "record_iol_refresh",
     "record_portfolio_load",
+    "record_tab_latency",
+    "record_adapter_fallback",
     "record_quote_load",
     "record_opportunities_report",
     "record_market_data_incident",
