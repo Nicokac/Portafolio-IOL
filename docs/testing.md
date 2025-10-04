@@ -129,9 +129,14 @@ Para reproducir la telemetría manualmente:
 
 ### Configuración del backend de snapshots en CI
 
-El módulo `services.snapshots` permite elegir el backend a través de variables de entorno. En
-pipelines efímeros se recomienda declarar explícitamente estas variables para evitar que los
-artefactos se escriban en el workspace compartido:
+El módulo `services.snapshots` difiere la configuración automática hasta la primera llamada a
+`save_snapshot` o `list_snapshots`. Esto permite que `app.py`, scripts o fixtures de `pytest`
+inyecten un backend explícito mediante `snapshots.configure_storage(...)` antes de utilizar las
+APIs públicas.
+
+En pipelines efímeros se recomienda declarar explícitamente las variables de entorno o fijar la
+configuración al inicio de la suite para evitar que los artefactos se escriban en el workspace
+compartido:
 
 - `SNAPSHOT_BACKEND`: acepta `json`, `sqlite` o `null`. Usa `null` para habilitar
   `NullSnapshotStorage` y desactivar por completo la persistencia durante los tests.
@@ -143,6 +148,31 @@ artefactos se escriban en el workspace compartido:
   `SNAPSHOT_STORAGE_PATH` a la carpeta provista por `tmp_path` (por ejemplo, `${{ runner.temp }}`) y
   ejecuta `pytest tests/integration/` completo. La suite ejerce los degradadores de proveedores y
   confirma que las exportaciones generen CSV, ZIP y Excel por snapshot.
+
+Si necesitás desactivar la persistencia de snapshots durante CI, podés forzar el backend nulo en el
+hook de `pytest_sessionstart` o en un fixture de alcance global:
+
+```python
+from services import snapshots
+
+
+@pytest.fixture(scope="session", autouse=True)
+def disable_snapshots_for_ci():
+    snapshots.configure_storage(backend="null")
+```
+
+Cuando un test o script requiera un backend efímero sin afectar `_STORAGE`, utilizá el helper
+`temporary_snapshot_storage` o creá la instancia manualmente:
+
+```python
+with snapshots.temporary_snapshot_storage(backend="json", path=tmp_path) as session:
+    record = session.save_snapshot("portfolio", payload={}, metadata={})
+
+storage = snapshots.create_storage(backend="sqlite", path=tmp_path / "snap.db")
+storage.save_snapshot("portfolio", payload={}, metadata={})
+```
+
+Ambos métodos permiten trabajar con backends aislados sin tocar `_STORAGE` global.
 
 Tras cada ejecución conviene borrar cualquier archivo residual para mantener el entorno limpio:
 
