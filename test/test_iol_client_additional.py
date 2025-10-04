@@ -170,7 +170,7 @@ def test_get_quote_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_get_quotes_bulk_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
 
-    def bad_get_quote(self, m, s):
+    def bad_get_quote(self, m, s, panel=None):
         raise ValueError("fail")
 
     monkeypatch.setattr(client_module.IOLClient, "get_quote", bad_get_quote, raising=False)

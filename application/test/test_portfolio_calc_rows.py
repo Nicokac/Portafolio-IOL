@@ -35,6 +35,45 @@ def test_calc_rows_integration():
     assert row["pld_%"] == pytest.approx(10.0)
 
 
+def test_calc_rows_handles_positional_quote_client():
+    payload = {
+        "activos": [
+            {
+                "simbolo": "GGAL",
+                "mercado": "BCBA",
+                "cantidad": 5,
+                "costoUnitario": 100.0,
+            }
+        ]
+    }
+    svc = PortfolioService()
+    df_pos = svc.normalize_positions(payload)
+    assert not df_pos.empty
+
+    class StrictClient:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, str | None]] = []
+
+        def get_quote(self, *args, **kwargs):
+            if kwargs:
+                raise TypeError("expected positional invocation")
+            market, symbol = args[:2]
+            panel = args[2] if len(args) > 2 else None
+            self.calls.append((market, symbol, panel))
+            return {"last": 250.0, "chg_pct": 5.0}
+
+    client = StrictClient()
+    df = svc.calc_rows(client.get_quote, df_pos)
+
+    assert client.calls == [("bcba", "GGAL", None)]
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert row["valor_actual"] == pytest.approx(1250.0)
+    assert row["costo"] == pytest.approx(500.0)
+    assert row["pl"] == pytest.approx(750.0)
+    assert row["pl_%"] == pytest.approx(150.0)
+
+
 @pytest.mark.parametrize(
     "simbolo, quote_data, tipo, cantidad, costo_unitario",
     [

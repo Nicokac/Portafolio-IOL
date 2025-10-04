@@ -254,22 +254,30 @@ class IOLClient:
 
         return self._parse_price_fields(data) if isinstance(data, dict) else None
 
-    def get_quote(self, mercado: str, simbolo: str) -> Dict[str, Any]:
+    def get_quote(
+        self,
+        market: str = "bcba",
+        symbol: str = "",
+        panel: str | None = None,
+        *,
+        mercado: str | None = None,
+        simbolo: str | None = None,
+    ) -> Dict[str, Any]:
         """
         Devuelve {"last": float|None, "chg_pct": float|None}
         chg_pct es la variación diaria en %, si está disponible.
         """
-        mercado = (mercado or "bcba").lower()
-        simbolo = (simbolo or "").upper()
+        resolved_market = (mercado if mercado is not None else market or "bcba").lower()
+        resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
         try:
             self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
+            data = self.iol_market.price_to_json(mercado=resolved_market, simbolo=resolved_symbol)
         except NoAuthException:
             self._market_ready = False
             self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
+            data = self.iol_market.price_to_json(mercado=resolved_market, simbolo=resolved_symbol)
         except Exception as e:
-            logger.warning("get_quote error %s:%s -> %s", mercado, simbolo, e)
+            logger.warning("get_quote error %s:%s -> %s", resolved_market, resolved_symbol, e)
             return {"last": None, "chg_pct": None}
 
         if not isinstance(data, dict):
@@ -278,29 +286,52 @@ class IOLClient:
         last = self._parse_price_fields(data)
         chg_pct = self._parse_chg_pct_fields(data, last)
         if chg_pct is None:
-            logger.warning("chg_pct indeterminado para %s:%s", mercado, simbolo)
+            logger.warning("chg_pct indeterminado para %s:%s", resolved_market, resolved_symbol)
         return {"last": last, "chg_pct": chg_pct}
 
     # -------- Opcional: cotizaciones en batch --------
     def get_quotes_bulk(
         self,
-        items: Iterable[Tuple[str, str]],
+        items: Iterable[Tuple[str, str] | Tuple[str, str, str | None]],
         max_workers: int = 8
     ) -> Dict[Tuple[str, str], Dict[str, Optional[float]]]:
         """
         Descarga cotizaciones para múltiples (mercado, símbolo) en paralelo.
         Retorna: { (mercado, símbolo): {"last": float|None, "chg_pct": float|None} }
         """
-        pairs = [( (m or "bcba").lower(), (s or "").upper() ) for (m, s) in items]
-        if not pairs:
+        requests: list[tuple[str, str, str | None]] = []
+        for raw in items:
+            market: str | None = None
+            symbol: str | None = None
+            panel: str | None = None
+            if isinstance(raw, dict):
+                market = raw.get("market", raw.get("mercado"))
+                symbol = raw.get("symbol", raw.get("simbolo"))
+                panel = raw.get("panel")
+            elif isinstance(raw, (list, tuple)):
+                if len(raw) >= 2:
+                    market = raw[0]
+                    symbol = raw[1]
+                if len(raw) >= 3:
+                    panel = raw[2]
+            else:
+                market = getattr(raw, "market", getattr(raw, "mercado", None))
+                symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
+                panel = getattr(raw, "panel", None)
+
+            norm_market = (market or "bcba").lower()
+            norm_symbol = (symbol or "").upper()
+            requests.append((norm_market, norm_symbol, panel))
+
+        if not requests:
             return {}
         self._ensure_market_auth()
 
         out: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
-        with ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(pairs)))) as ex:
+        with ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(requests)))) as ex:
             fut_map = {
-                ex.submit(self.get_quote, m, s): (m, s)
-                for (m, s) in pairs
+                ex.submit(self.get_quote, m, s, panel): (m, s)
+                for (m, s, panel) in requests
             }
             for fut in as_completed(fut_map):
                 key = fut_map[fut]

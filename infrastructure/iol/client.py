@@ -291,8 +291,8 @@ class IOLClient(IIOLProvider):
 
     def get_quote(
         self,
-        market: str | None = None,
-        symbol: str | None = None,
+        market: str = "bcba",
+        symbol: str = "",
         panel: str | None = None,
         *,
         mercado: str | None = None,
@@ -333,18 +333,44 @@ class IOLClient(IIOLProvider):
 
     def get_quotes_bulk(
         self,
-        items: Iterable[Tuple[str, str]],
+        items: Iterable[Tuple[str, str] | Tuple[str, str, str | None]],
         max_workers: int = 8,
     ) -> Dict[Tuple[str, str], Dict[str, Optional[float]]]:
-        pairs = [((m or "bcba").lower(), (s or "").upper()) for (m, s) in items]
-        if not pairs:
+        requests: list[tuple[str, str, str | None]] = []
+        for raw in items:
+            market: str | None = None
+            symbol: str | None = None
+            panel: str | None = None
+            if isinstance(raw, dict):
+                market = raw.get("market", raw.get("mercado"))
+                symbol = raw.get("symbol", raw.get("simbolo"))
+                panel = raw.get("panel")
+            elif isinstance(raw, (list, tuple)):
+                if len(raw) >= 2:
+                    market = raw[0]
+                    symbol = raw[1]
+                if len(raw) >= 3:
+                    panel = raw[2]
+            else:
+                market = getattr(raw, "market", getattr(raw, "mercado", None))
+                symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
+                panel = getattr(raw, "panel", None)
+
+            norm_market = (market or "bcba").lower()
+            norm_symbol = (symbol or "").upper()
+            requests.append((norm_market, norm_symbol, panel))
+
+        if not requests:
             return {}
         self._ensure_market_auth()
 
         result: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
-        workers = min(max_workers, max(1, len(pairs)))
+        workers = min(max_workers, max(1, len(requests)))
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            future_map = {executor.submit(self.get_quote, m, s): (m, s) for (m, s) in pairs}
+            future_map = {
+                executor.submit(self.get_quote, market, symbol, panel): (market, symbol)
+                for market, symbol, panel in requests
+            }
             for future in as_completed(future_map):
                 key = future_map[future]
                 try:
