@@ -88,3 +88,36 @@ def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware
     assert client.iol_market.bearer_time.tzinfo is None
     assert client.iol_market.bearer_time == aware_moment.replace(tzinfo=None)
     assert call_count == 1
+
+
+def test_get_quote_returns_last_and_chg_pct(
+    monkeypatch: pytest.MonkeyPatch, aware_moment: datetime
+) -> None:
+    """Quick hotfix validation: pytest tests/infrastructure/test_iol_client.py -k get_quote."""
+
+    class ResponseStub:
+        def json(self) -> dict:
+            return {"simbolo": "AAPL", "ultimoPrecio": 123.45, "variacion": 1.5}
+
+    def fake_request(
+        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
+    ) -> ResponseStub:
+        return ResponseStub()
+
+    def fake_now_datetime(cls: type[iol_client_module.TimeProvider]) -> datetime:
+        return aware_moment
+
+    monkeypatch.setattr(
+        iol_client_module.TimeProvider,
+        "now_datetime",
+        classmethod(fake_now_datetime),
+    )
+    monkeypatch.setattr(iol_client_module, "Iol", StubIol)
+    monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+
+    result = client.get_quote("bcba", "AAPL")
+
+    assert result == {"last": 123.45, "chg_pct": 1.5}
