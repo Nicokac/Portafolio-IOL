@@ -40,6 +40,13 @@ _YFINANCE_STATUS_LABELS = {
 _YFINANCE_ERROR_STATUSES = {"error", "failed", "timeout"}
 
 
+_TAB_LABELS = {
+    "tecnico": "Técnico",
+    "riesgo": "Riesgo",
+    "fundamentales": "Fundamentales",
+}
+
+
 def _sanitize_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -505,6 +512,198 @@ def _format_macro_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     return lines or ["_Sin datos macro registrados._"]
 
 
+def _sidebar_expander(label: str, *, expanded: bool = False):
+    expander_fn = getattr(st.sidebar, "expander", None)
+    if callable(expander_fn):
+        return expander_fn(label, expanded=expanded)
+    return st.expander(label, expanded=expanded)
+
+
+def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
+    label = _TAB_LABELS.get(key, str(stats.get("label") or key).title())
+    parts: list[str] = []
+
+    avg = stats.get("avg")
+    if isinstance(avg, (int, float)):
+        parts.append(f"μ {float(avg):.0f} ms")
+
+    percentiles = stats.get("percentiles")
+    if isinstance(percentiles, Mapping):
+        for name, display in (("p50", "P50"), ("p90", "P90"), ("p95", "P95")):
+            value = percentiles.get(name)
+            if isinstance(value, (int, float)):
+                parts.append(f"{display} {float(value):.0f} ms")
+
+    total = stats.get("total")
+    total_int = int(total) if isinstance(total, (int, float)) else 0
+    status_counts = stats.get("status_counts") if isinstance(stats.get("status_counts"), Mapping) else {}
+    status_ratios = stats.get("status_ratios") if isinstance(stats.get("status_ratios"), Mapping) else {}
+
+    success_count = status_counts.get("success")
+    if isinstance(success_count, (int, float)) and total_int:
+        success_ratio = status_ratios.get("success")
+        if isinstance(success_ratio, (int, float)):
+            parts.append(f"OK {int(success_count)}/{total_int} ({success_ratio:.0%})")
+        else:
+            parts.append(f"OK {int(success_count)}/{total_int}")
+
+    error_count = stats.get("error_count")
+    if isinstance(error_count, (int, float)) and total_int:
+        error_ratio = stats.get("error_ratio")
+        if isinstance(error_ratio, (int, float)):
+            parts.append(f"errores {int(error_count)}/{total_int} ({error_ratio:.0%})")
+        else:
+            parts.append(f"errores {int(error_count)}/{total_int}")
+
+    missing_count = stats.get("missing_count")
+    if isinstance(missing_count, (int, float)) and int(missing_count) > 0:
+        parts.append(f"sin dato {int(missing_count)}")
+
+    if not parts:
+        parts.append("sin métricas registradas")
+
+    return format_note(f"⏱️ {label} — {' • '.join(parts)}")
+
+
+def _format_tab_latency_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping) or not data:
+        return ["_Sin latencias registradas._"]
+
+    lines: list[str] = []
+    for key in sorted(data):
+        stats = data.get(key)
+        if not isinstance(stats, Mapping):
+            continue
+        lines.append(_format_tab_latency_entry(key, stats))
+    return lines or ["_Sin latencias registradas._"]
+
+
+def _format_adapter_fallback_line(
+    adapter_label: str, provider_stats: Mapping[str, Any]
+) -> str:
+    provider_label = str(provider_stats.get("label") or "desconocido")
+    count = provider_stats.get("count")
+    fallback_count = provider_stats.get("fallback_count")
+    fallback_ratio = provider_stats.get("fallback_ratio")
+    status_counts = (
+        provider_stats.get("status_counts")
+        if isinstance(provider_stats.get("status_counts"), Mapping)
+        else {}
+    )
+    status_ratios = (
+        provider_stats.get("status_ratios")
+        if isinstance(provider_stats.get("status_ratios"), Mapping)
+        else {}
+    )
+
+    total_int = int(count) if isinstance(count, (int, float)) else 0
+    metrics: list[str] = []
+    if isinstance(fallback_count, (int, float)) and total_int:
+        if isinstance(fallback_ratio, (int, float)):
+            metrics.append(
+                f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})"
+            )
+        elif int(fallback_count):
+            metrics.append(f"fallback {int(fallback_count)}/{total_int}")
+
+    success_count = status_counts.get("success")
+    if isinstance(success_count, (int, float)) and total_int:
+        success_ratio = status_ratios.get("success")
+        if isinstance(success_ratio, (int, float)):
+            metrics.append(f"OK {int(success_count)}/{total_int} ({success_ratio:.0%})")
+        else:
+            metrics.append(f"OK {int(success_count)}/{total_int}")
+
+    error_count = status_counts.get("error")
+    if isinstance(error_count, (int, float)) and total_int:
+        error_ratio = status_ratios.get("error")
+        if isinstance(error_ratio, (int, float)):
+            metrics.append(f"errores {int(error_count)}/{total_int} ({error_ratio:.0%})")
+        else:
+            metrics.append(f"errores {int(error_count)}/{total_int}")
+
+    if not metrics:
+        metrics.append("sin métricas registradas")
+
+    return format_note(
+        f"🛟 {adapter_label} → {provider_label} — {' • '.join(metrics)}"
+    )
+
+
+def _format_adapter_fallback_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin registros de fallbacks._"]
+
+    adapters = data.get("adapters")
+    lines: list[str] = []
+    if isinstance(adapters, Mapping):
+        for key in sorted(adapters):
+            adapter_entry = adapters.get(key)
+            if not isinstance(adapter_entry, Mapping):
+                continue
+            label = str(adapter_entry.get("label") or key).strip() or str(key)
+            providers = adapter_entry.get("providers")
+            if not isinstance(providers, Mapping):
+                continue
+            for provider_key in sorted(providers):
+                provider_stats = providers.get(provider_key)
+                if not isinstance(provider_stats, Mapping):
+                    continue
+                lines.append(_format_adapter_fallback_line(label, provider_stats))
+
+    if not lines:
+        return ["_Sin registros de fallbacks._"]
+
+    provider_totals = data.get("providers")
+    if isinstance(provider_totals, Mapping):
+        aggregated: list[str] = []
+        for provider_key in sorted(provider_totals):
+            stats = provider_totals.get(provider_key)
+            if not isinstance(stats, Mapping):
+                continue
+            label = str(stats.get("label") or provider_key).strip() or str(provider_key)
+            count = stats.get("count")
+            total_int = int(count) if isinstance(count, (int, float)) else 0
+            fallback_count = stats.get("fallback_count")
+            fallback_ratio = stats.get("fallback_ratio")
+            metrics: list[str] = []
+            if isinstance(fallback_count, (int, float)) and total_int:
+                if isinstance(fallback_ratio, (int, float)):
+                    metrics.append(
+                        f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})"
+                    )
+                elif int(fallback_count):
+                    metrics.append(f"fallback {int(fallback_count)}/{total_int}")
+            status_counts = (
+                stats.get("status_counts")
+                if isinstance(stats.get("status_counts"), Mapping)
+                else {}
+            )
+            status_ratios = (
+                stats.get("status_ratios")
+                if isinstance(stats.get("status_ratios"), Mapping)
+                else {}
+            )
+            success_count = status_counts.get("success")
+            if isinstance(success_count, (int, float)) and total_int:
+                success_ratio = status_ratios.get("success")
+                if isinstance(success_ratio, (int, float)):
+                    metrics.append(
+                        f"OK {int(success_count)}/{total_int} ({success_ratio:.0%})"
+                    )
+                else:
+                    metrics.append(f"OK {int(success_count)}/{total_int}")
+            if metrics:
+                aggregated.append(
+                    format_note(f"Σ {label} — {' • '.join(metrics)}")
+                )
+        if aggregated:
+            lines.append("_Totales por proveedor:_")
+            lines.extend(aggregated)
+
+    return lines
+
+
 def _format_opportunities_status(
     data: Optional[dict],
     history: Optional[Sequence[Mapping[str, Any]]] = None,
@@ -728,6 +927,14 @@ def render_health_sidebar() -> None:
         reversed(history_entries), metrics.get("opportunities_stats")
     ):
         sidebar.markdown(line)
+
+    sidebar.markdown("#### 🛰️ Observabilidad")
+    with _sidebar_expander("Latencias por pestaña"):
+        for line in _format_tab_latency_section(metrics.get("tab_latencies")):
+            st.markdown(line)
+    with _sidebar_expander("Fallbacks por adaptador"):
+        for line in _format_adapter_fallback_section(metrics.get("adapter_fallbacks")):
+            st.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
