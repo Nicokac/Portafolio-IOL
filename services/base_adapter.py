@@ -17,6 +17,8 @@ from typing import (
     Tuple,
 )
 
+from services.health import record_adapter_fallback
+
 
 @dataclass
 class AdapterResult:
@@ -72,6 +74,12 @@ class BaseProviderAdapter:
         for provider in self._providers:
             attempt, payload, missing = self._attempt(provider, **context)
             attempts.append(dict(attempt))
+            record_adapter_fallback(
+                adapter=self.__class__.__name__,
+                provider=provider,
+                status=attempt.get("status"),
+                fallback=len(attempts) > 1,
+            )
 
             status = str(attempt.get("status") or "").casefold()
             if status == "success":

@@ -191,6 +191,14 @@ class Settings:
             os.getenv("STUB_MAX_RUNTIME_WARN", cfg.get("STUB_MAX_RUNTIME_WARN", 0.25))
         )
 
+        # --- Snapshots backend configuration ---
+        self.snapshot_backend: str = os.getenv(
+            "SNAPSHOT_BACKEND", cfg.get("SNAPSHOT_BACKEND", "json")
+        )
+        self.snapshot_storage_path: str | None = os.getenv(
+            "SNAPSHOT_STORAGE_PATH", cfg.get("SNAPSHOT_STORAGE_PATH")
+        )
+
         primary_raw = os.getenv(
             "OHLC_PRIMARY_PROVIDER", cfg.get("OHLC_PRIMARY_PROVIDER", "alpha_vantage")
         )

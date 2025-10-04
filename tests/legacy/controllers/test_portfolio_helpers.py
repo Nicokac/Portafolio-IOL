@@ -325,6 +325,7 @@ def test_render_basic_section_with_data(monkeypatch):
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     fig = object()
     monkeypatch.setattr(
         charts_mod,

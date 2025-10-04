@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import time
 
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
@@ -26,6 +27,7 @@ from ui.charts import plot_correlation_heatmap, _apply_layout
 from ui.export import PLOTLY_CONFIG
 from ui.notifications import render_risk_badge
 from shared.errors import AppError
+from services.health import record_tab_latency
 
 
 logger = logging.getLogger(__name__)
@@ -97,22 +99,30 @@ def render_risk_analysis(
     )
     portfolio_symbols = df_view["simbolo"].tolist()
     if len(portfolio_symbols) >= 2:
+        corr_latency: float | None = None
         with st.spinner(f"Calculando correlación ({corr_period})…"):
+            start_time = time.perf_counter()
             try:
                 hist_df = tasvc.portfolio_history(
                     simbolos=portfolio_symbols, period=corr_period
                 )
             except AppError as err:
+                corr_latency = (time.perf_counter() - start_time) * 1000.0
+                record_tab_latency("riesgo", corr_latency, status="error")
                 st.error(str(err))
                 return
             except Exception:
                 logger.exception(
                     "Error al obtener históricos para correlación",
                 )
+                corr_latency = (time.perf_counter() - start_time) * 1000.0
+                record_tab_latency("riesgo", corr_latency, status="error")
                 st.error(
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
                 return
+            corr_latency = (time.perf_counter() - start_time) * 1000.0
+        record_tab_latency("riesgo", corr_latency, status="success")
         returns_for_corr = compute_returns(hist_df)
         fig = plot_correlation_heatmap(hist_df)
         if fig:
@@ -184,22 +194,30 @@ def render_risk_analysis(
             help_text="Se detectaron eventos de riesgo relevantes para tus posiciones recientes.",
         )
     if portfolio_symbols:
+        risk_latency: float | None = None
         with st.spinner("Descargando históricos…"):
+            start_time = time.perf_counter()
             try:
                 prices_df = tasvc.portfolio_history(
                     simbolos=portfolio_symbols, period="1y"
                 )
             except AppError as err:
+                risk_latency = (time.perf_counter() - start_time) * 1000.0
+                record_tab_latency("riesgo", risk_latency, status="error")
                 st.error(str(err))
                 return
             except Exception:
                 logger.exception(
                     "Error al obtener históricos para análisis de riesgo",
                 )
+                risk_latency = (time.perf_counter() - start_time) * 1000.0
+                record_tab_latency("riesgo", risk_latency, status="error")
                 st.error(
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
                 return
+            risk_latency = (time.perf_counter() - start_time) * 1000.0
+        record_tab_latency("riesgo", risk_latency, status="success")
         if prices_df.empty:
             st.info(
                 "No se pudieron obtener datos históricos para calcular métricas de riesgo."

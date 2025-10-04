@@ -1,4 +1,6 @@
 import logging
+import time
+from typing import Any, Mapping
 
 import streamlit as st
 
@@ -15,8 +17,11 @@ from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
 from shared.favorite_symbols import get_persistent_favorites
 from services.notifications import NotificationFlags, NotificationsService
+from services.health import record_tab_latency
 from services.portfolio_view import PortfolioViewModelService
+from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_suffix
+from shared.utils import format_money
 
 from .load_data import load_portfolio_data
 from .charts import render_basic_section, render_advanced_analysis
@@ -45,6 +50,78 @@ def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[s
         if suffix.strip() and suffix.strip() not in updated[4]:
             updated[4] = f"{updated[4]}{suffix}"
     return updated
+
+
+def _render_snapshot_comparison_controls(viewmodel) -> None:
+    snapshot_id = getattr(viewmodel, "snapshot_id", None)
+    catalog = getattr(viewmodel, "snapshot_catalog", {}) or {}
+    if not snapshot_id or not isinstance(catalog, Mapping):
+        return
+
+    options = list(catalog.get("portfolio", ()))
+    options = [opt for opt in options if getattr(opt, "id", None) and opt.id != snapshot_id]
+    if not options:
+        return
+
+    default_index = 0
+    baseline_id = getattr(getattr(viewmodel, "comparison", None), "reference_id", None)
+    if baseline_id:
+        for idx, opt in enumerate(options):
+            if opt.id == baseline_id:
+                default_index = idx
+                break
+
+    labels = [getattr(opt, "label", str(idx)) for idx, opt in enumerate(options)]
+    selected_idx = st.selectbox(
+        "Comparar portafolio con",
+        options=range(len(options)),
+        format_func=lambda i: labels[i],
+        index=min(default_index, len(options) - 1),
+        key="portfolio_snapshot_compare",
+    )
+
+    try:
+        selected = options[selected_idx]
+    except (IndexError, TypeError):
+        return
+
+    comparison = snapshot_service.compare_snapshots(snapshot_id, getattr(selected, "id", None))
+    if not comparison:
+        st.info("No hay datos comparativos disponibles para esta selección.")
+        return
+
+    _render_snapshot_metrics(comparison, getattr(selected, "label", "Snapshot"))
+
+
+def _render_snapshot_metrics(comparison: Mapping[str, Any], label: str) -> None:
+    totals_a = comparison.get("totals_a") if isinstance(comparison, Mapping) else {}
+    totals_b = comparison.get("totals_b") if isinstance(comparison, Mapping) else {}
+    delta = comparison.get("delta") if isinstance(comparison, Mapping) else {}
+
+    st.caption(f"Evolución frente a {label}")
+    metrics = (
+        ("Valorizado actual", "total_value"),
+        ("Costo actual", "total_cost"),
+        ("P/L actual", "total_pl"),
+    )
+    cols = st.columns(len(metrics))
+    for col, (title, key) in zip(cols, metrics):
+        current_val = _as_float((totals_a or {}).get(key))
+        baseline_val = _as_float((totals_b or {}).get(key))
+        delta_val = _as_float((delta or {}).get(key))
+        if current_val is None:
+            continue
+        delta_text = None if delta_val is None else format_money(delta_val)
+        col.metric(title, format_money(current_val), delta=delta_text)
+        if baseline_val is not None:
+            col.caption(f"Referencia: {format_money(baseline_val)}")
+
+
+def _as_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def render_portfolio_section(container, cli, fx_rates):
@@ -89,6 +166,7 @@ def render_portfolio_section(container, cli, fx_rates):
         df_view = viewmodel.positions
 
         if tab_idx == 0:
+            _render_snapshot_comparison_controls(viewmodel)
             render_basic_section(
                 df_view,
                 controls,
@@ -97,6 +175,7 @@ def render_portfolio_section(container, cli, fx_rates):
                 totals=viewmodel.totals,
                 historical_total=viewmodel.historical_total,
                 contribution_metrics=viewmodel.contributions,
+                snapshot=snapshot,
             )
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)
@@ -225,7 +304,9 @@ def render_portfolio_section(container, cli, fx_rates):
                                 "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
                             )
 
+                        indicator_latency: float | None = None
                         try:
+                            start_time = time.perf_counter()
                             df_ind = tasvc.indicators_for(
                                 sym,
                                 period=period,
@@ -242,17 +323,25 @@ def render_portfolio_section(container, cli, fx_rates):
                                 ichi_base=ichi_base,
                                 ichi_span=ichi_span,
                             )
+                            indicator_latency = (time.perf_counter() - start_time) * 1000.0
                         except AppError as err:
+                            if indicator_latency is None:
+                                indicator_latency = (time.perf_counter() - start_time) * 1000.0
+                            record_tab_latency("tecnico", indicator_latency, status="error")
                             st.error(str(err))
                             return
                         except Exception:
                             logger.exception(
                                 "Error al obtener indicadores técnicos para %s", sym
                             )
+                            if indicator_latency is None:
+                                indicator_latency = (time.perf_counter() - start_time) * 1000.0
+                            record_tab_latency("tecnico", indicator_latency, status="error")
                             st.error(
                                 "No se pudieron obtener indicadores técnicos, intente más tarde"
                             )
                             return
+                        record_tab_latency("tecnico", indicator_latency, status="success")
                         if df_ind.empty:
                             st.info(
                                 "No se pudo descargar histórico para ese símbolo/periodo/intervalo."
@@ -289,19 +378,29 @@ def render_portfolio_section(container, cli, fx_rates):
                             strat = st.selectbox(
                                 "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
                             )
+                            backtest_latency: float | None = None
                             try:
+                                start_time = time.perf_counter()
                                 bt = tasvc.backtest(df_ind, strategy=strat)
+                                backtest_latency = (time.perf_counter() - start_time) * 1000.0
                             except AppError as err:
+                                if backtest_latency is None:
+                                    backtest_latency = (time.perf_counter() - start_time) * 1000.0
+                                record_tab_latency("tecnico", backtest_latency, status="error")
                                 st.error(str(err))
                                 return
                             except Exception:
                                 logger.exception(
                                     "Error al ejecutar backtesting para %s", sym
                                 )
+                                if backtest_latency is None:
+                                    backtest_latency = (time.perf_counter() - start_time) * 1000.0
+                                record_tab_latency("tecnico", backtest_latency, status="error")
                                 st.error(
                                     "No se pudo ejecutar el backtesting, intente más tarde"
                                 )
                                 return
+                            record_tab_latency("tecnico", backtest_latency, status="success")
                             if bt.empty:
                                 st.info("Sin datos suficientes para el backtesting.")
                             else:

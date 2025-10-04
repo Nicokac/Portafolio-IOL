@@ -395,9 +395,10 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
 
     assert fake_st.session_state["portfolio_tab"] == 4
     assert fake_st.selectbox_calls
-    first_select = fake_st.selectbox_calls[0]
-    assert first_select["label"] == "Seleccioná un símbolo (CEDEAR / ETF)"
-    assert first_select["options"] == ["GGAL", "AAPL"]
+    symbol_select = next(
+        call for call in fake_st.selectbox_calls if call["label"] == "Seleccioná un símbolo (CEDEAR / ETF)"
+    )
+    assert symbol_select["options"] == ["GGAL", "AAPL"]
     # Ensure advanced analysis helpers were not triggered in this branch
     advanced.assert_not_called()
     basic.assert_not_called()
@@ -639,6 +640,7 @@ def test_render_basic_section_renders_timeline_and_heatmap(monkeypatch: pytest.M
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
 
     df_view = pd.DataFrame(
@@ -724,6 +726,7 @@ def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.Monk
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
 
     df_view = pd.DataFrame(
         {

@@ -209,6 +209,38 @@ El muestreo superior refleja la combinación live + fallback que hoy ve la UI: l
 
 El botón **"Descargar resultados (.csv)"** replica esta grilla y genera un archivo con las mismas columnas visibles en la UI (incluidos `score_compuesto`, el filtro aplicado y el enlace a Yahoo). Así se asegura paridad total entre lo que se analiza en pantalla y lo que se comparte para backtesting o QA, sin importar si la sesión proviene del origen `yahoo` o `stub`.
 
+## Exportación de análisis enriquecido
+
+La aplicación permite llevarte un paquete completo de métricas, rankings y visualizaciones del portafolio sin salir del dashboard o desde la línea de comandos si trabajás con snapshots persistidos.
+
+### Desde el dashboard
+
+1. Abrí la pestaña **📂 Portafolio** y desplegá el acordeón **📦 Exportar análisis enriquecido**.
+2. Seleccioná las métricas que querés incluir en el reporte (valor total, P/L, cantidad de posiciones, etc.). Cada opción muestra una breve descripción para que identifiques rápidamente qué KPI estás incorporando.
+3. Elegí los gráficos que se van a embeber en el Excel (por defecto se incluyen P/L Top N, composición por tipo, distribución valorizada, la evolución histórica y el mapa de calor por símbolo/tipo). Si Kaleido no está disponible la UI te lo indicará para que habilites la dependencia.
+4. Activá o desactivá la exportación de rankings e historial y definí el límite de filas para cada ranking.
+5. Descargá el ZIP con los CSV (`kpis.csv`, `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.) o el Excel enriquecido (`*_analisis.xlsx`) que incluye todas las tablas en hojas dedicadas y los gráficos renderizados como imágenes.
+
+### Desde la línea de comandos
+
+El script `scripts/export_analysis.py` procesa snapshots serializados en JSON (por ejemplo los generados por jobs batch o instrumentación de QA) y genera los mismos artefactos enriquecidos que la UI.
+
+```bash
+python scripts/export_analysis.py \
+  --input .cache/portfolio_snapshots \
+  --output ./exports/nocturno \
+  --metrics total_value total_pl total_pl_pct positions symbols \
+  --charts pl_top composition timeline heatmap \
+  --limit 15
+```
+
+- El argumento `--metrics help` lista todos los KPIs disponibles; `--charts help` hace lo propio con los gráficos.
+- Con `--formats csv` o `--formats excel` podés limitar la salida a un solo formato.
+- Cada snapshot genera un subdirectorio dentro de `--output` con todos los CSV y, si corresponde, el Excel `analysis.xlsx`.
+- Se adjunta además `summary.csv` en la raíz con los KPIs crudos (`raw_value`) de cada snapshot para facilitar comparaciones rápidas o integraciones en pipelines.
+
+> Dependencias: asegurate de instalar `kaleido` y `XlsxWriter` (ambos incluidos en `requirements.txt`) para que el script pueda renderizar los gráficos y escribir el Excel correctamente.
+
 Cada registro respeta los principios de la estrategia Andy: payout y P/E saludables, rachas y CAGR positivos, EPS forward por encima del trailing, buybacks y crecimiento de ingresos cuando corresponde. En la release actual, ese set determinista permite verificar que `score_compuesto` se mantenga estable tanto en modo `yahoo` como `stub`, sosteniendo la comparabilidad del ranking.
 
 Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas contextuales del caption principal. Los tests automatizados siguen apoyándose en este dataset extendido para validar diversidad sectorial, completitud de fundamentals y la presencia de la nueva columna `Score`.

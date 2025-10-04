@@ -113,6 +113,7 @@ def _patch_favorite_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
 
 
 def _portfolio_frame() -> pd.DataFrame:

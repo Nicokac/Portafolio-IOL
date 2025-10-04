@@ -46,6 +46,46 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
             "detail": "cache",
             "ts": 6,
         },
+        "tab_latencies": {
+            "tecnico": {
+                "label": "Técnico",
+                "avg": 250.0,
+                "percentiles": {"p50": 200.0, "p90": 300.0, "p95": 320.0},
+                "status_counts": {"success": 3},
+                "status_ratios": {"success": 1.0},
+                "total": 3,
+                "error_count": 0,
+                "error_ratio": 0.0,
+                "missing_count": 0,
+            }
+        },
+        "adapter_fallbacks": {
+            "adapters": {
+                "macroadapter": {
+                    "label": "MacroAdapter",
+                    "providers": {
+                        "worldbank": {
+                            "label": "World Bank",
+                            "count": 2,
+                            "fallback_count": 1,
+                            "fallback_ratio": 0.5,
+                            "status_counts": {"success": 2},
+                            "status_ratios": {"success": 1.0},
+                        }
+                    },
+                }
+            },
+            "providers": {
+                "worldbank": {
+                    "label": "World Bank",
+                    "count": 2,
+                    "fallback_count": 1,
+                    "fallback_ratio": 0.5,
+                    "status_counts": {"success": 2},
+                    "status_ratios": {"success": 1.0},
+                }
+            },
+        },
     }
 
     _render(health_sidebar, metrics)
@@ -59,6 +99,11 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     assert any("Uso de caché" in text for text in markdown_calls)
     assert any("Portafolio" in text and "200" in text for text in markdown_calls)
     assert any("Cotizaciones" in text and "350" in text for text in markdown_calls)
+    assert any("Observabilidad" in text for text in markdown_calls)
+
+    expanders = health_sidebar.st.get_records("expander")
+    assert any(entry.get("label") == "Latencias por pestaña" for entry in expanders)
+    assert any(entry.get("label") == "Fallbacks por adaptador" for entry in expanders)
 
 
 def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
@@ -79,6 +124,8 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
             "detail": "sin datos",
             "ts": None,
         },
+        "tab_latencies": {},
+        "adapter_fallbacks": {},
     }
 
     _render(health_sidebar, metrics)
@@ -90,6 +137,7 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     assert "_Sin uso de caché registrado._" in markdown_calls
     assert any(text.startswith("- Portafolio: sin registro") for text in markdown_calls)
     assert any("Cotizaciones" in text and "sin datos" in text for text in markdown_calls)
+    assert any("Observabilidad" in text for text in markdown_calls)
 
 
 def test_render_health_sidebar_with_yfinance_history(
@@ -282,6 +330,8 @@ def _dummy_metrics() -> dict[str, Any]:
                 "avg_delta_ms": 15.0,
             },
         },
+        "tab_latencies": {},
+        "adapter_fallbacks": {},
     }
 
 
@@ -419,6 +469,20 @@ def test_render_health_sidebar_includes_history_section(health_sidebar, _dummy_m
     )
     for line in expected_history_lines:
         assert line in health_sidebar.st.sidebar.markdowns
+
+
+def test_render_health_sidebar_highlights_macro_section(health_sidebar, _dummy_metrics) -> None:
+    _render(health_sidebar, _dummy_metrics)
+
+    macro_lines = [
+        line
+        for line in health_sidebar.st.sidebar.markdowns
+        if "Macro" in line or "Totales macro" in line
+    ]
+    assert macro_lines, "Expected macro section lines to be rendered"
+    assert any("Totales macro" in line for line in macro_lines)
+    assert any("fallback" in line.lower() for line in macro_lines)
+    assert any("Latencia" in line for line in macro_lines)
 
 
 def test_record_opportunities_report_rotates_history(monkeypatch: pytest.MonkeyPatch) -> None:
