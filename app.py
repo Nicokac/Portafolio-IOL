@@ -41,7 +41,11 @@ from ui.health_sidebar import render_health_sidebar
 from ui.login import render_login_page
 from ui.footer import render_footer
 #from controllers.fx import render_fx_section
-from controllers.portfolio import render_portfolio_section
+from controllers.portfolio.portfolio import (
+    default_notifications_service_factory,
+    default_view_model_service_factory,
+    render_portfolio_section,
+)
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 
@@ -91,17 +95,32 @@ def main(argv: list[str] | None = None):
 
     can_render_opportunities = FEATURE_OPPORTUNITIES_TAB and hasattr(st, "tabs")
 
+    portfolio_section_kwargs = {
+        "view_model_service_factory": default_view_model_service_factory,
+        "notifications_service_factory": default_notifications_service_factory,
+    }
+
     if can_render_opportunities:
         with main_col:
             tab_labels = ["Portafolio", "Empresas con oportunidad"]
             portfolio_tab, opportunities_tab = st.tabs(tab_labels)
-        refresh_secs = render_portfolio_section(portfolio_tab, cli, fx_rates)
+        refresh_secs = render_portfolio_section(
+            portfolio_tab,
+            cli,
+            fx_rates,
+            **portfolio_section_kwargs,
+        )
         with opportunities_tab:
             from ui.tabs.opportunities import render_opportunities_tab
 
             render_opportunities_tab()
     else:
-        refresh_secs = render_portfolio_section(main_col, cli, fx_rates)
+        refresh_secs = render_portfolio_section(
+            main_col,
+            cli,
+            fx_rates,
+            **portfolio_section_kwargs,
+        )
         if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
             logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
     render_footer()

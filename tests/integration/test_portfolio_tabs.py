@@ -368,6 +368,7 @@ def _run_for_tab(tab_index: int, monkeypatch: pytest.MonkeyPatch) -> _FakeStream
 
     fake_st = _FakeStreamlit(radio_sequence=[tab_index])
     monkeypatch.setattr(portfolio_mod, "st", fake_st)
+    portfolio_mod.reset_portfolio_services()
     monkeypatch.setattr(charts_mod, "st", fake_st)
     monkeypatch.setattr(risk_mod, "st", fake_st)
     monkeypatch.setattr(tables_mod, "st", fake_st)
@@ -398,10 +399,21 @@ def _run_for_tab(tab_index: int, monkeypatch: pytest.MonkeyPatch) -> _FakeStream
     )
     monkeypatch.setattr(portfolio_mod, "render_fundamental_data", lambda *a, **k: None)
     monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", lambda *a, **k: None)
-    monkeypatch.setattr(portfolio_mod, "view_model_service", SimpleNamespace(get_portfolio_view=lambda **_: _snapshot(df)))
     monkeypatch.setattr(portfolio_mod, "map_to_us_ticker", lambda sym: f"{sym}.US")
 
-    refresh = portfolio_mod.render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={"ccl": 890.0})
+    def _view_model_factory():
+        return SimpleNamespace(get_portfolio_view=lambda **_: _snapshot(df))
+
+    def _notifications_factory():
+        return SimpleNamespace(get_flags=lambda: portfolio_mod.NotificationFlags())
+
+    refresh = portfolio_mod.render_portfolio_section(
+        _DummyContainer(),
+        cli=object(),
+        fx_rates={"ccl": 890.0},
+        view_model_service_factory=_view_model_factory,
+        notifications_service_factory=_notifications_factory,
+    )
     assert refresh == controls.refresh_secs
     assert not fake_st.errors
     return fake_st

@@ -206,6 +206,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         notifications: NotificationFlags | None = None,
     ):
         portfolio_mod.st = fake_st
+        portfolio_mod.reset_portfolio_services()
         monkeypatch.setattr(portfolio_mod, "render_favorite_badges", lambda *a, **k: None)
         monkeypatch.setattr(portfolio_mod, "render_favorite_toggle", lambda *a, **k: None)
 
@@ -260,7 +261,8 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
                 contribution_metrics=PortfolioContributionMetrics.empty(),
             )
 
-        monkeypatch.setattr(portfolio_mod.view_model_service, "get_portfolio_view", _fake_snapshot)
+        def _view_model_factory():
+            return SimpleNamespace(get_portfolio_view=_fake_snapshot)
 
         basic = MagicMock()
         advanced = MagicMock()
@@ -273,22 +275,43 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "render_risk_analysis", risk)
         monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", fundamental)
         monkeypatch.setattr(portfolio_mod, "render_technical_badge", technical_badge)
-        monkeypatch.setattr(
-            portfolio_mod.notifications_service,
-            "get_flags",
-            lambda: notifications or NotificationFlags(),
-        )
+        def _notifications_factory():
+            return SimpleNamespace(get_flags=lambda: notifications or NotificationFlags())
 
-        return portfolio_mod, basic, advanced, risk, fundamental, technical_badge
+        return (
+            portfolio_mod,
+            basic,
+            advanced,
+            risk,
+            fundamental,
+            technical_badge,
+            _view_model_factory,
+            _notifications_factory,
+        )
 
     return _configure
 
 
 def test_render_portfolio_section_updates_tab_state(_portfolio_setup) -> None:
     fake_st = FakeStreamlit(radio_sequence=[1])
-    portfolio_mod, basic, advanced, risk, fundamental, technical_badge = _portfolio_setup(fake_st)
+    (
+        portfolio_mod,
+        basic,
+        advanced,
+        risk,
+        fundamental,
+        technical_badge,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(fake_st)
 
-    refresh_secs = render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={})
+    refresh_secs = render_portfolio_section(
+        _DummyContainer(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
 
     assert refresh_secs == 30
     assert fake_st.session_state["portfolio_tab"] == 1
@@ -303,9 +326,20 @@ def test_render_portfolio_section_updates_tab_state(_portfolio_setup) -> None:
 
 def test_render_portfolio_section_tab_labels_without_flags(_portfolio_setup) -> None:
     fake_st = FakeStreamlit(radio_sequence=[0])
-    _portfolio_setup(fake_st)
+    (
+        portfolio_mod,
+        *_rest,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(fake_st)
 
-    render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={})
+    render_portfolio_section(
+        _DummyContainer(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
 
     labels = fake_st.radio_calls[0]["display_labels"]
     suffixes = {
@@ -320,11 +354,24 @@ def test_render_portfolio_section_tab_labels_without_flags(_portfolio_setup) -> 
 def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfolio_setup) -> None:
     fake_st = FakeStreamlit(radio_sequence=[2])
     flags = NotificationFlags(risk_alert=True, technical_signal=True, upcoming_earnings=True)
-    portfolio_mod, basic, advanced, risk, fundamental, technical_badge = _portfolio_setup(
-        fake_st, notifications=flags
-    )
+    (
+        portfolio_mod,
+        basic,
+        advanced,
+        risk,
+        fundamental,
+        technical_badge,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(fake_st, notifications=flags)
 
-    render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={})
+    render_portfolio_section(
+        _DummyContainer(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
 
     labels = fake_st.radio_calls[0]["display_labels"]
     assert labels[2].endswith(tab_badge_suffix("risk"))
@@ -381,7 +428,16 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     def _ta_factory():
         return DummyTA()
 
-    portfolio_mod, basic, advanced, risk, fundamental, technical_badge = _portfolio_setup(
+    (
+        portfolio_mod,
+        basic,
+        advanced,
+        risk,
+        fundamental,
+        technical_badge,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(
         fake_st,
         all_symbols=["GGAL", "AAPL"],
         notifications=NotificationFlags(technical_signal=True),
@@ -391,7 +447,13 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     monkeypatch.setattr(portfolio_mod, "render_fundamental_data", MagicMock())
     monkeypatch.setattr(portfolio_mod, "plot_technical_analysis_chart", lambda df, fast, slow: {"df": df, "fast": fast, "slow": slow})
 
-    render_portfolio_section(_DummyContainer(), cli=object(), fx_rates={"ccl": 1000.0})
+    render_portfolio_section(
+        _DummyContainer(),
+        cli=object(),
+        fx_rates={"ccl": 1000.0},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
 
     assert fake_st.session_state["portfolio_tab"] == 4
     assert fake_st.selectbox_calls
