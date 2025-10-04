@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from infrastructure.iol import client as iol_client_module
+from infrastructure.iol.legacy import iol_client as legacy_module
 
 
 class FakeAuth:
