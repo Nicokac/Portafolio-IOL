@@ -375,6 +375,15 @@ class IOLClient(IIOLProvider):
                 key = future_map[future]
                 try:
                     result[key] = future.result()
+                except requests.HTTPError as exc:
+                    response = exc.response
+                    if response is not None and response.status_code == 500:
+                        market, symbol = key
+                        logger.warning(
+                            "IOL 500 → omitiendo símbolo %s:%s", market, symbol
+                        )
+                        continue
+                    raise
                 except Exception as exc:  # pragma: no cover - defensive guard
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], exc)
                     result[key] = {"last": None, "chg_pct": None}
