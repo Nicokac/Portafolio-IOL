@@ -11,6 +11,9 @@ from typing import Callable, Iterable, Mapping, Optional
 import numpy as np
 import pandas as pd
 import pytest
+
+pytest.importorskip("streamlit.testing.v1")
+
 from streamlit.runtime.secrets import Secrets
 from streamlit.testing.v1 import AppTest
 

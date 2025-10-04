@@ -6,7 +6,7 @@ import streamlit as st
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.tables import render_totals, render_table
-from ui.export import PLOTLY_CONFIG
+from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts import (
     _apply_layout,
@@ -39,6 +39,7 @@ def render_basic_section(
     favorites: FavoriteSymbols | None = None,
     historical_total=None,
     contribution_metrics=None,
+    snapshot=None,
 ):
     """Render totals, table and basic charts for the portfolio."""
     favorites = favorites or get_persistent_favorites()
@@ -74,6 +75,15 @@ def render_basic_section(
         return
 
     render_totals(df_view, ccl_rate=ccl_rate, totals=totals)
+    render_portfolio_exports(
+        snapshot=snapshot,
+        df_view=df_view,
+        totals=totals,
+        historical_total=historical_total,
+        contribution_metrics=contribution_metrics,
+        filename_prefix="portafolio",
+        ranking_limit=max(5, getattr(controls, "top_n", 10)),
+    )
     render_table(
         df_view,
         controls.order_by,
