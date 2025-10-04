@@ -47,6 +47,23 @@ _TAB_LABELS = {
 }
 
 
+_RISK_SEVERITY_ICONS = {
+    "critical": "🛑",
+    "high": "🚨",
+    "warning": "⚠️",
+    "medium": "⚠️",
+    "low": "ℹ️",
+}
+
+_RISK_SEVERITY_LABELS = {
+    "critical": "Críticas",
+    "high": "Altas",
+    "warning": "Advertencias",
+    "medium": "Medias",
+    "low": "Bajas",
+}
+
+
 def _sanitize_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -58,6 +75,196 @@ def _normalize_status_key(value: Any) -> str:
     text = _sanitize_text(value)
     return text.casefold() if text else ""
 
+
+def _risk_severity_badge(value: Any) -> tuple[str, str]:
+    key = _normalize_status_key(value)
+    icon = _RISK_SEVERITY_ICONS.get(key, "ℹ️")
+    label = _RISK_SEVERITY_LABELS.get(key)
+    if not label:
+        raw_text = _sanitize_text(value)
+        label = raw_text.title() if raw_text else "Desconocido"
+    return icon, label
+
+
+def _format_risk_summary(data: Optional[Mapping[str, Any]]) -> str:
+    if not isinstance(data, Mapping):
+        return "_Sin incidencias de riesgo registradas._"
+
+    total = data.get("total")
+    if not isinstance(total, (int, float)) or int(total) <= 0:
+        return "_Sin incidencias de riesgo registradas._"
+
+    total_int = int(total)
+    severity_stats = data.get("by_severity") if isinstance(data.get("by_severity"), Mapping) else {}
+    severity_tokens: list[str] = []
+    if isinstance(severity_stats, Mapping):
+        for key in sorted(severity_stats):
+            stats = severity_stats.get(key)
+            if not isinstance(stats, Mapping):
+                continue
+            count_val = stats.get("count")
+            if not isinstance(count_val, (int, float)):
+                continue
+            count_int = int(count_val)
+            if count_int <= 0:
+                continue
+            icon, label = _risk_severity_badge(key)
+            severity_tokens.append(f"{icon} {label} {count_int}")
+
+    fallback_count = data.get("fallback_count")
+    fallback_ratio = data.get("fallback_ratio")
+    if isinstance(fallback_count, (int, float)) and total_int:
+        fallback_int = int(fallback_count)
+        if fallback_int:
+            if isinstance(fallback_ratio, (int, float)):
+                severity_tokens.append(
+                    f"🛟 Fallbacks {fallback_int}/{total_int} ({fallback_ratio:.0%})"
+                )
+            else:
+                severity_tokens.append(f"🛟 Fallbacks {fallback_int}/{total_int}")
+
+    tail = f" — {' • '.join(severity_tokens)}" if severity_tokens else ""
+    return format_note(f"🚨 Incidencias {total_int}{tail}")
+
+
+def _format_risk_latest(entry: Optional[Mapping[str, Any]]) -> Optional[str]:
+    if not isinstance(entry, Mapping):
+        return None
+
+    category = _sanitize_text(entry.get("category")) or "desconocido"
+    icon, severity_label = _risk_severity_badge(entry.get("severity"))
+
+    ts_value = entry.get("ts")
+    ts_text: Optional[str] = None
+    if isinstance(ts_value, (int, float)):
+        ts_text = _format_timestamp(float(ts_value))
+    elif isinstance(ts_value, str):
+        try:
+            ts_text = _format_timestamp(float(ts_value))
+        except ValueError:
+            ts_text = None
+    if not ts_text:
+        ts_text = "Sin registro"
+
+    detail = _sanitize_text(entry.get("detail"))
+    detail_suffix = f" — {detail}" if detail else ""
+
+    fallback_flag = entry.get("fallback")
+    fallback_suffix = " • 🛟 con fallback" if bool(fallback_flag) else ""
+
+    source_text = _sanitize_text(entry.get("source"))
+    source_suffix = f" • origen: {source_text}" if source_text else ""
+
+    tags = entry.get("tags")
+    tags_suffix = ""
+    if isinstance(tags, Iterable) and not isinstance(tags, (str, bytes, bytearray)):
+        tag_tokens = [str(tag).strip() for tag in tags if str(tag).strip()]
+        if tag_tokens:
+            tags_suffix = f" • tags: {', '.join(tag_tokens)}"
+
+    return format_note(
+        f"{icon} Última incidencia en {category}: {severity_label} • {ts_text}"
+        f"{fallback_suffix}{source_suffix}{tags_suffix}{detail_suffix}"
+    )
+
+
+def _format_risk_detail_line(category: str, stats: Mapping[str, Any]) -> str:
+    label = _sanitize_text(stats.get("label")) or category or "desconocido"
+    count_val = stats.get("count")
+    count_int = int(count_val) if isinstance(count_val, (int, float)) else 0
+
+    severity_counts = stats.get("severity_counts") if isinstance(stats.get("severity_counts"), Mapping) else {}
+    severity_tokens: list[str] = []
+    if isinstance(severity_counts, Mapping):
+        for severity_key in sorted(severity_counts):
+            raw_value = severity_counts.get(severity_key)
+            if not isinstance(raw_value, (int, float)):
+                continue
+            value_int = int(raw_value)
+            if value_int <= 0:
+                continue
+            icon, severity_label = _risk_severity_badge(severity_key)
+            severity_tokens.append(f"{icon} {severity_label} {value_int}")
+
+    fallback_token: Optional[str] = None
+    fallback_count = stats.get("fallback_count")
+    fallback_ratio = stats.get("fallback_ratio")
+    if isinstance(fallback_count, (int, float)) and count_int:
+        fallback_int = int(fallback_count)
+        if fallback_int:
+            if isinstance(fallback_ratio, (int, float)):
+                fallback_token = f"Fallbacks 🛟 {fallback_int}/{count_int} ({fallback_ratio:.0%})"
+            else:
+                fallback_token = f"Fallbacks 🛟 {fallback_int}/{count_int}"
+    metrics_parts = [token for token in severity_tokens if token]
+    if fallback_token:
+        metrics_parts.append(fallback_token)
+    metrics_summary = " • ".join(metrics_parts) if metrics_parts else "sin desglose"
+
+    ts_value = stats.get("last_ts")
+    ts_text = None
+    if isinstance(ts_value, (int, float)):
+        ts_text = _format_timestamp(float(ts_value))
+
+    last_severity = stats.get("last_severity")
+    last_detail = _sanitize_text(stats.get("last_detail"))
+    last_fallback = stats.get("last_fallback")
+    last_source = _sanitize_text(stats.get("last_source"))
+    last_tags = stats.get("last_tags")
+
+    status_parts: list[str] = []
+    if last_severity:
+        icon, severity_label = _risk_severity_badge(last_severity)
+        status_parts.append(f"Último: {icon} {severity_label}")
+    if last_fallback:
+        status_parts.append("Fallback reciente")
+    if last_source:
+        status_parts.append(f"origen: {last_source}")
+    if ts_text:
+        status_parts.append(ts_text)
+    if isinstance(last_tags, Iterable) and not isinstance(last_tags, (str, bytes, bytearray)):
+        tag_tokens = [str(tag).strip() for tag in last_tags if str(tag).strip()]
+        if tag_tokens:
+            status_parts.append("tags: " + ", ".join(tag_tokens))
+    if last_detail:
+        status_parts.append(last_detail)
+
+    detail_suffix = f" • {' | '.join(status_parts)}" if status_parts else ""
+
+    return format_note(
+        f"🧮 {label} — {count_int} incidencias • {metrics_summary}{detail_suffix}"
+    )
+
+
+def _format_risk_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    summary_line = _format_risk_summary(data)
+    if summary_line.startswith("_Sin incidencias"):
+        return [summary_line]
+
+    lines = [summary_line]
+    if isinstance(data, Mapping):
+        latest_line = _format_risk_latest(data.get("latest"))
+        if latest_line:
+            lines.append(latest_line)
+    return lines
+
+
+def _format_risk_detail_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin incidencias registradas._"]
+
+    categories = data.get("by_category")
+    if not isinstance(categories, Mapping) or not categories:
+        return ["_Sin incidencias registradas._"]
+
+    lines: list[str] = []
+    for key in sorted(categories):
+        stats = categories.get(key)
+        if not isinstance(stats, Mapping):
+            continue
+        lines.append(_format_risk_detail_line(str(key), stats))
+
+    return lines or ["_Sin incidencias registradas._"]
 
 def _extract_yfinance_history(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     history_raw = data.get("history")
@@ -927,6 +1134,13 @@ def render_health_sidebar() -> None:
         reversed(history_entries), metrics.get("opportunities_stats")
     ):
         sidebar.markdown(line)
+
+    sidebar.markdown("#### 🚨 Incidencias de riesgo")
+    for line in _format_risk_section(metrics.get("risk_incidents")):
+        sidebar.markdown(line)
+    with _sidebar_expander("Detalle de incidencias de riesgo"):
+        for line in _format_risk_detail_section(metrics.get("risk_incidents")):
+            st.markdown(line)
 
     sidebar.markdown("#### 🛰️ Observabilidad")
     with _sidebar_expander("Latencias por pestaña"):
