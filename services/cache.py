@@ -88,8 +88,12 @@ def _trigger_logout() -> None:
         raise
 
 
-def _normalize_quote(raw: dict) -> dict:
+def _normalize_quote(raw: dict | None) -> dict:
     """Extract and compute basic quote information."""
+
+    if not isinstance(raw, dict) or not raw:
+        return {"last": None, "chg_pct": None}
+
     data = {"last": raw.get("last"), "chg_pct": raw.get("chg_pct")}
     if data.get("chg_pct") is None:
         try:
@@ -256,9 +260,18 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         if callable(get_bulk):
             data = get_bulk(items)
             if isinstance(data, dict):
+                normalized_bulk = {}
                 for k, v in data.items():
-                    data[k] = _normalize_quote(v)
-                    logger.debug("quote %s:%s -> %s", k[0], k[1], data[k])
+                    if v is None:
+                        logger.warning(
+                            "get_quotes_bulk returned empty entry for %s:%s", k[0], k[1]
+                        )
+                        continue
+                    quote = _normalize_quote(v)
+                    if isinstance(quote, dict):
+                        normalized_bulk[k] = quote
+                        logger.debug("quote %s:%s -> %s", k[0], k[1], quote)
+                data = normalized_bulk
             elapsed = (time.time() - start) * 1000
             log = logger.warning if elapsed > 1000 else logger.info
             log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
@@ -319,7 +332,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     "get_quote failed for %s:%s -> %s", key[0], key[1], e
                 )
                 quote = {"last": None, "chg_pct": None}
-            logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
+            if isinstance(quote, dict):
+                logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
             out[key] = quote
     elapsed = (time.time() - start) * 1000
     log = logger.warning if elapsed > 1000 else logger.info
