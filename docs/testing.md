@@ -44,9 +44,9 @@ usa los stubs deterministas para mantener resultados reproducibles.
    confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx` y `summary.csv` estén
    adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
 
-### Suites legacy
+### Suites legacy (deprecated)
 
-La carpeta `tests/legacy/` contiene casos heredados que duplican escenarios ya cubiertos en la suite principal. Se excluye de la recolección estándar para mantener los tiempos de CI. Si necesitas auditarlos manualmente, ejecútalos de forma explícita:
+El paquete `infrastructure.iol.legacy` permanece disponible únicamente para mantener compatibilidad con integraciones antiguas; su importación ahora emite una advertencia de deprecación y no participa del flujo principal. La carpeta `tests/legacy/` conserva los escenarios originales para auditorías puntuales y continúa excluida de la recolección estándar para preservar los tiempos de CI. Si necesitás ejecutarlos manualmente, hacelo de forma explícita:
 
 ```bash
 pytest tests/legacy
