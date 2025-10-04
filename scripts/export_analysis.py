@@ -20,6 +20,7 @@ from shared.portfolio_export import (
     METRIC_SPECS,
     PortfolioSnapshotExport,
     compute_kpis,
+    create_csv_bundle,
     create_excel_workbook,
     write_tables_to_directory,
 )
@@ -66,6 +67,7 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--formats",
+        "--format",
         choices=["csv", "excel", "both"],
         default="both",
         help="Formartos a generar (default: both).",
@@ -178,6 +180,14 @@ def main(argv: Iterable[str] | None = None) -> int:
                 include_history=include_history,
                 limit=limit,
             )
+            zip_bytes = create_csv_bundle(
+                snapshot,
+                metric_keys=metric_keys,
+                include_rankings=include_rankings,
+                include_history=include_history,
+                limit=limit,
+            )
+            (target_dir / "analysis.zip").write_bytes(zip_bytes)
         if excel_enabled:
             excel_bytes = create_excel_workbook(
                 snapshot,

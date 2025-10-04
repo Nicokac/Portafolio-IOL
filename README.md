@@ -22,8 +22,9 @@ La versión **0.3.28.1** destaca tres ejes principales:
   servicio `PortfolioViewSnapshot` permiten reanudar análisis sin repetir descargas ni recomputar
   agregados.
 - Las **exportaciones enriquecidas** consolidan la tabla visible, los KPIs y las notas de telemetría
-  en un mismo paquete. El nuevo script `scripts/export_analysis.py` genera CSV/JSON con los mismos
-  datos mostrados en la UI y añade el resumen agregado (`df.attrs["summary"]`).
+  en un mismo paquete. El script `scripts/export_analysis.py` genera carpetas con CSV, un ZIP con
+  esos mismos CSV y un Excel enriquecido con tablas y gráficos embebidos, además de un
+  `summary.csv` global para comparar snapshots.
 - La **observabilidad extendida** agrega métricas de almacenamiento y persistencia al health sidebar.
   Los contadores de resiliencia ahora muestran los hits de snapshots, los reintentos fallidos y la
   procedencia del último dato consolidado (primario, secundario o snapshot de contingencia).
@@ -58,11 +59,14 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
      del almacenamiento persistente como parte de la secuencia.
 4. **Exporta el análisis enriquecido.** Con la app cerrada o en paralelo, ejecuta el script:
    ```bash
-   python scripts/export_analysis.py --format both --output exports/screener.csv
+   python scripts/export_analysis.py --format both --output exports/screener
    ```
-   El comando genera `exports/screener.csv` con la grilla del screening y `exports/screener.json` con
-   notas, métricas agregadas y distribución sectorial. Abre el JSON para confirmar que el bloque
-   `summary` replica los KPI mostrados en la UI.
+   El comando crea una carpeta por snapshot dentro de `exports/screener/` (por ejemplo,
+   `exports/screener/sample/`) con los CSV (`kpis.csv`, `positions.csv`, `history.csv`,
+   `contribution_by_symbol.csv`, etc.), empaqueta esos archivos en `analysis.zip` y genera un
+   `analysis.xlsx` con todas las tablas en hojas dedicadas más los gráficos solicitados. En la raíz del
+   directorio también encontrarás `summary.csv` con los KPIs (`raw_value`) de cada snapshot para
+   facilitar comparaciones rápidas.
 
 ### Validar el fallback jerárquico desde el health sidebar
 
@@ -225,7 +229,7 @@ La aplicación permite llevarte un paquete completo de métricas, rankings y vis
 
 ### Desde la línea de comandos
 
-El script `scripts/export_analysis.py` procesa snapshots serializados en JSON (por ejemplo los generados por jobs batch o instrumentación de QA) y genera los mismos artefactos enriquecidos que la UI.
+El script `scripts/export_analysis.py` procesa snapshots serializados en JSON (por ejemplo los generados por jobs batch o instrumentación de QA) y genera los mismos artefactos enriquecidos que la UI: CSV individuales, un ZIP compacto con esos CSV, un Excel (`analysis.xlsx`) con tablas y gráficos, y el `summary.csv` agregado.
 
 ```bash
 python scripts/export_analysis.py \
@@ -237,8 +241,8 @@ python scripts/export_analysis.py \
 ```
 
 - El argumento `--metrics help` lista todos los KPIs disponibles; `--charts help` hace lo propio con los gráficos.
-- Con `--formats csv` o `--formats excel` podés limitar la salida a un solo formato.
-- Cada snapshot genera un subdirectorio dentro de `--output` con todos los CSV y, si corresponde, el Excel `analysis.xlsx`.
+- El argumento `--formats` (o su alias `--format`) acepta `csv`, `excel` o `both`.
+- Cada snapshot genera un subdirectorio dentro de `--output` con todos los CSV, el ZIP `analysis.zip` y, si corresponde, el Excel `analysis.xlsx`.
 - Se adjunta además `summary.csv` en la raíz con los KPIs crudos (`raw_value`) de cada snapshot para facilitar comparaciones rápidas o integraciones en pipelines.
 
 > Dependencias: asegurate de instalar `kaleido` y `XlsxWriter` (ambos incluidos en `requirements.txt`) para que el script pueda renderizar los gráficos y escribir el Excel correctamente.

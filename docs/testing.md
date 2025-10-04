@@ -82,10 +82,11 @@ Para reproducir la telemetría manualmente:
    bloque **Snapshots y almacenamiento** aumenta `snapshot_hits` en la segunda corrida.
 2. Exporta el análisis enriquecido desde la línea de comandos para validar la paridad con la UI:
    ```bash
-   python scripts/export_analysis.py --format both --output exports/manual_check.csv
+   python scripts/export_analysis.py --format both --output exports/manual_check
    ```
-   Revisa `exports/manual_check.json` y confirma que el bloque `summary.snapshot_hits` coincida con
-   el valor mostrado en el health sidebar.
+   Verifica que `exports/manual_check/summary.csv` incluya la fila del snapshot con el valor correcto
+   de `snapshot_hits` y que cada subdirectorio contenga los CSV, el ZIP (`analysis.zip`) y el Excel con
+   los mismos datos visibles en la UI.
 
 ## Pruebas con APIs en vivo
 
