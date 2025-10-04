@@ -4,9 +4,9 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.29, enfocada en hardening/CI para reforzar los
+> Nota: Esta guía corresponde a la release 0.3.29.1, enfocada en hardening/CI para reforzar los
 > pipelines automáticos y las verificaciones de integridad sin alterar los flujos funcionales
-> documentados en la serie 0.3.29.
+> documentados en la serie 0.3.29.1.
 
 - **Falta una clave y los servicios quedan en `disabled`.**
   - **Síntomas:** El health sidebar indica `disabled` para Alpha Vantage/Polygon/FMP/FRED/World Bank y el log muestra `Missing API key`.
@@ -41,7 +41,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.29 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.29.1 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
@@ -105,6 +105,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     1. Asegúrate de ejecutar la app con red estable y sin proxys que bloqueen Yahoo.
     2. Si sospechas de datos corruptos, elimina los archivos de caché bajo `infrastructure/cache/` y reinicia la app para forzar una descarga limpia.
     3. Confirma que las variables de TTL no estén fijadas en valores extremos que impidan la actualización.
+- **Los pesos Markowitz aparecen como `NaN` o el gráfico queda vacío.**
+  - **Síntomas:** La pestaña **Riesgo** no muestra la distribución de pesos y las exportaciones dejan columnas vacías para los pesos optimizados.
+  - **Diagnóstico rápido:** Ejecuta `pytest tests/application/test_risk_metrics.py -k markowitz` para validar que la degradación controlada funciona e inspecciona que el preset no concentre todos los activos en un solo símbolo.
+  - **Resolución:**
+    1. Amplía el histórico (`period=1y` o superior) y repite el screening para garantizar una matriz de covarianzas invertible.
+    2. Ajusta el preset para diversificar pesos antes de exportar o recalcula la optimización desde la UI.
+    3. En CI, ejecuta `pytest tests/integration/` completo para regenerar snapshots con datos válidos y revisar el health sidebar en busca del estado de validación Markowitz.
 
 - **El screening devuelve menos de 10 resultados o la tabla queda vacía.**
   - **Síntomas:** La telemetría del barrido muestra `universe final < 10` con severidad `⚠️`.
@@ -129,7 +136,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.29` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.29.1` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
@@ -146,9 +153,18 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   - **Síntomas:** El script termina con `FileNotFoundError` o `PermissionError` al escribir en `exports/`.
   - **Diagnóstico rápido:** Comprueba que la ruta indicada en `--output` exista y que el usuario tenga permisos de escritura. Ejecuta:
     ```bash
-    python scripts/export_analysis.py --output /tmp/probe --format csv
+    python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats csv --output /tmp/probe
     ```
-    para descartar un problema con rutas relativas.
+    para descartar un problema con rutas relativas. Verifica que se generen los CSV, el ZIP `analysis.zip`
+    (cuando `--formats` incluya `csv`) y, si seleccionas `excel` o `both`, el archivo `analysis.xlsx` dentro
+    del subdirectorio del snapshot.
+- **Los snapshots persisten entre jobs en CI.**
+  - **Síntomas:** Un job reutiliza datos de un pipeline anterior y la telemetría marca `snapshot_hits` altos aunque se espera un entorno limpio.
+  - **Diagnóstico rápido:** Revisa si las variables `SNAPSHOT_BACKEND` y `SNAPSHOT_STORAGE_PATH` están configuradas en el pipeline.
+  - **Resolución:**
+    1. Fija `SNAPSHOT_BACKEND=null` para desactivar la persistencia en jobs que no necesitan exportar artefactos.
+    2. Cuando debas validar exportaciones, apunta `SNAPSHOT_STORAGE_PATH` a la ruta temporal del runner (por ejemplo, `$RUNNER_TEMP`) y limpia el directorio al finalizar.
+    3. Ejecuta `pytest tests/integration/` para asegurarte de que la suite multi-proveedor funciona con la configuración elegida y de que se generan los CSV, ZIP y Excel esperados por snapshot.
   - **Resolución:**
     1. Crea el directorio de destino (`mkdir -p exports`) o usa una ruta absoluta accesible.
     2. Verifica que `pandas` esté instalado en el entorno (`pip install -r requirements.txt`).
