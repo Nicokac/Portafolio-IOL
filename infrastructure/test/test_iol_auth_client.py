@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from cryptography.fernet import Fernet
 
-from infrastructure.iol.client import IOLClientAdapter
+from infrastructure.iol.client import IOLClient
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="chmod not supported on Windows")
 def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
@@ -72,19 +72,23 @@ def test_iol_auth_expired_tokens_triggers_login(tmp_path, monkeypatch):
     assert "timestamp" in stored and stored["timestamp"] > 0
 
 
-def test_iol_client_get_portfolio_uses_cache_on_failure(tmp_path):
+def test_iol_client_get_portfolio_uses_cache_on_failure(tmp_path, monkeypatch):
     cache_file = tmp_path / "portfolio.json"
-    mock_legacy = MagicMock()
-    mock_legacy.get_portfolio.return_value = {"activos": [1]}
+    monkeypatch.setattr("infrastructure.iol.client.PORTFOLIO_CACHE", cache_file)
+    monkeypatch.setattr(IOLClient, "_ensure_market_auth", lambda self: None, raising=False)
 
-    with patch("infrastructure.iol.client.PORTFOLIO_CACHE", cache_file), \
-         patch("infrastructure.iol.client._LegacyIOLClient", return_value=mock_legacy):
-        cli = IOLClientAdapter("user", "pass", tokens_file=tmp_path / "tok.json")
-        data1 = cli.get_portfolio()
-        assert data1 == {"activos": [1]}
-        assert json.loads(cache_file.read_text()) == {"activos": [1]}
+    cli = IOLClient("user", "pass", tokens_file=tmp_path / "tok.json")
 
-        import requests
-        mock_legacy.get_portfolio.side_effect = requests.RequestException("boom")
-        data2 = cli.get_portfolio()
-        assert data2 == {"activos": [1]}
+    monkeypatch.setattr(cli, "_fetch_portfolio_live", lambda: {"activos": [1]}, raising=False)
+    data1 = cli.get_portfolio()
+    assert data1 == {"activos": [1]}
+    assert json.loads(cache_file.read_text()) == {"activos": [1]}
+
+    import requests
+
+    def fail():
+        raise requests.RequestException("boom")
+
+    monkeypatch.setattr(cli, "_fetch_portfolio_live", fail, raising=False)
+    data2 = cli.get_portfolio()
+    assert data2 == {"activos": [1]}

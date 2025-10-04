@@ -138,10 +138,12 @@ def _get_quote_cached(
         q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
         data = _normalize_quote(q)
     except InvalidCredentialsError:
-        try:
-            cli._cli.auth.clear_tokens()
-        except Exception:
-            pass
+        auth = getattr(cli, "auth", None)
+        if auth is not None:
+            try:
+                auth.clear_tokens()
+            except Exception:
+                pass
         _trigger_logout()
         data = {"last": None, "chg_pct": None}
     except Exception as e:
@@ -187,10 +189,12 @@ def fetch_portfolio(_cli: IIOLProvider):
     try:
         data = _cli.get_portfolio()
     except InvalidCredentialsError:
-        try:
-            _cli._cli.auth.clear_tokens()
-        except Exception:
-            pass
+        auth = getattr(_cli, "auth", None)
+        if auth is not None:
+            try:
+                auth.clear_tokens()
+            except Exception:
+                pass
         _trigger_logout()
         logger.info(
             "fetch_portfolio using cache due to invalid credentials",

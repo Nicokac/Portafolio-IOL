@@ -1,24 +1,27 @@
+"""Additional coverage for the native IOL client helpers."""
+
+from __future__ import annotations
+
 import pytest
 import requests
 
-from infrastructure.iol.legacy import iol_client as legacy_module
+from infrastructure.iol import client as client_module
 from iolConn.common.exceptions import NoAuthException
 
 
 class DummyAuth:
-    def __init__(self):
+    def __init__(self) -> None:
         self.refreshed = False
         self.tokens = {"access_token": "a", "refresh_token": "r"}
 
-    def auth_header(self):
+    def auth_header(self) -> dict:
         return {"Authorization": "Bearer tok"}
 
-    def refresh(self):
+    def refresh(self) -> None:
         self.refreshed = True
 
 
 def _noop_auth(self):
-    # helper to bypass real market auth
     self._market_ready = True
 
 
@@ -33,7 +36,7 @@ def _noop_auth(self):
     ],
 )
 def test_parse_price_fields_various(data, expected):
-    assert legacy_module.IOLClient._parse_price_fields(data) == expected
+    assert client_module.IOLClient._parse_price_fields(data) == expected
 
 
 @pytest.mark.parametrize(
@@ -49,12 +52,12 @@ def test_parse_price_fields_various(data, expected):
     ],
 )
 def test_parse_chg_pct_fields_various(data, last, expected):
-    assert legacy_module.IOLClient._parse_chg_pct_fields(data, last) == expected
+    assert client_module.IOLClient._parse_chg_pct_fields(data, last) == expected
 
 
-def test_request_refresh_on_401(monkeypatch):
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
+def test_request_refresh_on_401(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
 
     class DummyResp:
         def __init__(self, code):
@@ -80,9 +83,9 @@ def test_request_refresh_on_401(monkeypatch):
     assert count["n"] == 2
 
 
-def test_request_returns_none_on_404(monkeypatch):
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
+def test_request_returns_none_on_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
 
     class DummyResp:
         status_code = 404
@@ -100,23 +103,23 @@ def test_request_returns_none_on_404(monkeypatch):
     assert not client.auth.refreshed
 
 
-def test_ensure_market_auth_noauth_both(monkeypatch):
+def test_ensure_market_auth_noauth_both(monkeypatch: pytest.MonkeyPatch) -> None:
     dummy_st = type("ST", (), {"session_state": {}})()
-    monkeypatch.setattr(legacy_module, "st", dummy_st)
+    monkeypatch.setattr(client_module, "st", dummy_st)
 
     class DummyIol:
-        def __init__(self, *a, **k):
+        def __init__(self, *args, **kwargs):
             pass
 
         def gestionar(self):
             raise NoAuthException("fail")
 
-    monkeypatch.setattr(legacy_module, "Iol", DummyIol)
+    monkeypatch.setattr(client_module, "Iol", DummyIol)
 
-    orig_ensure = legacy_module.IOLClient._ensure_market_auth
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", orig_ensure, raising=False)
+    orig_ensure = client_module.IOLClient._ensure_market_auth
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", orig_ensure, raising=False)
 
     client._market_ready = False
     with pytest.raises(NoAuthException):
@@ -124,42 +127,43 @@ def test_ensure_market_auth_noauth_both(monkeypatch):
     assert not client._market_ready
 
 
-def test_get_last_price_fallback(monkeypatch):
+def test_get_last_price_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     class DummyMarket:
-        def price_to_json(self, *a, **k):
+        def price_to_json(self, *args, **kwargs):
             raise Exception("boom")
 
     def fake_ensure(self):
         self.iol_market = DummyMarket()
         self._market_ready = True
 
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", fake_ensure, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
-    assert client.get_last_price("m", "s") is None
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", fake_ensure, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
+    assert client.get_last_price(mercado="m", simbolo="s") is None
 
 
-def test_get_quote_fallback(monkeypatch):
+def test_get_quote_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     class DummyMarket:
-        def price_to_json(self, *a, **k):
+        def price_to_json(self, *args, **kwargs):
             return "nondict"
 
     def fake_ensure(self):
         self.iol_market = DummyMarket()
         self._market_ready = True
 
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", fake_ensure, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
-    quote = client.get_quote("m", "s")
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", fake_ensure, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
+    quote = client.get_quote(mercado="m", simbolo="s")
     assert quote == {"last": None, "chg_pct": None}
 
 
-def test_get_quotes_bulk_handles_errors(monkeypatch):
-    monkeypatch.setattr(legacy_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
+def test_get_quotes_bulk_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
 
     def bad_get_quote(self, m, s):
         raise ValueError("fail")
 
-    monkeypatch.setattr(legacy_module.IOLClient, "get_quote", bad_get_quote, raising=False)
-    client = legacy_module.IOLClient("u", "p", auth=DummyAuth())
+    monkeypatch.setattr(client_module.IOLClient, "get_quote", bad_get_quote, raising=False)
+    client = client_module.IOLClient("u", "p", auth=DummyAuth())
     result = client.get_quotes_bulk([("m", "SYM")])
     assert result == {("m", "SYM"): {"last": None, "chg_pct": None}}
+

@@ -8,7 +8,7 @@ import pytest
 
 
 def test_refresh_flow_uses_refresh_token(monkeypatch):
-    from infrastructure.iol.legacy.iol_client import IOLClient
+    from infrastructure.iol.client import IOLClient
 
     class DummyAuth:
         def __init__(self, user, password, tokens_file=None, allow_plain_tokens=False):
@@ -26,7 +26,7 @@ def test_refresh_flow_uses_refresh_token(monkeypatch):
             self.calls.append("login")
             return self.tokens
 
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLAuth", DummyAuth)
+    monkeypatch.setattr("infrastructure.iol.client.IOLAuth", DummyAuth)
     monkeypatch.setattr(IOLClient, "_ensure_market_auth", lambda self: None)
 
     calls = {"n": 0}
@@ -65,7 +65,7 @@ def test_rerun_preserves_session(monkeypatch):
     def fake_rerun():
         called["ok"] = True
 
-    monkeypatch.setattr(st, "rerun", fake_rerun)
+    monkeypatch.setattr(st, "rerun", fake_rerun, raising=False)
     st.rerun()
     assert called.get("ok") is True
     assert st.session_state["tokens"] == {"a": 1}
