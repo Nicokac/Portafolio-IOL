@@ -17,6 +17,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.30.1] - 2025-12-01
+
+### Changed
+- Limpieza de escenarios duplicados y migración final de controladores/servicios fuera de
+  `infrastructure.iol.legacy`, consolidando el uso de `IOLClientAdapter` y
+  `PortfolioViewModelService` como fuentes únicas para la UI y los scripts.
+- Ajuste de los pipelines para auditar importaciones legacy con `rg` y reforzar que `pytest` sólo
+  recolecte suites modernas.
+
+### Documentation
+- README, guía de pruebas y troubleshooting actualizados con la versión 0.3.30.1, instrucciones de
+  migración (helpers reemplazados, stub oficial de Streamlit) y comandos para ejecutar suites sin
+  módulos legacy.
+
+### Tests
+- Checklist de CI actualizada para exigir `pytest --ignore=tests/legacy`, auditorías de importaciones
+  legacy y verificación de artefactos (`coverage.xml`, `htmlcov/`, `analysis.zip`, `analysis.xlsx`,
+  `summary.csv`).
+
 ## [0.3.29.2] - 2025-11-24
 
 ### Changed
