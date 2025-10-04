@@ -1,7 +1,11 @@
 """Contract tests for the portfolio Streamlit UI."""
 from __future__ import annotations
 
+import base64
+import zipfile
 import sys
+import xml.etree.ElementTree as ET
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
 from types import SimpleNamespace
@@ -1062,3 +1066,70 @@ def test_render_portfolio_exports_warns_without_kaleido(
     assert len(fake_st.download_buttons) == 1
     assert fake_st.download_buttons[0]["mime"] == "application/zip"
     assert any("kaleido" in message.lower() for message in fake_st.warnings)
+
+
+def test_render_portfolio_exports_generates_full_package(
+    monkeypatch: pytest.MonkeyPatch,
+    sample_export_snapshot: dict[str, Any],
+) -> None:
+    import ui.export as export_mod
+
+    chart_keys = [spec.key for spec in export_mod.CHART_SPECS[:3]]
+    if len(chart_keys) < 2:
+        pytest.skip("Se requieren múltiples gráficos configurados para validar la exportación completa")
+
+    fake_st = FakeStreamlit(
+        radio_sequence=[],
+        multiselect_responses={
+            "metrics_portafolio": ["total_value", "total_pl", "cash_ratio"],
+            "charts_portafolio": chart_keys,
+        },
+        checkbox_values={"rankings_portafolio": True, "history_portafolio": True},
+        slider_values={"limit_portafolio": 25},
+    )
+
+    monkeypatch.setattr(export_mod, "st", fake_st)
+
+    png_bytes = base64.b64decode(
+        b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+    )
+    monkeypatch.setattr("shared.portfolio_export.fig_to_png_bytes", lambda fig: png_bytes)
+
+    export_mod.render_portfolio_exports(
+        snapshot=sample_export_snapshot["snapshot"],
+        df_view=sample_export_snapshot["df_view"],
+        totals=sample_export_snapshot["totals"],
+        historical_total=sample_export_snapshot["historical_total"],
+        contribution_metrics=sample_export_snapshot["contribution_metrics"],
+        filename_prefix="portafolio",
+    )
+
+    assert len(fake_st.download_buttons) == 2
+
+    csv_button = next(btn for btn in fake_st.download_buttons if btn["mime"] == "application/zip")
+    with zipfile.ZipFile(BytesIO(csv_button["data"])) as zf:
+        members = set(zf.namelist())
+    assert {"kpis.csv", "positions.csv"}.issubset(members)
+    assert any(name.startswith("ranking_") for name in members)
+
+    excel_button = next(
+        btn
+        for btn in fake_st.download_buttons
+        if btn["mime"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    with zipfile.ZipFile(BytesIO(excel_button["data"])) as zf:
+        workbook_files = set(zf.namelist())
+        assert "xl/workbook.xml" in workbook_files
+        drawing_files = [name for name in workbook_files if name.startswith("xl/drawings/drawing")]
+        assert drawing_files
+        drawing_xml = ET.fromstring(zf.read(drawing_files[0]))
+    ns = {"xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"}
+    anchors = drawing_xml.findall("xdr:twoCellAnchor", ns) + drawing_xml.findall("xdr:oneCellAnchor", ns)
+    assert len(anchors) >= 2
+
+    metric_call = next(call for call in fake_st.multiselect_calls if call["label"].startswith("Métricas"))
+    chart_call = next(call for call in fake_st.multiselect_calls if call["label"].startswith("Gráficos"))
+    assert set(metric_call["options"]) >= {"total_value", "total_pl", "cash_ratio"}
+    assert set(chart_call["options"]) >= set(chart_keys)
+    assert fake_st.session_state["metrics_portafolio"] == ["total_value", "total_pl", "cash_ratio"]
+    assert fake_st.session_state["charts_portafolio"] == list(chart_keys)
