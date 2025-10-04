@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.5] - 2025-10-04
+
+### Fixed
+- Se normalizó la publicación de cotizaciones nulas para evitar excepciones en telemetría y dashboards.
+- El backend de snapshots ahora se auto-configura en inicializaciones en frío, evitando estados parciales.
+- Se restauró el fallback legacy para consultas de mercado cuando el proveedor principal no responde.
+- Se reactivó la valorización de portafolios tras interrupciones de caché, garantizando cifras consistentes.
+
 ## [0.3.30.4] - 2025-10-04
 
 ### Added
