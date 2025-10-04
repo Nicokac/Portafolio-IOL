@@ -173,6 +173,7 @@ def render_portfolio_section(container, cli, fx_rates):
                 totals=viewmodel.totals,
                 historical_total=viewmodel.historical_total,
                 contribution_metrics=viewmodel.contributions,
+                snapshot=snapshot,
             )
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)
