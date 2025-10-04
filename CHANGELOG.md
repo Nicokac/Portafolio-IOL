@@ -17,6 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.29.2] - 2025-11-24
+
+### Changed
+- Hardening de CI/cobertura alineado con los hitos [CI resiliente 0.3.29.2](https://github.com/Portafolio-IOL/portafolio-iol/milestone/43)
+  y [Cobertura exportaciones 0.3.29.2](https://github.com/Portafolio-IOL/portafolio-iol/milestone/44), incorporando validaciones
+  cruzadas entre `pytest`, `coverage.xml` y los artefactos de exportación (CSV, ZIP y Excel) para bloquear merges sin evidencia
+  de reportes completos.
+- El pipeline ahora normaliza la recolección de artefactos (`htmlcov/`, `summary.csv`, `analysis.zip`, `analysis.xlsx`) y marca como
+  fallidos los jobs que no adjuntan cobertura o exportaciones esperadas.
+
+### Documentation
+- README, guía de pruebas y troubleshooting actualizados para la release 0.3.29.2 con la nueva sección **CI Checklist** y ejemplos
+  de exportación alineados a los artefactos `analysis.zip`, `analysis.xlsx` y `summary.csv`.
+
+### Tests
+- Checklist de CI incorporada en la documentación para garantizar que `pytest --cov` publique `htmlcov/` y `coverage.xml`, y que las
+  suites de exportación validen la presencia de CSV, ZIP y Excel antes de dar por válidos los pipelines.
+
 ## [0.3.29.1] - 2025-11-22
 
 ### Changed

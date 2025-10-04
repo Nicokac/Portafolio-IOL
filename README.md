@@ -6,18 +6,18 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.29.1)
+## Quick-start (release 0.3.29.2)
 
-La versión **0.3.29.1** es una release de hardening y CI que refuerza los pipelines automáticos y
+La versión **0.3.29.2** es una release de hardening y CI que refuerza los pipelines automáticos y
 las verificaciones de integridad, manteniendo las mejoras funcionales introducidas en la serie
 0.3.28 y extendiéndolas en la nueva iteración. Consolida la persistencia de snapshots del portafolio,
 habilita exportaciones enriquecidas
 listas para compartir y extiende la observabilidad de la plataforma con métricas de almacenamiento y
 telemetría unificadas.
 
-## Quick-start (release 0.3.29.1 — hardening/CI — 2025-11-22)
+## Quick-start (release 0.3.29.2 — hardening/CI — 2025-11-24)
 
-La versión **0.3.29.1** destaca cuatro ejes principales:
+La versión **0.3.29.2** destaca cinco ejes principales:
 - El **almacenamiento de snapshots** conserva los resultados del screening y del portafolio entre
   sesiones. Los controles persistentes del sidebar (`st.session_state["controls_snapshot"]`) y el
   servicio `PortfolioViewSnapshot` permiten reanudar análisis sin repetir descargas ni recomputar
@@ -32,6 +32,10 @@ La versión **0.3.29.1** destaca cuatro ejes principales:
 - La **observabilidad extendida** agrega métricas de almacenamiento y persistencia al health sidebar.
   Los contadores de resiliencia ahora muestran los hits de snapshots, los reintentos fallidos y la
   procedencia del último dato consolidado (primario, secundario o snapshot de contingencia).
+- La **CI Checklist reforzada** agrega verificaciones previas a merge: `pytest --cov` debe adjuntar
+  `coverage.xml` y `htmlcov/`, los jobs de exportación tienen que publicar `analysis.zip`,
+  `analysis.xlsx` y `summary.csv`, y la documentación lista los pasos rápidos para auditar esos
+  artefactos antes de aprobar una release.
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
@@ -48,7 +52,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.29.1` junto con
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.29.2` junto con
    el timestamp generado por `TimeProvider`. Abre el panel **Salud del sistema**: además del estado de
    cada proveedor verás el bloque **Snapshots y almacenamiento**, que expone la ruta activa del disco,
    el contador de recuperaciones desde snapshot y la latencia agregada de escritura.
@@ -75,7 +79,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
 ### Validar el fallback jerárquico desde el health sidebar
 
 1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La
-   release 0.3.29.1 conserva la última secuencia de degradación y ahora incluye el contador de snapshots
+   release 0.3.29.2 conserva la última secuencia de degradación y ahora incluye el contador de snapshots
    reutilizados (`snapshot_hits`).
 2. Ejecuta nuevamente **⟳ Refrescar** desde el menú **⚙️ Acciones** y observa el timeline: debe listar
    `primario → secundario → snapshot` (o fallback estático si corresponde) con la marca temporal de cada
@@ -102,7 +106,22 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### Validaciones Markowitz reforzadas (0.3.29.1)
+### CI Checklist (0.3.29.2)
+
+1. **Ejecuta la suite determinista.** Lanza `pytest --maxfail=1 --disable-warnings -q` para asegurar que
+   los stubs cubran la funcionalidad completa antes de generar artefactos.
+2. **Publica cobertura.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
+   y confirma que el pipeline adjunte `coverage.xml` y el directorio `htmlcov/` (verificable desde los
+   artefactos del job).
+3. **Valida exportaciones.** Ejecuta `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
+   o reutiliza los snapshots de `tmp_path`. Revisa que cada snapshot genere los CSV (`kpis.csv`,
+   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
+   `analysis.xlsx` y el resumen `summary.csv` en la raíz de `exports/ci`.
+4. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
+   y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx` y `summary.csv` estén
+   presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
+
+### Validaciones Markowitz reforzadas (0.3.29.2)
 
 - `application.risk_service.markowitz_optimize` valida la invertibilidad de la matriz de covarianzas y
   degrada a pesos `NaN` cuando detecta singularidad o entradas inválidas, evitando excepciones en la UI
@@ -117,7 +136,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
   y `tests/integration/test_portfolio_tabs.py` cubren la degradación controlada y los mensajes visibles
   en la UI, por lo que cualquier regresión se detecta en pipelines.
 
-**Resiliencia de APIs (0.3.29.1).** Cuando guardas un preset, la aplicación persiste la combinación de
+**Resiliencia de APIs (0.3.29.2).** Cuando guardas un preset, la aplicación persiste la combinación de
 filtros, el último resultado del screening y la procedencia (`primario`, `secundario`, `snapshot`). Al
 relanzarlo, la telemetría agrega la procedencia del dato y clasifica la recuperación según la estrategia
 aplicada:
@@ -131,7 +150,7 @@ aplicada:
   fallback estático con la leyenda "📦 Snapshot de contingencia" y el contador de resiliencia incrementa
   el total de recuperaciones exitosas sin datos frescos.
 
-Estas novedades convierten a la release 0.3.29.1 en la referencia para validar onboarding, telemetría y
+Estas novedades convierten a la release 0.3.29.2 en la referencia para validar onboarding, telemetría y
 resiliencia multi-API: toda la UI recuerda la versión activa, expone KPIs agregados de disponibilidad y
 almacenamiento en el health sidebar y las exportaciones enriquecidas aseguran paridad total entre la
 visión en pantalla y los artefactos compartidos.
@@ -139,7 +158,7 @@ visión en pantalla y los artefactos compartidos.
 
 ## Configuración de claves API
 
-La release 0.3.29.1 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets`. Antes de
+La release 0.3.29.2 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets`. Antes de
 ejecutar la aplicación en modo live, define las claves según el proveedor habilitado. Si una clave falta, el health sidebar registrará
 el evento como `disabled` y la degradación continuará con el siguiente proveedor disponible.
 
@@ -180,7 +199,7 @@ en ``~/.portafolio_iol/favorites.json`` con la siguiente estructura:
 - Podés borrar el archivo para reiniciar la lista; se volverá a generar cuando agregues un nuevo
   favorito.
 
-## Backend de snapshots para pipelines CI (0.3.29.1)
+## Backend de snapshots para pipelines CI (0.3.29.2)
 
 - Define `SNAPSHOT_BACKEND=null` para ejecutar suites sin escribir archivos persistentes; el módulo
   `services.snapshots` usará `NullSnapshotStorage` y evitará cualquier escritura en disco durante las
@@ -206,8 +225,9 @@ en ``~/.portafolio_iol/favorites.json`` con la siguiente estructura:
 - [Guía de pruebas](docs/testing.md)
 - [Integración en CI/CD](docs/testing.md#integración-en-cicd): ejemplos de pipelines para instalar dependencias,
   forzar los mocks (`RUN_LIVE_YF=0`) y ejecutar `pytest --maxfail=1 --disable-warnings -q`. Los jobs adjuntan
-  el directorio `htmlcov`; descárgalo desde los artefactos del pipeline y abre `index.html` para revisar la
-  cobertura en detalle.
+  el directorio `htmlcov`, `coverage.xml` y los bundles de exportación (`analysis.zip`, `analysis.xlsx`,
+  `summary.csv`); descárgalos desde los artefactos del pipeline y abre `htmlcov/index.html` para revisar la
+  cobertura en detalle antes de aprobar la release.
 
 ## Uso del proveedor de tiempo
 
@@ -314,7 +334,7 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.29.1)
+##### Escenarios de fallback macro (0.3.29.2)
 
 1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El monitor de resiliencia del health sidebar incrementa los contadores de éxito, actualiza los buckets de latencia del proveedor secundario y agrega la insignia "Fallback cubierto".
 2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente, incluyendo el identificador `contingency_snapshot` en la telemetría.
@@ -463,11 +483,11 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.29.1".
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.29.2".
 
 El menú **⚙️ Acciones** refuerza la seguridad operativa al anunciar con toasts cada vez que se refrescan los datos o se completa el cierre de sesión, dejando constancia en la propia UI sin depender de logs externos.
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.29.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.29.2)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega estadísticas agregadas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank.
 
 ### Interpretación del health sidebar (KPIs agregados)
 

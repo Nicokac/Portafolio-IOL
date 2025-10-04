@@ -29,6 +29,20 @@ pytest
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
 usa los stubs deterministas para mantener resultados reproducibles.
 
+## CI Checklist (0.3.29.2)
+
+1. **Suite determinista.** Ejecuta `pytest --maxfail=1 --disable-warnings -q` para validar que las
+   regresiones funcionales se detecten antes de publicar artefactos.
+2. **Cobertura obligatoria.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
+   y asegúrate de subir `coverage.xml` y el directorio `htmlcov/` como artefactos del job.
+3. **Exportaciones consistentes.** Invoca `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
+   (o reutiliza `tmp_path` en las suites) y revisa que cada snapshot incluya los CSV (`kpis.csv`,
+   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
+   `analysis.xlsx` y el resumen `summary.csv` en la raíz del directorio de exportaciones.
+4. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
+   confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx` y `summary.csv` estén
+   adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
+
 ### Suites legacy
 
 La carpeta `tests/legacy/` contiene casos heredados que duplican escenarios ya cubiertos en la suite principal. Se excluye de la recolección estándar para mantener los tiempos de CI. Si necesitas auditarlos manualmente, ejecútalos de forma explícita:
@@ -66,8 +80,9 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.29.1, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
-almacenamiento. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
+La release 0.3.29.2, orientada a hardening/CI y cobertura, refuerza los contadores de snapshots, la
+telemetría de almacenamiento y la verificación de artefactos en pipelines. Para cubrirlos en QA
+combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
   `st.session_state["controls_snapshot"]` y que el estado se limpie correctamente al cerrar sesión.
@@ -190,15 +205,28 @@ jobs:
         run: pytest --maxfail=1 --disable-warnings -q
       - name: Generar coverage
         run: pytest --cov=application --cov=controllers --cov-report=term --cov-report=html
+      - name: Generar exportaciones CI
+        run: |
+          python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci
+          find exports/ci -maxdepth 2 -type f || true
       - name: Publicar artefacto coverage
         uses: actions/upload-artifact@v4
         with:
           name: htmlcov
           path: htmlcov
+      - name: Publicar exportaciones
+        uses: actions/upload-artifact@v4
+        with:
+          name: exports-ci
+          path: |
+            exports/ci
 ```
 
 El artefacto `htmlcov/index.html` queda disponible en la sección "Artifacts" del job. Descárgalo y
-abre el archivo en tu navegador para revisar los módulos con menor cobertura.
+abre el archivo en tu navegador para revisar los módulos con menor cobertura. El paso
+`Generar exportaciones CI` asume que los tests o jobs previos generaron snapshots bajo
+`~/.portafolio_iol/snapshots`; si tu pipeline usa rutas temporales diferentes, ajusta los parámetros
+`--input` y `--output` o crea snapshots de prueba antes de invocar el script.
 
 ### GitLab CI
 
@@ -221,15 +249,19 @@ pytest:
     - pip install -r requirements.txt -r requirements-dev.txt
     - pytest --maxfail=1 --disable-warnings -q
     - pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=xml
+    - python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci
   artifacts:
     when: always
     paths:
       - coverage.xml
       - htmlcov/
+      - exports/ci/
     reports:
       cobertura: coverage.xml
 ```
 
 En GitLab, el reporte Cobertura queda adjunto al job y puede visualizarse en la pestaña **CI/CD →
 Pipelines → Jobs → Artifacts**. Para el detalle HTML, descarga el directorio `htmlcov` y abre
-`index.html` localmente.
+`index.html` localmente. El directorio `exports/ci` publicado como artefacto debe contener los CSV,
+`analysis.zip`, `analysis.xlsx` y `summary.csv`; si queda vacío, revisa las rutas de snapshots usadas
+por la suite.
