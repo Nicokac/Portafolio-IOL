@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Iterable, Mapping, MutableMapping
 
 import requests
@@ -15,8 +17,7 @@ from shared.settings import (
     technical_signal_threshold as _default_technical_threshold,
 )
 from shared.time_provider import TimeProvider
-from copy import deepcopy
-from datetime import date, datetime
+from shared.utils import _as_float_or_none, _to_float
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,6 @@ def _coerce_bool(value: Any) -> bool:
     return False
 
 
-def _to_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def _to_int(value: Any) -> int:
     if value is None:
         return 0
@@ -64,13 +56,6 @@ def _to_int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
-
-
-def _is_greater_or_equal(value: float, threshold: float) -> bool:
-    try:
-        return float(value) >= float(threshold)
-    except (TypeError, ValueError):
-        return False
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +170,13 @@ def build_notification_badges(
     earnings_days_threshold = int(earnings_days_threshold if earnings_days_threshold is not None else _default_earnings_threshold)
 
     risk_value = _extract_risk_value(risk_metrics)
-    risk_active = bool(risk_value is not None and _is_greater_or_equal(risk_value, risk_threshold))
+    risk_numeric = _as_float_or_none(risk_value)
+    risk_threshold_numeric = _as_float_or_none(risk_threshold)
+    risk_active = bool(
+        risk_numeric is not None
+        and risk_threshold_numeric is not None
+        and risk_numeric >= risk_threshold_numeric
+    )
 
     bullish_count, bearish_count = _extract_signal_counts(technical_indicators)
     technical_active = bool(max(bullish_count, bearish_count) >= technical_threshold)
@@ -223,11 +214,11 @@ def _extract_risk_value(data: Mapping[str, Any] | float | int | None) -> float |
     if isinstance(data, Mapping):
         for key in ("score", "value", "volatility", "risk", "beta"):
             raw = data.get(key)
-            numeric = _to_float(raw)
+            numeric = _to_float(raw, log=False)
             if numeric is not None:
                 return numeric
         return None
-    return _to_float(data)
+    return _to_float(data, log=False)
 
 
 def _extract_signal_counts(data: Mapping[str, Any] | None) -> tuple[int, int]:
@@ -259,7 +250,7 @@ def _find_next_earnings_event(calendar: Iterable[Mapping[str, Any]] | None) -> M
 
 def _coerce_days_until(entry: Mapping[str, Any]) -> float | None:
     raw = entry.get("days_until")
-    numeric = _to_float(raw)
+    numeric = _to_float(raw, log=False)
     if numeric is not None:
         return numeric
     raw_date = entry.get("date")
