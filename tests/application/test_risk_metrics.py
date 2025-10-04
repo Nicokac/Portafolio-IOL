@@ -146,17 +146,20 @@ def test_monte_carlo_simulation_is_reproducible() -> None:
     n_sims = 256
     horizon = 32
 
-    np.random.seed(123)
     mean = returns.mean().values
     cov = returns.cov().values
     w = weights.reindex(returns.columns).fillna(0.0).values
-    sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))
+    expected_rng = np.random.default_rng(SeedSequence(123))
+    sims = expected_rng.multivariate_normal(mean, cov, size=(n_sims, horizon))
     expected_paths = np.prod(1 + sims @ w, axis=1) - 1
     expected = pd.Series(expected_paths)
 
-    np.random.seed(123)
     result = rs.monte_carlo_simulation(
-        returns, weights, n_sims=n_sims, horizon=horizon
+        returns,
+        weights,
+        n_sims=n_sims,
+        horizon=horizon,
+        rng=np.random.default_rng(SeedSequence(123)),
     )
 
     pd.testing.assert_series_equal(result, expected)
@@ -175,16 +178,31 @@ def test_monte_carlo_simulation_seed_control() -> None:
     )
     weights = pd.Series({"AL30": 0.5, "GGAL": 0.5})
 
-    np.random.seed(2024)
-    first = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+    first = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=128,
+        horizon=16,
+        rng=np.random.default_rng(SeedSequence(2024)),
+    )
 
-    np.random.seed(2024)
-    second = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+    second = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=128,
+        horizon=16,
+        rng=np.random.default_rng(SeedSequence(2024)),
+    )
 
     pd.testing.assert_series_equal(first, second)
 
-    np.random.seed(2025)
-    third = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+    third = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=128,
+        horizon=16,
+        rng=np.random.default_rng(SeedSequence(2025)),
+    )
 
     assert not third.equals(first)
 
@@ -324,7 +342,7 @@ def test_markowitz_optimize_returns_nan_when_weights_not_normalisable(
     assert "invalid normalisation factor" in caplog.text
 
 
-def test_monte_carlo_simulation_handles_invalid_covariance(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_monte_carlo_simulation_handles_invalid_covariance() -> None:
     """Monte Carlo should return a safe series when the covariance is invalid."""
 
     returns = pd.DataFrame({
@@ -333,12 +351,17 @@ def test_monte_carlo_simulation_handles_invalid_covariance(monkeypatch: pytest.M
     })
     weights = pd.Series({"A": 0.6, "B": 0.4})
 
-    def _raise(*args, **kwargs):
-        raise np.linalg.LinAlgError("not positive definite")
+    class RaisingRNG:
+        def multivariate_normal(self, *args, **kwargs):
+            raise np.linalg.LinAlgError("not positive definite")
 
-    monkeypatch.setattr(np.random, "multivariate_normal", _raise)
-
-    result = rs.monte_carlo_simulation(returns, weights, n_sims=128, horizon=16)
+    result = rs.monte_carlo_simulation(
+        returns,
+        weights,
+        n_sims=128,
+        horizon=16,
+        rng=RaisingRNG(),
+    )
 
     assert isinstance(result, pd.Series)
     assert result.size == 1
