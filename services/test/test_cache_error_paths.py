@@ -123,7 +123,7 @@ def test_get_quote_cached_handles_invalid_credentials(monkeypatch):
         def __init__(self):
             self._cli = SimpleNamespace(auth=SimpleNamespace(clear_tokens=clear_tokens))
 
-        def get_quote(self, mercado, simbolo):
+        def get_quote(self, market, symbol, panel=None):
             raise svc_cache.InvalidCredentialsError()
 
     logout_mock = MagicMock()
@@ -152,13 +152,13 @@ def test_get_quote_cached_purges_expired_entries(monkeypatch):
         def __init__(self) -> None:
             self.calls = 0
 
-        def get_quote(self, mercado, simbolo):
+        def get_quote(self, market, symbol, panel=None):
             self.calls += 1
-            return {"last": simbolo, "chg_pct": float(self.calls)}
+            return {"last": symbol, "chg_pct": float(self.calls)}
 
     cli = DummyCli()
     ttl = 5
-    first_key = ("bcba", "SYM0")
+    first_key = ("bcba", "SYM0", None)
     try:
         for idx in range(50):
             fake_time.current = float(idx)
@@ -172,7 +172,7 @@ def test_get_quote_cached_purges_expired_entries(monkeypatch):
 
         fake_time.current = 100.0
         svc_cache._get_quote_cached(cli, "bcba", "LATEST", ttl=ttl)
-        assert set(svc_cache._QUOTE_CACHE.keys()) == {("bcba", "LATEST")}
+        assert set(svc_cache._QUOTE_CACHE.keys()) == {("bcba", "LATEST", None)}
     finally:
         svc_cache._QUOTE_CACHE.clear()
 

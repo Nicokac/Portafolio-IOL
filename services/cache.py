@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 # In-memory quote cache
-_QUOTE_CACHE: Dict[Tuple[str, str], Dict[str, Any]] = {}
+_QUOTE_CACHE: Dict[Tuple[str, str, str | None], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 
 
@@ -102,10 +102,26 @@ def _normalize_quote(raw: dict) -> dict:
     return data
 
 
+def _resolve_auth_ref(cli: Any):
+    auth = getattr(cli, "auth", None)
+    if auth is not None:
+        return auth
+    inner = getattr(cli, "_cli", None)
+    if inner is not None:
+        return getattr(inner, "auth", None)
+    return None
+
+
 def _get_quote_cached(
-    cli, mercado: str, simbolo: str, ttl: int = cache_ttl_quotes
+    cli,
+    market: str,
+    symbol: str,
+    panel: str | None = None,
+    ttl: int = cache_ttl_quotes,
 ) -> dict:
-    key = (str(mercado).lower(), str(simbolo).upper())
+    norm_market = str(market).lower()
+    norm_symbol = str(symbol).upper()
+    cache_key = (norm_market, norm_symbol, panel)
     try:
         ttl_seconds = float(ttl)
     except (TypeError, ValueError):
@@ -119,7 +135,7 @@ def _get_quote_cached(
     else:
         with _QUOTE_LOCK:
             _purge_expired_quotes(now, ttl_seconds)
-            rec = _QUOTE_CACHE.get(key)
+            rec = _QUOTE_CACHE.get(cache_key)
             if rec:
                 try:
                     rec_ttl = float(rec.get("ttl", ttl_seconds))
@@ -135,10 +151,10 @@ def _get_quote_cached(
                 if rec_ttl > 0 and now - ts_value < rec_ttl:
                     return rec["data"]
     try:
-        q = cli.get_quote(mercado=key[0], simbolo=key[1]) or {}
+        q = cli.get_quote(norm_market, norm_symbol, panel=panel) or {}
         data = _normalize_quote(q)
     except InvalidCredentialsError:
-        auth = getattr(cli, "auth", None)
+        auth = _resolve_auth_ref(cli)
         if auth is not None:
             try:
                 auth.clear_tokens()
@@ -147,14 +163,14 @@ def _get_quote_cached(
         _trigger_logout()
         data = {"last": None, "chg_pct": None}
     except Exception as e:
-        logger.warning("get_quote falló para %s:%s -> %s", mercado, simbolo, e)
+        logger.warning("get_quote falló para %s:%s -> %s", norm_market, norm_symbol, e)
         data = {"last": None, "chg_pct": None}
     store_time = time.time()
     if ttl_seconds <= 0:
         return data
     with _QUOTE_LOCK:
         _purge_expired_quotes(store_time, ttl_seconds)
-        _QUOTE_CACHE[key] = {"ts": store_time, "ttl": ttl_seconds, "data": data}
+        _QUOTE_CACHE[cache_key] = {"ts": store_time, "ttl": ttl_seconds, "data": data}
     return data
 
 
@@ -189,7 +205,7 @@ def fetch_portfolio(_cli: IIOLProvider):
     try:
         data = _cli.get_portfolio()
     except InvalidCredentialsError:
-        auth = getattr(_cli, "auth", None)
+        auth = _resolve_auth_ref(_cli)
         if auth is not None:
             try:
                 auth.clear_tokens()
@@ -231,6 +247,7 @@ def fetch_portfolio(_cli: IIOLProvider):
 
 @cache.cache_data(ttl=cache_ttl_quotes)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
+    items = list(items or [])
     start = time.time()
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
     fallback_mode = not callable(get_bulk)
@@ -263,13 +280,35 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     out = {}
     ttl = cache_ttl_quotes
     max_workers = max_quote_workers
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items) or 1)) as ex:
+    normalized: list[tuple[str, str, str | None]] = []
+    for raw in items:
+        market: str | None = None
+        symbol: str | None = None
+        panel: str | None = None
+        if isinstance(raw, dict):
+            market = raw.get("market", raw.get("mercado"))
+            symbol = raw.get("symbol", raw.get("simbolo"))
+            panel = raw.get("panel")
+        elif isinstance(raw, (list, tuple)):
+            if len(raw) >= 2:
+                market = raw[0]
+                symbol = raw[1]
+            if len(raw) >= 3:
+                panel = raw[2]
+        else:
+            market = getattr(raw, "market", getattr(raw, "mercado", None))
+            symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
+            panel = getattr(raw, "panel", None)
+
+        panel_value = None if panel is None else str(panel)
+        norm_market = str(market or "bcba").lower()
+        norm_symbol = str(symbol or "").upper()
+        normalized.append((norm_market, norm_symbol, panel_value))
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
         futs = {
-            ex.submit(_get_quote_cached, _cli, m, s, ttl): (
-                str(m).lower(),
-                str(s).upper(),
-            )
-            for m, s in items
+            ex.submit(_get_quote_cached, _cli, market, symbol, panel, ttl): (market, symbol)
+            for market, symbol, panel in normalized
         }
         for fut in as_completed(futs):
             key = futs[fut]
