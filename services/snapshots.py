@@ -31,6 +31,28 @@ from services import health
 
 logger = logging.getLogger(__name__)
 
+_CONFIG_LOCK = threading.RLock()
+_STORAGE: _BaseSnapshotStorage | None = None  # Lazily configured backend instance
+
+
+def _ensure_configured() -> None:
+    """Garantiza que el backend de snapshots esté listo antes de utilizarlo."""
+
+    global _STORAGE
+
+    if _STORAGE is not None:
+        return
+
+    with _CONFIG_LOCK:
+        if _STORAGE is not None:
+            return
+
+        try:
+            _auto_configure_from_settings()
+        except Exception as exc:  # pragma: no cover - defensive logging path
+            logger.exception("Fallo al configurar backend de snapshots: %s", exc)
+            raise
+
 
 SnapshotPayload = Mapping[str, Any]
 SnapshotMetadata = Mapping[str, Any]
@@ -310,12 +332,11 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
         return records
 
 
-_STORAGE: _BaseSnapshotStorage = _NullSnapshotStorage()
-_AUTO_CONFIGURED = False
-
-
 def current_backend_name() -> str:
     """Return the identifier for the active snapshot backend."""
+
+    if _STORAGE is None:
+        return "unconfigured"
 
     if isinstance(_STORAGE, _JSONSnapshotStorage):
         return "json"
@@ -329,10 +350,17 @@ def current_backend_name() -> str:
 def is_null_backend() -> bool:
     """Return whether the current backend disables snapshot persistence."""
 
+    if _STORAGE is None:
+        return True
     return isinstance(_STORAGE, _NullSnapshotStorage)
 
 
-def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str] | None = None) -> None:
+def configure_storage(
+    *,
+    backend: str | None = None,
+    path: str | os.PathLike[str] | None = None,
+    retention: int | None = None,
+) -> None:
     """Configure the snapshot backend based on the provided parameters."""
 
     backend = (backend or "json").strip().lower()
@@ -386,17 +414,22 @@ def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str
             logger.exception("No se pudo registrar la incidencia de snapshots")
 
     global _STORAGE
-    _STORAGE = storage
+    with _CONFIG_LOCK:
+        _STORAGE = storage
 
 
 def save_snapshot(kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None) -> Mapping[str, Any]:
     """Persist a snapshot and return the stored record."""
 
     _ensure_configured()
+    storage = _STORAGE
+    if storage is None:  # pragma: no cover - defensive guard
+        raise SnapshotStorageError("Backend de snapshots no configurado")
+
     payload = _to_plain_mapping(payload)
     metadata = _to_plain_mapping(metadata)
     try:
-        return _STORAGE.save_snapshot(kind, payload, metadata)
+        return storage.save_snapshot(kind, payload, metadata)
     except SnapshotStorageError:
         logger.exception("Error al guardar snapshot %s", kind)
         raise
@@ -406,8 +439,12 @@ def load_snapshot(snapshot_id: str) -> Mapping[str, Any] | None:
     """Load a snapshot by identifier."""
 
     _ensure_configured()
+    storage = _STORAGE
+    if storage is None:  # pragma: no cover - defensive guard
+        raise SnapshotStorageError("Backend de snapshots no configurado")
+
     try:
-        return _STORAGE.load_snapshot(snapshot_id)
+        return storage.load_snapshot(snapshot_id)
     except SnapshotStorageError:
         logger.exception("Error al cargar snapshot %s", snapshot_id)
         raise
@@ -419,8 +456,12 @@ def list_snapshots(
     """Return historical snapshots for the requested kind."""
 
     _ensure_configured()
+    storage = _STORAGE
+    if storage is None:  # pragma: no cover - defensive guard
+        raise SnapshotStorageError("Backend de snapshots no configurado")
+
     try:
-        return _STORAGE.list_snapshots(kind, limit=limit, order=order)
+        return storage.list_snapshots(kind, limit=limit, order=order)
     except SnapshotStorageError:
         logger.exception("Error al listar snapshots kind=%s", kind)
         raise
@@ -438,8 +479,12 @@ def compare_snapshots(id_a: str, id_b: str) -> Mapping[str, Any] | None:
         return None
 
     _ensure_configured()
+    storage = _STORAGE
+    if storage is None:  # pragma: no cover - defensive guard
+        raise SnapshotStorageError("Backend de snapshots no configurado")
+
     try:
-        return _compare_snapshots_with_storage(_STORAGE, id_a, id_b)
+        return _compare_snapshots_with_storage(storage, id_a, id_b)
     except SnapshotStorageError:
         logger.exception("Error al comparar snapshots %s vs %s", id_a, id_b)
         raise

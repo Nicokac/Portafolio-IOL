@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 import requests
 
@@ -142,18 +144,27 @@ def test_get_last_price_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_get_quote_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    class DummyMarket:
-        def price_to_json(self, *args, **kwargs):
+    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", _noop_auth, raising=False)
+
+    captured: dict[str, Any] = {}
+
+    class DummyResponse:
+        def json(self):  # pragma: no cover - simple stub
             return "nondict"
 
-    def fake_ensure(self):
-        self.iol_market = DummyMarket()
-        self._market_ready = True
+    def fake_request(self, method, url, params=None, **kwargs):
+        captured.update({"method": method, "url": url, "params": params})
+        return DummyResponse()
 
-    monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", fake_ensure, raising=False)
+    monkeypatch.setattr(client_module.IOLClient, "_request", fake_request, raising=False)
+
     client = client_module.IOLClient("u", "p", auth=DummyAuth())
-    quote = client.get_quote(mercado="m", simbolo="s")
+    quote = client.get_quote("m", "sym", panel="cotizacion")
+
     assert quote == {"last": None, "chg_pct": None}
+    assert captured["method"] == "GET"
+    assert captured["url"].endswith("/m/SYM")
+    assert captured["params"] == {"panel": "cotizacion"}
 
 
 def test_get_quotes_bulk_handles_errors(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -51,7 +51,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.1)
+## CI Checklist (0.3.30.2)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -115,7 +115,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.1, enfocada en limpiar duplicados y completar la migración fuera de legacy,
+La release 0.3.30.2, enfocada en limpiar duplicados y completar la migración fuera de legacy,
 refuerza los contadores de snapshots, la telemetría de almacenamiento y la verificación de artefactos
 en pipelines. Para cubrirlos en QA
 combina pruebas automáticas y verificaciones manuales:
