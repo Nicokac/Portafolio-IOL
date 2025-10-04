@@ -1,6 +1,6 @@
 [project]
 name = "portafolio-iol"
-version = "0.3.29"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.3.29.1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 
 [tool.pytest.ini_options]
 markers = [

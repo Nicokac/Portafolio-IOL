@@ -66,7 +66,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.29, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
+La release 0.3.29.1, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
 almacenamiento. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
@@ -86,12 +86,20 @@ Para reproducir la telemetría manualmente:
    ```
    Revisa `exports/manual_checks/<snapshot>/kpis.csv` y confirma que la columna `generated_at`
    coincida con el valor mostrado en el health sidebar. El archivo `exports/manual_checks/summary.csv`
-   resume los KPI crudos (`raw_value`) para comparar rápidamente contra la UI.
-   python scripts/export_analysis.py --format both --output exports/manual_check
-   ```
-   Verifica que `exports/manual_check/summary.csv` incluya la fila del snapshot con el valor correcto
-   de `snapshot_hits` y que cada subdirectorio contenga los CSV, el ZIP (`analysis.zip`) y el Excel con
-   los mismos datos visibles en la UI.
+   resume los KPI crudos (`raw_value`) para comparar rápidamente contra la UI. Cada subdirectorio
+   incluye los CSV de tablas, el ZIP `analysis.zip` con el bundle y el Excel `analysis.xlsx` con las
+   hojas y gráficos equivalentes a la UI.
+
+### Validaciones Markowitz
+
+- Ejecuta `pytest tests/application/test_risk_metrics.py -k markowitz` para confirmar que la
+  optimización degrada a pesos `NaN` ante matrices singulares sin romper la UI.
+- Valida que la pestaña de riesgo no renderice la distribución cuando los pesos no están disponibles;
+  puedes simularlo filtrando el portafolio a dos activos idénticos y revisando los logs generados por la
+  pestaña.
+- La suite `pytest tests/integration/test_portfolio_tabs.py` confirma que las pestañas siguen
+  operativas y que los presets mantienen pesos normalizados (suma igual a 1) tras las nuevas
+  validaciones.
 
 ### Configuración del backend de snapshots en CI
 
@@ -105,6 +113,10 @@ artefactos se escriban en el workspace compartido:
   utiliza un backend basado en disco. En runners como GitHub Actions puedes apuntar a
   `$RUNNER_TEMP/portfolio_snapshots.json` para generar los archivos en un directorio temporal que se
   limpia automáticamente.
+- Para validar exportaciones o flujos multi-proveedor dentro del pipeline, fija
+  `SNAPSHOT_STORAGE_PATH` a la carpeta provista por `tmp_path` (por ejemplo, `${{ runner.temp }}`) y
+  ejecuta `pytest tests/integration/` completo. La suite ejerce los degradadores de proveedores y
+  confirma que las exportaciones generen CSV, ZIP y Excel por snapshot.
 
 Tras cada ejecución conviene borrar cualquier archivo residual para mantener el entorno limpio:
 

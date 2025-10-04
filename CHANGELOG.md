@@ -17,6 +17,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.29.1] - 2025-11-22
+
+### Changed
+- Hardening de arquitectura y exportaciones: las validaciones de Markowitz ahora bloquean presets
+  inconsistentes y sincronizan la telemetría con los contadores de resiliencia para evitar falsos
+  positivos en screenings cooperativos.
+- Refuerzo de CI para escenarios multi-proveedor, ejecutando la suite de integración completa y
+  asegurando que los pipelines configuren el backend de snapshots en modo temporal (`Null`/`tmp_path`).
+
+### Documentation
+- README, guía de pruebas y troubleshooting alineados con la versión 0.3.29.1, con comandos de
+  exportación que detallan parámetros `--input`, artefactos generados (CSV, ZIP y Excel) y los pasos
+  para forzar escenarios multi-proveedor en CI.
+- Documentación de las nuevas validaciones Markowitz y de la configuración recomendada para el
+  backend de snapshots en pipelines efímeros.
+
+### Tests
+- Recordatorios en CI para ejecutar `pytest tests/integration/` completo y validar degradaciones
+  multi-proveedor antes de publicar artefactos.
+
 ## [0.3.29] - 2025-11-20
 
 ### Changed
