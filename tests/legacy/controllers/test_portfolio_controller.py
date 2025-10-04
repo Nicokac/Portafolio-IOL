@@ -16,6 +16,7 @@ from controllers.portfolio import (
 )
 from application.portfolio_service import calculate_totals
 from domain.models import Controls
+from services.portfolio_view import PortfolioContributionMetrics
 
 
 def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_rate=None):
@@ -32,6 +33,8 @@ def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_
         controls=controls,
         metrics=metrics,
         tab_options=get_portfolio_tabs(),
+        historical_total=pd.DataFrame(),
+        contributions=PortfolioContributionMetrics.empty(),
     )
 
 
@@ -42,6 +45,14 @@ def _make_snapshot(vm: PortfolioViewModel, *, apply_elapsed: float = 0.0, totals
         apply_elapsed=apply_elapsed,
         totals_elapsed=totals_elapsed,
         generated_at=0.0,
+    )
+
+
+def _notifications_stub() -> SimpleNamespace:
+    return SimpleNamespace(
+        get_flags=lambda: SimpleNamespace(
+            risk_alert=False, technical_signal=False, upcoming_earnings=False
+        )
     )
 
 
@@ -65,7 +76,14 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
+         patch(
+             'controllers.portfolio.portfolio.get_notifications_service',
+             return_value=_notifications_stub(),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
@@ -92,7 +110,14 @@ def test_ta_section_without_symbols_shows_message():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
+         patch(
+             'controllers.portfolio.portfolio.get_notifications_service',
+             return_value=_notifications_stub(),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
@@ -131,7 +156,14 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
+         patch(
+             'controllers.portfolio.portfolio.get_notifications_service',
+             return_value=_notifications_stub(),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.render_basic_section') as basic, \
          patch('controllers.portfolio.portfolio.render_advanced_analysis') as adv, \
@@ -173,13 +205,18 @@ def test_ta_section_symbol_without_us_ticker():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', side_effect=ValueError('invalid')), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
          patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'):
+         patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
+         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
+         patch('controllers.portfolio.portfolio.render_favorite_badges'):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.info.assert_any_call("No se encontró ticker US para este activo.")
@@ -225,7 +262,10 @@ def test_ta_section_symbol_with_empty_df():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
@@ -233,7 +273,9 @@ def test_ta_section_symbol_with_empty_df():
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
          patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
          patch('controllers.portfolio.portfolio.render_fundamental_data'), \
-         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart'):
+         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart'), \
+         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
+         patch('controllers.portfolio.portfolio.render_favorite_badges'):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.info.assert_any_call(
@@ -274,7 +316,10 @@ def test_ta_section_symbol_with_data():
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
          patch('controllers.portfolio.portfolio.render_ui_controls'), \
-         patch('controllers.portfolio.portfolio.view_model_service.get_portfolio_view', return_value=snapshot), \
+         patch(
+             'controllers.portfolio.portfolio.get_portfolio_view_service',
+             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+         ), \
          patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
          patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
          patch('controllers.portfolio.portfolio.render_basic_section'), \
@@ -282,7 +327,9 @@ def test_ta_section_symbol_with_data():
          patch('controllers.portfolio.portfolio.render_risk_analysis'), \
          patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
          patch('controllers.portfolio.portfolio.render_fundamental_data'), \
-         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart', return_value='fig'):
+         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart', return_value='fig'), \
+         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
+         patch('controllers.portfolio.portfolio.render_favorite_badges'):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.plotly_chart.assert_called_once_with(

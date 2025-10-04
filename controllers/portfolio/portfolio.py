@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping, cast
 
 import streamlit as st
 
@@ -29,14 +29,134 @@ from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
 
-view_model_service = PortfolioViewModelService(snapshot_backend=snapshot_service)
-notifications_service = NotificationsService()
+_SERVICE_REGISTRY_KEY = "__portfolio_services__"
+_VIEW_MODEL_SERVICE_KEY = "view_model_service"
+_VIEW_MODEL_FACTORY_KEY = "view_model_service_factory"
+_NOTIFICATIONS_SERVICE_KEY = "notifications_service"
+_NOTIFICATIONS_FACTORY_KEY = "notifications_service_factory"
+_SNAPSHOT_BACKEND_KEY = "snapshot_backend_override"
+
+_FALLBACK_SESSION_STATE: dict[str, Any] = {}
+
+
+def _get_service_registry() -> dict[str, Any]:
+    """Return the per-session registry that stores portfolio services."""
+
+    state = getattr(st, "session_state", None)
+    if state is not None:
+        try:
+            registry = state.get(_SERVICE_REGISTRY_KEY)  # type: ignore[attr-defined]
+        except AttributeError:
+            try:
+                registry = state[_SERVICE_REGISTRY_KEY]  # type: ignore[index]
+            except Exception:  # pragma: no cover - defensive branch
+                registry = None
+        if not isinstance(registry, dict):
+            registry = {}
+            try:
+                state[_SERVICE_REGISTRY_KEY] = registry  # type: ignore[index]
+            except Exception:  # pragma: no cover - defensive branch
+                pass
+        if isinstance(registry, dict):
+            return registry
+
+    registry = _FALLBACK_SESSION_STATE.get(_SERVICE_REGISTRY_KEY)
+    if not isinstance(registry, dict):
+        registry = {}
+        _FALLBACK_SESSION_STATE[_SERVICE_REGISTRY_KEY] = registry
+    return registry
+
+
+def default_view_model_service_factory() -> PortfolioViewModelService:
+    """Create a portfolio view model service bound to the configured backend."""
+
+    registry = _get_service_registry()
+    snapshot_backend = registry.get(_SNAPSHOT_BACKEND_KEY)
+    backend = snapshot_backend if snapshot_backend is not None else snapshot_service
+    return PortfolioViewModelService(snapshot_backend=backend)
+
+
+def default_notifications_service_factory() -> NotificationsService:
+    """Return a fresh notifications service instance."""
+
+    return NotificationsService()
+
+
+def _get_or_create_service(
+    key: str,
+    *,
+    default_factory: Callable[[], Any],
+    override_factory: Callable[[], Any] | None = None,
+) -> Any:
+    """Return a cached service for the current session, creating it if needed."""
+
+    registry = _get_service_registry()
+    factory_key = f"{key}_factory"
+    if override_factory is not None:
+        registry[factory_key] = override_factory
+        registry.pop(key, None)
+
+    factory = registry.get(factory_key)
+    if not callable(factory):
+        factory = default_factory
+        registry[factory_key] = factory
+
+    service = registry.get(key)
+    if service is None:
+        service = factory()
+        registry[key] = service
+    return service
+
+
+def get_portfolio_view_service(
+    factory: Callable[[], PortfolioViewModelService] | None = None,
+) -> PortfolioViewModelService:
+    """Return the cached portfolio view service, creating it if necessary."""
+
+    service = _get_or_create_service(
+        _VIEW_MODEL_SERVICE_KEY,
+        default_factory=default_view_model_service_factory,
+        override_factory=factory,
+    )
+    return cast(PortfolioViewModelService, service)
+
+
+def get_notifications_service(
+    factory: Callable[[], NotificationsService] | None = None,
+) -> NotificationsService:
+    """Return the cached notifications service, creating it if necessary."""
+
+    service = _get_or_create_service(
+        _NOTIFICATIONS_SERVICE_KEY,
+        default_factory=default_notifications_service_factory,
+        override_factory=factory,
+    )
+    return cast(NotificationsService, service)
+
+
+def reset_portfolio_services() -> None:
+    """Clear cached portfolio services for the current session."""
+
+    registry = _get_service_registry()
+    for key in (
+        _VIEW_MODEL_SERVICE_KEY,
+        _VIEW_MODEL_FACTORY_KEY,
+        _NOTIFICATIONS_SERVICE_KEY,
+        _NOTIFICATIONS_FACTORY_KEY,
+    ):
+        registry.pop(key, None)
 
 
 def configure_snapshot_backend(snapshot_backend: Any | None) -> None:
     """Override the snapshot backend used by the cached portfolio service."""
 
-    view_model_service.configure_snapshot_backend(snapshot_backend)
+    registry = _get_service_registry()
+    registry[_SNAPSHOT_BACKEND_KEY] = snapshot_backend
+
+    service = registry.get(_VIEW_MODEL_SERVICE_KEY)
+    configure = getattr(service, "configure_snapshot_backend", None)
+    if callable(configure):
+        configure(snapshot_backend)
 
 
 def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[str]:
@@ -130,11 +250,21 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def render_portfolio_section(container, cli, fx_rates):
+def render_portfolio_section(
+    container,
+    cli,
+    fx_rates,
+    *,
+    view_model_service_factory: Callable[[], PortfolioViewModelService] | None = None,
+    notifications_service_factory: Callable[[], NotificationsService] | None = None,
+):
     """Render the main portfolio section and return refresh interval."""
     with container:
         psvc = PortfolioService()
         tasvc = TAService()
+
+        view_model_service = get_portfolio_view_service(view_model_service_factory)
+        notifications_service = get_notifications_service(notifications_service_factory)
 
         df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
         favorites = get_persistent_favorites()
