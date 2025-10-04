@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from itertools import combinations
+import logging
 from typing import Dict
 
 import numpy as np
 import pandas as pd
+
+
+LOGGER = logging.getLogger(__name__)
 
 __all__ = [
     "compute_returns",
@@ -187,14 +191,40 @@ def markowitz_optimize(returns: pd.DataFrame, risk_free: float = 0.0) -> pd.Seri
         return pd.Series(dtype=float)
     mean_ret = returns.mean() * 252
     cov = returns.cov() * 252
-    try:
-        inv_cov = np.linalg.inv(cov.values)
-    except (np.linalg.LinAlgError, ValueError):
+
+    cov_values = cov.values
+    if cov_values.size == 0:
+        return pd.Series(dtype=float)
+
+    if not np.all(np.isfinite(cov_values)):
+        LOGGER.warning("markowitz_optimize: covariance contains non-finite values")
         return pd.Series(np.nan, index=returns.columns)
+
+    rank = np.linalg.matrix_rank(cov_values)
+    if rank < cov_values.shape[0]:
+        LOGGER.warning("markowitz_optimize: covariance matrix is singular (rank %s < %s)", rank, cov_values.shape[0])
+        return pd.Series(np.nan, index=returns.columns)
+
+    try:
+        inv_cov = np.linalg.pinv(cov_values)
+    except (np.linalg.LinAlgError, ValueError):
+        LOGGER.exception("markowitz_optimize: failed to compute pseudoinverse")
+        return pd.Series(np.nan, index=returns.columns)
+
     ones = np.ones(len(mean_ret))
     excess = mean_ret.values - risk_free
     w = inv_cov @ excess
-    w /= ones @ w
+    denom = ones @ w
+    if not np.isfinite(denom) or np.isclose(denom, 0.0, atol=1e-12, rtol=1e-12):
+        LOGGER.warning("markowitz_optimize: invalid normalisation factor for weights")
+        return pd.Series(np.nan, index=returns.columns)
+
+    w /= denom
+
+    if not np.all(np.isfinite(w)):
+        LOGGER.warning("markowitz_optimize: resulting weights contain non-finite values")
+        return pd.Series(np.nan, index=returns.columns)
+
     return pd.Series(w, index=returns.columns)
 
 
@@ -209,6 +239,31 @@ def monte_carlo_simulation(
         return pd.Series(dtype=float)
     mean = returns.mean().values
     cov = returns.cov().values
+
+    if cov.size == 0:
+        return pd.Series(dtype=float)
+
+    if not np.all(np.isfinite(cov)):
+        LOGGER.warning("monte_carlo_simulation: covariance contains non-finite values")
+        return pd.Series(np.nan)
+
+    if cov.shape[0] != cov.shape[1]:
+        LOGGER.warning("monte_carlo_simulation: covariance matrix is not square")
+        return pd.Series(np.nan)
+
+    try:
+        eigenvalues = np.linalg.eigvalsh(cov)
+    except np.linalg.LinAlgError:
+        LOGGER.warning("monte_carlo_simulation: unable to compute eigenvalues of covariance")
+        return pd.Series(np.nan)
+
+    if np.any(eigenvalues < -np.finfo(float).eps):
+        LOGGER.warning(
+            "monte_carlo_simulation: covariance matrix has negative eigenvalues (min=%s)",
+            eigenvalues.min(),
+        )
+        return pd.Series(np.nan)
+
     w = weights.reindex(returns.columns).fillna(0.0).values
     try:
         sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))

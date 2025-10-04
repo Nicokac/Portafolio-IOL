@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -201,7 +203,7 @@ def test_apply_stress_combines_weights_and_shocks() -> None:
     assert result == pytest.approx(expected_value)
 
 
-def test_markowitz_optimize_degrades_on_singular_covariance() -> None:
+def test_markowitz_optimize_degrades_on_singular_covariance(caplog: pytest.LogCaptureFixture) -> None:
     """Singular covariance matrices should yield NaN weights instead of crashing."""
 
     # Identical assets force a singular covariance matrix
@@ -210,11 +212,37 @@ def test_markowitz_optimize_degrades_on_singular_covariance() -> None:
         "B": [0.01, 0.02, -0.01, 0.015],
     })
 
+    caplog.set_level(logging.WARNING)
     weights = rs.markowitz_optimize(returns)
 
     assert isinstance(weights, pd.Series)
     assert list(weights.index) == list(returns.columns)
     assert weights.isna().all()
+    assert "covariance matrix is singular" in caplog.text
+
+
+def test_markowitz_optimize_returns_nan_when_weights_not_normalisable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If the tangency weights cannot be normalised the result should degrade."""
+
+    returns = pd.DataFrame(
+        {
+            "A": [0.01, 0.02, 0.0, 0.01],
+            "B": [0.03, -0.01, 0.02, 0.0],
+        }
+    )
+
+    mean = returns.mean() * 252
+    assert pytest.approx(mean["A"]) == pytest.approx(mean["B"])
+
+    caplog.set_level(logging.WARNING)
+    weights = rs.markowitz_optimize(returns, risk_free=float(mean["A"]))
+
+    assert isinstance(weights, pd.Series)
+    assert weights.index.tolist() == returns.columns.tolist()
+    assert weights.isna().all()
+    assert "invalid normalisation factor" in caplog.text
 
 
 def test_monte_carlo_simulation_handles_invalid_covariance(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,3 +264,32 @@ def test_monte_carlo_simulation_handles_invalid_covariance(monkeypatch: pytest.M
     assert isinstance(result, pd.Series)
     assert result.size == 1
     assert result.isna().all()
+
+
+def test_monte_carlo_simulation_detects_non_positive_covariance(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Negative eigenvalues should be caught before sampling to avoid crashes."""
+
+    returns = pd.DataFrame(
+        {
+            "A": [0.01, 0.02, 0.03],
+            "B": [0.015, 0.025, 0.035],
+        }
+    )
+    weights = pd.Series({"A": 0.5, "B": 0.5})
+
+    def fake_cov(self: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            [[1.0, 0.8], [0.8, -0.2]], index=self.columns, columns=self.columns
+        )
+
+    monkeypatch.setattr(pd.DataFrame, "cov", fake_cov, raising=False)
+
+    caplog.set_level(logging.WARNING)
+    result = rs.monte_carlo_simulation(returns, weights, n_sims=64, horizon=8)
+
+    assert isinstance(result, pd.Series)
+    assert result.size == 1
+    assert result.isna().all()
+    assert "negative eigenvalues" in caplog.text
