@@ -66,7 +66,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.28.1, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
+La release 0.3.29, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
 almacenamiento. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
@@ -82,6 +82,11 @@ Para reproducir la telemetría manualmente:
    bloque **Snapshots y almacenamiento** aumenta `snapshot_hits` en la segunda corrida.
 2. Exporta el análisis enriquecido desde la línea de comandos para validar la paridad con la UI:
    ```bash
+   python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/manual_checks
+   ```
+   Revisa `exports/manual_checks/<snapshot>/kpis.csv` y confirma que la columna `generated_at`
+   coincida con el valor mostrado en el health sidebar. El archivo `exports/manual_checks/summary.csv`
+   resume los KPI crudos (`raw_value`) para comparar rápidamente contra la UI.
    python scripts/export_analysis.py --format both --output exports/manual_check
    ```
    Verifica que `exports/manual_check/summary.csv` incluya la fila del snapshot con el valor correcto

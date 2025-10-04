@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+## [0.3.29] - 2025-11-20
+
+### Changed
+- Sincronización del versionado 0.3.29 entre `pyproject.toml`, `shared.version` y las superficies
+  visibles para mantener la trazabilidad durante el hardening de CI.
+
+### Documentation
+- README, guías de pruebas y troubleshooting alineados con la numeración 0.3.29 y con ejemplos de
+  exportación actualizados (`--input`, `--formats`, directorios de salida) que reflejan el
+  comportamiento real de `scripts/export_analysis.py`.
+
+### Tests
+- Recordatorios de ejecución en CI y validaciones manuales actualizados para utilizar la versión
+  0.3.29 al verificar banners y reportes exportados.
+
 ## [0.3.28.1] - 2025-11-18
 
 ### Changed
