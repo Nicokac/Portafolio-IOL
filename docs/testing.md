@@ -66,8 +66,8 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.28 introduce contadores de snapshots y telemetría de almacenamiento. Para cubrirlos
-en QA combina pruebas automáticas y verificaciones manuales:
+La release 0.3.28.1, orientada a hardening/CI, introduce contadores de snapshots y telemetría de
+almacenamiento. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
   `st.session_state["controls_snapshot"]` y que el estado se limpie correctamente al cerrar sesión.
