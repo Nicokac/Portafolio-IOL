@@ -18,8 +18,32 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 from domain.models import Controls
+from services import snapshots
 from services.portfolio_view import PortfolioViewModelService
 from shared import export as export_tools
+
+
+@pytest.fixture
+def snapshot_storage(tmp_path):
+    from shared.settings import settings as _settings
+
+    backend_default = getattr(_settings, "snapshot_backend", "json")
+    path_default = getattr(_settings, "snapshot_storage_path", None)
+
+    def _configure(*, backend: str = "json", path: Path | None = None):
+        storage_path = path
+        if storage_path is None and backend not in {"null", "none", "disabled"}:
+            if backend in {"sqlite", "sqlite3"}:
+                storage_path = tmp_path / "snapshots.db"
+            else:
+                storage_path = tmp_path / "snapshots.json"
+        snapshots.configure_storage(backend=backend, path=storage_path)
+        return snapshots
+
+    try:
+        yield _configure
+    finally:
+        snapshots.configure_storage(backend=backend_default, path=path_default)
 
 
 def _build_positions() -> pd.DataFrame:
@@ -50,7 +74,7 @@ def _portfolio_frame(value_scale: float) -> pd.DataFrame:
     return scaled
 
 
-def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub) -> None:
+def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_storage) -> None:
     import services.health as health_service
     import ui.health_sidebar as health_sidebar
 
@@ -65,7 +89,9 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub) -> None:
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply_filters)
 
-    service = PortfolioViewModelService()
+    backend = snapshot_storage(backend="json")
+
+    service = PortfolioViewModelService(snapshot_backend=backend)
     controls = Controls()
 
     snapshot_a = service.get_portfolio_view(
