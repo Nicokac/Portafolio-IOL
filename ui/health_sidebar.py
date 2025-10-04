@@ -736,7 +736,7 @@ def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
 
     percentiles = stats.get("percentiles")
     if isinstance(percentiles, Mapping):
-        for name, display in (("p50", "P50"), ("p90", "P90"), ("p95", "P95")):
+        for name, display in (("p50", "P50"), ("p90", "P90"), ("p95", "P95"), ("p99", "P99")):
             value = percentiles.get(name)
             if isinstance(value, (int, float)):
                 parts.append(f"{display} {float(value):.0f} ms")
@@ -754,13 +754,25 @@ def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
         else:
             parts.append(f"OK {int(success_count)}/{total_int}")
 
+    error_ratio_value = (
+        stats.get("error_ratio") if isinstance(stats.get("error_ratio"), (int, float)) else None
+    )
+
     error_count = stats.get("error_count")
     if isinstance(error_count, (int, float)) and total_int:
-        error_ratio = stats.get("error_ratio")
-        if isinstance(error_ratio, (int, float)):
-            parts.append(f"errores {int(error_count)}/{total_int} ({error_ratio:.0%})")
+        if isinstance(error_ratio_value, (int, float)):
+            parts.append(
+                f"errores {int(error_count)}/{total_int} ({error_ratio_value:.0%})"
+            )
         else:
             parts.append(f"errores {int(error_count)}/{total_int}")
+
+    budget_value = stats.get("error_budget")
+    if not isinstance(budget_value, (int, float)):
+        budget_value = error_ratio_value
+    if isinstance(budget_value, (int, float)):
+        color = "green" if budget_value <= 0.05 else "red"
+        parts.append(f":{color}[Budget {budget_value:.0%}]")
 
     missing_count = stats.get("missing_count")
     if isinstance(missing_count, (int, float)) and int(missing_count) > 0:

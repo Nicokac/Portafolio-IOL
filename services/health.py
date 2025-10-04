@@ -1444,7 +1444,9 @@ def get_health_metrics() -> Dict[str, Any]:
                         continue
                     samples.append(float(numeric))
 
-            percentiles = _compute_percentiles(samples, (0.5, 0.9, 0.95)) if samples else {}
+            percentiles = (
+                _compute_percentiles(samples, (0.5, 0.9, 0.95, 0.99)) if samples else {}
+            )
 
             status_counts_raw = raw_stats.get("status_counts")
             status_counts: Dict[str, int] = {}
@@ -1455,6 +1457,9 @@ def get_health_metrics() -> Dict[str, Any]:
                         continue
                     status_counts[str(status_key)] = int(numeric)
 
+            error_count = _as_optional_int(raw_stats.get("error_count")) or 0
+            error_ratio = error_count / total_attempts if total_attempts else 0.0
+
             summary[key] = {
                 "label": label,
                 "count": latency_count,
@@ -1464,12 +1469,9 @@ def get_health_metrics() -> Dict[str, Any]:
                 "percentiles": percentiles,
                 "status_counts": status_counts,
                 "status_ratios": _compute_ratio_map(status_counts, total_attempts),
-                "error_count": _as_optional_int(raw_stats.get("error_count")) or 0,
-                "error_ratio": (
-                    (_as_optional_int(raw_stats.get("error_count")) or 0) / total_attempts
-                    if total_attempts
-                    else 0.0
-                ),
+                "error_count": error_count,
+                "error_ratio": error_ratio,
+                "error_budget": error_ratio,
                 "missing_count": _as_optional_int(raw_stats.get("missing_count")) or 0,
                 "latest": {
                     "elapsed_ms": _as_optional_float(raw_stats.get("last_elapsed_ms")),
