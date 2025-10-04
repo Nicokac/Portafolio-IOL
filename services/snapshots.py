@@ -26,6 +26,8 @@ import time
 import uuid
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Sequence
 
+from services import health
+
 logger = logging.getLogger(__name__)
 
 
@@ -282,6 +284,24 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
 _STORAGE: _BaseSnapshotStorage = _NullSnapshotStorage()
 
 
+def current_backend_name() -> str:
+    """Return the identifier for the active snapshot backend."""
+
+    if isinstance(_STORAGE, _JSONSnapshotStorage):
+        return "json"
+    if isinstance(_STORAGE, _SQLiteSnapshotStorage):
+        return "sqlite"
+    if isinstance(_STORAGE, _NullSnapshotStorage):
+        return "null"
+    return type(_STORAGE).__name__
+
+
+def is_null_backend() -> bool:
+    """Return whether the current backend disables snapshot persistence."""
+
+    return isinstance(_STORAGE, _NullSnapshotStorage)
+
+
 def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str] | None = None) -> None:
     """Configure the snapshot backend based on the provided parameters."""
 
@@ -297,9 +317,27 @@ def configure_storage(*, backend: str | None = None, path: str | os.PathLike[str
             storage = _NullSnapshotStorage()
         else:
             raise SnapshotStorageError(f"Backend no soportado: {backend}")
-    except SnapshotStorageError:
+    except SnapshotStorageError as err:
         logger.exception("Fallo la configuración del backend de snapshots (%s)", backend)
         storage = _NullSnapshotStorage()
+
+        detail_text = str(err).strip() or repr(err)
+        metadata = {"backend": backend}
+        if storage_path is not None:
+            metadata["path"] = str(storage_path)
+
+        try:
+            health.record_risk_incident(
+                category="snapshots.backend",
+                severity="error",
+                detail=f"No se pudo inicializar el backend '{backend}': {detail_text}",
+                fallback=True,
+                source="snapshots.configure_storage",
+                tags=("snapshots", backend),
+                metadata=metadata,
+            )
+        except Exception:  # pragma: no cover - defensive fallback
+            logger.exception("No se pudo registrar la incidencia de snapshots")
 
     global _STORAGE
     _STORAGE = storage

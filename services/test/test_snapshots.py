@@ -65,3 +65,30 @@ def test_sqlite_snapshot_backend_persists_and_compares(tmp_path):
         assert comparison["totals_b"]["total_cost"] == pytest.approx(95.0)
     finally:
         snapshots.configure_storage(backend="null")
+
+
+def test_configure_storage_records_risk_incident_on_permission_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    incidents: list[dict[str, object]] = []
+
+    def fake_record_incident(**payload: object) -> None:
+        incidents.append(dict(payload))
+
+    monkeypatch.setattr(snapshots.health, "record_risk_incident", fake_record_incident)
+
+    def boom_init(self, path):  # type: ignore[no-untyped-def]
+        raise snapshots.SnapshotStorageError("Permiso denegado")
+
+    monkeypatch.setattr(snapshots._JSONSnapshotStorage, "__init__", boom_init)
+
+    snapshots.configure_storage(backend="json", path=tmp_path / "snapshots.json")
+
+    assert snapshots.is_null_backend()
+    assert incidents, "Se esperaba que se registrara una incidencia de riesgo"
+    incident = incidents[-1]
+    assert incident.get("category") == "snapshots.backend"
+    assert incident.get("fallback") is True
+    assert "permiso" in str(incident.get("detail", "")).lower()
+
+    snapshots.configure_storage(backend="null")
