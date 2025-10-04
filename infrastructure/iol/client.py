@@ -301,7 +301,7 @@ class IOLClient(IIOLProvider):
         resolved_market = (mercado if mercado is not None else market or "bcba").lower()
         resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
         params = {"panel": panel} if panel else None
-        url = f"{self.api_base}/marketdata/{resolved_market}/{resolved_symbol}"
+        url = f"{self.api_base}/marketdata/{resolved_market}/{resolved_symbol}/Cotizacion"
 
         try:
             response = self._request("GET", url, params=params)
