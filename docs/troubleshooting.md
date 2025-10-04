@@ -171,6 +171,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     para descartar un problema con rutas relativas. Verifica que se generen los CSV, el ZIP `analysis.zip`
     (cuando `--formats` incluya `csv`), el archivo `analysis.xlsx` y el resumen `summary.csv` dentro del
     subdirectorio del snapshot o en la raíz del directorio de exportaciones según corresponda.
+- **Kaleido ausente y sin PNG en las exportaciones.**
+  - **Síntomas:** `pytest` marca `kaleido no disponible` o la UI muestra una advertencia al generar el Excel.
+  - **Diagnóstico rápido:** Ejecuta `python -c "import kaleido"`; si falla, instala la dependencia incluida en `requirements.txt`.
+  - **Resolución:**
+    1. Instala Kaleido en el entorno activo (`pip install -r requirements.txt` o `pip install kaleido`).
+    2. Repite la exportación: el Excel incorporará los PNG y las suites de tests dejarán de saltar o advertir.
+    3. Si prefieres continuar sin la librería (por ejemplo, en CI minimalista), el flujo seguirá generando el ZIP de CSV y mostrará la advertencia para informar del fallback.
 - **Los snapshots persisten entre jobs en CI.**
   - **Síntomas:** Un job reutiliza datos de un pipeline anterior y la telemetría marca `snapshot_hits` altos aunque se espera un entorno limpio.
   - **Diagnóstico rápido:** Revisa si las variables `SNAPSHOT_BACKEND` y `SNAPSHOT_STORAGE_PATH` están configuradas en el pipeline.

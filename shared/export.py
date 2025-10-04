@@ -23,8 +23,8 @@ def _get_kaleido_scope():
 def fig_to_png_bytes(fig: go.Figure) -> bytes:
     """Devuelve la figura renderizada como bytes PNG usando kaleido."""
     try:
-        scope = _get_kaleido_scope()
-        return pio.to_image(fig, format="png", scope=scope)
+        _get_kaleido_scope()
+        return pio.to_image(fig, format="png")
     except (ValueError, RuntimeError, TypeError) as e:  # pragma: no cover - depende de librerías externas
         logger.exception("kaleido no disponible")
         raise ValueError("kaleido no disponible") from e

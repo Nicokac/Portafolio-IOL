@@ -1093,7 +1093,14 @@ def test_render_portfolio_exports_generates_full_package(
     png_bytes = base64.b64decode(
         b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
     )
-    monkeypatch.setattr("shared.portfolio_export.fig_to_png_bytes", lambda fig: png_bytes)
+
+    def fake_to_image(fig, *, format="png", **kwargs):
+        assert format == "png"
+        assert "scope" not in kwargs
+        return png_bytes
+
+    monkeypatch.setattr("shared.export._get_kaleido_scope", lambda: object())
+    monkeypatch.setattr("shared.export.pio.to_image", fake_to_image)
 
     export_mod.render_portfolio_exports(
         snapshot=sample_export_snapshot["snapshot"],
