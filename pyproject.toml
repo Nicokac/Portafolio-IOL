@@ -5,6 +5,7 @@ version = "0.3.29.2"  # Keep shared.version.DEFAULT_VERSION aligned with this va
 [tool.pytest.ini_options]
 markers = [
     "live_yahoo: Tests that call the live Yahoo Finance API (enable with RUN_LIVE_YF=1)",
+    "slow: Performance-sensitive tests that may take several seconds to finish",
 ]
 norecursedirs = [
     "tests/legacy",

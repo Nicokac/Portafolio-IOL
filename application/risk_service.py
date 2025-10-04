@@ -233,8 +233,24 @@ def monte_carlo_simulation(
     weights: pd.Series,
     n_sims: int = 1000,
     horizon: int = 252,
+    *,
+    rng: np.random.Generator | None = None,
+    batch_size: int | None = None,
 ) -> pd.Series:
-    """Simula distribución de rendimientos de cartera mediante Monte Carlo."""
+    """Simula distribución de rendimientos de cartera mediante Monte Carlo.
+
+    Parameters
+    ----------
+    returns, weights
+        Historicos de rendimientos y pesos de la cartera.
+    n_sims, horizon
+        Número de simulaciones y horizonte temporal de cada trayectoria.
+    rng
+        Generador opcional de NumPy para controlar la semilla y reproducibilidad.
+    batch_size
+        Cuando se especifica, permite generar las simulaciones en lotes para
+        reducir la huella de memoria con valores grandes de ``n_sims``.
+    """
     if returns is None or returns.empty:
         return pd.Series(dtype=float)
     mean = returns.mean().values
@@ -265,9 +281,34 @@ def monte_carlo_simulation(
         return pd.Series(np.nan)
 
     w = weights.reindex(returns.columns).fillna(0.0).values
-    try:
-        sims = np.random.multivariate_normal(mean, cov, size=(n_sims, horizon))
-    except (np.linalg.LinAlgError, ValueError):
+
+    def _sample(size: int) -> np.ndarray | None:
+        try:
+            if rng is None:
+                return np.random.multivariate_normal(mean, cov, size=(size, horizon))
+            return rng.multivariate_normal(mean, cov, size=(size, horizon))
+        except (np.linalg.LinAlgError, ValueError):
+            return None
+
+    if batch_size is not None:
+        try:
+            batch = int(batch_size)
+        except (TypeError, ValueError):
+            batch = None
+        if batch is not None and batch > 0 and batch < n_sims:
+            results: list[np.ndarray] = []
+            remaining = int(n_sims)
+            while remaining > 0:
+                current = min(batch, remaining)
+                sims = _sample(current)
+                if sims is None or sims.ndim != 3:
+                    return pd.Series(np.nan)
+                results.append(np.prod(1 + sims @ w, axis=1) - 1)
+                remaining -= current
+            return pd.Series(np.concatenate(results))
+
+    sims = _sample(int(n_sims))
+    if sims is None or sims.ndim != 3:
         return pd.Series(np.nan)
     port_paths = np.prod(1 + sims @ w, axis=1) - 1
     return pd.Series(port_paths)
