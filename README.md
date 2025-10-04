@@ -76,6 +76,12 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    directorio también encontrarás `summary.csv` con los KPIs (`raw_value`) de cada snapshot para
    facilitar comparaciones rápidas.
 
+   > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
+   > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
+   > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la aplicación y
+   > los scripts continúan ofreciendo el ZIP de CSV y muestran una advertencia que indica cómo activar
+   > la exportación a Excel con imágenes.
+
 ### Validar el fallback jerárquico desde el health sidebar
 
 1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La
