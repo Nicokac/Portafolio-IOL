@@ -3,6 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Escenarios cubiertos por tests/services/test_macro_adapter.py")
+
 # NOTE: Estas pruebas viven en la suite legacy mientras migramos sus escenarios
 # a `tests/controllers/test_opportunities_controller.py`. Mantenerlas permite
 # auditar la lógica previa hasta que consolidemos los duplicados y quitemos el
