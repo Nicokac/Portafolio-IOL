@@ -10,7 +10,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Mapping, Tuple
 from uuid import uuid4
 
 from shared.cache import cache
@@ -109,6 +109,120 @@ _QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
 _MAX_RATE_LIMIT_RETRIES = 2
 
 
+class QuoteBatchStats:
+    """Aggregate information about a batch of quotes."""
+
+    def __init__(self, total_expected: int = 0) -> None:
+        self.total_expected = int(total_expected)
+        self.started_at = time.time()
+        self._lock = Lock()
+        self.count = 0
+        self.fresh = 0
+        self.stale = 0
+        self.errors = 0
+        self.fallbacks = 0
+        self.rate_limited = 0
+        self.elapsed_ms_total = 0.0
+
+    def record_rate_limited(self) -> None:
+        with self._lock:
+            self.rate_limited += 1
+
+    def record_result(
+        self,
+        *,
+        provider: str | None,
+        stale: bool,
+        error: bool,
+        fallback: bool,
+        elapsed_ms: float | None,
+    ) -> None:
+        provider_key = (provider or "").strip().lower()
+        fallback_flag = fallback or (
+            provider_key not in ("", "iol", "cache")
+        ) or stale
+        elapsed_value = float(elapsed_ms) if elapsed_ms else 0.0
+        with self._lock:
+            self.count += 1
+            if error:
+                self.errors += 1
+            elif stale:
+                self.stale += 1
+            else:
+                self.fresh += 1
+            if fallback_flag:
+                self.fallbacks += 1
+            self.elapsed_ms_total += elapsed_value
+
+    def record_payload(self, payload: Any) -> None:
+        provider: str | None = None
+        stale = False
+        error = False
+        fallback = False
+        if isinstance(payload, Mapping):
+            provider = payload.get("provider")
+            stale = bool(payload.get("stale")) or payload.get("last") is None
+            error = (provider or "").strip().lower() == "error"
+            fallback = stale or (provider not in (None, "iol", "cache"))
+        else:
+            error = True
+            fallback = True
+        self.record_result(
+            provider=provider,
+            stale=stale,
+            error=error,
+            fallback=fallback,
+            elapsed_ms=None,
+        )
+
+    def apply_provider_stats(self, stats: Mapping[str, Any]) -> None:
+        with self._lock:
+            rate_limited = _as_optional_int(stats.get("rate_limited"))
+            if rate_limited is not None:
+                self.rate_limited = max(self.rate_limited, rate_limited)
+
+            fallback_count = _as_optional_int(stats.get("fallbacks"))
+            if fallback_count is not None:
+                self.fallbacks = max(self.fallbacks, fallback_count)
+
+            count_value = _as_optional_int(stats.get("count"))
+            if count_value is not None and count_value > 0:
+                self.count = max(self.count, count_value)
+
+            fresh_value = _as_optional_int(stats.get("fresh"))
+            if fresh_value is not None:
+                self.fresh = max(self.fresh, fresh_value)
+
+            stale_value = _as_optional_int(stats.get("stale"))
+            if stale_value is not None:
+                self.stale = max(self.stale, stale_value)
+
+            error_value = _as_optional_int(stats.get("errors"))
+            if error_value is not None:
+                self.errors = max(self.errors, error_value)
+
+            elapsed_value = stats.get("elapsed_ms_total")
+            if isinstance(elapsed_value, (int, float)):
+                self.elapsed_ms_total = max(self.elapsed_ms_total, float(elapsed_value))
+
+    def summary(self, elapsed: float) -> Dict[str, Any]:
+        with self._lock:
+            count = self.count
+            total_elapsed = max(float(elapsed), 0.0)
+            avg = total_elapsed / count if count else 0.0
+            qps = count / total_elapsed if total_elapsed > 0 and count else 0.0
+            return {
+                "count": count,
+                "fresh": self.fresh,
+                "stale": self.stale,
+                "errors": self.errors,
+                "fallbacks": self.fallbacks,
+                "rate_limited": self.rate_limited,
+                "elapsed": total_elapsed,
+                "avg": avg,
+                "qps": qps,
+            }
+
 def _quote_cache_key(market: str, symbol: str, panel: str | None) -> str:
     panel_token = "" if panel in (None, "") else str(panel)
     return "|".join([market, symbol, panel_token])
@@ -161,6 +275,18 @@ def _resolve_rate_limit_provider(cli: Any) -> str:
     return "iol"
 
 
+def _extract_provider_batch_stats(cli: Any) -> Mapping[str, Any] | None:
+    visited = set()
+    current = cli
+    while current is not None and current not in visited:
+        visited.add(current)
+        stats = getattr(current, "_last_bulk_stats", None)
+        if isinstance(stats, Mapping):
+            return stats
+        current = getattr(current, "_cli", None)
+    return None
+
+
 def _parse_retry_after_seconds(response) -> float | None:
     if response is None:
         return None
@@ -189,6 +315,15 @@ def _as_optional_float(value: Any) -> float | None:
         if value is None:
             return None
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_optional_int(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -414,6 +549,7 @@ def _get_quote_cached(
     symbol: str,
     panel: str | None = None,
     ttl: int = cache_ttl_quotes,
+    batch_stats: QuoteBatchStats | None = None,
 ) -> dict:
     norm_market = str(market).lower()
     norm_symbol = str(symbol).upper()
@@ -427,6 +563,27 @@ def _get_quote_cached(
         ttl_seconds = 0.0
     now = time.time()
     fetch_start = now
+
+    def _record_batch(payload: Any, *, elapsed_ms: float, fallback: bool | None = None) -> None:
+        if batch_stats is None:
+            return
+        provider_name: str | None = None
+        stale_flag = True
+        if isinstance(payload, Mapping):
+            provider_name = payload.get("provider")
+            stale_flag = bool(payload.get("stale")) or payload.get("last") is None
+        error_flag = (provider_name or "").strip().lower() == "error"
+        if fallback is None:
+            fallback_flag = stale_flag or (provider_name not in (None, "iol", "cache"))
+        else:
+            fallback_flag = fallback
+        batch_stats.record_result(
+            provider=provider_name,
+            stale=stale_flag,
+            error=error_flag,
+            fallback=fallback_flag,
+            elapsed_ms=elapsed_ms,
+        )
     if ttl_seconds <= 0:
         with _QUOTE_LOCK:
             _QUOTE_CACHE.clear()
@@ -455,6 +612,7 @@ def _get_quote_cached(
                         stale=bool(data.get("stale")),
                         source="memory",
                     )
+                    _record_batch(data, elapsed_ms=0.0, fallback=False)
                     return data
     provider_key = _resolve_rate_limit_provider(cli)
     q: dict[str, Any] | None = None
@@ -493,6 +651,8 @@ def _get_quote_cached(
                 wait_time = quote_rate_limiter.penalize(
                     provider_key, minimum_wait=retry_after
                 )
+                if batch_stats is not None:
+                    batch_stats.record_rate_limited()
                 logger.info(
                     "Rate limited (429) %s:%s, waiting %.3fs before retry",
                     norm_market,
@@ -545,6 +705,7 @@ def _get_quote_cached(
 
     if ttl_seconds <= 0:
         provider_name = data.get("provider") or "unknown"
+        _record_batch(data, elapsed_ms=elapsed_ms)
         record_quote_provider_usage(
             provider_name,
             elapsed_ms=elapsed_ms if data.get("last") is not None else None,
@@ -556,6 +717,7 @@ def _get_quote_cached(
     if data.get("last") is None:
         fallback_data = _recover_persisted_quote(persist_key, store_time)
         if fallback_data is not None:
+            _record_batch(fallback_data, elapsed_ms=elapsed_ms, fallback=True)
             return fallback_data
 
     with _QUOTE_LOCK:
@@ -570,6 +732,7 @@ def _get_quote_cached(
         stale=stale or data.get("last") is None,
         source="live",
     )
+    _record_batch(data, elapsed_ms=elapsed_ms)
     return data
 
 
@@ -677,6 +840,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         norm_symbol = str(symbol or "").upper()
         normalized.append((norm_market, norm_symbol, panel_value))
 
+    batch_stats = QuoteBatchStats(total_expected=len(normalized))
+
     try:
         if callable(get_bulk):
             data = get_bulk(items)
@@ -757,10 +922,23 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                             "quote %s:%s -> %s", norm_market, norm_symbol, quote
                         )
                 data = normalized_bulk
-            elapsed = (time.time() - start) * 1000
-            log = logger.warning if elapsed > 1000 else logger.info
-            log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
-            record_quote_load(elapsed, source="bulk", count=len(items))
+            if isinstance(data, Mapping):
+                for payload in data.values():
+                    batch_stats.record_payload(payload)
+            provider_stats = _extract_provider_batch_stats(_cli)
+            if isinstance(provider_stats, Mapping):
+                batch_stats.apply_provider_stats(provider_stats)
+            elapsed_seconds = time.time() - start
+            elapsed_ms = elapsed_seconds * 1000.0
+            summary = batch_stats.summary(elapsed_seconds)
+            message = (
+                "✅ {count} quotes processed "
+                "(fresh={fresh}, stale={stale}, errors={errors}, "
+                "fallbacks={fallbacks}, rate_limited={rate_limited}) "
+                "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
+            ).format(**summary)
+            logger.info(message)
+            record_quote_load(elapsed_ms, source="bulk", count=len(items))
             return data
     except InvalidCredentialsError:
         try:
@@ -780,7 +958,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     max_workers = max_quote_workers
     with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
         futs = {
-            ex.submit(_get_quote_cached, _cli, market, symbol, panel, ttl): (market, symbol)
+            ex.submit(
+                _get_quote_cached, _cli, market, symbol, panel, ttl, batch_stats
+            ): (market, symbol)
             for market, symbol, panel in normalized
         }
         for fut in as_completed(futs):
@@ -792,14 +972,22 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     "get_quote failed for %s:%s -> %s", key[0], key[1], e
                 )
                 quote = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
+                batch_stats.record_payload(quote)
             if isinstance(quote, dict):
                 logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
             out[key] = quote
-    elapsed = (time.time() - start) * 1000
-    log = logger.warning if elapsed > 1000 else logger.info
-    log("fetch_quotes_bulk done in %.0fms (%d items)", elapsed, len(items))
+    elapsed_seconds = time.time() - start
+    elapsed_ms = elapsed_seconds * 1000.0
+    summary = batch_stats.summary(elapsed_seconds)
+    message = (
+        "✅ {count} quotes processed "
+        "(fresh={fresh}, stale={stale}, errors={errors}, "
+        "fallbacks={fallbacks}, rate_limited={rate_limited}) "
+        "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
+    ).format(**summary)
+    logger.info(message)
     record_quote_load(
-        elapsed,
+        elapsed_ms,
         source="fallback" if fallback_mode else "per-symbol",
         count=len(items),
     )
