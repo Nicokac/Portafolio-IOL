@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.11] — Mantenimiento, observabilidad y optimización de logs/cache.
+
+### Changed
+- TTL de caché revisado para mantener los paneles cálidos sin sacrificar consistencia ni forzar
+  rehidrataciones innecesarias en los screenings nocturnos.
+- Panel de health actualizado con métricas de observabilidad que enlazan directamente con
+  `analysis.log`, facilitando el seguimiento de degradaciones y alertas proactivas.
+
+### Fixed
+- Limpieza del pipeline de logging para eliminar archivos huérfanos y entradas duplicadas en
+  `analysis.log`, reduciendo ruido operativo y facilitando auditorías.
+
 ## [0.3.30.10.2] - Robust Excel export
 
 ### Fixed
