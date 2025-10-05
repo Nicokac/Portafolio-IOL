@@ -67,9 +67,17 @@ class LegacySession:
         with self._lock:
             creds_changed = (self._user, self._password) != (norm_user, norm_password)
             tokens_changed = self._tokens_snapshot != tokens_snapshot
+            if self._legacy_auth_unavailable and not (creds_changed or tokens_changed):
+                return None
+
             if creds_changed or tokens_changed:
                 self._ready = False
                 self._iol = None
+                self._legacy_auth_unavailable = False
+                st.session_state.pop("legacy_auth_unavailable", None)
+                self._user = norm_user
+                self._password = norm_password
+                self._tokens_snapshot = tokens_snapshot
 
             if self._ready and self._iol is not None:
                 return self._iol
