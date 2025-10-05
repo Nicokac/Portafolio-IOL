@@ -23,7 +23,7 @@ _DUMMY_PNG = base64.b64decode(
 
 def _reset_runtime_state() -> None:
     export._KALEIDO_RUNTIME_AVAILABLE = None
-    export._KALEIDO_WARNING_EMITTED = False
+    export._KALEIDO_WARNING_LAST_TS = None
 
 
 def test_fig_to_png_bytes_returns_png_when_runtime_available(
@@ -76,7 +76,9 @@ def test_fig_to_png_bytes_returns_none_and_warns_when_runtime_missing(
 
     assert result is None
     assert export._KALEIDO_RUNTIME_AVAILABLE is False
-    assert any("Exportación a PNG deshabilitada" in message for message in caplog.messages)
+    assert any(
+        "Exportación no crítica" in message for message in caplog.messages
+    )
 
 
 def test_fig_to_png_bytes_short_circuits_after_failure(
@@ -96,3 +98,31 @@ def test_fig_to_png_bytes_short_circuits_after_failure(
     # Con el runtime marcado como no disponible, no se debe intentar exportar nuevamente.
     monkeypatch.setattr(export.pio, "to_image", pytest.fail)
     assert export.fig_to_png_bytes(go.Figure()) is None
+
+
+def test_fig_to_png_bytes_warning_throttled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _reset_runtime_state()
+    caplog.set_level(logging.WARNING, logger=export.logger.name)
+
+    class _Scope:
+        def ensure_chrome(self) -> None:
+            raise RuntimeError("chromium not found")
+
+    # Simula tiempo constante para activar la ventana de amortiguación.
+    def fake_monotonic() -> float:
+        return 1000.0
+
+    monkeypatch.setattr(export, "_get_kaleido_scope", lambda: _Scope())
+    monkeypatch.setattr(export, "monotonic", fake_monotonic)
+    monkeypatch.setattr(export.pio, "to_image", lambda *_args, **_kwargs: _DUMMY_PNG)
+
+    assert export.fig_to_png_bytes(go.Figure()) is None
+
+    export._KALEIDO_RUNTIME_AVAILABLE = None
+    assert export.fig_to_png_bytes(go.Figure()) is None
+
+    warning_messages = [record.message for record in caplog.records]
+    assert warning_messages.count("⚠️ Exportación no crítica fallida (Kaleido)") == 1
