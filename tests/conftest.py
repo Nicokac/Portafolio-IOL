@@ -37,6 +37,7 @@ class _DummySidebar:
         self.headers: list[str] = []
         self.captions: list[str] = []
         self.markdowns: list[str] = []
+        self.download_buttons: list[dict[str, Any]] = []
         self.elements: list[dict[str, Any]] = []
 
     def header(self, text: object) -> None:
@@ -53,6 +54,26 @@ class _DummySidebar:
         value = str(text)
         self.markdowns.append(value)
         self.elements.append({"type": "markdown", "text": value})
+
+    def download_button(
+        self,
+        label: str,
+        data: Any,
+        *,
+        file_name: str | None = None,
+        mime: str | None = None,
+        key: str | None = None,
+    ) -> None:
+        record = {
+            "type": "download_button",
+            "label": str(label),
+            "data": data,
+            "file_name": file_name,
+            "mime": mime,
+            "key": key,
+        }
+        self.download_buttons.append(record)
+        self.elements.append(record)
 
 
 class _DummyContext:

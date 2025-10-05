@@ -69,10 +69,21 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
         "#### 🔎 Screening de oportunidades",
         "_Sin screenings recientes._",
         "#### ⏱️ Latencias",
-        "- Portafolio: sin registro",
-        "- Cotizaciones: sin registro",
+        "#### 🧭 Monitoreo de sesiones",
+        "_Sin métricas de sesiones._",
+        "#### 🧪 Diagnóstico inicial",
+        "_Sin diagnósticos registrados._",
+        "#### 📄 Logs",
+        "_No se encontró analysis.log._",
     ]:
         assert expected in markdown_calls
+
+    assert any(
+        "Portafolio: sin registro" in text for text in markdown_calls
+    ), "Expected portfolio latency placeholder"
+    assert any(
+        "Cotizaciones: sin registro" in text for text in markdown_calls
+    ), "Expected quotes latency placeholder"
 
 
 def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_sidebar_module) -> None:
@@ -149,32 +160,45 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
     markdown = list(health_sidebar_module.st.sidebar.markdowns)
     formatted = [str(TimeProvider.from_timestamp(ts)) for ts in timestamps]
 
-    expected_lines = {
+    expected_headers = {
         "#### 🔐 Conexión IOL",
-        shared_notes.format_note(f"✅ Refresh correcto • {formatted[0]} — OK"),
         "#### 📈 Yahoo Finance",
-        shared_notes.format_note(
-            f"🛟 Fallback local [Fallback] • {formatted[1]} • Resultado: Fallback — respaldo"
-        ),
         "#### 💱 FX",
-        shared_notes.format_note(
-            f"⚠️ API FX con errores • {formatted[2]} (123 ms) — boom"
-        ),
-        shared_notes.format_note(
-            f"✅ Uso de caché • {formatted[3]} (edad 46s)"
-        ),
         "#### 🔎 Screening de oportunidades",
         shared_notes.format_note(
             "✅ Cache reutilizada • "
             f"{formatted[4]} (12 ms • previo 46 ms) — universo 150→90 | descartes 40% | sectores: Energy, Utilities | origen: nyse=45, nasdaq=45"
         ),
         "#### ⏱️ Latencias",
-        f"- Portafolio: 457 ms • fuente: api • fresh • {formatted[5]}",
-        f"- Cotizaciones: 789 ms • fuente: yfinance • items: 12 • with gaps • {formatted[6]}",
+        "#### 🧭 Monitoreo de sesiones",
+        "_Sin métricas de sesiones._",
+        "#### 🧪 Diagnóstico inicial",
+        "_Sin diagnósticos registrados._",
+        "#### 📄 Logs",
+        "_No se encontró analysis.log._",
     }
 
-    missing = expected_lines.difference(markdown)
+    missing = expected_headers.difference(markdown)
     assert not missing, f"Missing sidebar lines: {missing}"
+
+    assert any(
+        "Refresh correcto" in text and formatted[0] in text for text in markdown
+    ), "Expected IOL refresh summary"
+    assert any(
+        "Fallback local" in text and formatted[1] in text for text in markdown
+    ), "Expected Yahoo Finance summary"
+    assert any(
+        "API FX con errores" in text and formatted[2] in text for text in markdown
+    ), "Expected FX API summary"
+    assert any(
+        "Uso de caché" in text and formatted[3] in text for text in markdown
+    ), "Expected FX cache summary"
+    assert any(
+        "Portafolio: 457 ms" in text and formatted[5] in text for text in markdown
+    ), "Expected portfolio latency entry"
+    assert any(
+        "Cotizaciones: 789 ms" in text and formatted[6] in text for text in markdown
+    ), "Expected quotes latency entry"
     assert len(provider_stub.calls) == len(timestamps)
     for call, expected in zip(provider_stub.calls, timestamps):
         assert call == pytest.approx(expected)

@@ -28,6 +28,9 @@ def health_sidebar(streamlit_stub, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
+    log_path = Path("analysis.log")
+    log_path.write_text("diagnostic output\n", encoding="utf-8")
+
     metrics = {
         "authentication": {
             "status": "authenticated",
@@ -224,9 +227,46 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
                 }
             },
         },
+        "session_monitoring": {
+            "status": "ok",
+            "ts": 12.0,
+            "active_sessions": {"current": 4, "peak": 9, "window": "5m"},
+            "avg_login_to_render": {"seconds": 1.25, "samples": 20},
+            "last_http_error": {
+                "status": 503,
+                "path": "/api/portfolio",
+                "ts": 11.5,
+                "detail": "Timeout",
+            },
+        },
+        "diagnostics": {
+            "initial": {
+                "status": "ok",
+                "ts": 13.0,
+                "detail": "Todos los servicios responden",
+                "checks": [
+                    {
+                        "name": "database",
+                        "label": "Base de datos",
+                        "status": "success",
+                        "ts": 13.1,
+                        "detail": "Conexión establecida",
+                    },
+                    {
+                        "name": "cache",
+                        "status": "warning",
+                        "ts": 13.2,
+                        "detail": "Latencia elevada",
+                    },
+                ],
+            }
+        },
     }
 
-    _render(health_sidebar, metrics)
+    try:
+        _render(health_sidebar, metrics)
+    finally:
+        log_path.unlink(missing_ok=True)
 
     sidebar = health_sidebar.st.sidebar
     assert sidebar.headers == [f"🩺 Healthcheck (versión {health_sidebar.__version__})"]
@@ -250,9 +290,22 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     assert any("Portafolio" in text and "último fetch" in text for text in markdown_calls)
     assert any("Cotizaciones" in text and "estado desactualizado" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
+    assert any("Monitoreo de sesiones" in text for text in markdown_calls)
+    assert any("Sesiones activas" in text for text in markdown_calls)
+    assert any("login→render" in text for text in markdown_calls)
+    assert any("Último error HTTP" in text for text in markdown_calls)
+    assert any("Diagnóstico" in text for text in markdown_calls)
+    assert any("Base de datos" in text for text in markdown_calls)
+    assert any("Latencia elevada" in text for text in markdown_calls)
+    assert any("analysis.log" in text and "descargar" in text for text in markdown_calls)
     assert any("🚨 Incidencias 3" in text for text in markdown_calls)
     assert any("Fallbacks 1/3 (33%)" in text for text in markdown_calls)
     assert any("Última incidencia en liquidez" in text for text in markdown_calls)
+
+    assert any(
+        entry.get("label") == "⬇️ Descargar analysis.log"
+        for entry in sidebar.download_buttons
+    )
 
     expanders = health_sidebar.st.get_records("expander")
     assert any(entry.get("label") == "Latencias por pestaña" for entry in expanders)
@@ -291,6 +344,8 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
         "quote_providers": {},
         "tab_latencies": {},
         "adapter_fallbacks": {},
+        "session_monitoring": None,
+        "diagnostics": None,
     }
 
     _render(health_sidebar, metrics)
@@ -307,6 +362,9 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     assert any("Cotizaciones" in text and "sin datos" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
     assert "_Sin incidencias de riesgo registradas._" in markdown_calls
+    assert "_Sin métricas de sesiones._" in markdown_calls
+    assert "_Sin diagnósticos registrados._" in markdown_calls
+    assert "_No se encontró analysis.log._" in markdown_calls
 
 
 def test_render_health_sidebar_quote_providers_without_http_counters(
