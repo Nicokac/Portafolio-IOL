@@ -11,7 +11,8 @@ from typing import Any, Callable, Dict, Mapping
 import streamlit as st
 
 from services import snapshots
-from services.health import get_health_metrics
+from services.environment import capture_environment_snapshot
+from services.health import get_health_metrics, record_environment_snapshot
 from shared.cache import cache as shared_cache
 from shared.export import ensure_kaleido_runtime
 from shared.time_provider import TimeProvider
@@ -302,6 +303,7 @@ def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[
     metrics = get_health_metrics()
     session_snapshot = _snapshot_session_state(st.session_state)
     timestamp = TimeProvider.now()
+    environment_snapshot = capture_environment_snapshot()
 
     payload: Dict[str, Any] = {
         "event": "startup.diagnostics",
@@ -309,6 +311,7 @@ def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[
         "session": session_snapshot,
         "metrics": metrics,
         "highlights": _collect_highlights(metrics),
+        "environment": environment_snapshot,
     }
 
     runtime_diagnostics = _run_runtime_checks(tokens=tokens)
@@ -321,6 +324,11 @@ def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[
             "runtime": runtime_diagnostics,
         }
     )
+
+    try:
+        record_environment_snapshot(environment_snapshot)
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        logger.warning("No se pudo registrar snapshot de entorno", exc_info=exc)
 
     analysis_logger.info("startup.diagnostics", extra={"analysis": payload})
     return payload

@@ -29,6 +29,7 @@ _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 _SNAPSHOT_EVENT_KEY = "snapshot_event"
+_ENVIRONMENT_SNAPSHOT_KEY = "environment_snapshot"
 _DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"
 _PORTFOLIO_HISTORY_LIMIT = 32
 _QUOTE_HISTORY_LIMIT = 32
@@ -128,6 +129,56 @@ def _normalize_metadata(raw_metadata: Any) -> Dict[str, Any]:
     return normalized
 
 
+def _normalize_environment_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        normalized_map: Dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key or "").strip()
+            if not key_text:
+                continue
+            normalized_item = _normalize_environment_value(item)
+            if normalized_item is None:
+                continue
+            if isinstance(normalized_item, Mapping) and not normalized_item:
+                continue
+            if isinstance(normalized_item, (list, tuple)) and not normalized_item:
+                continue
+            normalized_map[key_text] = normalized_item
+        return normalized_map
+    if isinstance(value, (list, tuple, set)):
+        normalized_list = [
+            item
+            for item in (
+                _normalize_environment_value(entry)
+                for entry in value
+            )
+            if item is not None and (not isinstance(item, (list, tuple, Mapping)) or item)
+        ]
+        return normalized_list
+    return str(value)
+
+
+def _normalize_environment_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in snapshot.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        normalized_value = _normalize_environment_value(value)
+        if normalized_value is None:
+            continue
+        if isinstance(normalized_value, Mapping) and not normalized_value:
+            continue
+        if isinstance(normalized_value, (list, tuple)) and not normalized_value:
+            continue
+        normalized[key_text] = normalized_value
+    return normalized
+
+
 def record_snapshot_event(
     *,
     kind: str,
@@ -159,6 +210,34 @@ def record_snapshot_event(
 
     store = _store()
     store[_SNAPSHOT_EVENT_KEY] = event
+
+
+def record_environment_snapshot(snapshot: Mapping[str, Any]) -> None:
+    """Persist the latest environment snapshot for diagnostics."""
+
+    if not isinstance(snapshot, Mapping):
+        return
+
+    normalized_snapshot = _normalize_environment_snapshot(snapshot)
+    entry: Dict[str, Any] = {"ts": time.time(), "snapshot": normalized_snapshot}
+
+    store = _store()
+    store[_ENVIRONMENT_SNAPSHOT_KEY] = entry
+
+    metrics: Dict[str, Any] = {}
+    cpu_info = normalized_snapshot.get("cpu")
+    if isinstance(cpu_info, Mapping):
+        logical = cpu_info.get("logical_count")
+        if isinstance(logical, (int, float)):
+            metrics["cpu_logical"] = logical
+    memory_info = normalized_snapshot.get("memory")
+    if isinstance(memory_info, Mapping):
+        total_mb = memory_info.get("total_mb")
+        if isinstance(total_mb, (int, float)):
+            metrics["memory_total_mb"] = total_mb
+
+    if metrics:
+        _log_analysis_event("environment_snapshot", entry, metrics)
 
 
 def record_session_started(
@@ -3474,6 +3553,7 @@ __all__ = [
     "record_iol_refresh",
     "record_login_to_render",
     "record_portfolio_load",
+    "record_environment_snapshot",
     "record_session_started",
     "record_tab_latency",
     "record_adapter_fallback",

@@ -50,6 +50,20 @@ def test_run_startup_diagnostics_formats_payload(
     logger = Mock()
     monkeypatch.setattr(diagnostics_module, "analysis_logger", logger)
 
+    environment_snapshot = {"python": {"version": "3.11.0"}}
+    monkeypatch.setattr(
+        diagnostics_module,
+        "capture_environment_snapshot",
+        lambda: environment_snapshot,
+    )
+
+    recorder = Mock()
+    monkeypatch.setattr(
+        diagnostics_module,
+        "record_environment_snapshot",
+        recorder,
+    )
+
     payload = diagnostics_module.run_startup_diagnostics()
 
     assert payload["event"] == "startup.diagnostics"
@@ -64,6 +78,9 @@ def test_run_startup_diagnostics_formats_payload(
     highlights = payload["highlights"]
     assert any(entry["icon"] == "✅" and "Cotizaciones" in entry["label"] for entry in highlights)
     assert any(entry["icon"] == "❌" and entry["label"] == "FX" for entry in highlights)
+
+    assert payload["environment"] == environment_snapshot
+    recorder.assert_called_once_with(environment_snapshot)
 
     logger.info.assert_called_once()
     args, kwargs = logger.info.call_args
