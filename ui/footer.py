@@ -14,14 +14,14 @@ def render_footer():
     st.markdown(
         f"""
         <hr>
-        <div style='text-align:center; font-size:0.9em;'>
-            Desarrollado por Nicolás K. ·
-            <a href='https://github.com/caliari' target='_blank'>Portafolio</a><br>
-            Versión {version}<br>
-            Actualizado {timestamp}<br>
-            &copy; {year} - Los datos se ofrecen sin garantía. Uso bajo su responsabilidad.
+        <div style='text-align:center; font-size:0.9rem; color:#555;'>
+            <div style='font-weight:600; margin-bottom:0.25rem;'>Observabilidad operativa · versión {version}</div>
+            <div style='margin-bottom:0.75rem;'>Última sincronización: <strong>{timestamp}</strong></div>
+            <div style='font-size:0.8rem; color:#666;'>Desarrollado por Nicolás K. · <a href='https://github.com/caliari' target='_blank'>Portafolio</a></div>
+            <div style='font-size:0.75rem; color:#777; margin-top:0.5rem;'>
+                &copy; {year}. Los datos se ofrecen sin garantía. Uso bajo su responsabilidad.
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-

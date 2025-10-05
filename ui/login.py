@@ -16,6 +16,28 @@ def render_login_page() -> None:
     """Display the login form with header and footer."""
     render_header()
 
+    st.markdown(
+        """
+        <div style="margin:1rem 0 1.5rem; padding:1rem 1.2rem; border-radius:0.75rem; background:linear-gradient(135deg, rgba(0, 76, 255, 0.08), rgba(0, 199, 190, 0.08));">
+            <div style="display:flex; gap:0.8rem; align-items:flex-start;">
+                <span style="font-size:1.8rem;">🛰️</span>
+                <div>
+                    <div style="font-size:1.1rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Observabilidad operativa</div>
+                    <p style="margin:0.4rem 0 0; line-height:1.4; color:#333;">
+                        Supervisá la salud de tu portafolio con indicadores en tiempo real sin comprometer tus credenciales.
+                    </p>
+                    <div style="display:flex; flex-wrap:wrap; gap:0.6rem; margin-top:0.6rem; font-size:0.9rem;">
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">⚡ Actualización en vivo</span>
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">📊 Consolidación multi-cuenta</span>
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">🔍 Trazabilidad completa</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     validation = validate_tokens_key()
     if validation.message:
         if validation.level == "warning":
@@ -29,12 +51,17 @@ def render_login_page() -> None:
     if err:
         st.error(err)
 
-    with st.form("login_form"):
-        user = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
-        submitted = st.form_submit_button("Iniciar sesión")
+    form_col, info_col = st.columns([2.5, 1.5])
 
-    render_security_info()
+    with form_col:
+        with st.form("login_form"):
+            user = st.text_input("Usuario")
+            password = st.text_input("Contraseña", type="password")
+            submitted = st.form_submit_button("Iniciar sesión")
+
+    with info_col:
+        render_security_info()
+
     render_footer()
 
     if submitted:
