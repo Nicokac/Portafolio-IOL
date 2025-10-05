@@ -9,6 +9,7 @@ import time
 import threading
 from typing import Dict, Any
 
+import streamlit as st
 import requests
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -137,14 +138,17 @@ class IOLAuth:
                 raise NetworkError(str(e)) from e
 
             self._save_tokens(self.tokens)
+            end = time.time()
             logger.info(
                 "IOL login ok",
                 extra={
                     "tokens_file": self.tokens_path,
                     "result": "ok",
-                    "elapsed_ms": int((time.time() - start) * 1000),
+                    "elapsed_ms": int((end - start) * 1000),
                 },
             )
+            st.session_state["iol_login_ok_ts"] = end
+            st.session_state.pop("iol_startup_metric_logged", None)
             return self.tokens
 
     def refresh(self) -> Dict[str, Any]:
