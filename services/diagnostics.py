@@ -1,18 +1,29 @@
-
 from __future__ import annotations
 
-"""Utilities to collect startup diagnostics and publish them to telemetry logs."""
+"""Utilities for collecting and reporting startup diagnostics."""
 
-from typing import Any, Mapping
 import logging
+import socket
+import time
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Mapping
 
 import streamlit as st
 
-from shared.time_provider import TimeProvider
+from services import snapshots
 from services.health import get_health_metrics
+from shared.cache import cache as shared_cache
+from shared.export import ensure_kaleido_runtime
+from shared.time_provider import TimeProvider
 
 
 analysis_logger = logging.getLogger("analysis")
+logger = logging.getLogger(__name__)
+
+
+_IOL_HOST = "api.invertironline.com"
+_IOL_PORT = 443
+
 
 _STATUS_ICONS: Mapping[str, str] = {
     "success": "✅",
@@ -120,53 +131,16 @@ def _collect_highlights(metrics: Mapping[str, Any]) -> list[dict[str, Any]]:
         label = _resolve_label(entry, fallback=key.replace("_", " ").title())
         icon = _coerce_icon(entry, fallback=label)
         value = _resolve_value(entry)
-        highlights.append({
-            "id": key,
-            "icon": icon,
-            "label": label,
-            "value": value,
-        })
+        highlights.append(
+            {
+                "id": key,
+                "icon": icon,
+                "label": label,
+                "value": value,
+            }
+        )
 
     return highlights
-
-
-def run_startup_diagnostics() -> dict[str, Any]:
-    """Gather startup diagnostics combining health metrics and session data."""
-
-    metrics = get_health_metrics()
-    session_snapshot = _snapshot_session_state(st.session_state)
-    timestamp = TimeProvider.now()
-
-    payload: dict[str, Any] = {
-        "event": "startup.diagnostics",
-        "timestamp": timestamp,
-        "session": session_snapshot,
-        "metrics": metrics,
-        "highlights": _collect_highlights(metrics),
-    }
-
-    analysis_logger.info("startup.diagnostics", extra={"analysis": payload})
-    return payload
-
-from __future__ import annotations
-
-"""Runtime diagnostics executed after successful IOL authentication."""
-
-import logging
-import socket
-import time
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping
-
-from services import snapshots
-from shared.cache import cache as shared_cache
-from shared.export import ensure_kaleido_runtime
-
-
-logger = logging.getLogger(__name__)
-
-_IOL_HOST = "api.invertironline.com"
-_IOL_PORT = 443
 
 
 @dataclass(frozen=True)
@@ -187,8 +161,9 @@ class DiagnosticCheck:
 
 def _check_iol_connectivity(timeout: float = 2.5) -> DiagnosticCheck:
     host = _IOL_HOST
+    port = _IOL_PORT
     try:
-        with socket.create_connection((host, _IOL_PORT), timeout):
+        with socket.create_connection((host, port), timeout):
             pass
     except OSError as exc:  # pragma: no cover - depends on network conditions
         raise RuntimeError(f"Conectividad IOL falló: {exc}") from exc
@@ -260,9 +235,7 @@ def _check_cache_state() -> DiagnosticCheck:
     return DiagnosticCheck("cache", "ok", "Cachés de sesión operativas")
 
 
-def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[str, Any]:
-    """Execute lightweight checks to assess the environment health."""
-
+def _run_runtime_checks(*, tokens: Mapping[str, Any] | None = None) -> Dict[str, Any]:
     started_at = time.perf_counter()
     timestamp = time.time()
 
@@ -289,7 +262,17 @@ def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[
             errors += 1
 
     _run(lambda: _check_iol_connectivity())
-    _run(lambda: _check_bearer_token(tokens))
+    if tokens is not None:
+        _run(lambda: _check_bearer_token(tokens))
+    else:
+        checks.append(
+            DiagnosticCheck(
+                "bearer_token",
+                "warning",
+                "Tokens de autenticación no disponibles",
+            )
+        )
+        warnings += 1
     _run(_check_snapshots_access)
     _run(_check_kaleido_runtime)
     _run(_check_cache_state)
@@ -311,6 +294,36 @@ def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[
         "message": summary,
         "checks": [check.as_dict() for check in checks],
     }
+
+
+def run_startup_diagnostics(*, tokens: Mapping[str, Any] | None = None) -> Dict[str, Any]:
+    """Gather startup diagnostics combining telemetry and runtime checks."""
+
+    metrics = get_health_metrics()
+    session_snapshot = _snapshot_session_state(st.session_state)
+    timestamp = TimeProvider.now()
+
+    payload: Dict[str, Any] = {
+        "event": "startup.diagnostics",
+        "timestamp": timestamp,
+        "session": session_snapshot,
+        "metrics": metrics,
+        "highlights": _collect_highlights(metrics),
+    }
+
+    runtime_diagnostics = _run_runtime_checks(tokens=tokens)
+    payload.update(
+        {
+            "component": runtime_diagnostics["component"],
+            "status": runtime_diagnostics["status"],
+            "latency": runtime_diagnostics["latency"],
+            "checks": runtime_diagnostics["checks"],
+            "runtime": runtime_diagnostics,
+        }
+    )
+
+    analysis_logger.info("startup.diagnostics", extra={"analysis": payload})
+    return payload
 
 
 __all__ = ["run_startup_diagnostics"]
