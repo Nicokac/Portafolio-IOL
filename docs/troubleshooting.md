@@ -4,13 +4,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.30.11, enfocada en exponer los TTL de caché y la telemetría
+> Nota: Esta guía corresponde a la release 0.3.30.12, enfocada en estabilizar la sesión, exponer los TTL de caché y la telemetría
 > de salud directamente en la UI. Además de preservar la bitácora unificada y las exportaciones multi-formato,
-> la release registra cada screening en `~/.portafolio_iol/logs/analysis.log`, muestra la vigencia restante del
-> cache en el health sidebar y documenta cuándo los PNG quedan pendientes porque Kaleido no está instalado.
-> Cuando Kaleido falta, las exportaciones a Excel siguen generándose completas con todas las tablas.
+> la release registra cada screening en `~/.portafolio_iol/logs/analysis.log`, anota el `session_tag` activo, muestra la vigencia restante del
+> cache y el timeline de eventos en el health sidebar y documenta cuándo los PNG quedan pendientes porque Kaleido no está instalado.
+> Cuando Kaleido falta, las exportaciones a Excel siguen generándose completas con todas las tablas y se etiqueta la sesión que originó cada artefacto.
 
-## CI Checklist (0.3.30.11)
+## CI Checklist (0.3.30.12)
 
 - **Suite legacy detectada.** Si el resumen de `pytest` menciona archivos dentro de `tests/legacy/`,
   ajustá el comando (`pytest --ignore=tests/legacy`) o revisá `norecursedirs` en `pyproject.toml` para
@@ -22,7 +22,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
   `analysis.xlsx`, `summary.csv` o `analysis.log` (desde `~/.portafolio_iol/logs/`), márcalo como fallido y reejecuta las etapas de `pytest --cov` y
   `scripts/export_analysis.py`. Los pasos deben apuntar al mismo directorio temporal (`$RUNNER_TEMP` o
   `tmp_path`).
-- **TTL sin validar.** Ejecuta la aplicación en modo headless y capturá el health sidebar para confirmar que los TTL configurados en `CACHE_TTL_*` coincidan con los mostrados por cada proveedor. Conserva la captura o la salida de logs en los artefactos del pipeline.
+- **TTL o timeline sin validar.** Ejecuta la aplicación en modo headless y capturá el health sidebar para confirmar que los TTL configurados en `CACHE_TTL_*` coincidan con los mostrados por cada proveedor y que el timeline de sesión liste los hitos más recientes (login, screenings, exportaciones) con el `session_tag` esperado. Conserva la captura o la salida de logs en los artefactos del pipeline.
 - **Rutas inconsistentes de snapshots.** Cuando `scripts/export_analysis.py` no encuentra archivos,
   revisa la variable `SNAPSHOT_STORAGE_PATH` utilizada durante los tests. Configúrala explícitamente en
   el pipeline y replica la ruta al generar las exportaciones.
@@ -63,13 +63,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia o los TTL no persisten tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía o pierde la insignia con el TTL restante.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.11 o superior, que `analysis.log` se regenere tras cada screening, que `CACHE_TTL_*` no estén fijados en valores extremos y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]` ni `st.session_state["ttl_seconds"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.12 o superior, que `analysis.log` se regenere tras cada screening, que `CACHE_TTL_*` no estén fijados en valores extremos y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]` ni `st.session_state["ttl_seconds"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
 
-- **La etiqueta "Telemetría y caché reforzadas" o la insignia de TTL no aparece en el sidebar.**
-  - **Síntomas:** El banner superior muestra la versión `0.3.30.11`, pero el bloque de salud no adjunta el mensaje, no muestra el TTL restante y las exportaciones omiten los PNG sin explicar el motivo.
+- **La etiqueta "Estabilización y monitoreo de sesión" o la insignia de TTL no aparece en el sidebar.**
+  - **Síntomas:** El banner superior muestra la versión `0.3.30.12`, pero el bloque de salud no adjunta el mensaje, no muestra el TTL restante y las exportaciones omiten los PNG sin explicar el motivo.
   - **Diagnóstico rápido:** Ejecuta `python tests/helpers/check_live_quotes.py` (o el script equivalente) para confirmar que el
     proveedor activo devuelve `last = price`, que `shared.version.DEFAULT_VERSION` coincide con la release actual, que `CACHE_TTL_*` esté inicializado en `shared.settings` y que `python -c "import kaleido"` falle cuando el entorno no dispone de la librería.
   - **Resolución:**
@@ -77,6 +77,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     2. Si estás en modo offline, habilita el flag `LIVE_QUOTES_ENABLED=1` y vuelve a iniciar la app para forzar la consulta en vivo.
     3. Comprueba que no existan interceptores sobrescribiendo `st.session_state["live_quotes_status"]`; en caso de encontrarlos, elimínalos o actualízalos para reflejar el nuevo flujo.
     4. Valida que la ausencia de Kaleido sea intencional: si necesitás los PNG en la exportación instala la dependencia; en caso contrario el banner debe permanecer visible y el Excel se generará completo con las tablas aun con las exportaciones PNG deshabilitadas.
+    5. Revisa el timeline del health sidebar y confirma que los eventos de la sesión lleven el `session_tag` activo y las marcas de tiempo ordenadas.
 - **El bloque "Snapshots y almacenamiento" aparece vacío o en error.**
   - **Síntomas:** El health sidebar muestra `snapshot_hits = 0` pese a ejecutar screenings consecutivos, o aparece un mensaje "Ruta de snapshots inaccesible".
   - **Diagnóstico rápido:** Ejecuta el siguiente snippet para validar la ruta configurada y los permisos:
@@ -176,7 +177,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.11` en el header/footer, que el banner mencione "Telemetría y caché reforzadas" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.12` en el header/footer, que el banner mencione "Estabilización y monitoreo de sesión" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
