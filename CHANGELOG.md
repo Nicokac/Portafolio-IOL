@@ -23,6 +23,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.9] - 2025-10-10
+
+### Fixed
+- Se reparó el flujo de cotizaciones en vivo: `/Titulos/Cotizacion` vuelve a sincronizarse con
+  `/Cotizacion`, respeta el fallback jerárquico y expone el origen real de cada precio en la UI.
+- Se corrigió el sidebar para mostrar el estado actualizado del feed live, la versión `0.3.30.9` y la
+  salud de los proveedores sin mensajes inconsistentes.
+
+### Added
+- Integración del país de origen en el portafolio para habilitar filtros, dashboards y exports
+  multi-país en los análisis de cartera.
+
+### Documentation
+- README, guías de testing y troubleshooting actualizadas para destacar la release 0.3.30.9, las
+  cotizaciones en vivo restauradas y las verificaciones necesarias en banners y pipelines.
+
 ## [0.3.30.8] - 2025-10-06
 
 ### Added
