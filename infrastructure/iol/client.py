@@ -21,6 +21,7 @@ from shared.utils import _to_float
 
 from .auth import IOLAuth
 from .ports import IIOLProvider
+from services.health import record_quote_provider_usage
 
 logger = logging.getLogger(__name__)
 
@@ -470,6 +471,31 @@ class IOLClient(IIOLProvider):
                     resolved_symbol,
                     "response=None",
                 )
+                logger.info(
+                    "get_quote fallback -> legacy %s:%s",
+                    resolved_market,
+                    resolved_symbol,
+                )
+                legacy_payload = self._legacy_quote_fallback(
+                    resolved_market, resolved_symbol, panel
+                )
+                if legacy_payload is not None:
+                    provider_name = legacy_payload.get("provider") or "legacy"
+                    if legacy_payload.get("provider") is None:
+                        legacy_payload["provider"] = "legacy"
+                    record_quote_provider_usage(
+                        provider_name,
+                        elapsed_ms=None,
+                        stale=legacy_payload.get("last") is None,
+                        source="legacy",
+                    )
+                    return legacy_payload
+                record_quote_provider_usage(
+                    "legacy",
+                    elapsed_ms=None,
+                    stale=True,
+                    source="legacy",
+                )
                 fallback = self._fallback_quote_via_ohlc(
                     resolved_market, resolved_symbol, panel=panel
                 )
@@ -562,7 +588,7 @@ class IOLClient(IIOLProvider):
         resolved_market: str,
         resolved_symbol: str,
         panel: str | None,
-    ) -> Dict[str, Optional[float]]:
+    ) -> Optional[Dict[str, Optional[float]]]:
         try:
             from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
 
@@ -577,9 +603,25 @@ class IOLClient(IIOLProvider):
                 symbol=resolved_symbol,
                 panel=panel,
             )
-            if payload is None:
-                return {"last": None, "chg_pct": None}
-            return payload
+        except requests.HTTPError as http_exc:
+            status = None
+            if getattr(http_exc, "response", None) is not None:
+                status = http_exc.response.status_code
+            logger.warning(
+                "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
+                resolved_market,
+                resolved_symbol,
+                status or http_exc,
+            )
+            return None
+        except requests.RequestException as req_exc:
+            logger.warning(
+                "Legacy IOLClient.get_quote request error %s:%s -> %s",
+                resolved_market,
+                resolved_symbol,
+                req_exc,
+            )
+            return None
         except Exception as fallback_exc:  # pragma: no cover - defensive guard
             logger.error(
                 "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
@@ -588,7 +630,14 @@ class IOLClient(IIOLProvider):
                 fallback_exc,
                 exc_info=True,
             )
-            return {"last": None, "chg_pct": None}
+            return None
+
+        if not isinstance(payload, dict):
+            return None
+
+        normalized = dict(payload)
+        normalized.setdefault("provider", "legacy")
+        return normalized
 
     def get_quotes_bulk(
         self,

@@ -65,6 +65,32 @@ def aware_moment() -> datetime:
     return datetime(2024, 4, 1, 10, 45, tzinfo=ZoneInfo("UTC"))
 
 
+@pytest.fixture(autouse=True)
+def stub_record_usage(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    """Capture quote provider usage metrics emitted by the client."""
+
+    calls: list[dict] = []
+
+    def fake_record(
+        provider: str,
+        *,
+        elapsed_ms: float | None,
+        stale: bool,
+        source: str | None = None,
+    ) -> None:
+        calls.append(
+            {
+                "provider": provider,
+                "elapsed_ms": elapsed_ms,
+                "stale": stale,
+                "source": source,
+            }
+        )
+
+    monkeypatch.setattr(iol_client_module, "record_quote_provider_usage", fake_record)
+    return calls
+
+
 def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware_moment: datetime) -> None:
     """Instantiating IOLClient with bearer tokens should set a naive bearer_time."""
 
@@ -205,6 +231,11 @@ def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: None)
     monkeypatch.setattr(
         iol_client_module.IOLClient,
+        "_legacy_quote_fallback",
+        lambda self, market, symbol, panel=None: None,
+    )
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
         "_fallback_quote_via_ohlc",
         lambda self, market, symbol, panel=None: None,
     )
@@ -213,3 +244,48 @@ def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch)
     payload = client.get_quote("bcba", "GGAL")
 
     assert payload == {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
+
+
+def test_get_quote_response_none_uses_legacy(
+    monkeypatch: pytest.MonkeyPatch, stub_record_usage: list[dict]
+) -> None:
+    """When the primary request yields no response, the legacy fallback should supply the quote."""
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: None)
+
+    def fake_legacy(
+        self: iol_client_module.IOLClient,
+        market: str,
+        symbol: str,
+        panel: str | None,
+    ) -> dict:
+        return {"last": 250.5, "chg_pct": 2.1}
+
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
+        "_legacy_quote_fallback",
+        fake_legacy,
+    )
+
+    def fail_ohlc(*args, **kwargs):
+        raise AssertionError("OHLC fallback should not be used when legacy succeeds")
+
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
+        "_fallback_quote_via_ohlc",
+        fail_ohlc,
+    )
+
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    payload = client.get_quote("bcba", "GGAL")
+
+    assert payload == {"last": 250.5, "chg_pct": 2.1, "provider": "legacy"}
+    assert stub_record_usage == [
+        {
+            "provider": "legacy",
+            "elapsed_ms": None,
+            "stale": False,
+            "source": "legacy",
+        }
+    ]
