@@ -68,6 +68,8 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
         "_Sin uso de caché registrado._",
         "#### 🔎 Screening de oportunidades",
         "_Sin screenings recientes._",
+        "#### 🧩 Dependencias críticas",
+        "_Sin registros de dependencias._",
         "#### ⏱️ Latencias",
         "#### 🧭 Monitoreo de sesiones",
         "_Sin métricas de sesiones._",
@@ -169,6 +171,8 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
             "✅ Cache reutilizada • "
             f"{formatted[4]} (12 ms • previo 46 ms) — universo 150→90 | descartes 40% | sectores: Energy, Utilities | origen: nyse=45, nasdaq=45"
         ),
+        "#### 🧩 Dependencias críticas",
+        "_Sin registros de dependencias._",
         "#### ⏱️ Latencias",
         "#### 🧭 Monitoreo de sesiones",
         "_Sin métricas de sesiones._",

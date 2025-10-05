@@ -40,6 +40,7 @@ _ACTIVE_SESSIONS_KEY = "active_sessions"
 _LOGIN_TO_RENDER_STATS_KEY = "login_to_render"
 _LAST_HTTP_ERROR_KEY = "last_http_error"
 _SESSION_MONITORING_TTL_SECONDS = 300.0
+_DEPENDENCIES_KEY = "dependencies"
 
 
 logger = logging.getLogger(__name__)
@@ -396,6 +397,38 @@ def record_diagnostics_snapshot(
         if source_text:
             fallback_entry["source"] = source_text
         store[_DIAGNOSTICS_SNAPSHOT_KEY] = fallback_entry
+
+
+def record_dependency_status(
+    name: str,
+    *,
+    status: str,
+    detail: Optional[str] = None,
+    label: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    """Persist the latest status for a critical runtime dependency."""
+
+    dependency_key = str(name or "").strip() or "unknown"
+    status_text = str(status or "unknown").strip() or "unknown"
+    label_text = str(label or name or "").strip() or dependency_key
+    detail_text = _clean_detail(detail)
+    source_text = str(source or "").strip()
+
+    store = _store()
+    dependencies = store.setdefault(_DEPENDENCIES_KEY, {})
+
+    entry: Dict[str, Any] = {
+        "status": status_text,
+        "label": label_text,
+        "ts": time.time(),
+    }
+    if detail_text:
+        entry["detail"] = detail_text
+    if source_text:
+        entry["source"] = source_text
+
+    dependencies[dependency_key] = entry
 
 
 def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
@@ -2025,6 +2058,61 @@ def _summarize_diagnostics(raw_entry: Any, *, now: Optional[float] = None) -> Di
     return summary
 
 
+def _summarize_dependencies(raw_entry: Any) -> Dict[str, Any]:
+    if not isinstance(raw_entry, Mapping):
+        return {}
+
+    items: Dict[str, Any] = {}
+    status_priority = {"critical": 3, "error": 3, "warning": 2, "degraded": 2, "ok": 1, "success": 1}
+    overall_status = "unknown"
+    overall_score = -1
+
+    for name, value in raw_entry.items():
+        if not isinstance(value, Mapping):
+            continue
+        entry: Dict[str, Any] = {}
+
+        label_value = value.get("label") or name
+        if label_value is not None:
+            label_text = str(label_value).strip()
+            if label_text:
+                entry["label"] = label_text
+
+        status_value = value.get("status")
+        if status_value is not None:
+            status_text = str(status_value).strip()
+            if status_text:
+                entry["status"] = status_text
+                score = status_priority.get(status_text.lower(), 0)
+                if score > overall_score:
+                    overall_status = status_text
+                    overall_score = score
+
+        ts_value = _as_optional_float(value.get("ts"))
+        if ts_value is not None:
+            entry["ts"] = ts_value
+
+        detail_text = _clean_detail(value.get("detail"))
+        if detail_text:
+            entry["detail"] = detail_text
+
+        source_value = value.get("source")
+        if isinstance(source_value, str) and source_value.strip():
+            entry["source"] = source_value.strip()
+
+        if entry:
+            items[str(name)] = entry
+
+    if not items:
+        return {}
+
+    summary: Dict[str, Any] = {"items": items}
+    if overall_status != "unknown":
+        summary["status"] = overall_status
+
+    return summary
+
+
 def _summarize_session_monitoring(
     raw_monitoring: Any, *, now: Optional[float] = None
 ) -> Dict[str, Any]:
@@ -3462,12 +3550,14 @@ def get_health_metrics() -> Dict[str, Any]:
         "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
         "tab_latencies": _summarize_tab_latencies(store.get(_TAB_LATENCIES_KEY)),
         "adapter_fallbacks": _summarize_adapter_fallbacks(store.get(_ADAPTER_FALLBACK_KEY)),
+        "dependencies": _summarize_dependencies(store.get(_DEPENDENCIES_KEY)),
     }
 
 
 __all__ = [
     "get_health_metrics",
     "record_diagnostics_snapshot",
+    "record_dependency_status",
     "record_fx_api_response",
     "record_fx_cache_usage",
     "record_http_error",
