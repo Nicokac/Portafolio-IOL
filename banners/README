@@ -2,6 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: 0.3.30.11
+- Versión actual: 0.3.30.12
 - Fecha de publicación: 2025-11-06
-- Mensaje destacado: "Telemetría y caché reforzadas"
+- Mensaje destacado: "Estabilización y monitoreo de sesión"
+- Elementos complementarios: incluir badge de `session_tag` activo y timeline resumido de eventos en la esquina inferior.

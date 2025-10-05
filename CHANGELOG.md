@@ -23,6 +23,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.12] — Estabilización y Monitoreo de Sesión
+
+### Added
+- Timeline de sesión en el health sidebar con `session_tag`, timestamps y origen de cada hito (login,
+  screenings, exportaciones) para diagnosticar degradaciones y rebotes de UI sin revisar logs crudos.
+- Etiquetas de sesión en `analysis.zip`, `analysis.xlsx` y `summary.csv` para rastrear qué ejecución
+  generó los artefactos y correlacionarlos con los eventos registrados en `analysis.log`.
+
+### Changed
+- Banners de login/sidebar actualizados para resaltar "Estabilización y monitoreo de sesión" y el nuevo
+  badge de timeline visible para QA.
+- README, guías de testing y troubleshooting ajustadas para reflejar el monitoreo de sesión, los TTL
+  en vivo y los pasos de verificación asociados en pipelines.
+
+### Fixed
+- Normalización del `session_tag` almacenado en `st.session_state` para evitar duplicados tras reruns
+  y asegurar que los contadores de resiliencia conserven la trazabilidad de cada sesión.
+
 ## [0.3.30.11] — Mantenimiento, observabilidad y optimización de logs/cache.
 
 ### Changed
