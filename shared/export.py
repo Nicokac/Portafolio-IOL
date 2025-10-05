@@ -120,12 +120,17 @@ def ensure_kaleido_runtime() -> bool:
 def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
     """Devuelve la figura renderizada como bytes PNG usando kaleido si está disponible."""
 
-    if not ensure_kaleido_runtime():
-        return None
+    if ensure_kaleido_runtime():
+        try:
+            return pio.to_image(fig, format="png")
+        except Exception as exc:
+            _log_noncritical_export_failure(exc)
+            _mark_runtime_unavailable(exc)
+            return None
 
-    try:
+    # Intento de gracia para entornos donde ensure_chrome no está disponible pero kaleido puede funcionar.
+    try:  # pragma: no cover - ejercido mediante stubs en pruebas de UI
         return pio.to_image(fig, format="png")
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - se registra como falla no crítica
         _log_noncritical_export_failure(exc)
-        _mark_runtime_unavailable(exc)
         return None

@@ -20,7 +20,7 @@ from services.notifications import NotificationFlags, NotificationsService
 from services.health import record_tab_latency
 from services.portfolio_view import PortfolioViewModelService
 from services import snapshots as snapshot_service
-from ui.notifications import render_technical_badge, tab_badge_suffix
+from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
 
 from .load_data import load_portfolio_data
@@ -159,21 +159,25 @@ def configure_snapshot_backend(snapshot_backend: Any | None) -> None:
 
 
 def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[str]:
-    """Return updated tab labels including badge suffixes for active flags."""
+    """Return updated tab labels including descriptive badge suffixes for active flags."""
 
     updated = list(tab_labels)
+
+    def _append(label: str, variant: str) -> str:
+        suffix = tab_badge_suffix(variant)
+        descriptor = tab_badge_label(variant)
+        icon = suffix.strip()
+        if descriptor in label or (icon and icon in label):
+            return label
+        annotation = f"{suffix} {descriptor}" if icon else f" ({descriptor})"
+        return f"{label}{annotation}"
+
     if flags.risk_alert and len(updated) > 2:
-        suffix = tab_badge_suffix("risk")
-        if suffix.strip() and suffix.strip() not in updated[2]:
-            updated[2] = f"{updated[2]}{suffix}"
+        updated[2] = _append(updated[2], "risk")
     if flags.upcoming_earnings and len(updated) > 3:
-        suffix = tab_badge_suffix("earnings")
-        if suffix.strip() and suffix.strip() not in updated[3]:
-            updated[3] = f"{updated[3]}{suffix}"
+        updated[3] = _append(updated[3], "earnings")
     if flags.technical_signal and len(updated) > 4:
-        suffix = tab_badge_suffix("technical")
-        if suffix.strip() and suffix.strip() not in updated[4]:
-            updated[4] = f"{updated[4]}{suffix}"
+        updated[4] = _append(updated[4], "technical")
     return updated
 
 
@@ -316,14 +320,23 @@ def render_technical_tab(
     all_symbols: list[str],
     viewmodel,
     *,
-    map_symbol: Callable[[str], str] = map_to_us_ticker,
-    ui: Any = st,
+    map_symbol: Callable[[str], str] | None = None,
+    ui: Any | None = None,
     timer: Callable[[], float] = time.perf_counter,
     record_latency: Callable[[str, float | None, str], None] = record_tab_latency,
-    plot_chart: Callable[..., Any] = plot_technical_analysis_chart,
-    render_fundamentals: Callable[[Mapping[str, Any]], None] = render_fundamental_data,
+    plot_chart: Callable[..., Any] | None = None,
+    render_fundamentals: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> None:
     """Render the technical indicators tab for a specific symbol selection."""
+
+    if map_symbol is None:
+        map_symbol = map_to_us_ticker
+    if ui is None:
+        ui = st
+    if plot_chart is None:
+        plot_chart = plot_technical_analysis_chart
+    if render_fundamentals is None:
+        render_fundamentals = render_fundamental_data
 
     ui.subheader("Indicadores técnicos por activo")
     render_notifications_panel(favorites, notifications, ui=ui)

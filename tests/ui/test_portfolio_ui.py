@@ -25,7 +25,7 @@ from application.portfolio_service import PortfolioTotals
 from domain.models import Controls
 from services.notifications import NotificationFlags
 from shared.favorite_symbols import FavoriteSymbols
-from ui.notifications import tab_badge_suffix
+from ui.notifications import tab_badge_label, tab_badge_suffix
 from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
@@ -493,9 +493,12 @@ def test_render_portfolio_section_tab_labels_without_flags(_portfolio_setup) -> 
         tab_badge_suffix("risk").strip(),
         tab_badge_suffix("earnings").strip(),
         tab_badge_suffix("technical").strip(),
+        tab_badge_label("risk"),
+        tab_badge_label("earnings"),
+        tab_badge_label("technical"),
     }
     for label in labels:
-        assert not any(suffix and suffix in label for suffix in suffixes)
+        assert not any(token and token in label for token in suffixes)
 
 
 def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfolio_setup) -> None:
@@ -521,9 +524,9 @@ def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfoli
     )
 
     labels = fake_st.radio_calls[0]["display_labels"]
-    assert labels[2].endswith(tab_badge_suffix("risk"))
-    assert labels[3].endswith(tab_badge_suffix("earnings"))
-    assert labels[4].endswith(tab_badge_suffix("technical"))
+    assert labels[2].endswith(f"{tab_badge_suffix('risk')} {tab_badge_label('risk')}")
+    assert labels[3].endswith(f"{tab_badge_suffix('earnings')} {tab_badge_label('earnings')}")
+    assert labels[4].endswith(f"{tab_badge_suffix('technical')} {tab_badge_label('technical')}")
 
     risk.assert_called_once()
     assert risk.call_args.kwargs.get("notifications") == flags
