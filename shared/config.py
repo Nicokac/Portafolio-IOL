@@ -1,12 +1,15 @@
 # shared/config.py
 from __future__ import annotations
 import os, json
+import re
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 from dotenv import load_dotenv
 from functools import lru_cache
 import logging
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 import sys
 import streamlit as st
 
@@ -25,6 +28,8 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 # Cargar variables del .env en la raíz (y fallback al cwd por si acaso)
 load_dotenv(BASE_DIR / ".env")
 load_dotenv()
+
+DEFAULT_LOG_RETENTION_DAYS = 7
 
 def _load_cfg() -> Dict[str, Any]:
     """
@@ -141,6 +146,12 @@ class Settings:
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
+
+        # --- Logging ---
+        retention_candidate = os.getenv(
+            "LOG_RETENTION_DAYS", cfg.get("LOG_RETENTION_DAYS", DEFAULT_LOG_RETENTION_DAYS)
+        )
+        self.LOG_RETENTION_DAYS: int = self._coerce_positive_int(retention_candidate)
 
         # --- Cache/TTLs usados en app.py ---
         self.cache_ttl_portfolio: int = int(
@@ -399,6 +410,13 @@ class Settings:
             fallback[label] = entry
         return fallback
 
+    def _coerce_positive_int(self, candidate: Any) -> int:
+        try:
+            value = int(candidate)
+        except (TypeError, ValueError):
+            return DEFAULT_LOG_RETENTION_DAYS
+        return max(value, 1)
+
 settings = Settings()
 
 
@@ -430,6 +448,101 @@ class JsonFormatter(logging.Formatter):
         if user:
             log_record["user"] = user
         return json.dumps(log_record)
+
+
+LOG_FILENAME_PATTERN = re.compile(r"analysis_(\d{4}-\d{2}-\d{2})\.log$")
+
+
+def prune_old_logs(directory: Path, retention_days: int, current_file: str | None = None) -> None:
+    """Remove ``analysis_YYYY-MM-DD.log`` files older than the retention window."""
+
+    try:
+        retention_value = int(retention_days)
+    except (TypeError, ValueError):
+        retention_value = DEFAULT_LOG_RETENTION_DAYS
+
+    retention_value = max(retention_value, 1)
+    cutoff = datetime.now().date() - timedelta(days=retention_value - 1)
+
+    current_path = Path(current_file) if current_file else None
+    current_resolved = current_path.resolve() if current_path else None
+
+    legacy_file = directory / "analysis.log"
+    if legacy_file.exists():
+        try:
+            legacy_file.unlink()
+        except OSError as exc:
+            logger.warning("No se pudo borrar log legacy %s: %s", legacy_file, exc)
+
+    for candidate in directory.glob("analysis_*.log"):
+        if current_resolved is not None and candidate.resolve() == current_resolved:
+            continue
+
+        match = LOG_FILENAME_PATTERN.match(candidate.name)
+        if not match:
+            continue
+
+        try:
+            file_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        if file_date < cutoff:
+            try:
+                candidate.unlink()
+            except OSError as exc:
+                logger.warning("No se pudo borrar log antiguo %s: %s", candidate, exc)
+
+
+class DailyTimedRotatingFileHandler(TimedRotatingFileHandler):
+    """Time-based file handler that writes daily log files with a date suffix."""
+
+    def __init__(self, directory: Path, retention_days: int, encoding: str = "utf-8") -> None:
+        self.log_directory = Path(directory)
+        self.log_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            retention_value = int(retention_days)
+        except (TypeError, ValueError):
+            retention_value = DEFAULT_LOG_RETENTION_DAYS
+        self.retention_days = max(retention_value, 1)
+
+        current_time = datetime.now()
+        filename = self._filename_for(current_time)
+
+        super().__init__(
+            filename=str(filename),
+            when="midnight",
+            interval=1,
+            backupCount=0,
+            encoding=encoding,
+            delay=False,
+        )
+
+        # Ensure the next rollover happens at the upcoming midnight regardless of
+        # the file's modification time (especially when the file is freshly
+        # created during startup).
+        self.rolloverAt = self.computeRollover(time.time())
+
+        prune_old_logs(self.log_directory, self.retention_days, current_file=self.baseFilename)
+
+    def _filename_for(self, moment: datetime) -> Path:
+        return self.log_directory / f"analysis_{moment.strftime('%Y-%m-%d')}.log"
+
+    def doRollover(self) -> None:  # pragma: no cover - exercised indirectly
+        if self.stream:
+            self.stream.close()
+            self.stream = None
+
+        rollover_time = self.rolloverAt or time.time()
+        next_moment = datetime.fromtimestamp(rollover_time)
+        self.baseFilename = str(self._filename_for(next_moment))
+
+        if not self.delay:
+            self.stream = self._open()
+
+        # Schedule the subsequent rollover and prune stale files.
+        self.rolloverAt = self.computeRollover(rollover_time)
+        prune_old_logs(self.log_directory, self.retention_days, current_file=self.baseFilename)
 
 
 def configure_logging(level: str | None = None, json_format: bool | None = None) -> None:
@@ -469,15 +582,24 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
     stream_handler = logging.StreamHandler()
     stream_handler.setFormatter(formatter)
 
-    log_path = BASE_DIR / "analysis.log"
+    log_directory = BASE_DIR
     try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_directory.mkdir(parents=True, exist_ok=True)
     except OSError:
         pass
-    file_handler = RotatingFileHandler(
-        log_path,
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
+
+    retention_days = getattr(settings, "LOG_RETENTION_DAYS", DEFAULT_LOG_RETENTION_DAYS)
+    try:
+        retention_days = int(retention_days)
+    except (TypeError, ValueError):
+        retention_days = DEFAULT_LOG_RETENTION_DAYS
+    retention_days = max(retention_days, 1)
+
+    prune_old_logs(log_directory, retention_days)
+
+    file_handler = DailyTimedRotatingFileHandler(
+        directory=log_directory,
+        retention_days=retention_days,
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)

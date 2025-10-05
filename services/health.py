@@ -29,6 +29,7 @@ _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 _SNAPSHOT_EVENT_KEY = "snapshot_event"
+_ENVIRONMENT_SNAPSHOT_KEY = "environment_snapshot"
 _DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"
 _PORTFOLIO_HISTORY_LIMIT = 32
 _QUOTE_HISTORY_LIMIT = 32
@@ -40,6 +41,7 @@ _ACTIVE_SESSIONS_KEY = "active_sessions"
 _LOGIN_TO_RENDER_STATS_KEY = "login_to_render"
 _LAST_HTTP_ERROR_KEY = "last_http_error"
 _SESSION_MONITORING_TTL_SECONDS = 300.0
+_DEPENDENCIES_KEY = "dependencies"
 
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,56 @@ def _normalize_metadata(raw_metadata: Any) -> Dict[str, Any]:
     return normalized
 
 
+def _normalize_environment_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Mapping):
+        normalized_map: Dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key or "").strip()
+            if not key_text:
+                continue
+            normalized_item = _normalize_environment_value(item)
+            if normalized_item is None:
+                continue
+            if isinstance(normalized_item, Mapping) and not normalized_item:
+                continue
+            if isinstance(normalized_item, (list, tuple)) and not normalized_item:
+                continue
+            normalized_map[key_text] = normalized_item
+        return normalized_map
+    if isinstance(value, (list, tuple, set)):
+        normalized_list = [
+            item
+            for item in (
+                _normalize_environment_value(entry)
+                for entry in value
+            )
+            if item is not None and (not isinstance(item, (list, tuple, Mapping)) or item)
+        ]
+        return normalized_list
+    return str(value)
+
+
+def _normalize_environment_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
+    normalized: Dict[str, Any] = {}
+    for key, value in snapshot.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        normalized_value = _normalize_environment_value(value)
+        if normalized_value is None:
+            continue
+        if isinstance(normalized_value, Mapping) and not normalized_value:
+            continue
+        if isinstance(normalized_value, (list, tuple)) and not normalized_value:
+            continue
+        normalized[key_text] = normalized_value
+    return normalized
+
+
 def record_snapshot_event(
     *,
     kind: str,
@@ -159,6 +211,34 @@ def record_snapshot_event(
 
     store = _store()
     store[_SNAPSHOT_EVENT_KEY] = event
+
+
+def record_environment_snapshot(snapshot: Mapping[str, Any]) -> None:
+    """Persist the latest environment snapshot for diagnostics."""
+
+    if not isinstance(snapshot, Mapping):
+        return
+
+    normalized_snapshot = _normalize_environment_snapshot(snapshot)
+    entry: Dict[str, Any] = {"ts": time.time(), "snapshot": normalized_snapshot}
+
+    store = _store()
+    store[_ENVIRONMENT_SNAPSHOT_KEY] = entry
+
+    metrics: Dict[str, Any] = {}
+    cpu_info = normalized_snapshot.get("cpu")
+    if isinstance(cpu_info, Mapping):
+        logical = cpu_info.get("logical_count")
+        if isinstance(logical, (int, float)):
+            metrics["cpu_logical"] = logical
+    memory_info = normalized_snapshot.get("memory")
+    if isinstance(memory_info, Mapping):
+        total_mb = memory_info.get("total_mb")
+        if isinstance(total_mb, (int, float)):
+            metrics["memory_total_mb"] = total_mb
+
+    if metrics:
+        _log_analysis_event("environment_snapshot", entry, metrics)
 
 
 def record_session_started(
@@ -396,6 +476,38 @@ def record_diagnostics_snapshot(
         if source_text:
             fallback_entry["source"] = source_text
         store[_DIAGNOSTICS_SNAPSHOT_KEY] = fallback_entry
+
+
+def record_dependency_status(
+    name: str,
+    *,
+    status: str,
+    detail: Optional[str] = None,
+    label: Optional[str] = None,
+    source: Optional[str] = None,
+) -> None:
+    """Persist the latest status for a critical runtime dependency."""
+
+    dependency_key = str(name or "").strip() or "unknown"
+    status_text = str(status or "unknown").strip() or "unknown"
+    label_text = str(label or name or "").strip() or dependency_key
+    detail_text = _clean_detail(detail)
+    source_text = str(source or "").strip()
+
+    store = _store()
+    dependencies = store.setdefault(_DEPENDENCIES_KEY, {})
+
+    entry: Dict[str, Any] = {
+        "status": status_text,
+        "label": label_text,
+        "ts": time.time(),
+    }
+    if detail_text:
+        entry["detail"] = detail_text
+    if source_text:
+        entry["source"] = source_text
+
+    dependencies[dependency_key] = entry
 
 
 def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
@@ -2025,6 +2137,61 @@ def _summarize_diagnostics(raw_entry: Any, *, now: Optional[float] = None) -> Di
     return summary
 
 
+def _summarize_dependencies(raw_entry: Any) -> Dict[str, Any]:
+    if not isinstance(raw_entry, Mapping):
+        return {}
+
+    items: Dict[str, Any] = {}
+    status_priority = {"critical": 3, "error": 3, "warning": 2, "degraded": 2, "ok": 1, "success": 1}
+    overall_status = "unknown"
+    overall_score = -1
+
+    for name, value in raw_entry.items():
+        if not isinstance(value, Mapping):
+            continue
+        entry: Dict[str, Any] = {}
+
+        label_value = value.get("label") or name
+        if label_value is not None:
+            label_text = str(label_value).strip()
+            if label_text:
+                entry["label"] = label_text
+
+        status_value = value.get("status")
+        if status_value is not None:
+            status_text = str(status_value).strip()
+            if status_text:
+                entry["status"] = status_text
+                score = status_priority.get(status_text.lower(), 0)
+                if score > overall_score:
+                    overall_status = status_text
+                    overall_score = score
+
+        ts_value = _as_optional_float(value.get("ts"))
+        if ts_value is not None:
+            entry["ts"] = ts_value
+
+        detail_text = _clean_detail(value.get("detail"))
+        if detail_text:
+            entry["detail"] = detail_text
+
+        source_value = value.get("source")
+        if isinstance(source_value, str) and source_value.strip():
+            entry["source"] = source_value.strip()
+
+        if entry:
+            items[str(name)] = entry
+
+    if not items:
+        return {}
+
+    summary: Dict[str, Any] = {"items": items}
+    if overall_status != "unknown":
+        summary["status"] = overall_status
+
+    return summary
+
+
 def _summarize_session_monitoring(
     raw_monitoring: Any, *, now: Optional[float] = None
 ) -> Dict[str, Any]:
@@ -3462,18 +3629,21 @@ def get_health_metrics() -> Dict[str, Any]:
         "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
         "tab_latencies": _summarize_tab_latencies(store.get(_TAB_LATENCIES_KEY)),
         "adapter_fallbacks": _summarize_adapter_fallbacks(store.get(_ADAPTER_FALLBACK_KEY)),
+        "dependencies": _summarize_dependencies(store.get(_DEPENDENCIES_KEY)),
     }
 
 
 __all__ = [
     "get_health_metrics",
     "record_diagnostics_snapshot",
+    "record_dependency_status",
     "record_fx_api_response",
     "record_fx_cache_usage",
     "record_http_error",
     "record_iol_refresh",
     "record_login_to_render",
     "record_portfolio_load",
+    "record_environment_snapshot",
     "record_session_started",
     "record_tab_latency",
     "record_adapter_fallback",

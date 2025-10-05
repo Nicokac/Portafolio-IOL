@@ -2,9 +2,12 @@ from __future__ import annotations
 
 """Sidebar panel summarising recent data source health."""
 
+import math
+import re
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
+import pandas as pd
 import streamlit as st
 
 from services.health import get_health_metrics
@@ -214,14 +217,196 @@ def _format_session_monitoring(
     if avg_login:
         lines.append(format_note(f"⏱️ Promedio login→render: {avg_login}"))
 
-    last_error = _format_http_error(data.get("last_http_error"))
-    if last_error:
-        lines.append(last_error)
+    http_block = data.get("http_errors")
+    if isinstance(http_block, Mapping):
+        count_value = http_block.get("count")
+        summary_bits: list[str] = []
+        if isinstance(count_value, (int, float)) and int(count_value) > 0:
+            summary_bits.append(f"🚨 Errores HTTP {int(count_value)}")
+        last_entry = http_block.get("last")
+        last_ts = None
+        if isinstance(last_entry, Mapping):
+            last_ts = _coerce_timestamp(last_entry.get("ts"))
+        if last_ts is not None:
+            summary_bits.append(f"último {_format_timestamp(last_ts)}")
+        if summary_bits:
+            lines.append(format_note(" • ".join(summary_bits)))
+    else:
+        last_error = _format_http_error(data.get("last_http_error"))
+        if last_error:
+            lines.append(last_error)
 
     if len(lines) == 1:
         lines.append("_Sin datos de sesiones adicionales._")
 
     return lines
+
+
+def _normalize_numeric_samples(data: Any) -> list[float]:
+    if isinstance(data, Mapping):
+        raw_samples = data.get("samples")
+    else:
+        raw_samples = data
+
+    if not isinstance(raw_samples, Iterable) or isinstance(
+        raw_samples, (str, bytes, bytearray)
+    ):
+        return []
+
+    samples: list[float] = []
+    for entry in raw_samples:
+        try:
+            numeric = float(entry)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(numeric):
+            continue
+        samples.append(float(numeric))
+    return samples
+
+
+def _extract_stat_samples(entry: Any, metric: str) -> list[float]:
+    if not isinstance(entry, Mapping):
+        return []
+
+    stats = entry.get("stats")
+    if not isinstance(stats, Mapping):
+        return []
+
+    block = stats.get(metric)
+    if not isinstance(block, Mapping):
+        return []
+
+    return _normalize_numeric_samples(block.get("samples"))
+
+
+def _build_series_dataframe(series: Mapping[str, Iterable[float]]) -> Optional[pd.DataFrame]:
+    columns: dict[str, pd.Series] = {}
+    for label, values in series.items():
+        numeric_values = list(values)
+        if not numeric_values:
+            continue
+        columns[label] = pd.Series(numeric_values, dtype="float64")
+
+    if not columns:
+        return None
+
+    frame = pd.DataFrame(columns)
+    frame.index = frame.index + 1
+    frame.index.name = "Muestra"
+    return frame
+
+
+def _collect_latency_series(metrics: Mapping[str, Any]) -> Mapping[str, list[float]]:
+    series: dict[str, list[float]] = {}
+    entries = [
+        ("portfolio", "Portafolio (ms)"),
+        ("quotes", "Cotizaciones (ms)"),
+        ("fx_api", "FX API (ms)"),
+    ]
+    for key, label in entries:
+        samples = _extract_stat_samples(metrics.get(key), "latency")
+        if samples:
+            series[label] = samples
+    return series
+
+
+def _extract_semver(text: str) -> Optional[str]:
+    match = re.search(r"\d+(?:\.\d+){0,2}", text)
+    if not match:
+        return None
+    version = match.group(0)
+    parts = version.split(".")
+    if len(parts) >= 2:
+        return ".".join(parts[:2])
+    return version
+
+
+def _format_version_token(value: Any, *, icon: str, label: Optional[str] = None) -> Optional[str]:
+    text = _sanitize_text(value)
+    if not text:
+        return None
+    version = _extract_semver(text) or text
+    if label:
+        return f"{icon} {label} {version}"
+    return f"{icon} {version}"
+
+
+def _format_environment_badge(snapshot: Any) -> Optional[str]:
+    if not isinstance(snapshot, Mapping):
+        return None
+
+    python_token = _format_version_token(
+        snapshot.get("python_version") or snapshot.get("python"), icon="🐍"
+    )
+    streamlit_token = _format_version_token(
+        snapshot.get("streamlit_version") or snapshot.get("streamlit"),
+        icon="📊",
+        label="Streamlit",
+    )
+    runtime_label = _sanitize_text(
+        snapshot.get("runtime")
+        or snapshot.get("environment")
+        or snapshot.get("platform")
+    )
+    runtime_token = f"🖥️ {runtime_label}" if runtime_label else None
+
+    tokens = [token for token in (python_token, streamlit_token, runtime_token) if token]
+    if not tokens:
+        return None
+
+    ts_value = _coerce_timestamp(snapshot.get("ts"))
+    ts_text = _format_timestamp(ts_value)
+    if ts_text and ts_text != "Sin registro":
+        tokens.append(ts_text)
+
+    return format_note(" • ".join(tokens))
+
+
+def _format_recent_http_error(metrics: Mapping[str, Any]) -> Optional[str]:
+    monitoring = metrics.get("session_monitoring")
+    if isinstance(monitoring, Mapping):
+        http_block = monitoring.get("http_errors")
+        if isinstance(http_block, Mapping):
+            formatted = _format_http_error(http_block.get("last"))
+            if formatted:
+                return formatted
+            count_value = http_block.get("count")
+            if isinstance(count_value, (int, float)) and int(count_value) > 0:
+                return format_note(f"🚨 Errores HTTP registrados: {int(count_value)}")
+
+    raw_error = metrics.get("last_http_error")
+    if raw_error:
+        formatted = _format_http_error(raw_error)
+        if formatted:
+            return formatted
+    return None
+
+
+def _render_recent_stats(sidebar: Any, metrics: Mapping[str, Any]) -> None:
+    charts_rendered = False
+
+    latency_series = _collect_latency_series(metrics)
+    latency_frame = _build_series_dataframe(latency_series)
+    if latency_frame is not None:
+        sidebar.line_chart(latency_frame)
+        charts_rendered = True
+
+    cache_samples = _extract_stat_samples(metrics.get("fx_cache"), "age")
+    if cache_samples:
+        cache_frame = pd.DataFrame({"Edad caché (s)": pd.Series(cache_samples, dtype="float64")})
+        cache_frame.index = cache_frame.index + 1
+        cache_frame.index.name = "Muestra"
+        sidebar.area_chart(cache_frame)
+        charts_rendered = True
+
+    http_note = _format_recent_http_error(metrics)
+    if http_note:
+        sidebar.markdown(http_note)
+        charts_rendered = True
+
+    if not charts_rendered:
+        sidebar.markdown("_Sin estadísticas recientes._")
 
 
 def _format_active_sessions(data: Any) -> Optional[str]:
@@ -278,7 +463,8 @@ def _format_http_error(data: Any) -> Optional[str]:
         return None
 
     status_code = data.get("status") or data.get("status_code")
-    path = _sanitize_text(data.get("path") or data.get("endpoint"))
+    method = _sanitize_text(data.get("method"))
+    path = _sanitize_text(data.get("path") or data.get("endpoint") or data.get("url"))
     ts_text = _format_timestamp(_coerce_timestamp(data.get("ts")))
     detail_text = _sanitize_text(data.get("detail") or data.get("message"))
 
@@ -286,6 +472,8 @@ def _format_http_error(data: Any) -> Optional[str]:
     if status_code is not None:
         header += f" {status_code}"
     tokens = [header]
+    if method:
+        tokens.append(method.upper())
     if path:
         tokens.append(path)
     if ts_text:
@@ -360,6 +548,46 @@ def _format_diagnostics_section(data: Optional[Mapping[str, Any]]) -> Iterable[s
         lines.append("_Sin chequeos registrados._")
 
     return lines
+
+
+def _format_dependencies_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin registros de dependencias._"]
+
+    items = data.get("items")
+    if not isinstance(items, Mapping) or not items:
+        return ["_Sin registros de dependencias._"]
+
+    lines: list[str] = []
+
+    overall_status = data.get("status")
+    if isinstance(overall_status, str) and overall_status.strip():
+        icon, label = _status_badge(overall_status)
+        summary = f"{icon} Dependencias {label.lower()}"
+        lines.append(format_note(summary))
+
+    for name in sorted(items):
+        entry = items[name]
+        if not isinstance(entry, Mapping):
+            continue
+        icon, status_label = _status_badge(entry.get("status"))
+        label_text = (
+            _sanitize_text(entry.get("label"))
+            or _sanitize_text(name)
+            or "Dependencia"
+        )
+        ts_text = _format_timestamp(_coerce_timestamp(entry.get("ts")))
+        detail_text = _sanitize_text(entry.get("detail"))
+
+        summary_parts = [f"{icon} {label_text}", status_label.lower()]
+        if ts_text:
+            summary_parts.append(ts_text)
+        summary = " • ".join(summary_parts)
+        if detail_text:
+            summary += f" — {detail_text}"
+        lines.append(format_note(summary))
+
+    return lines or ["_Sin registros de dependencias._"]
 
 
 def _format_risk_summary(data: Optional[Mapping[str, Any]]) -> str:
@@ -1702,6 +1930,10 @@ def render_health_sidebar() -> None:
     sidebar.header(f"🩺 Healthcheck (versión {__version__})")
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
+    env_badge = _format_environment_badge(metrics.get("environment_snapshot"))
+    if env_badge:
+        sidebar.markdown(env_badge)
+
     auth_metrics = None
     for key in ("authentication", "auth_state", "auth"):
         candidate = metrics.get(key)
@@ -1774,8 +2006,15 @@ def render_health_sidebar() -> None:
     for line in _format_session_monitoring(metrics.get("session_monitoring")):
         sidebar.markdown(line)
 
+    sidebar.markdown("#### 📈 Estadísticas recientes")
+    _render_recent_stats(sidebar, metrics)
+
     sidebar.markdown("#### 🧪 Diagnóstico inicial")
     for line in _format_diagnostics_section(metrics.get("diagnostics")):
+        sidebar.markdown(line)
+
+    sidebar.markdown("#### 🧩 Dependencias críticas")
+    for line in _format_dependencies_section(metrics.get("dependencies")):
         sidebar.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")

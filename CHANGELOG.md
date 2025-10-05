@@ -23,6 +23,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.13] — Observabilidad reforzada en ejecución
+
+### Added
+- Telemetría de entorno con snapshot automático de variables críticas (Python, Streamlit, Kaleido y
+  binarios del sistema) visible desde la UI y embebida en `analysis.log` para acelerar diagnósticos
+  remotos.
+- Rotación automática de logs con compresión diaria y retención configurable que evita que `~/.portafolio_iol/logs`
+  crezca sin control en estaciones con screenings intensivos.
+- Controles de dependencias al inicio que advierten por UI y CLI cuando falta Kaleido, faltan
+  binarios de exportación o la versión de Python está fuera del rango soportado.
+
+### Changed
+- Barra lateral y pantalla de login muestran un bloque de "Observabilidad" con accesos rápidos para
+  descargar snapshots de entorno y el paquete de logs rotados.
+- Documentación de descarga guiada dentro de la UI para educar a los analistas sobre cómo compartir
+  snapshots, logs y artefactos de exportación al escalar incidentes.
+
+### Fixed
+- Se evitó la sobrescritura silenciosa de `analysis.log` cuando el proceso se relanza en entornos con
+  permisos restringidos, delegando la rotación en un handler tolerante a fallas.
+
 ## [0.3.30.12.1] — Hotfix: diagnóstico de inicio resiliente
 
 ### Fixed

@@ -55,6 +55,40 @@ class _DummySidebar:
         self.markdowns.append(value)
         self.elements.append({"type": "markdown", "text": value})
 
+    def line_chart(
+        self,
+        data: Any,
+        *,
+        use_container_width: bool | None = None,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> None:
+        record = {
+            "type": "line_chart",
+            "data": data,
+            "use_container_width": use_container_width,
+            "height": height,
+            "width": width,
+        }
+        self.elements.append(record)
+
+    def area_chart(
+        self,
+        data: Any,
+        *,
+        use_container_width: bool | None = None,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> None:
+        record = {
+            "type": "area_chart",
+            "data": data,
+            "use_container_width": use_container_width,
+            "height": height,
+            "width": width,
+        }
+        self.elements.append(record)
+
     def download_button(
         self,
         label: str,
@@ -224,6 +258,38 @@ class _DummyStreamlitCore:
 
     def plotly_chart(self, fig: object, **kwargs: Any) -> None:
         self._record("plotly_chart", fig=fig, kwargs=kwargs)
+
+    def line_chart(
+        self,
+        data: Any,
+        *,
+        use_container_width: bool | None = None,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> None:
+        self._record(
+            "line_chart",
+            data=data,
+            use_container_width=use_container_width,
+            height=height,
+            width=width,
+        )
+
+    def area_chart(
+        self,
+        data: Any,
+        *,
+        use_container_width: bool | None = None,
+        height: int | None = None,
+        width: int | None = None,
+    ) -> None:
+        self._record(
+            "area_chart",
+            data=data,
+            use_container_width=use_container_width,
+            height=height,
+            width=width,
+        )
 
     def write(self, text: object) -> None:
         self._record("write", text=text)
@@ -500,6 +566,8 @@ for _name in (
     "empty",
     "dataframe",
     "download_button",
+    "line_chart",
+    "area_chart",
     "altair_chart",
     "cache_resource",
     "cache_data",
