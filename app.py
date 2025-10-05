@@ -161,12 +161,16 @@ def main(argv: list[str] | None = None):
     if fx_error:
         st.warning(fx_error)
     render_header(rates=fx_rates)
-    _, hcol2 = st.columns([4, 1])
-    with hcol2:
-        timestamp = TimeProvider.now()
-        st.caption(f"🕒 {timestamp}")
-        render_action_menu()
-    main_col = st.container()
+    content_col, controls_col = st.columns([5, 2], gap="large")
+    with controls_col:
+        controls_area = st.container()
+        with controls_area:
+            st.markdown("#### 🎛️ Panel de control")
+            st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
+            timestamp = TimeProvider.now()
+            st.markdown(f"**🕒 {timestamp}**")
+            render_action_menu()
+    main_col = content_col.container()
 
     cli = build_iol_client()
 

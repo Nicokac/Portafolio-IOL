@@ -1538,6 +1538,13 @@ def _sidebar_expander(label: str, *, expanded: bool = False):
     return st.expander(label, expanded=expanded)
 
 
+def _container_expander(container: Any, label: str, *, expanded: bool = False):
+    expander_fn = getattr(container, "expander", None)
+    if callable(expander_fn):
+        return expander_fn(label, expanded=expanded)
+    return _sidebar_expander(label, expanded=expanded)
+
+
 def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
     label = _TAB_LABELS.get(key, str(stats.get("label") or key).title())
     parts: list[str] = []
@@ -1931,8 +1938,6 @@ def render_health_sidebar() -> None:
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
     env_badge = _format_environment_badge(metrics.get("environment_snapshot"))
-    if env_badge:
-        sidebar.markdown(env_badge)
 
     auth_metrics = None
     for key in ("authentication", "auth_state", "auth"):
@@ -1940,15 +1945,34 @@ def render_health_sidebar() -> None:
         if candidate is not None:
             auth_metrics = candidate
             break
-    sidebar.markdown("#### 🔑 Autenticación")
-    for line in _format_authentication_section(auth_metrics):
-        sidebar.markdown(line)
+    auth_lines = list(_format_authentication_section(auth_metrics))
+    iol_summary = _format_iol_status(metrics.get("iol_refresh"))
+    session_lines = list(_format_session_monitoring(metrics.get("session_monitoring")))
 
-    sidebar.markdown("#### 🔐 Conexión IOL")
-    sidebar.markdown(_format_iol_status(metrics.get("iol_refresh")))
-
-    sidebar.markdown("#### 📈 Yahoo Finance")
-    sidebar.markdown(_format_yfinance_status(metrics.get("yfinance")))
+    overview_section = sidebar.container(border=True)
+    with overview_section:
+        st.markdown("#### 🔍 Resumen operativo")
+        if env_badge:
+            st.markdown(env_badge)
+        if auth_lines:
+            st.markdown(auth_lines[0])
+        else:
+            st.markdown("_Sin métricas de autenticación._")
+        st.markdown(iol_summary)
+        if session_lines:
+            st.markdown(session_lines[0])
+        if (len(auth_lines) > 1) or (len(session_lines) > 1):
+            with _container_expander(
+                overview_section, "Detalle de autenticación y sesión", expanded=False
+            ):
+                if auth_lines:
+                    for line in auth_lines:
+                        st.markdown(line)
+                if session_lines:
+                    if auth_lines:
+                        st.markdown("---")
+                    for line in session_lines:
+                        st.markdown(line)
 
     snapshot_metrics = None
     for key in ("snapshot", "snapshots", "snapshot_status", "portfolio_snapshot"):
@@ -1956,91 +1980,155 @@ def render_health_sidebar() -> None:
         if candidate is not None:
             snapshot_metrics = candidate
             break
-    sidebar.markdown("#### 💾 Snapshots")
-    for line in _format_snapshot_section(snapshot_metrics):
-        sidebar.markdown(line)
 
-    sidebar.markdown("#### 💹 Cotizaciones")
-    for line in _format_quote_providers(metrics.get("quote_providers")):
-        sidebar.markdown(line)
+    yfinance_summary = _format_yfinance_status(metrics.get("yfinance"))
+    snapshot_lines = list(_format_snapshot_section(snapshot_metrics))
+    quote_lines = list(_format_quote_providers(metrics.get("quote_providers")))
+    fx_lines = list(_format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")))
+    macro_lines = list(_format_macro_section(metrics.get("macro_api")))
 
-    sidebar.markdown("#### 🌐 Macro / Datos externos")
-    for line in _format_macro_section(metrics.get("macro_api")):
-        sidebar.markdown(line)
+    data_section = sidebar.container(border=True)
+    with data_section:
+        st.markdown("#### 📊 Salud de datos")
+        st.markdown(yfinance_summary)
+        if snapshot_lines:
+            st.markdown(snapshot_lines[0])
+        if quote_lines:
+            st.markdown(quote_lines[0])
+        if fx_lines:
+            st.markdown(fx_lines[0])
+        if macro_lines:
+            st.markdown(macro_lines[0])
 
-    sidebar.markdown("#### 💱 FX")
-    for line in _format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")):
-        sidebar.markdown(line)
+        has_data_details = any(len(lines) > 1 for lines in (snapshot_lines, quote_lines, fx_lines, macro_lines))
+        if has_data_details:
+            with _container_expander(data_section, "Detalle de proveedores y cachés"):
+                st.markdown("**📈 Yahoo Finance**")
+                st.markdown(yfinance_summary)
+                if snapshot_lines:
+                    st.markdown("**💾 Snapshots**")
+                    for line in snapshot_lines:
+                        st.markdown(line)
+                if quote_lines:
+                    st.markdown("**💹 Cotizaciones**")
+                    for line in quote_lines:
+                        st.markdown(line)
+                if fx_lines:
+                    st.markdown("**💱 FX**")
+                    for line in fx_lines:
+                        st.markdown(line)
+                if macro_lines:
+                    st.markdown("**🌐 Macro / Datos externos**")
+                    for line in macro_lines:
+                        st.markdown(line)
 
-    sidebar.markdown("#### 🔎 Screening de oportunidades")
-    sidebar.markdown(
-        _format_opportunities_status(
+    opportunities_section = sidebar.container(border=True)
+    with opportunities_section:
+        st.markdown("#### 💡 Oportunidades")
+        opportunities_summary = _format_opportunities_status(
             metrics.get("opportunities"),
             metrics.get("opportunities_history"),
             metrics.get("opportunities_stats"),
         )
-    )
-    sidebar.markdown("#### 🗂️ Historial de screenings")
-    history_entries = metrics.get("opportunities_history") or []
-    for line in _format_opportunities_history(
-        reversed(history_entries), metrics.get("opportunities_stats")
-    ):
-        sidebar.markdown(line)
-
-    sidebar.markdown("#### 🚨 Incidencias de riesgo")
-    for line in _format_risk_section(metrics.get("risk_incidents")):
-        sidebar.markdown(line)
-    with _sidebar_expander("Detalle de incidencias de riesgo"):
-        for line in _format_risk_detail_section(metrics.get("risk_incidents")):
-            st.markdown(line)
-
-    sidebar.markdown("#### 🛰️ Observabilidad")
-    with _sidebar_expander("Latencias por pestaña"):
-        for line in _format_tab_latency_section(metrics.get("tab_latencies")):
-            st.markdown(line)
-    with _sidebar_expander("Fallbacks por adaptador"):
-        for line in _format_adapter_fallback_section(metrics.get("adapter_fallbacks")):
-            st.markdown(line)
-
-    sidebar.markdown("#### 🧭 Monitoreo de sesiones")
-    for line in _format_session_monitoring(metrics.get("session_monitoring")):
-        sidebar.markdown(line)
-
-    sidebar.markdown("#### 📈 Estadísticas recientes")
-    _render_recent_stats(sidebar, metrics)
-
-    sidebar.markdown("#### 🧪 Diagnóstico inicial")
-    for line in _format_diagnostics_section(metrics.get("diagnostics")):
-        sidebar.markdown(line)
-
-    sidebar.markdown("#### 🧩 Dependencias críticas")
-    for line in _format_dependencies_section(metrics.get("dependencies")):
-        sidebar.markdown(line)
-
-    sidebar.markdown("#### ⏱️ Latencias")
-    for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
-        sidebar.markdown(format_note(line))
-
-    sidebar.markdown("#### 📄 Logs")
-    log_path = Path("analysis.log")
-    try:
-        log_path.stat()
-    except FileNotFoundError:
-        sidebar.markdown("_No se encontró analysis.log._")
-    except OSError:
-        sidebar.markdown("_No se pudo leer analysis.log._")
-    else:
-        try:
-            log_bytes = log_path.read_bytes()
-        except OSError:
-            sidebar.markdown("_No se pudo leer analysis.log._")
-        else:
-            sidebar.markdown(format_note("📦 analysis.log listo para descargar"))
-            sidebar.download_button(
-                "⬇️ Descargar analysis.log",
-                log_bytes,
-                file_name="analysis.log",
+        st.markdown(opportunities_summary)
+        history_entries = metrics.get("opportunities_history") or []
+        st.caption(f"Historial disponible: {len(history_entries)} ejecuciones recientes.")
+        history_lines = list(
+            _format_opportunities_history(
+                reversed(history_entries), metrics.get("opportunities_stats")
             )
+        )
+        if history_lines:
+            with _container_expander(opportunities_section, "Historial de screenings"):
+                for line in history_lines:
+                    st.markdown(line)
+
+    risk_lines = list(_format_risk_section(metrics.get("risk_incidents")))
+    risk_detail_lines = list(_format_risk_detail_section(metrics.get("risk_incidents")))
+    tab_latency_lines = list(_format_tab_latency_section(metrics.get("tab_latencies")))
+    fallback_lines = list(_format_adapter_fallback_section(metrics.get("adapter_fallbacks")))
+
+    observability_section = sidebar.container(border=True)
+    with observability_section:
+        st.markdown("#### 🚨 Riesgo y observabilidad")
+        if risk_lines:
+            st.markdown(risk_lines[0])
+        if tab_latency_lines:
+            st.markdown(tab_latency_lines[0])
+        if fallback_lines:
+            st.markdown(fallback_lines[0])
+
+        has_risk_details = (len(risk_lines) > 1) or (
+            risk_detail_lines and not (len(risk_detail_lines) == 1 and "_Sin" in risk_detail_lines[0])
+        )
+        if has_risk_details:
+            with _container_expander(observability_section, "Detalle de incidencias de riesgo"):
+                for line in risk_lines:
+                    st.markdown(line)
+                if risk_detail_lines:
+                    st.markdown("---")
+                    for line in risk_detail_lines:
+                        st.markdown(line)
+        if len(tab_latency_lines) > 1:
+            with _container_expander(observability_section, "Latencias por pestaña"):
+                for line in tab_latency_lines:
+                    st.markdown(line)
+        if len(fallback_lines) > 1:
+            with _container_expander(observability_section, "Fallbacks por adaptador"):
+                for line in fallback_lines:
+                    st.markdown(line)
+
+    diagnostics_section = sidebar.container(border=True)
+    with diagnostics_section:
+        st.markdown("#### 🧪 Diagnóstico y soporte")
+        _render_recent_stats(diagnostics_section, metrics)
+
+        diagnostics_lines = list(_format_diagnostics_section(metrics.get("diagnostics")))
+        if diagnostics_lines:
+            with _container_expander(diagnostics_section, "Diagnóstico inicial"):
+                for line in diagnostics_lines:
+                    st.markdown(line)
+
+        dependencies_lines = list(_format_dependencies_section(metrics.get("dependencies")))
+        if dependencies_lines:
+            with _container_expander(diagnostics_section, "Dependencias críticas"):
+                for line in dependencies_lines:
+                    st.markdown(line)
+
+        latency_lines = list(
+            _format_latency_section(metrics.get("portfolio"), metrics.get("quotes"))
+        )
+        if latency_lines:
+            with _container_expander(diagnostics_section, "Latencias de cálculo"):
+                for line in latency_lines:
+                    st.markdown(format_note(line))
+
+        log_path = Path("analysis.log")
+        log_bytes = None
+        log_summary = ""
+        try:
+            log_path.stat()
+        except FileNotFoundError:
+            log_summary = "_No se encontró analysis.log._"
+        except OSError:
+            log_summary = "_No se pudo leer analysis.log._"
+        else:
+            try:
+                log_bytes = log_path.read_bytes()
+            except OSError:
+                log_summary = "_No se pudo leer analysis.log._"
+            else:
+                log_summary = format_note("📦 analysis.log listo para descargar")
+
+        if log_summary:
+            st.markdown(log_summary)
+        if log_bytes is not None:
+            with _container_expander(diagnostics_section, "Descargar logs"):
+                st.download_button(
+                    "⬇️ Descargar analysis.log",
+                    log_bytes,
+                    file_name="analysis.log",
+                )
 
 
 __all__ = ["render_health_sidebar"]
