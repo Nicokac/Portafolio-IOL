@@ -615,15 +615,6 @@ class IOLClient(IIOLProvider):
                         source="v2",
                         ok=True,
                     )
-                    logger.debug(
-                        "✅ Quotes OK from /Titulos/Cotizacion",
-                        extra={
-                            "market": resolved_market,
-                            "symbol": resolved_symbol,
-                            "panel": panel,
-                            "currency": payload.get("currency"),
-                        },
-                    )
                     self._record_batch_result(
                         resolved_market,
                         resolved_symbol,
