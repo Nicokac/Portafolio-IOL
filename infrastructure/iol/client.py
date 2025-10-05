@@ -30,7 +30,7 @@ PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
 PORTFOLIO_URL = f"{API_BASE_URL}/portafolio"
 
 REQ_TIMEOUT = 30
-RETRIES = 1
+RETRIES = 3
 BACKOFF_SEC = 0.5
 USER_AGENT = "IOL-Portfolio/1.0 (+iol_client)"
 
@@ -86,6 +86,7 @@ class IOLClient(IIOLProvider):
         for attempt in range(RETRIES + 1):
             headers = kwargs.pop("headers", {})
             headers.update(self.auth.auth_header())
+            delay = BACKOFF_SEC * (attempt + 1)
             try:
                 response = self.session.request(
                     method,
@@ -114,14 +115,17 @@ class IOLClient(IIOLProvider):
                 return response
             except requests.HTTPError as exc:
                 last_exc = exc
-                if exc.response is not None and exc.response.status_code == 404:
+                status_code = exc.response.status_code if exc.response is not None else None
+                if status_code == 404:
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
+                if status_code == 429:
+                    delay = BACKOFF_SEC * (2**attempt)
             except requests.RequestException as exc:
                 last_exc = exc
 
             if attempt < RETRIES:
-                time.sleep(BACKOFF_SEC * (attempt + 1))
+                time.sleep(delay)
 
         if last_exc:
             if (
