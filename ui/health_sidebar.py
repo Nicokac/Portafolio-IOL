@@ -405,6 +405,20 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
     return format_note(" ".join(parts))
 
 
+def _format_rate_limit_reason(reason: Optional[str]) -> Optional[str]:
+    if not reason:
+        return None
+    text = str(reason).strip()
+    if not text:
+        return None
+    normalized = text.casefold()
+    mapping = {
+        "throttle": "pre-llamada",
+        "http_429": "HTTP 429",
+    }
+    return mapping.get(normalized, text)
+
+
 def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     if not isinstance(data, Mapping):
         return ["_Sin consultas de cotizaciones registradas._"]
@@ -421,12 +435,16 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     total_int = int(total_val) if isinstance(total_val, (int, float)) else None
     stale_total_val = data.get("stale_total")
     stale_total = int(stale_total_val) if isinstance(stale_total_val, (int, float)) else 0
+    rate_total_val = data.get("rate_limit_total")
+    rate_total = int(rate_total_val) if isinstance(rate_total_val, (int, float)) else 0
 
     header_parts: list[str] = []
     if total_int is not None:
         header_parts.append(f"Total {total_int}")
     if stale_total:
         header_parts.append(f"Stale {stale_total}")
+    if rate_total:
+        header_parts.append(f"Rate limit {rate_total}")
 
     lines: list[str] = []
     if header_parts:
@@ -444,6 +462,11 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
         ts_text = _format_timestamp(ts_value)
         source_text = _sanitize_text(entry.get("source"))
         stale_last = bool(entry.get("stale_last"))
+        rate_count_val = entry.get("rate_limit_count")
+        rate_count = int(rate_count_val) if isinstance(rate_count_val, (int, float)) else 0
+        rate_avg = entry.get("rate_limit_avg_ms")
+        rate_last = entry.get("rate_limit_last_ms")
+        rate_reason = _format_rate_limit_reason(entry.get("rate_limit_last_reason"))
 
         icon = "🛟" if stale_last else "✅"
         if label.casefold() == "error":
@@ -456,6 +479,15 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
             parts.append(f"prom. {float(avg_ms):.0f} ms")
         if isinstance(last_ms, (int, float)):
             parts.append(f"último {float(last_ms):.0f} ms")
+        if rate_count:
+            rate_bits: list[str] = [f"limit {rate_count}"]
+            if isinstance(rate_avg, (int, float)):
+                rate_bits.append(f"prom. espera {float(rate_avg):.0f} ms")
+            if isinstance(rate_last, (int, float)):
+                rate_bits.append(f"últ. espera {float(rate_last):.0f} ms")
+            if rate_reason:
+                rate_bits.append(f"motivo {rate_reason}")
+            parts.append(", ".join(rate_bits))
         if source_text:
             parts.append(f"fuente: {source_text}")
         parts.append(ts_text)
