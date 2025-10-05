@@ -8,14 +8,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
-try:  # pragma: no cover - dependencia opcional
-    from plotly_get_chrome import ChromeNotFoundError  # type: ignore
-except Exception:  # pragma: no cover - degradación si la librería no está disponible
-    class ChromeNotFoundError(RuntimeError):  # type: ignore[override]
-        """Sentinel para capturar errores de Chrome cuando falta plotly-get-chrome."""
-
-        pass
-
 try:  # pragma: no cover - streamlit puede no estar disponible en CLI
     import streamlit as st  # type: ignore
 except Exception:  # pragma: no cover - degradación a caché local
@@ -106,14 +98,13 @@ def ensure_kaleido_runtime() -> bool:
 
     ensure_chrome = getattr(scope, "ensure_chrome", None)
 
-    try:
-        if callable(ensure_chrome):
-            ensure_chrome()
-        else:  # pragma: no cover - fallback para versiones antiguas de kaleido
-            import plotly_get_chrome  # type: ignore
+    if not callable(ensure_chrome):  # pragma: no cover - versiones antiguas no soportadas
+        _mark_runtime_unavailable(RuntimeError("kaleido scope lacks ensure_chrome"))
+        return False
 
-            plotly_get_chrome.get_chrome_sync()
-    except (ChromeNotFoundError, RuntimeError, ImportError) as exc:
+    try:
+        ensure_chrome()
+    except (RuntimeError, OSError) as exc:
         _mark_runtime_unavailable(exc)
         return False
 
@@ -129,6 +120,6 @@ def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
 
     try:
         return pio.to_image(fig, format="png")
-    except (ChromeNotFoundError, RuntimeError, ImportError) as exc:
+    except (RuntimeError, OSError) as exc:
         _mark_runtime_unavailable(exc)
         return None
