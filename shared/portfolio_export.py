@@ -860,7 +860,8 @@ def create_excel_workbook(
                     continue
                 if not img_bytes or len(img_bytes) < 8:
                     logger.warning("⛔ Imagen omitida: %s (PNG vacío o inválido)", key)
-                    row += 20
+                    charts_sheet.write(row, 0, "⛔ Imagen omitida")
+                    row += 2
                     continue
                 charts_sheet.insert_image(
                     row,
