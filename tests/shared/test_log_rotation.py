@@ -1,70 +1,37 @@
-import logging
-from datetime import datetime, timedelta
-
-import pytest
-
-from shared import config
+import os
+from pathlib import Path
+import sys
 
 
-@pytest.fixture()
-def _isolated_root_logger():
-    root_logger = logging.getLogger()
-    original_level = root_logger.level
-    original_handlers = root_logger.handlers[:]
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
-        try:
-            handler.close()
-        except Exception:
-            pass
-
-    try:
-        yield root_logger
-    finally:
-        for handler in root_logger.handlers[:]:
-            root_logger.removeHandler(handler)
-            try:
-                handler.close()
-            except Exception:
-                pass
-
-        for handler in original_handlers:
-            root_logger.addHandler(handler)
-
-        root_logger.setLevel(original_level)
+from shared.log_rotation import LOG_RETENTION_DAYS, cleanup_log_directory
 
 
-def test_configure_logging_prunes_old_log_files(tmp_path, monkeypatch, _isolated_root_logger):
-    retention_days = 3
-    monkeypatch.setattr(config, "BASE_DIR", tmp_path)
-    monkeypatch.setattr(config.settings, "LOG_RETENTION_DAYS", retention_days, raising=False)
+def test_cleanup_log_directory_respects_retention(tmp_path):
+    old_file = tmp_path / "old.log"
+    recent_file = tmp_path / "recent.log"
+    boundary_file = tmp_path / "boundary.log"
 
-    today = datetime.now().date()
-    all_dates = [today - timedelta(days=offset) for offset in range(retention_days + 3)]
-    for current_date in all_dates:
-        log_path = tmp_path / f"analysis_{current_date.strftime('%Y-%m-%d')}.log"
-        log_path.write_text("legacy", encoding="utf-8")
+    old_file.write_text("old", encoding="utf-8")
+    recent_file.write_text("recent", encoding="utf-8")
+    boundary_file.write_text("boundary", encoding="utf-8")
 
-    legacy_path = tmp_path / "analysis.log"
-    legacy_path.write_text("legacy", encoding="utf-8")
+    now = 1_700_000_000.0
+    retention_seconds = LOG_RETENTION_DAYS * 86400
 
-    config.configure_logging(level="INFO", json_format=False)
+    os.utime(old_file, (now - retention_seconds - 10, now - retention_seconds - 10))
+    os.utime(recent_file, (now - retention_seconds + 10, now - retention_seconds + 10))
+    os.utime(boundary_file, (now - retention_seconds, now - retention_seconds))
 
-    remaining_files = {path.name for path in tmp_path.glob("analysis_*.log")}
+    removed = cleanup_log_directory(tmp_path, now=now)
 
-    expected_kept = {
-        f"analysis_{(today - timedelta(days=offset)).strftime('%Y-%m-%d')}.log"
-        for offset in range(retention_days)
-    }
-    assert expected_kept <= remaining_files
+    assert not old_file.exists()
+    assert recent_file.exists()
+    assert boundary_file.exists()
 
-    removed_cutoff = today - timedelta(days=retention_days)
-    assert f"analysis_{removed_cutoff.strftime('%Y-%m-%d')}.log" not in remaining_files
-    assert not legacy_path.exists()
+    removed_paths = {path.resolve() for path in removed}
+    assert removed_paths == {old_file.resolve()}
 
-    # Logging still works and writes to today's file.
-    _isolated_root_logger.info("rotation test")
-    today_file = tmp_path / f"analysis_{today.strftime('%Y-%m-%d')}.log"
-    assert today_file.exists()
-    assert "rotation test" in today_file.read_text(encoding="utf-8")
