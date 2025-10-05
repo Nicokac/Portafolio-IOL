@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.10.1] - Hotfix entorno Kaleido
+
+### Changed
+- Limpieza y resincronización de dependencias en `pyproject.toml` y los requirements planos
+  para evitar paquetes redundantes en CI/CD y entornos mínimos.
+
+### Fixed
+- Restaurado el fallback de exportación cuando `kaleido` no está disponible: la aplicación
+  mantiene los artefactos CSV/Excel, etiqueta el estado en los banners y registra la ausencia
+  de PNG para los pipelines.
+
+### Documentation
+- README, guías de testing y troubleshooting actualizadas con la release 0.3.30.10.1, el hotfix
+  de Kaleido y el mensaje visible en los banners.
+
 ## [0.3.30.10] - 2025-10-15
 
 ### Fixed

@@ -2,6 +2,6 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: 0.3.30.10
-- Fecha de publicación: 2025-10-15
-- Mensaje destacado: "Logging y exports restaurados"
+- Versión actual: 0.3.30.10.1
+- Fecha de publicación: 2025-10-16
+- Mensaje destacado: "Hotfix Kaleido: fallback restaurado"

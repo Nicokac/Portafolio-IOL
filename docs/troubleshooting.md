@@ -4,12 +4,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.30.10, enfocada en restaurar la bitácora unificada y las
-> exportaciones multi-formato tras los incidentes de logging/export. Mantiene las cotizaciones en vivo
-> sincronizadas, la procedencia propagada hacia `/Titulos/Cotizacion` y los metadatos de país en el
-> portafolio, junto con los refuerzos del fallback jerárquico documentados en la serie 0.3.30.x.
+> Nota: Esta guía corresponde a la release 0.3.30.10.1, un hotfix orientado al entorno de Kaleido. Además de
+> preservar la bitácora unificada y las exportaciones multi-formato, documenta cuándo los PNG quedan
+> pendientes porque la librería no está instalada. Mantiene las cotizaciones en vivo sincronizadas, la
+> procedencia propagada hacia `/Titulos/Cotizacion`, los metadatos de país en el portafolio y los refuerzos
+> del fallback jerárquico documentados en la serie 0.3.30.x.
 
-## CI Checklist (0.3.30.10)
+## CI Checklist (0.3.30.10.1)
 
 - **Suite legacy detectada.** Si el resumen de `pytest` menciona archivos dentro de `tests/legacy/`,
   ajustá el comando (`pytest --ignore=tests/legacy`) o revisá `norecursedirs` en `pyproject.toml` para
@@ -61,19 +62,21 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.10 o superior, que `analysis.log` se regenere tras cada screening y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.10.1 o superior, que `analysis.log` se regenere tras cada screening y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
 
-- **La etiqueta "Logging y exports restaurados" no aparece en el sidebar.**
-  - **Síntomas:** El banner superior muestra la versión `0.3.30.10`, pero el bloque de salud no adjunta el mensaje de logging/export y el feed live indica degradación aun cuando `/Titulos/Cotizacion` responde.
-  - **Diagnóstico rápido:** Ejecuta `python tests/helpers/check_live_quotes.py` (o el script equivalente) para confirmar que el proveedor activo devuelve `last = price` y que `shared.version.DEFAULT_VERSION` coincide con la release actual.
+- **La etiqueta "Hotfix Kaleido: fallback restaurado" no aparece en el sidebar.**
+  - **Síntomas:** El banner superior muestra la versión `0.3.30.10.1`, pero el bloque de salud no adjunta el mensaje del hotfix
+    y las exportaciones omiten los PNG sin explicar el motivo.
+  - **Diagnóstico rápido:** Ejecuta `python tests/helpers/check_live_quotes.py` (o el script equivalente) para confirmar que el
+    proveedor activo devuelve `last = price`, que `shared.version.DEFAULT_VERSION` coincide con la release actual y que `python -c "import kaleido"` falla cuando el entorno no dispone de la librería.
   - **Resolución:**
     1. Revisa los logs de `services.quotes.live_quotes_flow` y verifica que `source="titulos"` llegue al `quotes_store`.
     2. Si estás en modo offline, habilita el flag `LIVE_QUOTES_ENABLED=1` y vuelve a iniciar la app para forzar la consulta en vivo.
     3. Comprueba que no existan interceptores sobrescribiendo `st.session_state["live_quotes_status"]`; en caso de encontrarlos, elimínalos o actualízalos para reflejar el nuevo flujo.
-
+    4. Valida que la ausencia de Kaleido sea intencional: si necesitás los PNG en la exportación instala la dependencia; en caso contrario el banner del hotfix debe permanecer visible.
 - **El bloque "Snapshots y almacenamiento" aparece vacío o en error.**
   - **Síntomas:** El health sidebar muestra `snapshot_hits = 0` pese a ejecutar screenings consecutivos, o aparece un mensaje "Ruta de snapshots inaccesible".
   - **Diagnóstico rápido:** Ejecuta el siguiente snippet para validar la ruta configurada y los permisos:
@@ -173,7 +176,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.10` en el header/footer, que el banner mencione "Logging y exports restaurados" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.10.1` en el header/footer, que el banner mencione "Hotfix Kaleido: fallback restaurado" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
