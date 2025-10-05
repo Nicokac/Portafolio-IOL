@@ -2,19 +2,49 @@ import streamlit as st
 from shared.utils import _as_float_or_none
 from ui.palette import get_active_palette
 
+
 def render_header(rates=None):
-    st.title("📈 IOL — Portafolio en vivo (solo lectura)")
-    st.caption("Autenticación sólo para **leer** portafolio / cotizaciones. No se envían órdenes.")
-    st.caption(
-        "Datos provistos sin garantía ni recomendación de inversión. "
-        "[Documentación](https://github.com/caliari/Portafolio-IOL#readme) · "
-        "[Ayuda](https://github.com/caliari/Portafolio-IOL/issues)"
-    )
+    """Render the application header with contextual actions."""
+
+    pal = get_active_palette()
+    info_col, links_col = st.columns([3, 2])
+
+    with info_col:
+        st.markdown(
+            """
+            <div style="display:flex; gap:0.8rem; align-items:flex-start;">
+                <span style="font-size:2.2rem; line-height:1;">📈</span>
+                <div>
+                    <h1 style="margin:0; font-size:1.8rem;">IOL — Portafolio en vivo</h1>
+                    <p style="margin:0.4rem 0 0; color:#555;">
+                        Acceso operativo en modo <strong>solo lectura</strong> para monitorear posiciones y cotizaciones.
+                    </p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with links_col:
+        st.markdown(
+            """
+            <div style="padding:0.8rem 1rem; border-radius:0.6rem; background-color:rgba(0,0,0,0.04); font-size:0.95rem;">
+                <div style="font-weight:600; margin-bottom:0.4rem;">Enlaces útiles</div>
+                <div>📘 <a href="https://github.com/caliari/Portafolio-IOL#readme" target="_blank">Documentación</a></div>
+                <div>🆘 <a href="https://github.com/caliari/Portafolio-IOL/issues" target="_blank">Centro de ayuda</a></div>
+                <div style="margin-top:0.6rem; color:#666; font-size:0.85rem;">
+                    Datos provistos sin garantía ni recomendación de inversión.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if rates:
-        render_fx_summary_in_header(rates)
+        render_fx_summary_in_header(rates, palette=pal)
 
-def render_fx_summary_in_header(rates: dict):
+
+def render_fx_summary_in_header(rates: dict, palette=None):
     """Render a summary of foreign exchange rates in the header.
 
     Parameters
@@ -25,7 +55,7 @@ def render_fx_summary_in_header(rates: dict):
     if not rates:
         return
 
-    pal = get_active_palette()
+    pal = palette or get_active_palette()
 
     # Extraer las cotizaciones necesarias
     valores = {
@@ -42,10 +72,10 @@ def render_fx_summary_in_header(rates: dict):
     for col, (label, value) in zip(cols, valores.items()):
         with col:
             style = (
+                "display:flex; flex-direction:column; gap:0.2rem; "
                 f"background-color:{pal.highlight_bg}; "
                 f"color:{pal.highlight_text}; "
-                "padding:0.6em 1em; "
-                "border-radius:0.5em;"
+                "padding:0.8rem 1rem; border-radius:0.75rem; text-align:center;"
             )
             value_str = (
                 f"$ {value:,.2f}"
@@ -58,8 +88,8 @@ def render_fx_summary_in_header(rates: dict):
             st.markdown(
                 f"""
                 <div style="{style}">
-                    <strong>{label}</strong><br>
-                    <span style="font-size:1.2em;">{value_str}</span>
+                    <span style="font-size:0.85rem; letter-spacing:0.02em; text-transform:uppercase; opacity:0.85;">{label}</span>
+                    <span style="font-size:1.5rem; font-weight:700; line-height:1;">{value_str}</span>
                 </div>
                 """,
                 unsafe_allow_html=True,
