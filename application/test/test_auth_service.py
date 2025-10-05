@@ -140,7 +140,7 @@ def test_logout_clears_cached_queries(monkeypatch):
             self.portfolio_calls = 0
             self.quotes_calls = 0
 
-        def get_portfolio(self):
+        def get_portfolio(self, country="argentina"):
             self.portfolio_calls += 1
             return {"n": self.portfolio_calls}
 

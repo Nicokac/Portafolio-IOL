@@ -18,7 +18,8 @@ from shared.utils import _to_float
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from services.quote_rate_limit import quote_rate_limiter
 from infrastructure.iol.legacy.session import LegacySession
-PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
+DEFAULT_COUNTRY = "argentina"
+PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio/{pais}"
 
 REQ_TIMEOUT = 30
 RETRIES = max(int(legacy_login_max_retries), 0)  # reintentos adicionales
@@ -158,9 +159,10 @@ class IOLClient:
         return None
 
     # -------- Cuenta --------
-    def get_portfolio(self) -> Dict[str, Any]:
+    def get_portfolio(self, country: str = DEFAULT_COUNTRY) -> Dict[str, Any]:
         start = time.time()
-        r = self._request("GET", PORTFOLIO_URL)
+        country_slug = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
+        r = self._request("GET", PORTFOLIO_URL.format(pais=country_slug))
         logger.info("get_portfolio %s ms", _elapsed_ms(start))
         return r.json() if r is not None else {}
 

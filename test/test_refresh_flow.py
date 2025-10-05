@@ -109,7 +109,7 @@ def test_login_refresh_valid_then_invalid(monkeypatch):
         def __init__(self, user, password, tokens_file=None):
             self.auth = DummyAuth(user, password, tokens_file)
 
-        def get_portfolio(self):
+        def get_portfolio(self, country="argentina"):
             if self.auth.tokens.get("access_token") == "expired":
                 self.auth.refresh()
             return {"ok": 1}

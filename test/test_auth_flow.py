@@ -48,7 +48,7 @@ class DummyClient:
         self.auth = DummyAuth(user, password, tokens_file)
         self.calls: list[str] = []
 
-    def get_portfolio(self):
+    def get_portfolio(self, country: str = "argentina"):
         self.calls.append("get_portfolio")
         if self.auth.tokens.get("access_token") == "expired":
             self.auth.refresh()

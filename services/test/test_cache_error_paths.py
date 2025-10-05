@@ -34,7 +34,7 @@ def test_fetch_portfolio_handles_invalid_credentials(monkeypatch):
         def __init__(self):
             self._cli = SimpleNamespace(auth=SimpleNamespace(clear_tokens=clear_tokens))
 
-        def get_portfolio(self):
+        def get_portfolio(self, country="argentina"):
             raise svc_cache.InvalidCredentialsError()
 
     svc_cache.fetch_portfolio.clear()
@@ -60,7 +60,7 @@ def test_fetch_portfolio_handles_request_exception(monkeypatch, exc_cls, expecte
     monkeypatch.setattr(svc_cache, "_trigger_logout", logout_mock)
 
     class DummyCli:
-        def get_portfolio(self):
+        def get_portfolio(self, country="argentina"):
             raise exc_cls("net")
 
     svc_cache.fetch_portfolio.clear()

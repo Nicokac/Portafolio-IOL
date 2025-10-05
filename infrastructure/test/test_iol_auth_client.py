@@ -79,14 +79,19 @@ def test_iol_client_get_portfolio_uses_cache_on_failure(tmp_path, monkeypatch):
 
     cli = IOLClient("user", "pass", tokens_file=tmp_path / "tok.json")
 
-    monkeypatch.setattr(cli, "_fetch_portfolio_live", lambda: {"activos": [1]}, raising=False)
+    monkeypatch.setattr(
+        cli,
+        "_fetch_portfolio_live",
+        lambda country="argentina": {"activos": [1]},
+        raising=False,
+    )
     data1 = cli.get_portfolio()
     assert data1 == {"activos": [1]}
     assert json.loads(cache_file.read_text()) == {"activos": [1]}
 
     import requests
 
-    def fail():
+    def fail(_country="argentina"):
         raise requests.RequestException("boom")
 
     monkeypatch.setattr(cli, "_fetch_portfolio_live", fail, raising=False)
