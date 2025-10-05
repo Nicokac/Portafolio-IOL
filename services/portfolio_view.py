@@ -5,13 +5,14 @@ import json
 import logging
 import time
 from dataclasses import dataclass, asdict
-from typing import Any, Mapping, Sequence
+from typing import Any, Dict, Mapping, Sequence
 
 import numpy as np
 
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
+from services import health
 from services import snapshots as snapshot_service
 from application.risk_service import (
     annualized_volatility,
@@ -186,6 +187,69 @@ class PortfolioViewModelService:
         else:
             self._snapshot_storage = snapshot_backend
 
+    def _snapshot_backend_details(self) -> Dict[str, Any]:
+        backend = getattr(self, "_snapshot_storage", None)
+        details: Dict[str, Any] = {}
+        if backend is None:
+            return details
+
+        backend_name: str | None = None
+        getter = getattr(backend, "current_backend_name", None)
+        if callable(getter):
+            try:
+                backend_name = getter()
+            except Exception:
+                logger.debug("No se pudo determinar el backend activo de snapshots", exc_info=True)
+        if isinstance(backend_name, str):
+            backend_name = backend_name.strip() or None
+        elif backend_name is not None:
+            backend_name = str(backend_name)
+
+        if not backend_name:
+            raw_name = getattr(backend, "backend_name", None)
+            if isinstance(raw_name, str):
+                backend_name = raw_name.strip() or None
+            elif raw_name is not None:
+                backend_name = str(raw_name)
+
+        if not backend_name:
+            module_name = getattr(backend, "__name__", None)
+            if isinstance(module_name, str) and module_name.strip():
+                backend_name = module_name.strip()
+
+        if not backend_name:
+            backend_name = backend.__class__.__name__
+
+        if backend_name:
+            details["name"] = str(backend_name)
+
+        for attr in ("path", "storage_path", "location"):
+            value = getattr(backend, attr, None)
+            if value:
+                details[attr] = str(value)
+
+        return details
+
+    def _record_snapshot_event(
+        self,
+        *,
+        action: str,
+        status: str,
+        storage_id: str | None = None,
+        detail: str | None = None,
+    ) -> None:
+        try:
+            health.record_snapshot_event(
+                kind=self._snapshot_kind,
+                action=action,
+                status=status,
+                storage_id=storage_id,
+                detail=detail,
+                backend=self._snapshot_backend_details(),
+            )
+        except Exception:
+            logger.debug("No se pudo registrar el evento de snapshot", exc_info=True)
+
     def _update_history(self, totals: PortfolioTotals) -> pd.DataFrame:
         entry = _history_row(time.time(), totals)
         self._history_records = _append_history(self._history_records, entry, maxlen=500)
@@ -249,11 +313,21 @@ class PortfolioViewModelService:
 
         try:
             saved = backend(self._snapshot_kind, payload, metadata)
-        except Exception:
+        except Exception as exc:
             logger.exception("No se pudo persistir el snapshot del portafolio")
+            self._record_snapshot_event(
+                action="save",
+                status="error",
+                detail=str(exc),
+            )
             return None, None, None
 
         storage_id = saved.get("id") if isinstance(saved, Mapping) else None
+        self._record_snapshot_event(
+            action="save",
+            status="saved",
+            storage_id=str(storage_id) if storage_id else None,
+        )
         comparison: SnapshotComparison | None = None
 
         if callable(compare_fn) and storage_id:
@@ -328,6 +402,11 @@ class PortfolioViewModelService:
             and filters_key == self._filters_key
         ):
             snapshot = self._snapshot
+            self._record_snapshot_event(
+                action="load",
+                status="reused",
+                storage_id=snapshot.storage_id,
+            )
             logger.info(
                 "portfolio_view cache hit dataset_changed=%s filters_changed=%s apply=%.4fs totals=%.4fs",
                 dataset_changed,

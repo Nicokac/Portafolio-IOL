@@ -25,6 +25,7 @@ _ADAPTER_FALLBACK_KEY = "adapter_fallbacks"
 _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
+_SNAPSHOT_EVENT_KEY = "snapshot_event"
 
 _PROVIDER_LABELS = {
     "alpha_vantage": "Alpha Vantage",
@@ -51,6 +52,62 @@ def _clean_detail(detail: Optional[str]) -> Optional[str]:
         return None
     text = str(detail).strip()
     return text or None
+
+
+def _normalize_backend_details(raw_backend: Any) -> Dict[str, Any]:
+    if not isinstance(raw_backend, Mapping):
+        return {}
+
+    details: Dict[str, Any] = {}
+    for key, value in raw_backend.items():
+        key_text = str(key).strip()
+        if not key_text:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, (str, bytes)):
+            text = str(value).strip()
+            if not text:
+                continue
+            details[key_text] = text
+        elif isinstance(value, (int, float, bool)):
+            details[key_text] = value
+        else:
+            details[key_text] = str(value)
+    return details
+
+
+def record_snapshot_event(
+    *,
+    kind: str,
+    status: str,
+    action: Optional[str] = None,
+    storage_id: Optional[str] = None,
+    detail: Optional[str] = None,
+    backend: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Persist information about the latest snapshot interaction."""
+
+    kind_text = str(kind or "generic").strip() or "generic"
+    status_text = str(status or "unknown").strip() or "unknown"
+    action_text = str(action or "").strip()
+    storage_id_text = str(storage_id or "").strip()
+    detail_text = _clean_detail(detail)
+
+    event: Dict[str, Any] = {"kind": kind_text, "status": status_text, "ts": time.time()}
+    if action_text:
+        event["action"] = action_text
+    if storage_id_text:
+        event["storage_id"] = storage_id_text
+    if detail_text:
+        event["detail"] = detail_text
+
+    backend_details = _normalize_backend_details(backend or {})
+    if backend_details:
+        event["backend"] = backend_details
+
+    store = _store()
+    store[_SNAPSHOT_EVENT_KEY] = event
 
 
 def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
@@ -1498,6 +1555,39 @@ def get_health_metrics() -> Dict[str, Any]:
     """Return a shallow copy of the tracked metrics for UI consumption."""
     store = _store()
 
+    def _normalize_snapshot_event_entry(raw_event: Any) -> Dict[str, Any]:
+        if not isinstance(raw_event, Mapping):
+            return {}
+
+        event: Dict[str, Any] = {}
+
+        ts = _as_optional_float(raw_event.get("ts"))
+        if ts is not None:
+            event["ts"] = ts
+
+        for key in ("kind", "status", "action"):
+            value = raw_event.get(key)
+            if isinstance(value, str):
+                text = value.strip()
+                if text:
+                    event[key] = text
+
+        detail_text = _clean_detail(raw_event.get("detail"))
+        if detail_text:
+            event["detail"] = detail_text
+
+        storage_id = raw_event.get("storage_id")
+        if storage_id is not None:
+            text = str(storage_id).strip()
+            if text:
+                event["storage_id"] = text
+
+        backend = _normalize_backend_details(raw_event.get("backend"))
+        if backend:
+            event["backend"] = backend
+
+        return event
+
     def _summarize_stats(raw_stats: Any) -> Dict[str, Any]:
         if not isinstance(raw_stats, Mapping):
             return {}
@@ -2220,6 +2310,7 @@ def get_health_metrics() -> Dict[str, Any]:
 
     return {
         "iol_refresh": store.get("iol_refresh"),
+        "snapshot_event": _normalize_snapshot_event_entry(store.get(_SNAPSHOT_EVENT_KEY)),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
@@ -2250,6 +2341,7 @@ __all__ = [
     "record_quote_load",
     "record_quote_provider_usage",
     "record_quote_rate_limit_wait",
+    "record_snapshot_event",
     "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",
