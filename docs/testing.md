@@ -51,7 +51,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.10)
+## CI Checklist (0.3.30.10.1)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -73,7 +73,7 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
   dependencias vulnerables. Ambos comandos deben formar parte del pipeline y bloquear el merge ante
   hallazgos críticos.
 7. **Verificación del feed live.** Incluye un paso que ejecute `pytest tests/integration/test_quotes_flow.py`
-   (o el job equivalente) y aserte que la UI muestre la etiqueta "Logging y exports restaurados" cuando
+   (o el job equivalente) y aserte que la UI muestre la etiqueta "Hotfix Kaleido: fallback restaurado" cuando
    `/Titulos/Cotizacion` entrega precios en tiempo real y `analysis.log` queda actualizado.
 
 ### Suites legacy (deprecated)
@@ -119,11 +119,12 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.10 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
-el indicador de procedencia a `/Titulos/Cotizacion` y añade el país al view-model del portafolio. Las
+La release 0.3.30.10.1 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
+el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio y documenta
+el hotfix de Kaleido para que los exports indiquen cuándo los PNG quedan pendientes. Las
 pruebas continúan reforzando el fallback jerárquico mientras verifican que el feed live quede etiquetado
 correctamente en la UI, que `analysis.log` capture cada screening y que los artefactos por país lleguen a
-los exports. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
+los exports aun cuando Kaleido no esté instalado. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
   `st.session_state["controls_snapshot"]` y que el estado se limpie correctamente al cerrar sesión.
