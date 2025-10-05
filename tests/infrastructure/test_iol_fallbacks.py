@@ -2,6 +2,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -179,6 +180,47 @@ def test_get_quote_returns_stale_from_persistent_cache_when_all_fallbacks_fail(
     assert payload["provider"] == "stale"
     assert payload["provider"] is not None
     assert payload["stale"] is True
+
+
+def test_fetch_quotes_bulk_uses_persisted_price_when_bulk_returns_null(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(cache_module, "st", fake_st)
+    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
+
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    def record(provider: str, **kwargs: Any) -> None:
+        recorded.append((provider, kwargs))
+
+    stale_payload = {
+        "last": 123.45,
+        "chg_pct": 1.2,
+        "provider": "iol",
+        "asof": "2024-01-01T00:00:00",
+    }
+    ts = time.time()
+    monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: (stale_payload, ts))
+    monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
+    monkeypatch.setattr(cache_module, "QUOTE_STALE_TTL_SECONDS", 60.0)
+
+    class DummyClient:
+        def get_quotes_bulk(self, items):  # type: ignore[no-untyped-def]
+            return {tuple(items[0]): {"last": None, "provider": "iol"}}
+
+    cache_module.fetch_quotes_bulk.clear()
+
+    result = cache_module.fetch_quotes_bulk(DummyClient(), [("bcba", "GGAL")])
+
+    assert set(result) == {("bcba", "GGAL")}
+    quote = result[("bcba", "GGAL")]
+    assert quote["last"] == pytest.approx(123.45)
+    assert quote["chg_pct"] == pytest.approx(1.2)
+    assert quote["asof"] == "2024-01-01T00:00:00"
+    assert quote["provider"] == "iol"
+    assert quote["stale"] is True
+    assert recorded == [("iol", {"elapsed_ms": None, "stale": True, "source": "persistent"})]
 
 
 def test_legacy_login_only_once_for_multiple_symbols(

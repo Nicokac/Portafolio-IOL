@@ -198,6 +198,32 @@ def _load_persisted_entry(cache_key: str) -> tuple[dict[str, Any], float] | None
     return dict(data), ts
 
 
+def _recover_persisted_quote(cache_key: str, now: float) -> dict[str, Any] | None:
+    persisted = _load_persisted_entry(cache_key)
+    if persisted is None:
+        return None
+    cached_data, cached_ts = persisted
+    ttl = QUOTE_STALE_TTL_SECONDS
+    if ttl > 0:
+        if now - cached_ts > ttl:
+            return None
+    elif ttl == 0:
+        pass
+    else:
+        return None
+
+    fallback_data = dict(_normalize_quote(cached_data))
+    fallback_data["stale"] = True
+    fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
+    record_quote_provider_usage(
+        fallback_data.get("provider") or "stale",
+        elapsed_ms=None,
+        stale=True,
+        source="persistent",
+    )
+    return fallback_data
+
+
 def _persist_quote(cache_key: str, payload: dict[str, Any], ts: float) -> None:
     if not isinstance(payload, dict):
         return
@@ -478,32 +504,9 @@ def _get_quote_cached(
         return data
 
     if data.get("last") is None:
-        persisted = _load_persisted_entry(persist_key)
-        if persisted is not None:
-            cached_data, cached_ts = persisted
-            if QUOTE_STALE_TTL_SECONDS > 0:
-                if store_time - cached_ts <= QUOTE_STALE_TTL_SECONDS:
-                    fallback_data = dict(_normalize_quote(cached_data))
-                    fallback_data["stale"] = True
-                    fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
-                    record_quote_provider_usage(
-                        fallback_data.get("provider") or "stale",
-                        elapsed_ms=None,
-                        stale=True,
-                        source="persistent",
-                    )
-                    return fallback_data
-            elif QUOTE_STALE_TTL_SECONDS == 0:
-                fallback_data = dict(_normalize_quote(cached_data))
-                fallback_data["stale"] = True
-                fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
-                record_quote_provider_usage(
-                    fallback_data.get("provider") or "stale",
-                    elapsed_ms=None,
-                    stale=True,
-                    source="persistent",
-                )
-                return fallback_data
+        fallback_data = _recover_persisted_quote(persist_key, store_time)
+        if fallback_data is not None:
+            return fallback_data
 
     with _QUOTE_LOCK:
         _purge_expired_quotes(store_time, ttl_seconds)
@@ -598,11 +601,43 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
     fallback_mode = not callable(get_bulk)
 
+    normalized: list[tuple[str, str, str | None]] = []
+    persist_lookup: dict[tuple[str, str], str] = {}
+
+    for raw in items:
+        market: str | None = None
+        symbol: str | None = None
+        panel: str | None = None
+        if isinstance(raw, dict):
+            market = raw.get("market", raw.get("mercado"))
+            symbol = raw.get("symbol", raw.get("simbolo"))
+            panel = raw.get("panel")
+        elif isinstance(raw, (list, tuple)):
+            if len(raw) >= 2:
+                market = raw[0]
+                symbol = raw[1]
+            if len(raw) >= 3:
+                panel = raw[2]
+        else:
+            market = getattr(raw, "market", getattr(raw, "mercado", None))
+            symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
+            panel = getattr(raw, "panel", None)
+
+        panel_value = None if panel is None else str(panel)
+        norm_market = str(market or "bcba").lower()
+        norm_symbol = str(symbol or "").upper()
+        normalized.append((norm_market, norm_symbol, panel_value))
+        persist_lookup.setdefault(
+            (norm_market, norm_symbol),
+            _quote_cache_key(norm_market, norm_symbol, panel_value),
+        )
+
     try:
         if callable(get_bulk):
             data = get_bulk(items)
             if isinstance(data, dict):
                 normalized_bulk = {}
+                store_time = time.time()
                 for k, v in data.items():
                     if v is None:
                         logger.warning(
@@ -611,6 +646,15 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                         continue
                     quote = _normalize_quote(v)
                     if isinstance(quote, dict):
+                        if quote.get("last") is None and isinstance(k, (list, tuple)) and len(k) >= 2:
+                            norm_key = (str(k[0]).lower(), str(k[1]).upper())
+                            persist_key = persist_lookup.get(norm_key)
+                            if persist_key is None:
+                                persist_key = _quote_cache_key(norm_key[0], norm_key[1], None)
+                            fallback_quote = _recover_persisted_quote(persist_key, store_time)
+                            if fallback_quote is not None:
+                                normalized_bulk[k] = fallback_quote
+                                continue
                         normalized_bulk[k] = quote
                         logger.debug("quote %s:%s -> %s", k[0], k[1], quote)
                 data = normalized_bulk
@@ -635,31 +679,6 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     out = {}
     ttl = cache_ttl_quotes
     max_workers = max_quote_workers
-    normalized: list[tuple[str, str, str | None]] = []
-    for raw in items:
-        market: str | None = None
-        symbol: str | None = None
-        panel: str | None = None
-        if isinstance(raw, dict):
-            market = raw.get("market", raw.get("mercado"))
-            symbol = raw.get("symbol", raw.get("simbolo"))
-            panel = raw.get("panel")
-        elif isinstance(raw, (list, tuple)):
-            if len(raw) >= 2:
-                market = raw[0]
-                symbol = raw[1]
-            if len(raw) >= 3:
-                panel = raw[2]
-        else:
-            market = getattr(raw, "market", getattr(raw, "mercado", None))
-            symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
-            panel = getattr(raw, "panel", None)
-
-        panel_value = None if panel is None else str(panel)
-        norm_market = str(market or "bcba").lower()
-        norm_symbol = str(symbol or "").upper()
-        normalized.append((norm_market, norm_symbol, panel_value))
-
     with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
         futs = {
             ex.submit(_get_quote_cached, _cli, market, symbol, panel, ttl): (market, symbol)
