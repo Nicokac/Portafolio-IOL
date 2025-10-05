@@ -1692,6 +1692,7 @@ def get_health_metrics() -> Dict[str, Any]:
         providers: list[Dict[str, Any]] = []
         total_count = 0
         stale_total = 0
+        ok_total = 0
         rate_total = 0
         rate_wait_total = 0.0
 
@@ -1799,6 +1800,8 @@ def get_health_metrics() -> Dict[str, Any]:
         summary: Dict[str, Any] = {"providers": providers, "total": summary_total}
         if stale_total:
             summary["stale_total"] = stale_total
+        if ok_total:
+            summary["ok_total"] = ok_total
         if rate_total:
             summary["rate_limit_total"] = rate_total
         if rate_wait_total:
