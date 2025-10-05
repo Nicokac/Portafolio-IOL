@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import logging
 from functools import wraps
-from typing import Any, Callable, Dict, TypeVar
+from typing import Any, Callable, Dict, Optional, TypeVar
 
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+
+try:  # pragma: no cover - dependencia opcional
+    from plotly_get_chrome import ChromeNotFoundError  # type: ignore
+except Exception:  # pragma: no cover - degradación si la librería no está disponible
+    class ChromeNotFoundError(RuntimeError):  # type: ignore[override]
+        """Sentinel para capturar errores de Chrome cuando falta plotly-get-chrome."""
+
+        pass
 
 try:  # pragma: no cover - streamlit puede no estar disponible en CLI
     import streamlit as st  # type: ignore
@@ -17,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 _GLOBAL_CACHE: Dict[str, Any] = {}
+_KALEIDO_RUNTIME_AVAILABLE: Optional[bool] = None
+_KALEIDO_WARNING_EMITTED = False
+_KALEIDO_WARNING_MESSAGE = (
+    "📉 Exportación a PNG deshabilitada. Instale los requisitos de Kaleido/Chrome para"
+    " habilitar las descargas."
+)
 
 
 def _wrap_with_cache(func: Callable[[], _T]) -> Callable[[], _T]:
@@ -46,17 +60,75 @@ def df_to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+def _log_kaleido_warning(exc: Exception | None = None) -> None:
+    """Registra un único warning si kaleido no está disponible."""
+
+    global _KALEIDO_WARNING_EMITTED
+
+    if not _KALEIDO_WARNING_EMITTED:
+        if exc is None:
+            logger.warning(_KALEIDO_WARNING_MESSAGE)
+        else:
+            logger.warning("%s (%s)", _KALEIDO_WARNING_MESSAGE, exc)
+        _KALEIDO_WARNING_EMITTED = True
+    elif exc is not None:
+        logger.debug("Kaleido runtime no disponible: %s", exc)
+
+
+def _mark_runtime_unavailable(exc: Exception | None = None) -> None:
+    """Actualiza el estado del runtime y emite el warning correspondiente."""
+
+    global _KALEIDO_RUNTIME_AVAILABLE
+
+    _KALEIDO_RUNTIME_AVAILABLE = False
+    _log_kaleido_warning(exc)
+
+
 @_wrap_with_cache
 def _get_kaleido_scope():
     """Obtiene un alcance de kaleido cacheado para reutilizar el proceso de Chromium."""
     return pio.kaleido.scope
 
 
-def fig_to_png_bytes(fig: go.Figure) -> bytes:
-    """Devuelve la figura renderizada como bytes PNG usando kaleido."""
+def ensure_kaleido_runtime() -> bool:
+    """Garantiza que el runtime de Kaleido y Chromium esté disponible."""
+
+    global _KALEIDO_RUNTIME_AVAILABLE
+
+    if _KALEIDO_RUNTIME_AVAILABLE is not None:
+        return _KALEIDO_RUNTIME_AVAILABLE
+
     try:
-        _get_kaleido_scope()
+        scope = _get_kaleido_scope()
+    except Exception as exc:  # pragma: no cover - depende de la instalación local
+        _mark_runtime_unavailable(exc)
+        return False
+
+    ensure_chrome = getattr(scope, "ensure_chrome", None)
+
+    try:
+        if callable(ensure_chrome):
+            ensure_chrome()
+        else:  # pragma: no cover - fallback para versiones antiguas de kaleido
+            import plotly_get_chrome  # type: ignore
+
+            plotly_get_chrome.get_chrome_sync()
+    except (ChromeNotFoundError, RuntimeError, ImportError) as exc:
+        _mark_runtime_unavailable(exc)
+        return False
+
+    _KALEIDO_RUNTIME_AVAILABLE = True
+    return True
+
+
+def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
+    """Devuelve la figura renderizada como bytes PNG usando kaleido si está disponible."""
+
+    if not ensure_kaleido_runtime():
+        return None
+
+    try:
         return pio.to_image(fig, format="png")
-    except (ValueError, RuntimeError, TypeError) as e:  # pragma: no cover - depende de librerías externas
-        logger.exception("kaleido no disponible")
-        raise ValueError("kaleido no disponible") from e
+    except (ChromeNotFoundError, RuntimeError, ImportError) as exc:
+        _mark_runtime_unavailable(exc)
+        return None
