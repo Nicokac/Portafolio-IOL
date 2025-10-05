@@ -38,7 +38,9 @@ Esto resulta útil para los ciclos de TDD locales o al depurar suites nuevas
 que no requieren medir cobertura.
 
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
-usa los stubs deterministas para mantener resultados reproducibles.
+usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.30.13 añade
+telemetría de entorno y rotación automática de `analysis.log`, por lo que los tests deben verificar
+que los snapshots y los logs comprimidos generados por la app se publiquen como artefactos.
 
 ### Generadores aleatorios reproducibles
 
@@ -61,7 +63,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.12.1)
+## CI Checklist (0.3.30.13)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -74,18 +76,19 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
 4. **Exportaciones consistentes.** Invoca `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
  (o reutiliza `tmp_path` en las suites) y revisa que cada snapshot incluya los CSV (`kpis.csv`,
   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
-  `analysis.xlsx`, el resumen `summary.csv` y el log consolidado `analysis.log` en la raíz del directorio de exportaciones.
+  `analysis.xlsx`, el resumen `summary.csv`, el snapshot de entorno (`environment.json`) y el paquete de logs rotados (`analysis.log` + `.gz`).
 5. **TTLs y monitoreo visibles.** Ejecuta la app en modo headless y capturá el health sidebar para confirmar que cada proveedor muestra el TTL restante configurado en `CACHE_TTL_*` y que el timeline de sesión despliega los hitos (login, screenings, exportaciones) en orden. Adjunta la captura o los logs en el pipeline.
 6. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
-  confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
-  `analysis.log` (desde `~/.portafolio_iol/logs/`) estén adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
+  confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv`, el snapshot de entorno y
+  los archivos `analysis.log*` rotados (desde `~/.portafolio_iol/logs/`) estén adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
 7. **Puerta de seguridad.** Ejecuta `bandit -r application controllers services` para auditar llamadas inseguras
   y `pip-audit --requirement requirements.txt --requirement requirements-dev.txt` para identificar
   dependencias vulnerables. Ambos comandos deben formar parte del pipeline y bloquear el merge ante
   hallazgos críticos.
 8. **Verificación del feed live.** Incluye un paso que ejecute `pytest tests/integration/test_quotes_flow.py`
-   (o el job equivalente) y aserte que la UI muestre la etiqueta "Estabilización y monitoreo de sesión" con el TTL restante cuando
-   `/Titulos/Cotizacion` entrega precios en tiempo real y `analysis.log` queda actualizado.
+   (o el job equivalente) y aserte que la UI muestre la etiqueta "Observabilidad operativa" con el TTL restante,
+   el bloque de **Descargas de observabilidad** habilite la descarga del snapshot de entorno y que `analysis.log`
+   registre la rotación correspondiente cuando `/Titulos/Cotizacion` entrega precios en tiempo real.
 
 ### Suites legacy (deprecated)
 
@@ -130,7 +133,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.12.1 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
+La release 0.3.30.13 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
 el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio, expone los TTL configurados para cada proveedor dentro del health sidebar y despliega un timeline de sesión con los hitos (login, screenings, exportaciones, fallbacks) asociados a cada ejecución.
 Las
 pruebas continúan reforzando el fallback jerárquico mientras verifican que el feed live quede etiquetado
