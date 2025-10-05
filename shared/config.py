@@ -462,6 +462,8 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
+    logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+
 @lru_cache(maxsize=1)
 def get_config() -> dict:
     path = os.getenv("PORTFOLIO_CONFIG_PATH", "config.json")
