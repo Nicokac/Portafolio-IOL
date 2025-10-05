@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.12.1] — Hotfix: diagnóstico de inicio resiliente
+
+### Fixed
+- Se restauró el registro de diagnósticos de inicio para tolerar snapshots mal formados,
+  conservar la telemetría en el health sidebar y evitar que el flujo de login falle.
+
 ## [0.3.30.12] — Estabilización y Monitoreo de Sesión
 
 ### Added

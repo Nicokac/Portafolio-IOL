@@ -6,20 +6,20 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.30.12)
+## Quick-start (release 0.3.30.12.1)
 
-La versión **0.3.30.12** estabiliza la sesión de trabajo, refuerza la trazabilidad de eventos críticos y expone indicadores de monitoreo directamente en la UI. El paquete mantiene el fallback de exportaciones cuando Kaleido no está instalado, confirma explícitamente que los Excel se generan completos (sin gráficos PNG) aun cuando la librería esté ausente y ahora etiqueta cada artefacto con la sesión que lo originó.
+La versión **0.3.30.12.1** estabiliza la sesión de trabajo, refuerza la trazabilidad de eventos críticos y expone indicadores de monitoreo directamente en la UI. El paquete mantiene el fallback de exportaciones cuando Kaleido no está instalado, confirma explícitamente que los Excel se generan completos (sin gráficos PNG) aun cuando la librería esté ausente y ahora etiqueta cada artefacto con la sesión que lo originó.
 
-## Quick-start (release 0.3.30.12 — Estabilización y monitoreo de sesión — 2025-11-06)
+## Quick-start (release 0.3.30.12.1 — Estabilización y monitoreo de sesión — 2025-11-06)
 
-La versión **0.3.30.12** refuerza los siguientes ejes:
+La versión **0.3.30.12.1** refuerza los siguientes ejes:
 - El **logging consolidado** mueve `analysis.log` al directorio dedicado `~/.portafolio_iol/logs/` y adjunta un encabezado por screening con el identificador de sesión activo, el resumen de TTL y la secuencia de degradaciones controladas que la UI refleja en vivo.
 - La **configuración de caché** documenta y expone en la UI los valores de `CACHE_TTL_*`: cada bloque del health sidebar muestra ahora la vigencia restante, la fuente (API, caché o snapshot) y la sesión que originó el dato para que QA pueda contrastar rápidamente los tiempos de expiración y la estabilidad del flujo.
 - El **health sidebar** añade insignias de color con indicadores de salud, TTL restante y un timeline en vivo con los eventos relevantes de la sesión (login, screening, fallback, exportaciones), además de enlaces directos a la bitácora correspondiente dentro de `analysis.log`.
 - Los **exports enriquecidos** garantizan que `analysis.zip`, `analysis.xlsx` y `summary.csv` estén presentes en cada corrida, conservando los timestamps, registrando cuándo la exportación omitió PNG por ausencia de Kaleido e incluyendo una pestaña de "Sesión" que resume hitos de monitoreo y los contadores de resiliencia.
 - El **endpoint `/Titulos/Cotizacion`** mantiene los precios en vivo sincronizados con `/Cotizacion`, incluye la marca de procedencia, la insignia "TTL vigente" cuando la caché evita un salto al fallback y agrega un `session_tag` para anclar la medición de latencia a la UI.
 - El **portafolio integrado por país** añade metadatos de origen para cada posición, desbloquea filtros y dashboards por país en la UI y en los exports, y replica esas etiquetas en el monitoreo de sesión para seguir la procedencia de los datos.
-- La **CI Checklist reforzada** conserva los artefactos (`analysis.zip`, `analysis.xlsx`, `summary.csv`) y valida que los banners del login/sidebar indiquen "Estabilización y monitoreo de sesión" junto con la versión `0.3.30.12`.
+- La **CI Checklist reforzada** conserva los artefactos (`analysis.zip`, `analysis.xlsx`, `summary.csv`) y valida que los banners del login/sidebar indiquen "Estabilización y monitoreo de sesión" junto con la versión `0.3.30.12.1`.
 
 Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
 
@@ -37,7 +37,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.30.12` junto con
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.30.12.1` junto con
    el mensaje "Estabilización y monitoreo de sesión" y el timestamp generado por `TimeProvider`. Abre el panel
    **Salud del sistema**: además del estado de cada proveedor verás el bloque **Snapshots y
    almacenamiento**, que expone la ruta activa del disco, el contador de recuperaciones desde snapshot,
@@ -68,7 +68,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.30.12 muestra el banner "Estabilización y monitoreo de sesión", mantiene el ZIP de CSV y
+   > 0.3.30.12.1 muestra el banner "Estabilización y monitoreo de sesión", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Las
    > exportaciones a Excel se completan igualmente con todas las tablas y logs, y omiten únicamente
    > las imágenes PNG.
@@ -103,7 +103,7 @@ validar escenarios sin depender de módulos obsoletos.
 ### Validar el fallback jerárquico desde el health sidebar
 
 1. Abre el panel lateral **Salud del sistema** y localiza el bloque **Resiliencia de proveedores**. La
-   release 0.3.30.12 conserva la última secuencia de degradación, deja trazas en `~/.portafolio_iol/logs/analysis.log`
+   release 0.3.30.12.1 conserva la última secuencia de degradación, deja trazas en `~/.portafolio_iol/logs/analysis.log`
    y muestra el estado del feed
    `/Titulos/Cotizacion` junto con el TTL restante, la fuente (API/caché/snapshot) y el contador de snapshots reutilizados (`snapshot_hits`).
 2. Ejecuta nuevamente **⟳ Refrescar** desde el menú **⚙️ Acciones** y observa el timeline: debe listar
@@ -131,7 +131,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### CI Checklist (0.3.30.12)
+### CI Checklist (0.3.30.12.1)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
@@ -149,7 +149,7 @@ validar escenarios sin depender de módulos obsoletos.
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    `analysis.log` (ubicado ahora en `~/.portafolio_iol/logs/`) estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
 
-### Validaciones Markowitz reforzadas (0.3.30.12)
+### Validaciones Markowitz reforzadas (0.3.30.12.1)
 
 - `application.risk_service.markowitz_optimize` valida la invertibilidad de la matriz de covarianzas y
   degrada a pesos `NaN` cuando detecta singularidad o entradas inválidas, evitando excepciones en la UI
@@ -164,7 +164,7 @@ validar escenarios sin depender de módulos obsoletos.
   y `tests/integration/test_portfolio_tabs.py` cubren la degradación controlada y los mensajes visibles
   en la UI, por lo que cualquier regresión se detecta en pipelines.
 
-**Resiliencia de APIs (0.3.30.12).** Cuando guardas un preset, la aplicación persiste la combinación de
+**Resiliencia de APIs (0.3.30.12.1).** Cuando guardas un preset, la aplicación persiste la combinación de
 filtros, el último resultado del screening, la procedencia (`primario`, `secundario`, `snapshot`) y el TTL activo para cada proveedor. Al
 relanzarlo, la telemetría agrega la procedencia del dato, la vigencia de la caché y clasifica la recuperación según la estrategia
 aplicada:
@@ -178,7 +178,7 @@ aplicada:
   fallback estático con la leyenda "📦 Snapshot de contingencia" y el contador de resiliencia incrementa
   el total de recuperaciones exitosas sin datos frescos, marcando el TTL como expirado.
 
-Estas novedades convierten a la release 0.3.30.12 en la referencia para validar onboarding, telemetría y
+Estas novedades convierten a la release 0.3.30.12.1 en la referencia para validar onboarding, telemetría y
 resiliencia multi-API: el endpoint `/Cotizacion` expone la versión activa desde la UI y las integraciones
 externas, el manejo de errores 500 asegura continuidad visible en dashboards, la UI muestra la vigencia de cada caché y la prueba de cobertura
 protege el flujo frente a regresiones mientras las exportaciones enriquecidas mantienen paridad total
@@ -187,7 +187,7 @@ entre la visión en pantalla y los artefactos compartidos, registrando cada paso
 
 ## Configuración de claves API
 
-La release 0.3.30.12 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets` y deja
+La release 0.3.30.12.1 consolida la carga de credenciales desde `config.json`, variables de entorno o `streamlit secrets` y deja
 registro de la resolución de cada proveedor en `~/.portafolio_iol/logs/analysis.log`. Antes de
 ejecutar la aplicación en modo live, define las claves según el proveedor habilitado. Si una clave falta, el health sidebar registrará
 el evento como `disabled` y la degradación continuará con el siguiente proveedor disponible.
@@ -229,7 +229,7 @@ en ``~/.portafolio_iol/favorites.json`` con la siguiente estructura:
 - Podés borrar el archivo para reiniciar la lista; se volverá a generar cuando agregues un nuevo
   favorito.
 
-## Backend de snapshots para pipelines CI (0.3.30.12)
+## Backend de snapshots para pipelines CI (0.3.30.12.1)
 
 - Define `SNAPSHOT_BACKEND=null` para ejecutar suites sin escribir archivos persistentes; el módulo
   `services.snapshots` usará `NullSnapshotStorage` y evitará cualquier escritura en disco durante las
@@ -365,7 +365,7 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 - Flujo de failover: si la API devuelve errores, alcanza el límite de rate limiting o falta la clave, el controlador intenta poblar `macro_outlook` con los valores declarados en `MACRO_SECTOR_FALLBACK`. Cuando no hay fallback, la columna queda en blanco y se agrega una nota explicando la causa (`Datos macro no disponibles: FRED sin credenciales configuradas`). Todos los escenarios se registran en `services.health.record_macro_api_usage`, exponiendo en el healthcheck si el último intento fue exitoso, error o fallback.
 - El rate limiting se maneja desde `infrastructure/macro/fred_client.py`, que serializa las llamadas según el umbral configurado (`FRED_API_RATE_LIMIT_PER_MINUTE`) y reutiliza el `User-Agent` global para respetar los términos de uso de FRED.
 
-##### Escenarios de fallback macro (0.3.30.12)
+##### Escenarios de fallback macro (0.3.30.12.1)
 
 1. **Secuencia `fred → worldbank → fallback`.** Con `MACRO_API_PROVIDER="fred,worldbank"` y sin `FRED_API_KEY`, el intento inicial queda marcado como `disabled`, el World Bank responde con `success` y la nota "Datos macro (World Bank)" deja registro de la latencia. El monitor de resiliencia del health sidebar incrementa los contadores de éxito, actualiza los buckets de latencia del proveedor secundario y agrega la insignia "Fallback cubierto".
 2. **World Bank sin credenciales o series.** Si el segundo proveedor no puede inicializarse (sin `WORLD_BANK_API_KEY` o sin `WORLD_BANK_SECTOR_SERIES`), el intento se registra como `error` o `unavailable` y el fallback estático cierra la secuencia con el detalle correspondiente, incluyendo el identificador `contingency_snapshot` en la telemetría.
@@ -514,11 +514,11 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.30.12" y destaca "Estabilización y monitoreo de sesión" para documentar cuándo los PNG quedan pendientes en los artefactos y qué TTL quedó activo.
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.30.12.1" y destaca "Estabilización y monitoreo de sesión" para documentar cuándo los PNG quedan pendientes en los artefactos y qué TTL quedó activo.
 
 El menú **⚙️ Acciones** refuerza la seguridad operativa al anunciar con toasts cada vez que se refrescan los datos o se completa el cierre de sesión, dejando constancia en la propia UI sin depender de logs externos.
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.30.12)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega insignias con el TTL restante, estadísticas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank y la bitácora asociada en `~/.portafolio_iol/logs/analysis.log`.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.30.12.1)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega insignias con el TTL restante, estadísticas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank y la bitácora asociada en `~/.portafolio_iol/logs/analysis.log`.
 
 ### Interpretación del health sidebar (KPIs agregados)
 
