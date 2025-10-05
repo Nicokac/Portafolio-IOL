@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 import random
@@ -17,6 +18,11 @@ from shared.errors import InvalidCredentialsError
 logger = logging.getLogger(__name__)
 
 
+AUTH_FAILURE_COOLDOWN_SECONDS = float(
+    os.getenv("LEGACY_AUTH_FAILURE_COOLDOWN_SECONDS", "0") or 0
+)
+
+
 class LegacySession:
     """Singleton that provides a shared authenticated legacy ``Iol`` session."""
 
@@ -30,6 +36,7 @@ class LegacySession:
         self._user: str | None = None
         self._password: str | None = None
         self._legacy_auth_unavailable = False
+        self._legacy_auth_unavailable_at: float | None = None
         self._tokens_snapshot: tuple[str | None, str | None] | None = None
 
     # ------------------------------------------------------------------
@@ -67,14 +74,26 @@ class LegacySession:
         with self._lock:
             creds_changed = (self._user, self._password) != (norm_user, norm_password)
             tokens_changed = self._tokens_snapshot != tokens_snapshot
-            if self._legacy_auth_unavailable and not (creds_changed or tokens_changed):
-                return None
+
+            if self._legacy_auth_unavailable:
+                can_retry = creds_changed or tokens_changed
+                if not can_retry and self._legacy_auth_unavailable_at is not None:
+                    cooldown = AUTH_FAILURE_COOLDOWN_SECONDS
+                    if cooldown > 0:
+                        elapsed = time.monotonic() - self._legacy_auth_unavailable_at
+                        can_retry = elapsed >= cooldown
+
+                if not can_retry:
+                    st.session_state["legacy_auth_unavailable"] = True
+                    return None
+
+                self._legacy_auth_unavailable = False
+                self._legacy_auth_unavailable_at = None
+                st.session_state.pop("legacy_auth_unavailable", None)
 
             if creds_changed or tokens_changed:
                 self._ready = False
                 self._iol = None
-                self._legacy_auth_unavailable = False
-                st.session_state.pop("legacy_auth_unavailable", None)
                 self._user = norm_user
                 self._password = norm_password
                 self._tokens_snapshot = tokens_snapshot
@@ -90,6 +109,7 @@ class LegacySession:
                 self._password = norm_password
                 self._tokens_snapshot = tokens_snapshot
                 self._legacy_auth_unavailable = False
+                self._legacy_auth_unavailable_at = None
                 st.session_state.pop("legacy_auth_unavailable", None)
                 return self._iol
             except InvalidCredentialsError:
@@ -107,6 +127,7 @@ class LegacySession:
         self._ready = False
         self._iol = None
         self._legacy_auth_unavailable = True
+        self._legacy_auth_unavailable_at = time.monotonic()
         st.session_state["legacy_auth_unavailable"] = True
 
     def _build_session(
@@ -157,6 +178,7 @@ class LegacySession:
 
         session = self.ensure_authenticated(auth_user, auth_password, auth)
         if session is None:
+            st.session_state["legacy_auth_unavailable"] = True
             return None, True
 
         delays = (0.5, 1.0, 2.0)
