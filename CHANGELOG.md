@@ -45,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   de PNG para los pipelines.
 
 ### Documentation
-- README, guías de testing y troubleshooting actualizadas con la release 0.3.30.10.1, el hotfix
+- README, guías de testing y troubleshooting actualizadas con la release 0.3.30.10.2, el hotfix
   de Kaleido y el mensaje visible en los banners.
 
 ## [0.3.30.10] - 2025-10-15

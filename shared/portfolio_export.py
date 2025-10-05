@@ -858,7 +858,17 @@ def create_excel_workbook(
                     charts_sheet.write(row, 0, "No se pudo exportar el gráfico (kaleido ausente)")
                     row += 18
                     continue
-                charts_sheet.insert_image(row, 0, f"{key}.png", {"image_data": BytesIO(img_bytes), "x_scale": 0.9, "y_scale": 0.9})
+                if not img_bytes or len(img_bytes) < 8:
+                    logger.warning("⛔ Imagen omitida: %s (PNG vacío o inválido)", key)
+                    charts_sheet.write(row, 0, "⛔ Imagen omitida")
+                    row += 2
+                    continue
+                charts_sheet.insert_image(
+                    row,
+                    0,
+                    f"{key}.png",
+                    {"image_data": BytesIO(img_bytes), "x_scale": 0.9, "y_scale": 0.9},
+                )
                 row += 20
 
     return buffer.getvalue()

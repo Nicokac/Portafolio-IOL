@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime
 from typing import Sequence
 
+import logging
 import pandas as pd
 import streamlit as st
 
@@ -21,6 +22,9 @@ from shared.portfolio_export import (
 
 # Configuración común de Plotly para habilitar captura a PNG desde la barra de herramientas
 PLOTLY_CONFIG = {"modeBarButtonsToAdd": ["toImage"]}
+
+
+logger = logging.getLogger(__name__)
 
 
 def download_csv(df: pd.DataFrame, filename: str, *, label: str = "⬇️ Exportar CSV") -> None:
@@ -128,9 +132,10 @@ def render_portfolio_exports(
                 include_history=include_history,
                 limit=limit,
             )
-        except ValueError:
+        except Exception:
+            logger.exception("Failed to generate portfolio export workbook")
             st.warning(
-                "No se pudieron generar los gráficos (depende de kaleido). Instálalo para habilitar la exportación a Excel."
+                "⚠️ No se pudo generar el Excel completo. Revise los logs para más detalles."
             )
         else:
             st.download_button(
