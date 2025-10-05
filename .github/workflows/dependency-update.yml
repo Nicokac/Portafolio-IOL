@@ -1,5 +1,8 @@
 name: dependency-update
 
+env:
+  UV_USE_REQUIREMENTS: 'true'
+
 on:
   schedule:
     - cron: '0 0 1 * *'

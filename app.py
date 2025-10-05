@@ -70,6 +70,7 @@ def main(argv: list[str] | None = None):
         st.session_state["session_id"] = uuid4().hex
     args = _parse_args(argv or [])
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
+    logger.info("requirements.txt es la fuente autorizada de dependencias.")
     ensure_tokens_key()
 
     if st.session_state.get("force_login"):
