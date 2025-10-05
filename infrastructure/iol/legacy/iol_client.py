@@ -5,19 +5,24 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Iterable, Tuple
 import time
 import logging
+import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
 from shared.config import settings
+from shared.settings import legacy_login_backoff_base, legacy_login_max_retries
 from shared.utils import _to_float
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
+from services.quote_rate_limit import quote_rate_limiter
 from infrastructure.iol.legacy.session import LegacySession
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
 REQ_TIMEOUT = 30
-RETRIES = 1                # reintento simple (además del primer intento)
-BACKOFF_SEC = 0.5
+RETRIES = max(int(legacy_login_max_retries), 0)  # reintentos adicionales
+BACKOFF_SEC = max(float(legacy_login_backoff_base), 0.0)
 USER_AGENT = "IOL-Portfolio/1.0 (+iol_client)"
 
 logger = logging.getLogger(__name__)
@@ -78,7 +83,22 @@ class IOLClient:
             headers = kwargs.pop("headers", {})
             headers.update(self.auth.auth_header())
             try:
-                r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
+                quote_rate_limiter.wait_for_slot("legacy")
+                r = self.session.request(
+                    method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
+                )
+                if r.status_code == 429:
+                    wait_time = quote_rate_limiter.penalize(
+                        "legacy", minimum_wait=_parse_retry_after_seconds(r)
+                    )
+                    logger.info(
+                        "Legacy IOL 429 %s %s, esperando %.3fs antes de reintentar",
+                        method,
+                        url,
+                        wait_time,
+                    )
+                    if attempt < RETRIES:
+                        continue
                 if r.status_code == 401:
                     # Token expirado o inválido -> refresh y reintento 1 vez
                     try:
@@ -87,9 +107,23 @@ class IOLClient:
                         raise
                     headers = kwargs.pop("headers", {})
                     headers.update(self.auth.auth_header())
-                    r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
+                    quote_rate_limiter.wait_for_slot("legacy")
+                    r = self.session.request(
+                        method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
+                    )
                     if r.status_code == 401:
                         raise InvalidCredentialsError("Credenciales inválidas")
+                    if r.status_code == 429:
+                        wait_time = quote_rate_limiter.penalize(
+                            "legacy", minimum_wait=_parse_retry_after_seconds(r)
+                        )
+                        logger.info(
+                            "Legacy IOL 429 tras refresh %s, espera %.3fs",
+                            url,
+                            wait_time,
+                        )
+                        if attempt < RETRIES:
+                            continue
                 r.raise_for_status()
                 return r
             except requests.HTTPError as e:
@@ -97,6 +131,22 @@ class IOLClient:
                 if e.response is not None and e.response.status_code == 404:
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
+                if (
+                    e.response is not None
+                    and e.response.status_code == 429
+                    and attempt < RETRIES
+                ):
+                    wait_time = quote_rate_limiter.penalize(
+                        "legacy",
+                        minimum_wait=_parse_retry_after_seconds(e.response),
+                    )
+                    logger.info(
+                        "Legacy IOL HTTP 429 %s %s, espera %.3fs",
+                        method,
+                        url,
+                        wait_time,
+                    )
+                    continue
             except requests.RequestException as e:
                 last_exc = e
             if attempt < RETRIES:
@@ -303,3 +353,24 @@ class IOLClient:
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
                     out[key] = {"last": None, "chg_pct": None}
         return out
+def _parse_retry_after_seconds(response) -> Optional[float]:
+    if response is None:
+        return None
+    headers = getattr(response, "headers", {}) or {}
+    value = headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            dt = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return max(0.0, (dt - now).total_seconds())
+
