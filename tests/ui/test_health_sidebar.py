@@ -249,6 +249,45 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
     assert "_Sin incidencias de riesgo registradas._" in markdown_calls
 
 
+def test_render_health_sidebar_quote_providers_without_http_counters(
+    health_sidebar,
+) -> None:
+    metrics = {
+        "iol_refresh": {"status": "success", "detail": "Tokens OK", "ts": 1},
+        "yfinance": None,
+        "fx_api": None,
+        "fx_cache": None,
+        "portfolio": None,
+        "quotes": None,
+        "quote_providers": {
+            "total": 2,
+            "ok_total": 2,
+            "providers": [
+                {
+                    "provider": "iol",
+                    "label": "IOL v2",
+                    "count": 2,
+                    "ok_count": 2,
+                    "ok_ratio": 1.0,
+                    "ts": 12.0,
+                }
+            ],
+        },
+        "tab_latencies": None,
+        "adapter_fallbacks": None,
+        "macro_api": None,
+        "opportunities": None,
+        "opportunities_history": None,
+        "opportunities_stats": None,
+        "risk_incidents": None,
+    }
+
+    _render(health_sidebar, metrics)
+
+    markdown_calls = health_sidebar.st.sidebar.markdowns
+    assert any("IOL v2" in text for text in markdown_calls)
+
+
 def test_render_health_sidebar_with_yfinance_history(
     health_sidebar, _dummy_metrics
 ) -> None:

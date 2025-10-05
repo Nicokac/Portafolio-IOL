@@ -458,6 +458,9 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     if header_parts:
         lines.append(format_note("📊 " + " • ".join(header_parts)))
 
+    http_counters_val = data.get("http_counters") if isinstance(data.get("http_counters"), Mapping) else None
+    http_counters: Mapping[str, Any] = http_counters_val or {}
+
     if http_counters:
         iol_500 = http_counters.get("iolv2_500", 0)
         legacy_429 = http_counters.get("legacy_429", 0)
