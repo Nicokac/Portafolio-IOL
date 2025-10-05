@@ -142,10 +142,14 @@ class Settings:
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
 
         # --- Cache/TTLs usados en app.py ---
-        self.cache_ttl_portfolio: int = int(os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 20)))
+        self.cache_ttl_portfolio: int = int(
+            os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 3600))
+        )
         self.cache_ttl_last_price: int = int(os.getenv("CACHE_TTL_LAST_PRICE", cfg.get("CACHE_TTL_LAST_PRICE", 10)))
         self.cache_ttl_fx: int = int(os.getenv("CACHE_TTL_FX", cfg.get("CACHE_TTL_FX", 60)))
-        self.cache_ttl_quotes: int = int(os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 8)))
+        self.cache_ttl_quotes: int = int(
+            os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 600))
+        )
         self.cache_ttl_yf_indicators: int = int(
             os.getenv("CACHE_TTL_YF_INDICATORS", cfg.get("CACHE_TTL_YF_INDICATORS", 900))
         )
