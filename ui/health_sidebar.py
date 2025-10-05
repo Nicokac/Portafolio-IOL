@@ -64,6 +64,32 @@ _RISK_SEVERITY_LABELS = {
 }
 
 
+_FRESHNESS_BADGES = {
+    "fresh": ("🟢", "Actualizado"),
+    "stale": ("🟡", "Desactualizado"),
+    "empty": ("🔴", "Sin datos"),
+}
+
+_AUTH_STATUS_BADGES = {
+    "authenticated": ("🟢", "Sesión activa"),
+    "reauth": ("🟡", "Reautenticación requerida"),
+    "reauth_required": ("🟡", "Reautenticación requerida"),
+    "expired": ("🟡", "Sesión expirada"),
+    "error": ("🔴", "Error de autenticación"),
+    "failed": ("🔴", "Error de autenticación"),
+    "logout": ("ℹ️", "Sesión finalizada"),
+}
+
+_SNAPSHOT_STATUS_BADGES = {
+    "hit": ("⚡", "Servido desde snapshot"),
+    "miss": ("🆕", "Generado nuevamente"),
+    "created": ("💾", "Snapshot creado"),
+    "persisted": ("💾", "Snapshot persistido"),
+    "error": ("⚠️", "Error de snapshot"),
+    "disabled": ("⛔", "Snapshots deshabilitados"),
+}
+
+
 def _sanitize_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -74,6 +100,37 @@ def _sanitize_text(value: Any) -> Optional[str]:
 def _normalize_status_key(value: Any) -> str:
     text = _sanitize_text(value)
     return text.casefold() if text else ""
+
+
+def _coerce_timestamp(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _freshness_badge(value: Any) -> tuple[str, str]:
+    key = _normalize_status_key(value)
+    if not key:
+        return "⚪️", "Estado desconocido"
+    icon, label = _FRESHNESS_BADGES.get(key, ("⚪️", "Estado desconocido"))
+    return icon, label
+
+
+def _auth_status_badge(value: Any) -> tuple[str, str]:
+    key = _normalize_status_key(value)
+    icon, label = _AUTH_STATUS_BADGES.get(key, ("ℹ️", "Estado desconocido"))
+    return icon, label
+
+
+def _snapshot_status_badge(value: Any) -> tuple[str, str]:
+    key = _normalize_status_key(value)
+    icon, label = _SNAPSHOT_STATUS_BADGES.get(key, ("🗂️", "Estado desconocido"))
+    return icon, label
 
 
 def _risk_severity_badge(value: Any) -> tuple[str, str]:
@@ -315,16 +372,163 @@ def _format_timestamp(ts: Optional[float]) -> str:
     return snapshot.text
 
 
+def _format_authentication_section(
+    data: Optional[Mapping[str, Any]]
+) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin autenticaciones registradas._"]
+
+    status_icon, status_label = _auth_status_badge(data.get("status"))
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+
+    user_text = _sanitize_text(data.get("user")) or "desconocido"
+    method_text = _sanitize_text(data.get("method"))
+    scope_text = _sanitize_text(data.get("scope"))
+    detail_text = _sanitize_text(data.get("detail") or data.get("message"))
+    error_text = _sanitize_text(data.get("error"))
+
+    last_ok_ts = _coerce_timestamp(
+        data.get("last_success_ts") or data.get("last_refresh_ts") or data.get("ts")
+    )
+    last_error_ts = _coerce_timestamp(data.get("last_error_ts") or data.get("last_failure_ts"))
+
+    token_age = data.get("token_age_secs") or data.get("token_age")
+    token_age_txt = (
+        f"token {float(token_age):.0f}s"
+        if isinstance(token_age, (int, float))
+        else None
+    )
+
+    expires_in = data.get("expires_in_secs") or data.get("expires_in")
+    expires_txt = (
+        f"expira en {float(expires_in):.0f}s"
+        if isinstance(expires_in, (int, float))
+        else None
+    )
+
+    reauth_flag = bool(data.get("reauth_required") or data.get("reauth"))
+
+    parts = [f"{freshness_icon} {status_icon} {status_label}"]
+    parts.append(f"usuario: {user_text}")
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
+    ok_ts_text = _format_timestamp(last_ok_ts)
+    parts.append(f"último ok {ok_ts_text}")
+    if last_error_ts is not None:
+        error_ts_text = _format_timestamp(last_error_ts)
+        parts.append(f"último error {error_ts_text}")
+    if method_text:
+        parts.append(f"método {method_text}")
+    if scope_text:
+        parts.append(f"scope {scope_text}")
+    if token_age_txt:
+        parts.append(token_age_txt)
+    if expires_txt:
+        parts.append(expires_txt)
+    if reauth_flag:
+        parts.append("requiere login")
+
+    suffix_bits: list[str] = []
+    if detail_text:
+        suffix_bits.append(detail_text)
+    if error_text:
+        suffix_bits.append(error_text)
+    suffix = f" — {' • '.join(suffix_bits)}" if suffix_bits else ""
+
+    return [format_note(" • ".join(parts) + suffix)]
+
+
+def _format_snapshot_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin snapshots registrados._"]
+
+    status_icon, status_label = _snapshot_status_badge(data.get("status"))
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+
+    last_use_ts = _coerce_timestamp(
+        data.get("last_used_ts")
+        or data.get("last_load_ts")
+        or data.get("last_access_ts")
+    )
+    last_saved_ts = _coerce_timestamp(
+        data.get("last_saved_ts")
+        or data.get("last_created_ts")
+        or data.get("ts")
+    )
+
+    backend = data.get("backend")
+    backend_label = None
+    backend_path = None
+    if isinstance(backend, Mapping):
+        backend_label = _sanitize_text(backend.get("label") or backend.get("kind"))
+        backend_path = _sanitize_text(backend.get("path"))
+    else:
+        backend_label = _sanitize_text(backend)
+
+    snapshot_id = _sanitize_text(data.get("snapshot_id") or data.get("last_snapshot_id"))
+    comparison_id = _sanitize_text(data.get("comparison_id"))
+
+    hits = data.get("hits") or data.get("hit_count")
+    misses = data.get("misses") or data.get("miss_count")
+    reuse_count = data.get("reuse_count")
+
+    parts = [f"{freshness_icon} {status_icon} {status_label}"]
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
+    if last_use_ts is not None:
+        parts.append(f"último uso {_format_timestamp(last_use_ts)}")
+    if last_saved_ts is not None:
+        parts.append(f"último guardado {_format_timestamp(last_saved_ts)}")
+    if backend_label:
+        parts.append(f"backend {backend_label}")
+    if isinstance(hits, (int, float)):
+        parts.append(f"hits {int(hits)}")
+    if isinstance(misses, (int, float)):
+        parts.append(f"misses {int(misses)}")
+    if isinstance(reuse_count, (int, float)):
+        parts.append(f"reusos {int(reuse_count)}")
+
+    detail_text = _sanitize_text(data.get("detail") or data.get("message"))
+    suffix = f" — {detail_text}" if detail_text else ""
+
+    lines = [format_note(" • ".join(parts) + suffix)]
+
+    path_bits: list[str] = []
+    if backend_path:
+        path_bits.append(f"ruta: {backend_path}")
+    storage_count = data.get("stored_snapshots") or data.get("snapshot_count")
+    if isinstance(storage_count, (int, float)):
+        path_bits.append(f"snapshots {int(storage_count)}")
+    if snapshot_id:
+        path_bits.append(f"último id {snapshot_id}")
+    if comparison_id:
+        path_bits.append(f"comparación {comparison_id}")
+
+    if path_bits:
+        lines.append(format_note("📁 " + " • ".join(path_bits)))
+
+    return lines
+
+
 def _format_iol_status(data: Optional[dict]) -> str:
     if not data:
         return "_Sin actividad registrada._"
     status = data.get("status")
     label = "Refresh correcto" if status == "success" else "Error al refrescar"
-    ts = _format_timestamp(data.get("ts"))
+    ts_value = _coerce_timestamp(data.get("last_fetch_ts") or data.get("ts"))
+    ts = _format_timestamp(ts_value)
     detail = data.get("detail")
     detail_txt = f" — {detail}" if detail else ""
     prefix = "✅" if status == "success" else "⚠️"
-    return format_note(f"{prefix} {label} • {ts}{detail_txt}")
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+    parts = [f"{freshness_icon} {prefix} {label}"]
+    parts.append(f"último fetch {ts}")
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
+    return format_note(" • ".join(parts) + detail_txt)
 
 
 def _format_yfinance_status(data: Optional[dict]) -> str:
@@ -378,9 +582,13 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
         result_key, result_key.title() if result_key else "Desconocido"
     )
 
-    timestamp_value = latest_entry.get("ts") if isinstance(latest_entry, Mapping) else None
+    timestamp_value = None
+    if isinstance(latest_entry, Mapping):
+        timestamp_value = _coerce_timestamp(
+            latest_entry.get("last_fetch_ts") or latest_entry.get("ts")
+        )
     if timestamp_value is None:
-        timestamp_value = data.get("ts")
+        timestamp_value = _coerce_timestamp(data.get("last_fetch_ts") or data.get("ts"))
     ts_text = _format_timestamp(timestamp_value)
 
     detail_value = None
@@ -394,11 +602,16 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
     fallback_badge = " [Fallback]" if fallback_flag else ""
     history_summary = _compress_yfinance_history(history_entries)
 
+    freshness_value = data.get("freshness") or latest_entry.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+
     parts = [
-        f"{icon} {provider_label}{fallback_badge}",
-        f"• {ts_text}",
+        f"{freshness_icon} {icon} {provider_label}{fallback_badge}",
+        f"• último fetch {ts_text}",
         f"• Resultado: {status_label}{detail_suffix}",
     ]
+    if freshness_value is not None:
+        parts.append(f"• estado {freshness_label.lower()}")
     if history_summary:
         parts.append(f"• {history_summary}")
 
@@ -535,13 +748,23 @@ def _format_fx_api_status(data: Optional[dict]) -> str:
         return "_Sin llamadas a la API FX._"
     status = data.get("status")
     label = "API FX OK" if status == "success" else "API FX con errores"
-    ts = _format_timestamp(data.get("ts"))
+    ts = _format_timestamp(_coerce_timestamp(data.get("last_fetch_ts") or data.get("ts")))
     elapsed = data.get("elapsed_ms")
     elapsed_txt = f"{float(elapsed):.0f} ms" if isinstance(elapsed, (int, float)) else "s/d"
     detail = data.get("error")
     detail_txt = f" — {detail}" if detail else ""
     prefix = "✅" if status == "success" else "⚠️"
-    return format_note(f"{prefix} {label} • {ts} ({elapsed_txt}){detail_txt}")
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+    parts = [f"{freshness_icon} {prefix} {label}"]
+    parts.append(f"último fetch {ts}")
+    parts.append(f"latencia {elapsed_txt}")
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
+    source_text = _sanitize_text(data.get("source"))
+    if source_text:
+        parts.append(f"origen {source_text}")
+    return format_note(" • ".join(parts) + detail_txt)
 
 
 def _format_fx_cache_status(data: Optional[dict]) -> str:
@@ -550,18 +773,32 @@ def _format_fx_cache_status(data: Optional[dict]) -> str:
     mode = data.get("mode")
     icon = "✅" if mode == "hit" else "ℹ️"
     label = "Uso de caché" if mode == "hit" else "Actualización"
-    ts = _format_timestamp(data.get("ts"))
+    ts = _format_timestamp(_coerce_timestamp(data.get("last_fetch_ts") or data.get("ts")))
     age = data.get("age")
     age_txt = f"{float(age):.0f}s" if isinstance(age, (int, float)) else "s/d"
-    return format_note(f"{icon} {label} • {ts} (edad {age_txt})")
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
+    detail_text = _sanitize_text(data.get("detail"))
+    detail_suffix = f" — {detail_text}" if detail_text else ""
+    parts = [f"{freshness_icon} {icon} {label}"]
+    parts.append(f"último fetch {ts}")
+    parts.append(f"edad {age_txt}")
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
+    hit_ratio = data.get("hit_ratio")
+    if isinstance(hit_ratio, (int, float)):
+        parts.append(f"hit ratio {float(hit_ratio):.0%}")
+    return format_note(" • ".join(parts) + detail_suffix)
 
 
 def _format_latency_line(label: str, data: Optional[dict]) -> str:
     if not data:
-        return f"- {label}: sin registro"
+        return f"⚪️ - {label}: sin registro"
+    freshness_value = data.get("freshness")
+    freshness_icon, freshness_label = _freshness_badge(freshness_value)
     elapsed = data.get("elapsed_ms")
     elapsed_txt = f"{float(elapsed):.0f} ms" if isinstance(elapsed, (int, float)) else "s/d"
-    parts = [f"- {label}: {elapsed_txt}"]
+    parts = [f"{freshness_icon} - {label}: {elapsed_txt}"]
     source = data.get("source")
     if source:
         parts.append(f"fuente: {source}")
@@ -571,7 +808,10 @@ def _format_latency_line(label: str, data: Optional[dict]) -> str:
     detail = data.get("detail")
     if detail:
         parts.append(detail)
-    parts.append(_format_timestamp(data.get("ts")))
+    ts_value = _coerce_timestamp(data.get("last_fetch_ts") or data.get("ts"))
+    parts.append(f"último fetch {_format_timestamp(ts_value)}")
+    if freshness_value is not None:
+        parts.append(f"estado {freshness_label.lower()}")
     return " • ".join(parts)
 
 
@@ -1243,11 +1483,31 @@ def render_health_sidebar() -> None:
     sidebar.header(f"🩺 Healthcheck (versión {__version__})")
     sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
+    auth_metrics = None
+    for key in ("authentication", "auth_state", "auth"):
+        candidate = metrics.get(key)
+        if candidate is not None:
+            auth_metrics = candidate
+            break
+    sidebar.markdown("#### 🔑 Autenticación")
+    for line in _format_authentication_section(auth_metrics):
+        sidebar.markdown(line)
+
     sidebar.markdown("#### 🔐 Conexión IOL")
     sidebar.markdown(_format_iol_status(metrics.get("iol_refresh")))
 
     sidebar.markdown("#### 📈 Yahoo Finance")
     sidebar.markdown(_format_yfinance_status(metrics.get("yfinance")))
+
+    snapshot_metrics = None
+    for key in ("snapshot", "snapshots", "snapshot_status", "portfolio_snapshot"):
+        candidate = metrics.get(key)
+        if candidate is not None:
+            snapshot_metrics = candidate
+            break
+    sidebar.markdown("#### 💾 Snapshots")
+    for line in _format_snapshot_section(snapshot_metrics):
+        sidebar.markdown(line)
 
     sidebar.markdown("#### 💹 Cotizaciones")
     for line in _format_quote_providers(metrics.get("quote_providers")):
