@@ -23,7 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
-## [0.3.30.10.2] - Hotfix entorno Kaleido
+## [0.3.30.10.2] - Robust Excel export
+
+### Fixed
+- Reforzada la generación de `analysis.xlsx` para reintentar exportes con hojas vacías y conservar
+  el archivo dentro de `analysis.zip` aun cuando la primera iteración falle.
+- Normalizados los nombres de hojas y encabezados para evitar errores de `ExcelSheetNameError` en
+  portafolios con símbolos extensos o caracteres especiales.
+- Alineada la conversión de tipos mixtos en columnas numéricas para impedir que se descarten
+  registros al aplicar formatos durante la exportación.
+
+## [0.3.30.10.1] - Hotfix entorno Kaleido
 
 ### Changed
 - Limpieza y resincronización de dependencias en `pyproject.toml` y los requirements planos

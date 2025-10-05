@@ -8,12 +8,12 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 ## Quick-start (release 0.3.30.10.2)
 
-La versión **0.3.30.10.2** es un hotfix orientado a entornos donde Kaleido no está disponible: limpia dependencias residuales, resincroniza los requirements y refuerza el fallback de exportación para que los dashboards mantengan los artefactos aun sin los PNG generados por Plotly. Si las exportaciones PNG están deshabilitadas, el Excel se genera sin gráficos adjuntos para priorizar la continuidad de datos. A la vez preserva las mejoras previas de logging unificado, telemetría en vivo y sidebar corregido.
+La versión **0.3.30.10.2** es un hotfix orientado a entornos donde Kaleido no está disponible: limpia dependencias residuales, resincroniza los requirements y refuerza el fallback de exportación para que los dashboards mantengan los artefactos aun sin los PNG generados por Plotly. A la vez preserva las mejoras previas de logging unificado, telemetría en vivo y sidebar corregido.
 
 ## Quick-start (release 0.3.30.10.2 — Hotfix entorno Kaleido — 2025-10-16)
 
 La versión **0.3.30.10.2** refuerza los siguientes ejes:
-- El **hotfix de Kaleido** restaura el fallback automático cuando la librería no está disponible, manteniendo la generación de Excel y ZIP aun cuando los PNG no puedan incrustarse. Si las exportaciones PNG están deshabilitadas, el Excel se genera sin gráficos adjuntos.
+- El **hotfix de Kaleido** restaura el fallback automático cuando la librería no está disponible, manteniendo la generación de Excel y ZIP aun cuando los PNG no puedan incrustarse.
 - La **limpieza de dependencias** alinea `pyproject.toml` con los requirements planos y retira paquetes redundantes para que los entornos CI/CD instalen sólo lo necesario.
 - El **logging consolidado** vuelve a persistir `analysis.log` en cada screening, captura los `snapshot_hits`, la procedencia de datos y las degradaciones controladas que la UI refleja en vivo.
 - Los **exports enriquecidos** garantizan que `analysis.zip`, `analysis.xlsx` y `summary.csv` estén presentes en cada corrida, conservando los timestamps, adjuntando la bitácora en los artefactos de CI y mostrando claramente cuándo los PNG dependen de Kaleido.
