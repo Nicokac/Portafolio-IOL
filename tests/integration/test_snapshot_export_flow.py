@@ -207,6 +207,28 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     opportunities_stats = metrics.get("opportunities_stats") or {}
     assert opportunities_stats.get("hit_ratio") == pytest.approx(1.0)
 
+    portfolio_stats = metrics.get("portfolio", {}).get("stats", {})
+    assert portfolio_stats.get("invocations") == 1
+    assert portfolio_stats.get("latency", {}).get("avg") == pytest.approx(123.0)
+    assert (
+        portfolio_stats.get("sources", {}).get("counts", {}).get("api") == 1
+    )
+
+    quote_stats = metrics.get("quotes", {}).get("stats", {})
+    assert quote_stats.get("invocations") == 1
+    assert quote_stats.get("latency", {}).get("avg") == pytest.approx(345.0)
+    assert quote_stats.get("batch", {}).get("avg") == pytest.approx(9.0)
+
+    fx_api_stats = metrics.get("fx_api", {}).get("stats", {})
+    assert fx_api_stats.get("invocations") == 1
+    assert fx_api_stats.get("status", {}).get("counts", {}).get("error") == 1
+    assert fx_api_stats.get("latency", {}).get("avg") == pytest.approx(812.0)
+
+    fx_cache_stats = metrics.get("fx_cache", {}).get("stats", {})
+    assert fx_cache_stats.get("invocations") == 1
+    assert fx_cache_stats.get("labels", {}).get("counts", {}).get("fresh") == 1
+    assert fx_cache_stats.get("age", {}).get("avg") == pytest.approx(33.0)
+
     class _StaticTimeProvider:
         @staticmethod
         def from_timestamp(ts):  # noqa: ANN001 - streamlit compatibility
