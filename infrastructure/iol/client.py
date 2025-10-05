@@ -82,10 +82,62 @@ class IOLClient(IIOLProvider):
         )
 
         self._legacy_last_http_label: Optional[str] = None
+        self._active_batch_stats: Optional[dict[str, Any]] = None
+        self._last_bulk_stats: Optional[dict[str, Any]] = None
 
     # ------------------------------------------------------------------
     # HTTP helpers
     # ------------------------------------------------------------------
+    def _record_batch_rate_limit(self) -> None:
+        stats = self._active_batch_stats
+        if stats is None:
+            return
+        stats["rate_limited"] = int(stats.get("rate_limited", 0) or 0) + 1
+
+    def _record_batch_result(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        provider: str | None,
+        elapsed_ms: float | None,
+        stale: bool,
+        fallback: bool,
+        error: bool,
+    ) -> None:
+        stats = self._active_batch_stats
+        if stats is None:
+            return
+
+        provider_key = (provider or "").strip().lower() or None
+        stats["count"] = int(stats.get("count", 0) or 0) + 1
+        if error:
+            stats["errors"] = int(stats.get("errors", 0) or 0) + 1
+        elif stale:
+            stats["stale"] = int(stats.get("stale", 0) or 0) + 1
+        else:
+            stats["fresh"] = int(stats.get("fresh", 0) or 0) + 1
+
+        if fallback or (provider_key not in (None, "iol", "cache")):
+            stats["fallbacks"] = int(stats.get("fallbacks", 0) or 0) + 1
+
+        total_elapsed = float(elapsed_ms) if elapsed_ms else 0.0
+        stats["elapsed_ms_total"] = float(stats.get("elapsed_ms_total", 0.0)) + total_elapsed
+
+        details = stats.setdefault("details", [])
+        if isinstance(details, list):
+            details.append(
+                {
+                    "market": market,
+                    "symbol": symbol,
+                    "provider": provider_key,
+                    "stale": stale,
+                    "error": error,
+                    "elapsed_ms": total_elapsed,
+                    "fallback": fallback or (provider_key not in (None, "iol", "cache")),
+                }
+            )
+
     def _request(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
         last_exc: Optional[Exception] = None
         for attempt in range(RETRIES + 1):
@@ -125,6 +177,7 @@ class IOLClient(IIOLProvider):
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
                 if status_code == 429:
+                    self._record_batch_rate_limit()
                     delay = BACKOFF_SEC * (2**attempt)
             except requests.RequestException as exc:
                 last_exc = exc
@@ -562,7 +615,7 @@ class IOLClient(IIOLProvider):
                         source="v2",
                         ok=True,
                     )
-                    logger.info(
+                    logger.debug(
                         "✅ Quotes OK from /Titulos/Cotizacion",
                         extra={
                             "market": resolved_market,
@@ -570,6 +623,15 @@ class IOLClient(IIOLProvider):
                             "panel": panel,
                             "currency": payload.get("currency"),
                         },
+                    )
+                    self._record_batch_result(
+                        resolved_market,
+                        resolved_symbol,
+                        provider=provider_name,
+                        elapsed_ms=elapsed_ms,
+                        stale=False,
+                        fallback=False,
+                        error=False,
                     )
                     return payload
 
@@ -635,6 +697,15 @@ class IOLClient(IIOLProvider):
                 resolved_market,
                 resolved_symbol,
             )
+            self._record_batch_result(
+                resolved_market,
+                resolved_symbol,
+                provider=legacy_provider,
+                elapsed_ms=(time.time() - start) * 1000.0,
+                stale=False,
+                fallback=True,
+                error=False,
+            )
             return legacy_payload
 
         record_quote_provider_usage(
@@ -671,6 +742,15 @@ class IOLClient(IIOLProvider):
                 resolved_market,
                 resolved_symbol,
             )
+            self._record_batch_result(
+                resolved_market,
+                resolved_symbol,
+                provider=provider,
+                elapsed_ms=(time.time() - start) * 1000.0,
+                stale=fallback.get("last") is None,
+                fallback=True,
+                error=False,
+            )
             return fallback
 
         transitions.append("stale")
@@ -693,6 +773,15 @@ class IOLClient(IIOLProvider):
             " -> ".join(transitions),
             resolved_market,
             resolved_symbol,
+        )
+        self._record_batch_result(
+            resolved_market,
+            resolved_symbol,
+            provider="stale",
+            elapsed_ms=(time.time() - start) * 1000.0,
+            stale=True,
+            fallback=True,
+            error=False,
         )
         return stale_payload
 
@@ -797,16 +886,62 @@ class IOLClient(IIOLProvider):
         self._ensure_market_auth()
 
         result: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
-        with self._quotes_lock:
-            for market, symbol, panel in requests:
-                try:
-                    payload = self.get_quote(market, symbol, panel)
-                except Exception as exc:  # pragma: no cover - defensive guard
-                    logger.warning("get_quotes_bulk %s:%s error -> %s", market, symbol, exc)
-                    payload = {"last": None, "chg_pct": None}
-                if payload is None:
-                    payload = {"last": None, "chg_pct": None}
-                result[(market, symbol)] = payload
+        batch_start = time.time()
+        stats: dict[str, Any] = {
+            "count": 0,
+            "fresh": 0,
+            "stale": 0,
+            "errors": 0,
+            "fallbacks": 0,
+            "rate_limited": 0,
+            "elapsed_ms_total": 0.0,
+            "details": [],
+        }
+        previous_stats = self._active_batch_stats
+        self._active_batch_stats = stats
+        try:
+            with self._quotes_lock:
+                for market, symbol, panel in requests:
+                    pre_count = int(stats.get("count", 0) or 0)
+                    try:
+                        payload = self.get_quote(market, symbol, panel)
+                    except Exception as exc:  # pragma: no cover - defensive guard
+                        logger.warning("get_quotes_bulk %s:%s error -> %s", market, symbol, exc)
+                        self._record_batch_result(
+                            market,
+                            symbol,
+                            provider="error",
+                            elapsed_ms=None,
+                            stale=True,
+                            fallback=True,
+                            error=True,
+                        )
+                        payload = {"last": None, "chg_pct": None}
+                    else:
+                        if payload is None and int(stats.get("count", 0) or 0) == pre_count:
+                            self._record_batch_result(
+                                market,
+                                symbol,
+                                provider="error",
+                                elapsed_ms=None,
+                                stale=True,
+                                fallback=True,
+                                error=True,
+                            )
+                    if payload is None:
+                        payload = {"last": None, "chg_pct": None}
+                    result[(market, symbol)] = payload
+        finally:
+            stats["duration_ms"] = (time.time() - batch_start) * 1000.0
+            details = stats.get("details")
+            if isinstance(details, list):
+                copied_details = [dict(item) for item in details if isinstance(item, dict)]
+            else:
+                copied_details = []
+            summary = dict(stats)
+            summary["details"] = copied_details
+            self._last_bulk_stats = summary
+            self._active_batch_stats = previous_stats
         return result
 
 
