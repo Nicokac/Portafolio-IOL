@@ -23,6 +23,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.7] - 2025-10-05
+
+### Fixed
+- Corrección del fallback jerárquico que perdía el escalón secundario cuando el proveedor primario
+  devolvía credenciales inválidas, garantizando que la degradación continúe hasta el snapshot
+  persistido.
+- Sincronización del banner de login y del health sidebar para reflejar la procedencia real de los
+  datos servidos durante la degradación, evitando mensajes inconsistentes.
+- Ajuste del contador `snapshot_hits` para propagar correctamente los resultados recuperados por el
+  fallback endurecido y mantener la telemetría alineada en dashboards y exportaciones.
+
+### Documentation
+- README, guías de testing y troubleshooting actualizadas con la release 0.3.30.7 y los pasos para
+  validar los fixes del fallback jerárquico.
+
 ## [0.3.30.5] - 2025-10-04
 
 ### Fixed

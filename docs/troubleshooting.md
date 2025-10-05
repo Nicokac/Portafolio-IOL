@@ -4,11 +4,11 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.30.5, centrada en publicar el endpoint `/Cotizacion`,
-> reforzar el manejo de errores 500, limpiar duplicados y completar la migración fuera de módulos
-> legacy sin alterar los flujos funcionales documentados en la serie 0.3.30.x.
+> Nota: Esta guía corresponde a la release 0.3.30.7, enfocada en robustecer el fallback jerárquico,
+> propagar los indicadores de procedencia corregidos y completar la migración fuera de módulos legacy
+> sin alterar los flujos funcionales documentados en la serie 0.3.30.x.
 
-## CI Checklist (0.3.30.5)
+## CI Checklist (0.3.30.7)
 
 - **Suite legacy detectada.** Si el resumen de `pytest` menciona archivos dentro de `tests/legacy/`,
   ajustá el comando (`pytest --ignore=tests/legacy`) o revisá `norecursedirs` en `pyproject.toml` para
@@ -60,7 +60,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia no persiste tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.5 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.7 o superior y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
@@ -164,7 +164,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.5` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.7` en el header/footer y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
