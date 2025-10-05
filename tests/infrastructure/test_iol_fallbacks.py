@@ -19,6 +19,9 @@ from services import cache as cache_module
 from services import ohlc_adapter as ohlc_module
 
 
+ORIGINAL_PERSIST_QUOTE = cache_module._persist_quote
+
+
 class FakeAuth:
     """Minimal auth stub exposing preloaded tokens."""
 
@@ -221,6 +224,95 @@ def test_fetch_quotes_bulk_uses_persisted_price_when_bulk_returns_null(
     assert quote["provider"] == "iol"
     assert quote["stale"] is True
     assert recorded == [("iol", {"elapsed_ms": None, "stale": True, "source": "persistent"})]
+
+
+def test_fetch_quotes_bulk_persists_and_rehydrates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(cache_module, "st", fake_st)
+    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
+
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    def record(provider: str, **kwargs: Any) -> None:
+        recorded.append((provider, kwargs))
+
+    monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
+    monkeypatch.setattr(cache_module, "record_quote_load", lambda *_, **__: None)
+    monkeypatch.setattr(cache_module, "_persist_quote", ORIGINAL_PERSIST_QUOTE)
+    monkeypatch.setattr(
+        cache_module,
+        "_QUOTE_PERSIST_PATH",
+        tmp_path / "quotes_cache.json",
+    )
+    monkeypatch.setattr(cache_module, "QUOTE_STALE_TTL_SECONDS", 60.0)
+
+    cache_module._QUOTE_PERSIST_CACHE = None
+    cache_module._QUOTE_CACHE.clear()
+    cache_module.fetch_quotes_bulk.clear()
+
+    class DummyClient:
+        def __init__(self, payloads: list[dict[tuple[str, str], dict[str, Any]]]) -> None:
+            self._payloads = list(payloads)
+
+        def get_quotes_bulk(self, items):  # type: ignore[no-untyped-def]
+            if not self._payloads:
+                pytest.fail("unexpected bulk call")
+            return self._payloads.pop(0)
+
+    client = DummyClient(
+        [
+            {
+                ("bcba", "GGAL"): {
+                    "last": 111.0,
+                    "chg_pct": 1.1,
+                    "asof": "2024-01-02T03:04:05",
+                    "provider": "iol",
+                }
+            },
+            {("bcba", "GGAL"): {"last": None, "provider": "iol"}},
+        ]
+    )
+
+    try:
+        first = cache_module.fetch_quotes_bulk(client, [("bcba", "GGAL")])
+        assert set(first) == {("bcba", "GGAL")}
+        quote = first[("bcba", "GGAL")]
+        assert quote["last"] == pytest.approx(111.0)
+        assert quote["provider"] == "iol"
+
+        persist_key = cache_module._quote_cache_key("bcba", "GGAL", None)
+        stored_entry = cache_module._load_persisted_entry(persist_key)
+        assert stored_entry is not None
+        stored_payload, _ = stored_entry
+        assert stored_payload["last"] == pytest.approx(111.0)
+        assert stored_payload["provider"] == "iol"
+        assert stored_payload["asof"] == "2024-01-02T03:04:05"
+
+        assert recorded
+        first_provider, first_metrics = recorded[0]
+        assert first_provider == "iol"
+        assert first_metrics["stale"] is False
+        assert first_metrics["source"] == "bulk"
+
+        cache_module.fetch_quotes_bulk.clear()
+
+        second = cache_module.fetch_quotes_bulk(client, [("bcba", "GGAL")])
+        assert set(second) == {("bcba", "GGAL")}
+        stale_quote = second[("bcba", "GGAL")]
+        assert stale_quote["last"] == pytest.approx(111.0)
+        assert stale_quote["stale"] is True
+        assert stale_quote["provider"] == "iol"
+
+        assert len(recorded) == 2
+        fallback_provider, fallback_metrics = recorded[1]
+        assert fallback_provider == "iol"
+        assert fallback_metrics["stale"] is True
+        assert fallback_metrics["source"] == "persistent"
+    finally:
+        cache_module.fetch_quotes_bulk.clear()
+        cache_module._QUOTE_CACHE.clear()
 
 
 def test_legacy_login_only_once_for_multiple_symbols(
