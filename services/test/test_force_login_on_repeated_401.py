@@ -44,7 +44,7 @@ def test_repeated_401_forces_login(monkeypatch):
         def __init__(self):
             self._cli = SimpleNamespace(auth=SimpleNamespace(clear_tokens=clear_tokens))
 
-        def get_portfolio(self):
+        def get_portfolio(self, country="argentina"):
             raise svc_cache.InvalidCredentialsError()
 
     cli = DummyCli()

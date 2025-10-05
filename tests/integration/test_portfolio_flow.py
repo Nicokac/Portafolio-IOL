@@ -1,7 +1,9 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 import sys
 
+import pandas as pd
 import pytest
 import requests
 
@@ -14,6 +16,7 @@ from controllers.portfolio import filters
 from domain.models import Controls
 from infrastructure.iol import client as iol_client_module
 from services import cache as cache_module
+from services.portfolio_view import PortfolioViewModelService
 
 
 def _http_error(status: int) -> requests.HTTPError:
@@ -118,3 +121,125 @@ def test_portfolio_flow_recovers_via_ohlc_after_legacy_429(
 
     assert not df_view.empty
     assert (df_view["chg_%"].dropna() > 0).all()
+
+
+def test_portfolio_country_endpoint_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_streamlit: FakeStreamlit,
+    tmp_path,
+) -> None:
+    cache_file = tmp_path / "portfolio.json"
+    monkeypatch.setattr("infrastructure.iol.client.PORTFOLIO_CACHE", cache_file)
+    monkeypatch.setattr(
+        iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False
+    )
+
+    class DummyAuth:
+        def __init__(self) -> None:
+            self.tokens = {"access_token": "tok", "refresh_token": "ref"}
+
+        def auth_header(self) -> dict[str, str]:
+            return {"Authorization": "Bearer tok"}
+
+        def refresh(self) -> None:  # pragma: no cover - defensive
+            raise AssertionError("refresh should not run")
+
+    payload = {
+        "pais": "argentina",
+        "activos": [
+            {
+                "simbolo": "GGAL",
+                "mercado": "bcba",
+                "cantidad": 10,
+                "costoUnitario": 100.0,
+                "valorizado": 1250.0,
+                "titulo": {"tipo": "Acción"},
+            },
+            {
+                "simbolo": "AAPL",
+                "mercado": "nyse",
+                "cantidad": 5,
+                "costoUnitario": 150.0,
+                "valorizado": 850.0,
+                "titulo": {"tipo": "CEDEAR"},
+            },
+        ],
+    }
+
+    class DummyResponse:
+        def __init__(self, data: dict) -> None:
+            self._data = data
+            self.status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._data
+
+    captured: dict[str, str] = {}
+
+    def fake_request(self, method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        captured["method"] = method
+        captured["url"] = url
+        return DummyResponse(payload)
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request, raising=False)
+
+    client = iol_client_module.IOLClient("user", "", auth=DummyAuth())
+    data = client.get_portfolio()
+
+    assert captured["method"] == "GET"
+    assert captured["url"].endswith("/portafolio/argentina")
+    assert data == payload
+    assert json.loads(cache_file.read_text()) == payload
+
+    from controllers.portfolio import load_data as load_data_module
+
+    class _Spinner:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+    fake_streamlit.spinner = lambda message: _Spinner()
+    fake_streamlit.info = lambda *a, **k: None
+    fake_streamlit.dataframe = lambda *a, **k: None
+
+    monkeypatch.setattr(load_data_module, "st", fake_streamlit)
+    monkeypatch.setattr(load_data_module, "fetch_portfolio", lambda cli: data)
+
+    psvc = PortfolioService()
+    df_pos, all_syms, available_types = load_data_module.load_portfolio_data(client, psvc)
+
+    assert not df_pos.empty
+    assert set(all_syms) == {"AAPL", "GGAL"}
+    assert available_types  # clasificación derivada del payload
+
+    assets = {
+        (str(item.get("mercado", "")).lower(), str(item.get("simbolo", "")).upper()): item
+        for item in payload["activos"]
+    }
+
+    def fake_quotes(_cli, pairs):
+        out: dict[tuple[str, str], dict[str, float]] = {}
+        for mercado, simbolo in pairs:
+            key = (str(mercado).lower(), str(simbolo).upper())
+            asset = assets.get(key, {})
+            qty = float(asset.get("cantidad") or 0.0)
+            valorizado = float(asset.get("valorizado") or 0.0)
+            last = valorizado / qty if qty else 0.0
+            out[key] = {"last": last, "chg_pct": 0.0}
+        return out
+
+    monkeypatch.setattr(filters, "fetch_quotes_bulk", fake_quotes)
+    monkeypatch.setattr(cache_module, "fetch_quotes_bulk", fake_quotes)
+
+    view_service = PortfolioViewModelService()
+    controls = Controls(hide_cash=False)
+    snapshot = view_service.get_portfolio_view(df_pos, controls, cli=client, psvc=psvc)
+
+    total_valorizado = sum(item["valorizado"] for item in payload["activos"])
+    assert snapshot.totals.total_value == pytest.approx(total_valorizado)
+    assert (snapshot.df_view["valor_actual"] > 0).all()

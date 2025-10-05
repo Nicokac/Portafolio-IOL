@@ -77,7 +77,7 @@ class FakeClient:
         self.portfolio_calls: int = 0
         self.quote_requests: list[tuple[tuple[str, str], ...]] = []
 
-    def get_portfolio(self) -> dict:
+    def get_portfolio(self, country: str = "argentina") -> dict:
         self.portfolio_calls += 1
         return self._payload
 

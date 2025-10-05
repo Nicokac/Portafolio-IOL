@@ -19,11 +19,16 @@ def test_portfolio_fallback(monkeypatch, tmp_path):
 
     client = iol_client.IOLClient("user", "pass", auth=DummyAuth())
 
-    monkeypatch.setattr(client, "_fetch_portfolio_live", lambda: {"activos": [1]}, raising=False)
+    monkeypatch.setattr(
+        client,
+        "_fetch_portfolio_live",
+        lambda country="argentina": {"activos": [1]},
+        raising=False,
+    )
     assert client.get_portfolio() == {"activos": [1]}
     assert json.loads(cache_file.read_text()) == {"activos": [1]}
 
-    def fail():
+    def fail(_country="argentina"):
         raise requests.RequestException("boom")
 
     monkeypatch.setattr(client, "_fetch_portfolio_live", fail, raising=False)

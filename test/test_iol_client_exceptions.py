@@ -27,7 +27,7 @@ def test_get_portfolio_uses_cache_on_network_error(monkeypatch: pytest.MonkeyPat
 
     client = client_module.IOLClient("u", "p", auth=DummyAuth())
 
-    def fail():
+    def fail(_country="argentina"):
         raise requests.RequestException("boom")
 
     monkeypatch.setattr(client, "_fetch_portfolio_live", fail, raising=False)
@@ -39,7 +39,7 @@ def test_get_portfolio_propagates_unexpected(monkeypatch: pytest.MonkeyPatch, tm
     monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False)
     client = client_module.IOLClient("u", "p", auth=DummyAuth())
 
-    def unexpected():
+    def unexpected(_country="argentina"):
         raise ValueError("unexpected")
 
     monkeypatch.setattr(client, "_fetch_portfolio_live", unexpected, raising=False)

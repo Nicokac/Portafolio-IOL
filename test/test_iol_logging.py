@@ -26,7 +26,7 @@ def test_client_get_portfolio_logs(monkeypatch: pytest.MonkeyPatch, tmp_path, ca
     monkeypatch.setattr(client_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False)
     monkeypatch.setattr("infrastructure.iol.client.PORTFOLIO_CACHE", tmp_path / "portfolio.json")
 
-    def fail(self):
+    def fail(self, country="argentina"):
         raise requests.RequestException("network error")
 
     monkeypatch.setattr(client_module.IOLClient, "_fetch_portfolio_live", fail, raising=False)

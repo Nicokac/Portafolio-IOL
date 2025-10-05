@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 API_BASE_URL = "https://api.invertironline.com/api/v2"
 PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
-PORTFOLIO_URL = f"{API_BASE_URL}/portafolio"
+DEFAULT_COUNTRY = "argentina"
+PORTFOLIO_URL = f"{API_BASE_URL}/portafolio/{{pais}}"
 
 REQ_TIMEOUT = 30
 RETRIES = 3
@@ -144,9 +145,10 @@ class IOLClient(IIOLProvider):
     # ------------------------------------------------------------------
     # Portfolio
     # ------------------------------------------------------------------
-    def _fetch_portfolio_live(self) -> Dict[str, Any]:
+    def _fetch_portfolio_live(self, country: str) -> Dict[str, Any]:
         start = time.time()
-        response = self._request("GET", PORTFOLIO_URL)
+        country_slug = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
+        response = self._request("GET", PORTFOLIO_URL.format(pais=country_slug))
         elapsed = _elapsed_ms(start)
         logger.info("get_portfolio %s ms", elapsed)
         if response is None:
@@ -175,9 +177,9 @@ class IOLClient(IIOLProvider):
             logger.error("No se pudo leer cache portafolio: %s", exc, exc_info=True)
             return {"activos": []}
 
-    def get_portfolio(self) -> Dict[str, Any]:
+    def get_portfolio(self, country: str = DEFAULT_COUNTRY) -> Dict[str, Any]:
         try:
-            data = self._fetch_portfolio_live()
+            data = self._fetch_portfolio_live(country)
         except InvalidCredentialsError:
             raise
         except requests.RequestException as exc:

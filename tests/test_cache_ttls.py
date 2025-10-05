@@ -69,7 +69,7 @@ def test_fetch_portfolio_respects_monkeypatched_ttl(monkeypatch):
                 self.calls = 0
                 self.auth = SimpleNamespace(tokens_path=None)
 
-            def get_portfolio(self):
+            def get_portfolio(self, country="argentina"):
                 self.calls += 1
                 return {"calls": self.calls}
 
