@@ -169,6 +169,27 @@ class Settings:
         self.YAHOO_QUOTES_TTL: int = int(
             os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300))
         )
+        self.QUOTES_TTL_SECONDS: int = int(
+            os.getenv("QUOTES_TTL_SECONDS", cfg.get("QUOTES_TTL_SECONDS", 300))
+        )
+        self.QUOTES_RPS_IOL: float = float(
+            os.getenv("QUOTES_RPS_IOL", cfg.get("QUOTES_RPS_IOL", 3))
+        )
+        self.QUOTES_RPS_LEGACY: float = float(
+            os.getenv("QUOTES_RPS_LEGACY", cfg.get("QUOTES_RPS_LEGACY", 1))
+        )
+        self.LEGACY_LOGIN_MAX_RETRIES: int = int(
+            os.getenv(
+                "LEGACY_LOGIN_MAX_RETRIES",
+                cfg.get("LEGACY_LOGIN_MAX_RETRIES", 1),
+            )
+        )
+        self.LEGACY_LOGIN_BACKOFF_BASE: float = float(
+            os.getenv(
+                "LEGACY_LOGIN_BACKOFF_BASE",
+                cfg.get("LEGACY_LOGIN_BACKOFF_BASE", 0.5),
+            )
+        )
 
         self.min_score_threshold: int = int(
             os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80))
