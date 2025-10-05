@@ -803,7 +803,7 @@ El script actualiza los paquetes a sus últimas versiones disponibles, ejecuta l
 2. Regenera la lista plana para CI: `python scripts/sync_requirements.py`.
 3. Reinstala las dependencias en tu entorno virtual (`pip install -r requirements.txt`) y ejecuta las suites necesarias.
 
-La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; `matplotlib` y `kaleido` se incluyen automáticamente al instalar `requirements.txt`, por lo que no hace falta agregarlos manualmente antes de correr ese flujo.
+La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; `kaleido` se incluye automáticamente al instalar `requirements.txt`, por lo que no hace falta agregarlo manualmente antes de correr ese flujo.
 
 ## Políticas de sesión y manejo de tokens
 

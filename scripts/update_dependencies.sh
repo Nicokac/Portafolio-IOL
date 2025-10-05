@@ -13,7 +13,6 @@ PACKAGES=(
   python-dotenv
   iolConn
   plotly
-  matplotlib
   kaleido
   XlsxWriter
   tomli
