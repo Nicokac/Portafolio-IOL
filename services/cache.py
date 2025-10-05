@@ -114,6 +114,46 @@ def _quote_cache_key(market: str, symbol: str, panel: str | None) -> str:
     return "|".join([market, symbol, panel_token])
 
 
+def _normalize_bulk_key_components(key: Any) -> tuple[str, str, str | None] | None:
+    """Try to extract (market, symbol, panel) information from bulk keys."""
+
+    market: str | None = None
+    symbol: str | None = None
+    panel_value: str | None = None
+
+    if isinstance(key, (list, tuple)):
+        if len(key) >= 1 and key[0] is not None:
+            market = str(key[0]).lower()
+        if len(key) >= 2 and key[1] is not None:
+            symbol = str(key[1]).upper()
+        if len(key) >= 3:
+            panel_raw = key[2]
+            if panel_raw not in (None, ""):
+                panel_value = str(panel_raw)
+    elif isinstance(key, str):
+        parts = re.split(r"[|:/]", key)
+        if len(parts) >= 1 and parts[0]:
+            market = parts[0].lower()
+        if len(parts) >= 2 and parts[1]:
+            symbol = parts[1].upper()
+        if len(parts) >= 3 and parts[2]:
+            panel_value = parts[2]
+    else:
+        market = getattr(key, "market", getattr(key, "mercado", None))
+        symbol = getattr(key, "symbol", getattr(key, "simbolo", None))
+        panel_raw = getattr(key, "panel", None)
+        if market is not None:
+            market = str(market).lower()
+        if symbol is not None:
+            symbol = str(symbol).upper()
+        if panel_raw not in (None, ""):
+            panel_value = str(panel_raw)
+
+    if market is None or symbol is None:
+        return None
+    return market, symbol, panel_value
+
+
 def _resolve_rate_limit_provider(cli: Any) -> str:
     module = getattr(getattr(cli, "__class__", None), "__module__", "")
     if isinstance(module, str) and module.startswith("infrastructure.iol.legacy"):
@@ -230,6 +270,16 @@ def _persist_quote(cache_key: str, payload: dict[str, Any], ts: float) -> None:
     if payload.get("last") is None:
         return
     normalized = _normalize_quote(payload)
+    provider = None
+    asof_value = None
+    if isinstance(payload, dict):
+        provider = payload.get("provider")
+        asof_value = payload.get("asof")
+    if normalized.get("provider") is None and isinstance(provider, str):
+        normalized["provider"] = provider or None
+    if normalized.get("asof") is None and isinstance(asof_value, str):
+        text = asof_value.strip()
+        normalized["asof"] = text or None
     if normalized.get("last") is None:
         return
     entry = {"data": normalized, "ts": float(ts)}
@@ -602,7 +652,6 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     fallback_mode = not callable(get_bulk)
 
     normalized: list[tuple[str, str, str | None]] = []
-    persist_lookup: dict[tuple[str, str], str] = {}
 
     for raw in items:
         market: str | None = None
@@ -627,10 +676,6 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         norm_market = str(market or "bcba").lower()
         norm_symbol = str(symbol or "").upper()
         normalized.append((norm_market, norm_symbol, panel_value))
-        persist_lookup.setdefault(
-            (norm_market, norm_symbol),
-            _quote_cache_key(norm_market, norm_symbol, panel_value),
-        )
 
     try:
         if callable(get_bulk):
@@ -638,6 +683,16 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             if isinstance(data, dict):
                 normalized_bulk = {}
                 store_time = time.time()
+                try:
+                    ttl_seconds = float(cache_ttl_quotes or 0)
+                except (TypeError, ValueError):
+                    ttl_seconds = 0.0
+                if ttl_seconds < 0:
+                    ttl_seconds = 0.0
+                if ttl_seconds > 0:
+                    with _QUOTE_LOCK:
+                        _purge_expired_quotes(store_time, ttl_seconds)
+                elapsed_ms = (store_time - start) * 1000.0
                 for k, v in data.items():
                     if v is None:
                         logger.warning(
@@ -646,17 +701,61 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                         continue
                     quote = _normalize_quote(v)
                     if isinstance(quote, dict):
-                        if quote.get("last") is None and isinstance(k, (list, tuple)) and len(k) >= 2:
-                            norm_key = (str(k[0]).lower(), str(k[1]).upper())
-                            persist_key = persist_lookup.get(norm_key)
-                            if persist_key is None:
-                                persist_key = _quote_cache_key(norm_key[0], norm_key[1], None)
-                            fallback_quote = _recover_persisted_quote(persist_key, store_time)
+                        stale_flag = (
+                            bool(v.get("stale")) if isinstance(v, dict) else False
+                        )
+                        if stale_flag:
+                            quote["stale"] = True
+                        if quote.get("provider") is None and not stale_flag:
+                            quote["provider"] = "iol"
+
+                        key_components = _normalize_bulk_key_components(k)
+                        if key_components is None and len(normalized) == 1:
+                            key_components = normalized[0]
+                        if key_components is None:
+                            normalized_bulk[k] = quote
+                            provider_name = quote.get("provider") or "unknown"
+                            record_quote_provider_usage(
+                                provider_name,
+                                elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
+                                stale=stale_flag or quote.get("last") is None,
+                                source="bulk" if ttl_seconds > 0 else "live",
+                            )
+                            logger.debug("quote %s -> %s", k, quote)
+                            continue
+
+                        norm_market, norm_symbol, panel_value = key_components
+                        persist_key = _quote_cache_key(norm_market, norm_symbol, panel_value)
+
+                        if quote.get("last") is None:
+                            fallback_quote = _recover_persisted_quote(
+                                persist_key, store_time
+                            )
                             if fallback_quote is not None:
                                 normalized_bulk[k] = fallback_quote
                                 continue
+
                         normalized_bulk[k] = quote
-                        logger.debug("quote %s:%s -> %s", k[0], k[1], quote)
+                        cache_key = (norm_market, norm_symbol, panel_value)
+                        if ttl_seconds > 0:
+                            with _QUOTE_LOCK:
+                                _QUOTE_CACHE[cache_key] = {
+                                    "ts": store_time,
+                                    "ttl": ttl_seconds,
+                                    "data": quote,
+                                }
+                            if quote.get("last") is not None and not stale_flag:
+                                _persist_quote(persist_key, quote, store_time)
+                        provider_name = quote.get("provider") or "unknown"
+                        record_quote_provider_usage(
+                            provider_name,
+                            elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
+                            stale=stale_flag or quote.get("last") is None,
+                            source="bulk" if ttl_seconds > 0 else "live",
+                        )
+                        logger.debug(
+                            "quote %s:%s -> %s", norm_market, norm_symbol, quote
+                        )
                 data = normalized_bulk
             elapsed = (time.time() - start) * 1000
             log = logger.warning if elapsed > 1000 else logger.info
