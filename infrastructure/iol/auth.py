@@ -15,6 +15,8 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from shared.config import settings
 from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
+from services.diagnostics import run_startup_diagnostics
+from services.health import record_diagnostics_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +151,32 @@ class IOLAuth:
             )
             st.session_state["iol_login_ok_ts"] = end
             st.session_state.pop("iol_startup_metric_logged", None)
+
+            analysis_logger = logging.getLogger("analysis")
+            try:
+                diagnostics = run_startup_diagnostics(tokens=self.tokens)
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                analysis_logger.info(
+                    "startup_diagnostics_failed",
+                    extra={
+                        "component": "startup_diagnostics",
+                        "error": str(exc),
+                    },
+                )
+            else:
+                analysis_logger.info(
+                    "startup_diagnostics",
+                    extra={
+                        "component": diagnostics.get("component", "startup_diagnostics"),
+                        "status": diagnostics.get("status"),
+                        "latency_ms": diagnostics.get("latency"),
+                        "details": diagnostics,
+                    },
+                )
+                try:
+                    record_diagnostics_snapshot(diagnostics)
+                except Exception:  # pragma: no cover - defensive logging path
+                    logger.exception("No se pudo registrar el diagnóstico de inicio")
             return self.tokens
 
     def refresh(self) -> Dict[str, Any]:
