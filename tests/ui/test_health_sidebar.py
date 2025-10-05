@@ -48,14 +48,24 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
         },
         "quote_providers": {
             "total": 6,
+            "ok_total": 5,
+            "ok_ratio": 5 / 6,
             "stale_total": 1,
+            "http_counters": {
+                "legacy_429": 2,
+                "legacy_auth_fail": 1,
+            },
             "providers": [
                 {
                     "provider": "iol",
                     "label": "IOL v2",
                     "count": 4,
+                    "ok_count": 4,
+                    "ok_ratio": 1.0,
                     "avg_ms": 120.0,
                     "last_ms": 100.0,
+                    "p50_ms": 110.0,
+                    "p95_ms": 180.0,
                     "ts": 7.0,
                     "source": "live",
                 },
@@ -63,9 +73,13 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
                     "provider": "av",
                     "label": "Alpha Vantage",
                     "count": 2,
+                    "ok_count": 1,
+                    "ok_ratio": 0.5,
                     "stale_count": 1,
                     "avg_ms": 450.0,
                     "last_ms": 480.0,
+                    "p50_ms": 430.0,
+                    "p95_ms": 500.0,
                     "ts": 8.0,
                     "source": "fallback",
                     "stale_last": True,
@@ -172,6 +186,9 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     assert any("Uso de caché" in text for text in markdown_calls)
     assert any("💹 Cotizaciones" in text for text in markdown_calls)
     assert any("Total 6" in text for text in markdown_calls)
+    assert any("OK 5/6" in text for text in markdown_calls)
+    assert any("Legacy rate-limit 429" in text for text in markdown_calls)
+    assert any("Legacy auth fallida" in text for text in markdown_calls)
     assert any("Portafolio" in text and "200" in text for text in markdown_calls)
     assert any("Cotizaciones" in text and "350" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)

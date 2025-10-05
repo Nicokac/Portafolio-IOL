@@ -78,6 +78,8 @@ class IOLClient(IIOLProvider):
             extra={"user": safe_user, "tokens_file": tokens_path, "has_refresh": has_refresh},
         )
 
+        self._legacy_last_http_label: Optional[str] = None
+
     # ------------------------------------------------------------------
     # HTTP helpers
     # ------------------------------------------------------------------
@@ -390,6 +392,35 @@ class IOLClient(IIOLProvider):
             "provider": provider_key or None,
         }
 
+    def _log_quote_event(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        phase: str,
+        result: str,
+        provider: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "quote_market": market,
+            "quote_symbol": symbol,
+            "quote_phase": phase,
+            "quote_result": result,
+        }
+        if provider:
+            payload["quote_provider"] = provider
+        if detail:
+            payload["quote_detail"] = detail
+        logger.info(
+            "quote_event %s:%s phase=%s result=%s",
+            market,
+            symbol,
+            phase,
+            result,
+            extra=payload,
+        )
+
     def _fallback_quote_via_ohlc(
         self,
         market: str,
@@ -418,6 +449,13 @@ class IOLClient(IIOLProvider):
                     symbol,
                     payload.get("provider"),
                 )
+                self._log_quote_event(
+                    market,
+                    symbol,
+                    phase="ohlc",
+                    result="success",
+                    provider=str(payload.get("provider") or "ohlc"),
+                )
                 return payload
         except Exception as exc:
             logger.warning(
@@ -425,6 +463,13 @@ class IOLClient(IIOLProvider):
                 market,
                 symbol,
                 exc,
+            )
+            self._log_quote_event(
+                market,
+                symbol,
+                phase="ohlc",
+                result="error",
+                detail=str(exc),
             )
         return None
 
@@ -462,6 +507,15 @@ class IOLClient(IIOLProvider):
         url = f"{base_url}/marketdata/{resolved_market}/{resolved_symbol}"
         url = f"{url}/{panel}" if panel else f"{url}/Cotizacion"
 
+        phase_detail = panel or "Cotizacion"
+        self._log_quote_event(
+            resolved_market,
+            resolved_symbol,
+            phase="iol_v2",
+            result="start",
+            detail=str(phase_detail),
+        )
+
         try:
             response = self._request("GET", url)
             if response is None:
@@ -471,10 +525,18 @@ class IOLClient(IIOLProvider):
                     resolved_symbol,
                     "response=None",
                 )
-                logger.info(
-                    "get_quote fallback -> legacy %s:%s",
+                self._log_quote_event(
                     resolved_market,
                     resolved_symbol,
+                    phase="iol_v2",
+                    result="empty_response",
+                )
+                self._legacy_last_http_label = None
+                self._log_quote_event(
+                    resolved_market,
+                    resolved_symbol,
+                    phase="legacy",
+                    result="attempt",
                 )
                 legacy_payload = self._legacy_quote_fallback(
                     resolved_market, resolved_symbol, panel
@@ -488,6 +550,7 @@ class IOLClient(IIOLProvider):
                         elapsed_ms=None,
                         stale=legacy_payload.get("last") is None,
                         source="legacy",
+                        http_status=self._legacy_last_http_label,
                     )
                     return legacy_payload
                 record_quote_provider_usage(
@@ -495,22 +558,48 @@ class IOLClient(IIOLProvider):
                     elapsed_ms=None,
                     stale=True,
                     source="legacy",
+                    http_status=self._legacy_last_http_label,
                 )
                 fallback = self._fallback_quote_via_ohlc(
                     resolved_market, resolved_symbol, panel=panel
                 )
                 if fallback is not None:
                     return fallback
+                self._log_quote_event(
+                    resolved_market,
+                    resolved_symbol,
+                    phase="ohlc",
+                    result="stale",
+                )
                 return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
             raise_for_status = getattr(response, "raise_for_status", None)
             if callable(raise_for_status):
                 raise_for_status()
         except InvalidCredentialsError:
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result="auth_error",
+            )
             raise
         except requests.HTTPError as exc:
             status_code = exc.response.status_code if exc.response is not None else None
             if status_code == 500:
                 logger.warning("IOL 500 → omitiendo símbolo %s:%s", resolved_market, resolved_symbol)
+                self._log_quote_event(
+                    resolved_market,
+                    resolved_symbol,
+                    phase="iol_v2",
+                    result="http_500",
+                )
+                record_quote_provider_usage(
+                    "iol",
+                    elapsed_ms=None,
+                    stale=True,
+                    source="iol_v2",
+                    http_status="iolv2_500",
+                )
                 try:
                     from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
 
@@ -538,12 +627,26 @@ class IOLClient(IIOLProvider):
                     )
                     if fallback is not None:
                         return fallback
+                    self._log_quote_event(
+                        resolved_market,
+                        resolved_symbol,
+                        phase="ohlc",
+                        result="stale",
+                    )
                     return {
                         "last": None,
                         "chg_pct": None,
                         "asof": None,
                         "provider": "stale",
                     }
+            status_label = f"http_{status_code}" if status_code else "http_error"
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result=status_label,
+                detail=str(exc),
+            )
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             logger.warning(
@@ -552,11 +655,24 @@ class IOLClient(IIOLProvider):
                 resolved_symbol,
                 exc,
             )
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result="exception",
+                detail=str(exc),
+            )
             fallback = self._fallback_quote_via_ohlc(
                 resolved_market, resolved_symbol, panel=panel
             )
             if fallback is not None:
                 return fallback
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="ohlc",
+                result="stale",
+            )
             return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
 
         status_code = getattr(response, "status_code", "n/a")
@@ -571,16 +687,37 @@ class IOLClient(IIOLProvider):
                 resolved_symbol,
                 exc,
             )
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result="json_error",
+                detail=str(exc),
+            )
             fallback = self._fallback_quote_via_ohlc(
                 resolved_market, resolved_symbol, panel=panel
             )
             if fallback is not None:
                 return fallback
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="ohlc",
+                result="stale",
+            )
             return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
 
         payload = self._normalize_quote_payload(data)
         if payload.get("provider") is None:
             payload["provider"] = "iol"
+        provider_name = str(payload.get("provider") or "iol")
+        self._log_quote_event(
+            resolved_market,
+            resolved_symbol,
+            phase=provider_name,
+            result="success",
+            provider=provider_name,
+        )
         return payload
 
     def _legacy_quote_fallback(
@@ -589,6 +726,7 @@ class IOLClient(IIOLProvider):
         resolved_symbol: str,
         panel: str | None,
     ) -> Optional[Dict[str, Optional[float]]]:
+        self._legacy_last_http_label = None
         try:
             from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
 
@@ -607,11 +745,26 @@ class IOLClient(IIOLProvider):
             status = None
             if getattr(http_exc, "response", None) is not None:
                 status = http_exc.response.status_code
+            if status == 429:
+                self._legacy_last_http_label = "legacy_429"
+                result_label = "http_429"
+            elif status in (401, 403):
+                self._legacy_last_http_label = "legacy_auth_fail"
+                result_label = f"http_{status}"
+            else:
+                result_label = "http_error"
             logger.warning(
                 "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
                 resolved_market,
                 resolved_symbol,
                 status or http_exc,
+            )
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="legacy",
+                result=result_label,
+                detail=str(status or http_exc),
             )
             return None
         except requests.RequestException as req_exc:
@@ -620,6 +773,13 @@ class IOLClient(IIOLProvider):
                 resolved_market,
                 resolved_symbol,
                 req_exc,
+            )
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="legacy",
+                result="request_error",
+                detail=str(req_exc),
             )
             return None
         except Exception as fallback_exc:  # pragma: no cover - defensive guard
@@ -630,13 +790,34 @@ class IOLClient(IIOLProvider):
                 fallback_exc,
                 exc_info=True,
             )
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="legacy",
+                result="exception",
+                detail=str(fallback_exc),
+            )
             return None
 
         if not isinstance(payload, dict):
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="legacy",
+                result="empty",
+            )
             return None
 
         normalized = dict(payload)
         normalized.setdefault("provider", "legacy")
+        provider_name = str(normalized.get("provider") or "legacy")
+        self._log_quote_event(
+            resolved_market,
+            resolved_symbol,
+            phase="legacy",
+            result="success",
+            provider=provider_name,
+        )
         return normalized
 
     def get_quotes_bulk(
