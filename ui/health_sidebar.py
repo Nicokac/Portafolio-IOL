@@ -433,6 +433,9 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
 
     total_val = data.get("total")
     total_int = int(total_val) if isinstance(total_val, (int, float)) else None
+    ok_val = data.get("ok_total")
+    ok_int = int(ok_val) if isinstance(ok_val, (int, float)) else None
+    ok_ratio = data.get("ok_ratio") if isinstance(data.get("ok_ratio"), (int, float)) else None
     stale_total_val = data.get("stale_total")
     stale_total = int(stale_total_val) if isinstance(stale_total_val, (int, float)) else 0
     rate_total_val = data.get("rate_limit_total")
@@ -441,6 +444,11 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     header_parts: list[str] = []
     if total_int is not None:
         header_parts.append(f"Total {total_int}")
+    if ok_int is not None and total_int:
+        if ok_ratio is not None:
+            header_parts.append(f"OK {ok_int}/{total_int} ({ok_ratio:.0%})")
+        else:
+            header_parts.append(f"OK {ok_int}/{total_int}")
     if stale_total:
         header_parts.append(f"Stale {stale_total}")
     if rate_total:
@@ -450,14 +458,31 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     if header_parts:
         lines.append(format_note("📊 " + " • ".join(header_parts)))
 
+    if http_counters:
+        iol_500 = http_counters.get("iolv2_500", 0)
+        legacy_429 = http_counters.get("legacy_429", 0)
+        legacy_auth = http_counters.get("legacy_auth_fail", 0)
+        if iol_500:
+            lines.append(format_note(f"⚠️ IOL v2 HTTP 500: {iol_500}"))
+        if legacy_429:
+            lines.append(format_note(f"🚦 Legacy rate-limit 429: {legacy_429}"))
+        if legacy_auth:
+            lines.append(format_note(f"🔐 Legacy auth fallida: {legacy_auth}"))
+
     for entry in entries:
         label = _sanitize_text(entry.get("label")) or str(entry.get("provider") or "desconocido")
         count_val = entry.get("count")
         count_int = int(count_val) if isinstance(count_val, (int, float)) else 0
         stale_count_val = entry.get("stale_count")
         stale_count = int(stale_count_val) if isinstance(stale_count_val, (int, float)) else 0
+        ok_count_val = entry.get("ok_count")
+        ok_count = int(ok_count_val) if isinstance(ok_count_val, (int, float)) else 0
+        ok_ratio_val = entry.get("ok_ratio")
+        ok_ratio = float(ok_ratio_val) if isinstance(ok_ratio_val, (int, float)) else None
         avg_ms = entry.get("avg_ms")
         last_ms = entry.get("last_ms")
+        p50_ms = entry.get("p50_ms")
+        p95_ms = entry.get("p95_ms")
         ts_value = entry.get("ts") if isinstance(entry.get("ts"), (int, float)) else None
         ts_text = _format_timestamp(ts_value)
         source_text = _sanitize_text(entry.get("source"))
@@ -475,6 +500,11 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
         parts = [f"{icon} {label}: {count_int} consultas"]
         if stale_count:
             parts.append(f"stale {stale_count}")
+        if ok_count:
+            if ok_ratio is not None:
+                parts.append(f"OK {ok_count}/{count_int} ({ok_ratio:.0%})")
+            else:
+                parts.append(f"OK {ok_count}/{count_int}")
         if isinstance(avg_ms, (int, float)):
             parts.append(f"prom. {float(avg_ms):.0f} ms")
         if isinstance(last_ms, (int, float)):

@@ -80,6 +80,8 @@ class IOLClient(IIOLProvider):
             extra={"user": safe_user, "tokens_file": tokens_path, "has_refresh": has_refresh},
         )
 
+        self._legacy_last_http_label: Optional[str] = None
+
     # ------------------------------------------------------------------
     # HTTP helpers
     # ------------------------------------------------------------------
@@ -392,6 +394,35 @@ class IOLClient(IIOLProvider):
             "provider": provider_key or None,
         }
 
+    def _log_quote_event(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        phase: str,
+        result: str,
+        provider: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "quote_market": market,
+            "quote_symbol": symbol,
+            "quote_phase": phase,
+            "quote_result": result,
+        }
+        if provider:
+            payload["quote_provider"] = provider
+        if detail:
+            payload["quote_detail"] = detail
+        logger.info(
+            "quote_event %s:%s phase=%s result=%s",
+            market,
+            symbol,
+            phase,
+            result,
+            extra=payload,
+        )
+
     def _fallback_quote_via_ohlc(
         self,
         market: str,
@@ -420,6 +451,13 @@ class IOLClient(IIOLProvider):
                     symbol,
                     payload.get("provider"),
                 )
+                self._log_quote_event(
+                    market,
+                    symbol,
+                    phase="ohlc",
+                    result="success",
+                    provider=str(payload.get("provider") or "ohlc"),
+                )
                 return payload
         except Exception as exc:
             logger.warning(
@@ -427,6 +465,13 @@ class IOLClient(IIOLProvider):
                 market,
                 symbol,
                 exc,
+            )
+            self._log_quote_event(
+                market,
+                symbol,
+                phase="ohlc",
+                result="error",
+                detail=str(exc),
             )
         return None
 
@@ -472,6 +517,12 @@ class IOLClient(IIOLProvider):
         try:
             response = self._request("GET", url)
         except InvalidCredentialsError:
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result="auth_error",
+            )
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
             v2_error = exc
@@ -628,6 +679,14 @@ class IOLClient(IIOLProvider):
             status = None
             if getattr(http_exc, "response", None) is not None:
                 status = http_exc.response.status_code
+            if status == 429:
+                self._legacy_last_http_label = "legacy_429"
+                result_label = "http_429"
+            elif status in (401, 403):
+                self._legacy_last_http_label = "legacy_auth_fail"
+                result_label = f"http_{status}"
+            else:
+                result_label = "http_error"
             logger.warning(
                 "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
                 resolved_market,
