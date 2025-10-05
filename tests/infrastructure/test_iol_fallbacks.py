@@ -100,6 +100,58 @@ def test_primary_endpoint_provides_fresh_quote(
     assert any(entry[0] == "iol" and entry[1].get("stale") is False for entry in recorded)
 
 
+def test_primary_endpoint_missing_last_triggers_legacy(
+    monkeypatch: pytest.MonkeyPatch, client: iol_client_module.IOLClient
+) -> None:
+    """A missing last price from v2 should trigger the legacy fallback path."""
+
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    def record(provider: str, **kwargs: Any) -> None:
+        recorded.append((provider, kwargs))
+
+    legacy_calls: list[dict[str, Any]] = []
+
+    def missing_last_request(
+        self: iol_client_module.IOLClient, method: str, url: str, **kwargs: Any
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "variacion": 1.5,
+                "moneda": "ARS",
+                "fecha": "2024-05-20T15:30:00",
+            },
+        )
+
+    class LegacyStub:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def get_quote(self, **kwargs: Any) -> dict[str, Any]:
+            legacy_calls.append(kwargs)
+            return {
+                "last": 101.25,
+                "chg_pct": 1.5,
+                "asof": "2024-05-20T15:35:00",
+                "provider": "legacy",
+            }
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", missing_last_request)
+    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyStub)
+    monkeypatch.setattr(iol_client_module, "record_quote_provider_usage", record)
+    monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
+    monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
+
+    payload = cache_module._get_quote_cached(client, "bcba", "GGAL", ttl=60)
+
+    assert legacy_calls, "Legacy client should be invoked when last price is missing"
+    assert payload["provider"] == "legacy"
+    assert payload["last"] == pytest.approx(101.25)
+    assert any(entry[0] == "iol" and entry[1].get("source") == "v2-missing-last" for entry in recorded)
+
+
 def test_get_quote_uses_legacy_on_primary_http_500(
     monkeypatch: pytest.MonkeyPatch, client: iol_client_module.IOLClient
 ) -> None:
