@@ -29,6 +29,7 @@ _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 _SNAPSHOT_EVENT_KEY = "snapshot_event"
+_DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"
 _PORTFOLIO_HISTORY_LIMIT = 32
 _QUOTE_HISTORY_LIMIT = 32
 _FX_API_HISTORY_LIMIT = 32
@@ -298,6 +299,63 @@ def record_diagnostics_snapshot(
     source_text = str(source or "").strip()
     if source_text:
         entry["source"] = source_text
+def record_diagnostics_snapshot(result: Mapping[str, Any]) -> None:
+    """Persist the latest startup diagnostics summary."""
+
+    if not isinstance(result, Mapping):
+        result = {}
+
+    status_text = str(result.get("status") or "unknown").strip() or "unknown"
+    latency_value = _as_optional_float(result.get("latency"))
+    ts_value = _as_optional_float(result.get("timestamp"))
+    if ts_value is None:
+        ts_value = _as_optional_float(result.get("ts"))
+    if ts_value is None:
+        ts_value = time.time()
+
+    entry: Dict[str, Any] = {"status": status_text, "ts": ts_value}
+    if latency_value is not None:
+        entry["latency"] = latency_value
+
+    component = result.get("component")
+    if isinstance(component, str):
+        component_text = component.strip()
+        if component_text:
+            entry["component"] = component_text
+
+    message_value = result.get("message")
+    if message_value is not None:
+        message_text = _clean_detail(message_value)
+        if message_text:
+            entry["message"] = message_text
+
+    checks_raw = result.get("checks")
+    checks: list[Dict[str, Any]] = []
+    if isinstance(checks_raw, Iterable) and not isinstance(
+        checks_raw, (str, bytes, bytearray)
+    ):
+        for item in checks_raw:
+            if not isinstance(item, Mapping):
+                continue
+            check_entry: Dict[str, Any] = {}
+            component_value = item.get("component") or item.get("name")
+            if component_value:
+                component_text = str(component_value).strip()
+                if component_text:
+                    check_entry["component"] = component_text
+            status_value = item.get("status")
+            if status_value is not None:
+                status_text = str(status_value).strip()
+                if status_text:
+                    check_entry["status"] = status_text
+            message_data = item.get("message")
+            detail_text = _clean_detail(message_data)
+            if detail_text:
+                check_entry["message"] = detail_text
+            if check_entry:
+                checks.append(check_entry)
+    if checks:
+        entry["checks"] = checks
 
     store = _store()
     store[_DIAGNOSTICS_SNAPSHOT_KEY] = entry
@@ -2530,6 +2588,70 @@ def get_health_metrics() -> Dict[str, Any]:
             event["backend"] = backend
 
         return event
+
+    def _normalize_diagnostics_entry(raw_entry: Any) -> Dict[str, Any]:
+        if not isinstance(raw_entry, Mapping):
+            return {}
+
+        entry: Dict[str, Any] = {}
+
+        status_value = raw_entry.get("status")
+        if status_value is not None:
+            status_text = str(status_value).strip()
+            if status_text:
+                entry["status"] = status_text
+
+        latency_value = _as_optional_float(raw_entry.get("latency"))
+        if latency_value is not None:
+            entry["latency"] = latency_value
+
+        ts_value = _as_optional_float(raw_entry.get("ts"))
+        if ts_value is None:
+            ts_value = _as_optional_float(raw_entry.get("timestamp"))
+        if ts_value is not None:
+            entry["ts"] = ts_value
+
+        component_value = raw_entry.get("component")
+        if component_value is not None:
+            component_text = str(component_value).strip()
+            if component_text:
+                entry["component"] = component_text
+
+        message_value = raw_entry.get("message")
+        if message_value is not None:
+            message_text = _clean_detail(message_value)
+            if message_text:
+                entry["message"] = message_text
+
+        checks_raw = raw_entry.get("checks")
+        if isinstance(checks_raw, Iterable) and not isinstance(
+            checks_raw, (str, bytes, bytearray)
+        ):
+            checks: list[Dict[str, Any]] = []
+            for item in checks_raw:
+                if not isinstance(item, Mapping):
+                    continue
+                check_entry: Dict[str, Any] = {}
+                component_name = item.get("component") or item.get("name")
+                if component_name is not None:
+                    component_text = str(component_name).strip()
+                    if component_text:
+                        check_entry["component"] = component_text
+                status_entry = item.get("status")
+                if status_entry is not None:
+                    status_text = str(status_entry).strip()
+                    if status_text:
+                        check_entry["status"] = status_text
+                message_entry = item.get("message")
+                detail_text = _clean_detail(message_entry)
+                if detail_text:
+                    check_entry["message"] = detail_text
+                if check_entry:
+                    checks.append(check_entry)
+            if checks:
+                entry["checks"] = checks
+
+        return entry
     def _merge_entry(entry: Any, stats_summary: Dict[str, Any]) -> Any:
         if not stats_summary:
             if isinstance(entry, Mapping):
@@ -3290,6 +3412,9 @@ def get_health_metrics() -> Dict[str, Any]:
         "snapshot_event": _normalize_snapshot_event_entry(store.get(_SNAPSHOT_EVENT_KEY)),
         "diagnostics": diagnostics_data,
         "session_monitoring": session_monitoring_data,
+        "startup_diagnostics": _normalize_diagnostics_entry(
+            store.get(_DIAGNOSTICS_SNAPSHOT_KEY)
+        ),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
@@ -3325,6 +3450,7 @@ __all__ = [
     "record_quote_provider_usage",
     "record_quote_rate_limit_wait",
     "record_snapshot_event",
+    "record_diagnostics_snapshot",
     "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",
