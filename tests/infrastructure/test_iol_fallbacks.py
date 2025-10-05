@@ -179,3 +179,116 @@ def test_get_quote_returns_stale_from_persistent_cache_when_all_fallbacks_fail(
     assert payload["provider"] == "stale"
     assert payload["provider"] is not None
     assert payload["stale"] is True
+
+
+def test_legacy_login_only_once_for_multiple_symbols(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(iol_client_module, "st", fake_st)
+    monkeypatch.setattr(cache_module, "st", fake_st)
+    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
+
+    class TrackingAuth:
+        def __init__(self) -> None:
+            self.tokens: dict[str, str] = {}
+            self.login_calls = 0
+
+        def login(self) -> dict[str, str]:
+            self.login_calls += 1
+            token = f"token-{self.login_calls}"
+            self.tokens = {"access_token": token, "refresh_token": "refresh"}
+            return self.tokens
+
+        def auth_header(self) -> dict[str, str]:
+            if not self.tokens.get("access_token"):
+                self.login()
+            return {"Authorization": f"Bearer {self.tokens['access_token']}"}
+
+        def refresh(self) -> None:  # pragma: no cover - not exercised here
+            raise AssertionError("refresh should not be called")
+
+    auth = TrackingAuth()
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+    client = iol_client_module.IOLClient("user", "", auth=auth)
+
+    def failing_request(self, method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        raise _http_error(500)
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", failing_request)
+
+    legacy_auths: list[TrackingAuth] = []
+
+    class LegacyLoginSpy:
+        def __init__(self, *args, **kwargs) -> None:
+            self.auth = kwargs.get("auth")
+            assert isinstance(self.auth, TrackingAuth)
+            legacy_auths.append(self.auth)
+
+        def get_quote(self, market, symbol, panel=None):  # type: ignore[no-untyped-def]
+            header = self.auth.auth_header()
+            assert header.get("Authorization")
+            return {
+                "last": 101.0,
+                "chg_pct": 1.2,
+                "asof": "2024-01-01T12:00:00",
+                "provider": "legacy",
+            }
+
+    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyLoginSpy)
+    monkeypatch.setattr(ohlc_module, "OHLCAdapter", lambda *_, **__: pytest.fail("OHLC fallback should not run"))
+    monkeypatch.setattr(cache_module, "_persist_quote", lambda *_, **__: None)
+    monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
+    monkeypatch.setattr(cache_module, "record_quote_provider_usage", lambda *_, **__: None)
+    monkeypatch.setattr(cache_module, "record_quote_load", lambda *_, **__: None)
+    monkeypatch.setattr(cache_module, "max_quote_workers", 1)
+    cache_module.fetch_quotes_bulk.clear()
+    cache_module._QUOTE_CACHE.clear()
+
+    try:
+        pairs = [("bcba", "GGAL"), ("nyse", "AAPL"), ("bcba", "YPFD")]
+        result = cache_module.fetch_quotes_bulk(client, pairs)
+    finally:
+        cache_module._QUOTE_CACHE.clear()
+        cache_module.fetch_quotes_bulk.clear()
+
+    assert set(result) == {("bcba", "GGAL"), ("nyse", "AAPL"), ("bcba", "YPFD")}
+    assert auth.login_calls == 1
+    assert len({id(ref) for ref in legacy_auths}) == 1
+
+
+def test_primary_client_uses_exponential_backoff_on_http_429(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr(iol_client_module, "st", fake_st)
+
+    class StaticAuth:
+        def __init__(self) -> None:
+            self.tokens = {"access_token": "token", "refresh_token": "refresh"}
+
+        def auth_header(self) -> dict[str, str]:
+            return {"Authorization": "Bearer token"}
+
+        def refresh(self) -> None:  # pragma: no cover - not exercised
+            raise AssertionError("refresh should not be triggered")
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+    client = iol_client_module.IOLClient("user", "", auth=StaticAuth())
+
+    def failing_request(self, method: str, url: str, **kwargs):  # type: ignore[no-untyped-def]
+        raise _http_error(429)
+
+    monkeypatch.setattr(iol_client_module.requests.Session, "request", failing_request, raising=False)
+
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(iol_client_module.time, "sleep", fake_sleep)
+
+    response = client._request("GET", "https://example.com/api")
+
+    assert response is None
+    assert sleeps == [0.5, 1.0, 2.0]

@@ -82,6 +82,7 @@ class IOLClient:
         for attempt in range(RETRIES + 1):
             headers = kwargs.pop("headers", {})
             headers.update(self.auth.auth_header())
+            delay = BACKOFF_SEC * (attempt + 1)
             try:
                 quote_rate_limiter.wait_for_slot("legacy")
                 r = self.session.request(
@@ -128,7 +129,8 @@ class IOLClient:
                 return r
             except requests.HTTPError as e:
                 last_exc = e
-                if e.response is not None and e.response.status_code == 404:
+                status_code = e.response.status_code if e.response is not None else None
+                if status_code == 404:
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
                 if (
@@ -150,7 +152,7 @@ class IOLClient:
             except requests.RequestException as e:
                 last_exc = e
             if attempt < RETRIES:
-                time.sleep(BACKOFF_SEC * (attempt + 1))
+                time.sleep(delay)
         if last_exc:
             logger.warning("Request %s %s falló: %s", method, url, last_exc)
         return None
