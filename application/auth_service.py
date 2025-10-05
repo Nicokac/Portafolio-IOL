@@ -8,7 +8,6 @@ import re
 import hashlib
 from uuid import uuid4
 import logging
-import time
 
 import streamlit as st
 
@@ -136,11 +135,7 @@ def get_auth_provider() -> AuthenticationProvider:
 
 def login(user: str, password: str) -> dict:
     """Wrapper para el login utilizando el proveedor registrado."""
-    start = time.time()
     tokens = _provider.login(user, password)
-    elapsed = (time.time() - start) * 1000
-    log = logging.getLogger(__name__).warning if elapsed > 1000 else logging.getLogger(__name__).info
-    log("login done in %.0fms", elapsed)
     if "client_salt" not in st.session_state:
         st.session_state["client_salt"] = uuid4().hex
     return tokens

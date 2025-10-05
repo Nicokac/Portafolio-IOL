@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 from dotenv import load_dotenv
 from functools import lru_cache
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 import streamlit as st
 
@@ -142,10 +143,14 @@ class Settings:
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
 
         # --- Cache/TTLs usados en app.py ---
-        self.cache_ttl_portfolio: int = int(os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 20)))
+        self.cache_ttl_portfolio: int = int(
+            os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 3600))
+        )
         self.cache_ttl_last_price: int = int(os.getenv("CACHE_TTL_LAST_PRICE", cfg.get("CACHE_TTL_LAST_PRICE", 10)))
         self.cache_ttl_fx: int = int(os.getenv("CACHE_TTL_FX", cfg.get("CACHE_TTL_FX", 60)))
-        self.cache_ttl_quotes: int = int(os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 8)))
+        self.cache_ttl_quotes: int = int(
+            os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 600))
+        )
         self.cache_ttl_yf_indicators: int = int(
             os.getenv("CACHE_TTL_YF_INDICATORS", cfg.get("CACHE_TTL_YF_INDICATORS", 900))
         )
@@ -450,17 +455,35 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
         json_format = fmt == "json"
 
     if json_format:
-        handler = logging.StreamHandler()
-        handler.setFormatter(JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S"))
-        root = logging.getLogger()
-        root.setLevel(level_value)
-        root.handlers = [handler]
+        formatter: logging.Formatter = JsonFormatter(datefmt="%Y-%m-%d %H:%M:%S")
     else:
-        logging.basicConfig(
-            level=level_value,
-            format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        formatter = logging.Formatter(
+            fmt="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
+
+    root = logging.getLogger()
+    root.setLevel(level_value)
+    root.handlers = []
+
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    log_path = BASE_DIR / "analysis.log"
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    file_handler = RotatingFileHandler(
+        log_path,
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+
+    root.addHandler(stream_handler)
+    root.addHandler(file_handler)
 
     logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
 

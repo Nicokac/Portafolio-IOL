@@ -562,9 +562,9 @@ IOL_TOKENS_KEY="..."
 # Permite guardar tokens sin cifrar (NO recomendado)
 IOL_ALLOW_PLAIN_TOKENS=0
 # Otros ajustes opcionales
-CACHE_TTL_PORTFOLIO=20
+CACHE_TTL_PORTFOLIO=3600
 CACHE_TTL_LAST_PRICE=10
-CACHE_TTL_QUOTES=8
+CACHE_TTL_QUOTES=600
 CACHE_TTL_FX=60
 CACHE_TTL_YF_INDICATORS=900
 CACHE_TTL_YF_HISTORY=3600
@@ -659,9 +659,9 @@ IOL_TOKENS_FILE=/app/tokens/tokens_iol.json
    IOL_TOKENS_FILE = "tokens_iol.json"
    IOL_TOKENS_KEY = "..."
    IOL_ALLOW_PLAIN_TOKENS = 0
-   CACHE_TTL_PORTFOLIO = 20
+   CACHE_TTL_PORTFOLIO = 3600
    CACHE_TTL_LAST_PRICE = 10
-   CACHE_TTL_QUOTES = 8
+   CACHE_TTL_QUOTES = 600
    CACHE_TTL_FX = 60
    CACHE_TTL_YF_INDICATORS = 900
    CACHE_TTL_YF_HISTORY = 3600
@@ -803,7 +803,7 @@ El script actualiza los paquetes a sus últimas versiones disponibles, ejecuta l
 2. Regenera la lista plana para CI: `python scripts/sync_requirements.py`.
 3. Reinstala las dependencias en tu entorno virtual (`pip install -r requirements.txt`) y ejecuta las suites necesarias.
 
-La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; `matplotlib` y `kaleido` se incluyen automáticamente al instalar `requirements.txt`, por lo que no hace falta agregarlos manualmente antes de correr ese flujo.
+La guía interna que detalla cómo recrear los assets del dashboard se apoya en el script generador correspondiente; `kaleido` se incluye automáticamente al instalar `requirements.txt`, por lo que no hace falta agregarlo manualmente antes de correr ese flujo.
 
 ## Políticas de sesión y manejo de tokens
 

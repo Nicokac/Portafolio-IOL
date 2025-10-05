@@ -3,11 +3,14 @@ from __future__ import annotations
 """Helpers to capture health metrics and expose them via ``st.session_state``."""
 
 from collections import deque
+import logging
 import math
 from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 import time
 
 import streamlit as st
+
+from shared.settings import cache_ttl_fx
 
 
 _HEALTH_KEY = "health_metrics"
@@ -26,6 +29,13 @@ _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 _SNAPSHOT_EVENT_KEY = "snapshot_event"
+_PORTFOLIO_HISTORY_LIMIT = 32
+_QUOTE_HISTORY_LIMIT = 32
+_FX_API_HISTORY_LIMIT = 32
+_FX_CACHE_HISTORY_LIMIT = 32
+
+
+analysis_logger = logging.getLogger("analysis")
 
 _PROVIDER_LABELS = {
     "alpha_vantage": "Alpha Vantage",
@@ -197,6 +207,295 @@ def _ensure_latency_history(raw_history: Any, *, limit: int) -> Deque[float]:
             history.append(float(numeric))
     return history
 
+
+def _ensure_event_history(raw_history: Any, *, limit: int) -> Deque[Dict[str, Any]]:
+    """Return a deque that keeps track of the latest metric events."""
+
+    if isinstance(raw_history, deque) and raw_history.maxlen == limit:
+        return raw_history
+
+    history: Deque[Dict[str, Any]] = deque(maxlen=limit)
+    if isinstance(raw_history, Iterable) and not isinstance(
+        raw_history, (str, bytes, bytearray)
+    ):
+        for entry in raw_history:
+            if isinstance(entry, Mapping):
+                history.append(dict(entry))
+    return history
+
+
+def _normalize_numeric(value: float) -> float | int:
+    numeric = float(value)
+    if numeric.is_integer():
+        return int(numeric)
+    return numeric
+
+
+def _serialize_event_history(raw_history: Any) -> list[Dict[str, Any]]:
+    if isinstance(raw_history, deque):
+        iterable = raw_history
+    elif isinstance(raw_history, Iterable) and not isinstance(
+        raw_history, (str, bytes, bytearray)
+    ):
+        iterable = raw_history
+    else:
+        return []
+
+    serialized: list[Dict[str, Any]] = []
+    for entry in iterable:
+        if isinstance(entry, Mapping):
+            serialized.append(dict(entry))
+    return serialized
+
+
+def _summarize_metric_block(
+    stats: Mapping[str, Any],
+    prefix: str,
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(stats, Mapping):
+        return None
+
+    try:
+        count = int(stats.get(f"{prefix}_count", 0) or 0)
+    except (TypeError, ValueError):
+        count = 0
+    if count <= 0:
+        return None
+
+    try:
+        sum_value = float(stats.get(f"{prefix}_sum", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        sum_value = 0.0
+
+    try:
+        sum_sq_value = float(stats.get(f"{prefix}_sum_sq", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        sum_sq_value = 0.0
+
+    avg = sum_value / count
+    variance = max(sum_sq_value / count - avg * avg, 0.0)
+    block: Dict[str, Any] = {
+        "count": count,
+        "avg": avg,
+        "stdev": math.sqrt(variance),
+    }
+
+    min_value = _as_optional_float(stats.get(f"{prefix}_min"))
+    if min_value is not None and math.isfinite(min_value):
+        block["min"] = float(min_value)
+    max_value = _as_optional_float(stats.get(f"{prefix}_max"))
+    if max_value is not None and math.isfinite(max_value):
+        block["max"] = float(max_value)
+
+    history_key = f"{prefix}_history"
+    history_raw = stats.get(history_key)
+    if isinstance(history_raw, deque):
+        samples: list[float | int] = []
+        for value in history_raw:
+            numeric = _as_optional_float(value)
+            if numeric is None or not math.isfinite(numeric):
+                continue
+            samples.append(_normalize_numeric(numeric))
+        if samples:
+            block["samples"] = samples
+
+    return block
+
+
+def _normalize_counter_map(raw_map: Any) -> Dict[str, int]:
+    if not isinstance(raw_map, Mapping):
+        return {}
+    counters: Dict[str, int] = {}
+    for key, value in raw_map.items():
+        try:
+            numeric = int(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric < 0:
+            continue
+        name = str(key).strip()
+        if not name:
+            continue
+        counters[name] = numeric
+    return counters
+
+
+def _summarize_portfolio_stats(stats: Any) -> Dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {}
+
+    summary: Dict[str, Any] = {}
+    try:
+        invocations = int(stats.get("invocations", 0) or 0)
+    except (TypeError, ValueError):
+        invocations = 0
+    if invocations:
+        summary["invocations"] = invocations
+
+    latency_block = _summarize_metric_block(stats, "latency")
+    if latency_block:
+        summary["latency"] = latency_block
+
+    latency_count = int(stats.get("latency_count", 0) or 0)
+    missing = invocations - latency_count
+    if missing > 0:
+        summary["missing_latency"] = missing
+
+    sources = _normalize_counter_map(stats.get("sources"))
+    if sources:
+        total = sum(sources.values())
+        source_data: Dict[str, Any] = {"counts": sources}
+        if total:
+            source_data["ratios"] = _compute_ratio_map(sources, total)
+        summary["sources"] = source_data
+
+    events = _serialize_event_history(stats.get("event_history"))
+    if events:
+        summary["events"] = events
+
+    return summary
+
+
+def _summarize_quote_stats(stats: Any) -> Dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {}
+
+    summary = _summarize_portfolio_stats(stats)
+
+    batch_block = _summarize_metric_block(stats, "batch")
+    if batch_block:
+        summary["batch"] = batch_block
+
+    return summary
+
+
+def _summarize_fx_api_stats(stats: Any) -> Dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {}
+
+    summary: Dict[str, Any] = {}
+
+    try:
+        invocations = int(stats.get("invocations", 0) or 0)
+    except (TypeError, ValueError):
+        invocations = 0
+    if invocations:
+        summary["invocations"] = invocations
+
+    latency_block = _summarize_metric_block(stats, "latency")
+    if latency_block:
+        summary["latency"] = latency_block
+
+    statuses = _normalize_counter_map(stats.get("status_counts"))
+    if statuses:
+        total = sum(statuses.values())
+        status_payload: Dict[str, Any] = {"counts": statuses}
+        if total:
+            status_payload["ratios"] = _compute_ratio_map(statuses, total)
+        summary["status"] = status_payload
+
+    errors = _normalize_counter_map(stats.get("error_counts"))
+    if errors:
+        summary["errors"] = errors
+
+    last_error = stats.get("last_error")
+    if isinstance(last_error, str) and last_error:
+        summary["last_error"] = last_error
+
+    events = _serialize_event_history(stats.get("event_history"))
+    if events:
+        summary["events"] = events
+
+    return summary
+
+
+def _summarize_fx_cache_stats(stats: Any) -> Dict[str, Any]:
+    if not isinstance(stats, Mapping):
+        return {}
+
+    summary: Dict[str, Any] = {}
+
+    try:
+        invocations = int(stats.get("invocations", 0) or 0)
+    except (TypeError, ValueError):
+        invocations = 0
+    if invocations:
+        summary["invocations"] = invocations
+
+    modes = _normalize_counter_map(stats.get("mode_counts"))
+    if modes:
+        total_modes = sum(modes.values())
+        mode_payload: Dict[str, Any] = {"counts": modes}
+        if total_modes:
+            mode_payload["ratios"] = _compute_ratio_map(modes, total_modes)
+        summary["modes"] = mode_payload
+
+    labels = _normalize_counter_map(stats.get("label_counts"))
+    if labels:
+        total_labels = sum(labels.values())
+        label_payload: Dict[str, Any] = {"counts": labels}
+        if total_labels:
+            label_payload["ratios"] = _compute_ratio_map(labels, total_labels)
+        summary["labels"] = label_payload
+
+    age_block = _summarize_metric_block(stats, "age")
+    if age_block:
+        summary["age"] = age_block
+
+    last_label = stats.get("last_label")
+    if isinstance(last_label, str) and last_label:
+        summary["last_label"] = last_label
+
+    events = _serialize_event_history(stats.get("event_history"))
+    if events:
+        summary["events"] = events
+
+    return summary
+
+
+def _classify_fx_cache_event(
+    mode: str,
+    age: Optional[float],
+    stats: Mapping[str, Any],
+) -> str:
+    normalized_mode = str(mode or "unknown").strip().casefold() or "unknown"
+    age_value = _as_optional_float(age)
+    has_data = bool(stats.get("has_data"))
+
+    if normalized_mode == "hit":
+        if age_value is None:
+            return "empty"
+        if not math.isfinite(age_value):
+            return "unknown"
+        if age_value > cache_ttl_fx:
+            return "stale"
+        return "fresh"
+
+    if normalized_mode == "refresh":
+        return "stale" if has_data else "empty"
+
+    return "unknown"
+
+
+def _log_analysis_event(
+    event: str,
+    latest: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+) -> None:
+    if not metrics:
+        return
+
+    analysis_logger.info(
+        "%s updated",
+        event,
+        extra={
+            "analysis": {
+                "event": event,
+                "latest": dict(latest),
+                "metrics": dict(metrics),
+            }
+        },
+    )
 
 def record_yfinance_usage(
     source: str,
@@ -499,12 +798,84 @@ def record_fx_api_response(
 ) -> None:
     """Persist metadata about the latest FX API call."""
     store = _store()
-    store["fx_api"] = {
-        "status": "success" if not error else "error",
-        "error": _clean_detail(error),
-        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
-        "ts": time.time(),
+    status_text = "success" if not error else "error"
+    error_text = _clean_detail(error)
+    numeric_latency = _as_optional_float(elapsed_ms)
+    now = time.time()
+
+    summary: Dict[str, Any] = {
+        "status": status_text,
+        "error": error_text,
+        "elapsed_ms": float(numeric_latency) if numeric_latency is not None else None,
+        "ts": now,
     }
+
+    stats_raw = store.get("fx_api_stats")
+    stats: Dict[str, Any]
+    if isinstance(stats_raw, Mapping):
+        stats = dict(stats_raw)
+    else:
+        stats = {}
+
+    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
+
+    status_counts_raw = stats.get("status_counts")
+    if isinstance(status_counts_raw, Mapping):
+        status_counts = dict(status_counts_raw)
+    else:
+        status_counts = {}
+    status_counts[status_text] = int(status_counts.get(status_text, 0) or 0) + 1
+    stats["status_counts"] = status_counts
+
+    if error_text:
+        error_counts_raw = stats.get("error_counts")
+        if isinstance(error_counts_raw, Mapping):
+            error_counts = dict(error_counts_raw)
+        else:
+            error_counts = {}
+        error_counts[error_text] = int(error_counts.get(error_text, 0) or 0) + 1
+        stats["error_counts"] = error_counts
+        stats["last_error"] = error_text
+
+    if numeric_latency is not None and math.isfinite(numeric_latency):
+        value = float(numeric_latency)
+        stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
+        stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
+        stats["latency_sum_sq"] = (
+            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
+        )
+        current_min = _as_optional_float(stats.get("latency_min"))
+        stats["latency_min"] = value if current_min is None else min(current_min, value)
+        current_max = _as_optional_float(stats.get("latency_max"))
+        stats["latency_max"] = value if current_max is None else max(current_max, value)
+        latency_history = _ensure_latency_history(
+            stats.get("latency_history"), limit=_FX_API_HISTORY_LIMIT
+        )
+        latency_history.append(value)
+        stats["latency_history"] = latency_history
+        stats["last_elapsed_ms"] = value
+    else:
+        stats["missing_latency"] = int(stats.get("missing_latency", 0) or 0) + 1
+
+    stats["last_status"] = status_text
+    stats["last_ts"] = now
+
+    latest_event = dict(summary)
+    event_history = _ensure_event_history(
+        stats.get("event_history"), limit=_FX_API_HISTORY_LIMIT
+    )
+    event_history.append(latest_event)
+    stats["event_history"] = event_history
+
+    store["fx_api_stats"] = stats
+
+    metrics_summary = _summarize_fx_api_stats(stats)
+    if metrics_summary:
+        summary["stats"] = metrics_summary
+
+    store["fx_api"] = summary
+
+    _log_analysis_event("fx.api", latest_event, metrics_summary)
 
 
 def record_macro_api_usage(
@@ -733,11 +1104,89 @@ def record_macro_api_usage(
 def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
     """Persist information about session cache usage for FX rates."""
     store = _store()
-    store["fx_cache"] = {
-        "mode": mode,
-        "age": float(age) if age is not None else None,
-        "ts": time.time(),
+
+    mode_text = str(mode or "unknown").strip() or "unknown"
+    mode_key = mode_text.casefold()
+    numeric_age = _as_optional_float(age)
+    now = time.time()
+
+    entry: Dict[str, Any] = {
+        "mode": mode_text,
+        "age": float(numeric_age) if numeric_age is not None else None,
+        "ts": now,
     }
+
+    stats_raw = store.get("fx_cache_stats")
+    stats: Dict[str, Any]
+    if isinstance(stats_raw, Mapping):
+        stats = dict(stats_raw)
+    else:
+        stats = {}
+
+    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
+
+    mode_counts_raw = stats.get("mode_counts")
+    if isinstance(mode_counts_raw, Mapping):
+        mode_counts = dict(mode_counts_raw)
+    else:
+        mode_counts = {}
+    mode_counts[mode_key] = int(mode_counts.get(mode_key, 0) or 0) + 1
+    stats["mode_counts"] = mode_counts
+
+    classification = _classify_fx_cache_event(mode_text, numeric_age, stats)
+    if classification:
+        entry["label"] = classification
+        label_counts_raw = stats.get("label_counts")
+        if isinstance(label_counts_raw, Mapping):
+            label_counts = dict(label_counts_raw)
+        else:
+            label_counts = {}
+        label_counts[classification] = int(label_counts.get(classification, 0) or 0) + 1
+        stats["label_counts"] = label_counts
+        stats["last_label"] = classification
+
+    if mode_key in {"hit", "refresh"}:
+        stats["has_data"] = True
+
+    stats["last_mode"] = mode_key
+    if numeric_age is not None and math.isfinite(numeric_age):
+        stats["age_count"] = int(stats.get("age_count", 0) or 0) + 1
+        stats["age_sum"] = float(stats.get("age_sum", 0.0) or 0.0) + numeric_age
+        stats["age_sum_sq"] = (
+            float(stats.get("age_sum_sq", 0.0) or 0.0) + numeric_age * numeric_age
+        )
+        current_min = _as_optional_float(stats.get("age_min"))
+        stats["age_min"] = (
+            numeric_age if current_min is None else min(current_min, numeric_age)
+        )
+        current_max = _as_optional_float(stats.get("age_max"))
+        stats["age_max"] = (
+            numeric_age if current_max is None else max(current_max, numeric_age)
+        )
+        age_history = _ensure_latency_history(
+            stats.get("age_history"), limit=_FX_CACHE_HISTORY_LIMIT
+        )
+        age_history.append(numeric_age)
+        stats["age_history"] = age_history
+
+    stats["last_age"] = numeric_age
+
+    event_history = _ensure_event_history(
+        stats.get("event_history"), limit=_FX_CACHE_HISTORY_LIMIT
+    )
+    latest_event = dict(entry)
+    event_history.append(latest_event)
+    stats["event_history"] = event_history
+
+    store["fx_cache_stats"] = stats
+
+    summary = _summarize_fx_cache_stats(stats)
+    if summary:
+        entry["stats"] = summary
+
+    store["fx_cache"] = entry
+
+    _log_analysis_event("fx.cache", latest_event, summary)
 
 
 def record_portfolio_load(
@@ -745,12 +1194,75 @@ def record_portfolio_load(
 ) -> None:
     """Persist response time and source for the latest portfolio load."""
     store = _store()
-    store["portfolio"] = {
-        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
-        "source": source,
-        "detail": _clean_detail(detail),
-        "ts": time.time(),
+    source_text = str(source or "unknown").strip() or "unknown"
+    detail_text = _clean_detail(detail)
+    numeric_latency = _as_optional_float(elapsed_ms)
+    now = time.time()
+
+    summary: Dict[str, Any] = {
+        "elapsed_ms": float(numeric_latency) if numeric_latency is not None else None,
+        "source": source_text,
+        "detail": detail_text,
+        "ts": now,
     }
+
+    stats_raw = store.get("portfolio_stats")
+    stats: Dict[str, Any]
+    if isinstance(stats_raw, Mapping):
+        stats = dict(stats_raw)
+    else:
+        stats = {}
+
+    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
+
+    source_counts_raw = stats.get("sources")
+    if isinstance(source_counts_raw, Mapping):
+        source_counts = dict(source_counts_raw)
+    else:
+        source_counts = {}
+    source_counts[source_text] = int(source_counts.get(source_text, 0) or 0) + 1
+    stats["sources"] = source_counts
+
+    if numeric_latency is not None and math.isfinite(numeric_latency):
+        value = float(numeric_latency)
+        stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
+        stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
+        stats["latency_sum_sq"] = (
+            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
+        )
+        current_min = _as_optional_float(stats.get("latency_min"))
+        stats["latency_min"] = value if current_min is None else min(current_min, value)
+        current_max = _as_optional_float(stats.get("latency_max"))
+        stats["latency_max"] = value if current_max is None else max(current_max, value)
+        latency_history = _ensure_latency_history(
+            stats.get("latency_history"), limit=_PORTFOLIO_HISTORY_LIMIT
+        )
+        latency_history.append(value)
+        stats["latency_history"] = latency_history
+        stats["last_elapsed_ms"] = value
+    else:
+        stats["missing_latency"] = int(stats.get("missing_latency", 0) or 0) + 1
+
+    stats["last_source"] = source_text
+    stats["last_detail"] = detail_text
+    stats["last_ts"] = now
+
+    latest_event = dict(summary)
+    event_history = _ensure_event_history(
+        stats.get("event_history"), limit=_PORTFOLIO_HISTORY_LIMIT
+    )
+    event_history.append(latest_event)
+    stats["event_history"] = event_history
+
+    store["portfolio_stats"] = stats
+
+    metrics_summary = _summarize_portfolio_stats(stats)
+    if metrics_summary:
+        summary["stats"] = metrics_summary
+
+    store["portfolio"] = summary
+
+    _log_analysis_event("portfolio.load", latest_event, metrics_summary)
 
 
 def record_tab_latency(
@@ -885,12 +1397,18 @@ def record_quote_load(
     elapsed_ms: Optional[float], *, source: str, count: Optional[int] = None
 ) -> None:
     """Persist response time and source for the latest quote load."""
+
     store = _store()
+    source_text = str(source or "unknown").strip() or "unknown"
+    numeric_latency = _as_optional_float(elapsed_ms)
+    numeric_count = _as_optional_int(count)
+    now = time.time()
+
     summary: Dict[str, Any] = {
-        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
-        "source": source,
-        "count": int(count) if count is not None else None,
-        "ts": time.time(),
+        "elapsed_ms": float(numeric_latency) if numeric_latency is not None else None,
+        "source": source_text,
+        "count": int(numeric_count) if numeric_count is not None else None,
+        "ts": now,
     }
 
     total_attempts = _as_optional_int(store.get("quotes_total"))
@@ -924,7 +1442,86 @@ def record_quote_load(
         if provider_summary:
             summary["by_provider"] = provider_summary
 
+    stats_raw = store.get("quotes_stats")
+    stats: Dict[str, Any]
+    if isinstance(stats_raw, Mapping):
+        stats = dict(stats_raw)
+    else:
+        stats = {}
+
+    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
+
+    source_counts_raw = stats.get("sources")
+    if isinstance(source_counts_raw, Mapping):
+        source_counts = dict(source_counts_raw)
+    else:
+        source_counts = {}
+    source_counts[source_text] = int(source_counts.get(source_text, 0) or 0) + 1
+    stats["sources"] = source_counts
+
+    if numeric_latency is not None and math.isfinite(numeric_latency):
+        value = float(numeric_latency)
+        stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
+        stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
+        stats["latency_sum_sq"] = (
+            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
+        )
+        current_min = _as_optional_float(stats.get("latency_min"))
+        stats["latency_min"] = value if current_min is None else min(current_min, value)
+        current_max = _as_optional_float(stats.get("latency_max"))
+        stats["latency_max"] = value if current_max is None else max(current_max, value)
+        latency_history = _ensure_latency_history(
+            stats.get("latency_history"), limit=_QUOTE_HISTORY_LIMIT
+        )
+        latency_history.append(value)
+        stats["latency_history"] = latency_history
+        stats["last_elapsed_ms"] = value
+    else:
+        stats["missing_latency"] = int(stats.get("missing_latency", 0) or 0) + 1
+
+    if numeric_count is not None:
+        count_value = float(numeric_count)
+        stats["batch_count"] = int(stats.get("batch_count", 0) or 0) + 1
+        stats["batch_sum"] = float(stats.get("batch_sum", 0.0) or 0.0) + count_value
+        stats["batch_sum_sq"] = (
+            float(stats.get("batch_sum_sq", 0.0) or 0.0) + count_value * count_value
+        )
+        current_min = _as_optional_float(stats.get("batch_min"))
+        stats["batch_min"] = (
+            count_value if current_min is None else min(current_min, count_value)
+        )
+        current_max = _as_optional_float(stats.get("batch_max"))
+        stats["batch_max"] = (
+            count_value if current_max is None else max(current_max, count_value)
+        )
+        batch_history = _ensure_latency_history(
+            stats.get("batch_history"), limit=_QUOTE_HISTORY_LIMIT
+        )
+        batch_history.append(count_value)
+        stats["batch_history"] = batch_history
+        stats["last_count"] = int(numeric_count)
+    else:
+        stats["missing_batch"] = int(stats.get("missing_batch", 0) or 0) + 1
+
+    stats["last_source"] = source_text
+    stats["last_ts"] = now
+
+    latest_event = dict(summary)
+    event_history = _ensure_event_history(
+        stats.get("event_history"), limit=_QUOTE_HISTORY_LIMIT
+    )
+    event_history.append(latest_event)
+    stats["event_history"] = event_history
+
+    store["quotes_stats"] = stats
+
+    metrics_summary = _summarize_quote_stats(stats)
+    if metrics_summary:
+        summary["stats"] = metrics_summary
+
     store["quotes"] = summary
+
+    _log_analysis_event("quotes.load", latest_event, metrics_summary)
 
 
 def record_quote_provider_usage(
@@ -1587,6 +2184,19 @@ def get_health_metrics() -> Dict[str, Any]:
             event["backend"] = backend
 
         return event
+    def _merge_entry(entry: Any, stats_summary: Dict[str, Any]) -> Any:
+        if not stats_summary:
+            if isinstance(entry, Mapping):
+                return dict(entry)
+            return entry
+        if isinstance(entry, Mapping):
+            merged = dict(entry)
+        elif entry is None:
+            merged = {}
+        else:
+            merged = {"value": entry}
+        merged["stats"] = stats_summary
+        return merged
 
     def _summarize_stats(raw_stats: Any) -> Dict[str, Any]:
         if not isinstance(raw_stats, Mapping):
@@ -2308,17 +2918,30 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
+    fx_api_data = _merge_entry(
+        store.get("fx_api"), _summarize_fx_api_stats(store.get("fx_api_stats"))
+    )
+    fx_cache_data = _merge_entry(
+        store.get("fx_cache"), _summarize_fx_cache_stats(store.get("fx_cache_stats"))
+    )
+    portfolio_data = _merge_entry(
+        store.get("portfolio"), _summarize_portfolio_stats(store.get("portfolio_stats"))
+    )
+    quotes_data = _merge_entry(
+        store.get("quotes"), _summarize_quote_stats(store.get("quotes_stats"))
+    )
+
     return {
         "iol_refresh": store.get("iol_refresh"),
         "snapshot_event": _normalize_snapshot_event_entry(store.get(_SNAPSHOT_EVENT_KEY)),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
-        "fx_api": store.get("fx_api"),
-        "fx_cache": store.get("fx_cache"),
+        "fx_api": fx_api_data,
+        "fx_cache": fx_cache_data,
         "macro_api": _summarize_macro(store.get("macro_api")),
-        "portfolio": store.get("portfolio"),
-        "quotes": store.get("quotes"),
+        "portfolio": portfolio_data,
+        "quotes": quotes_data,
         "quote_providers": _summarize_quote_providers(
             store.get("quote_providers"), store.get(_QUOTE_RATE_LIMIT_KEY)
         ),
