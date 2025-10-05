@@ -61,13 +61,16 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    `contribution_by_symbol.csv`, etc.), empaqueta esos archivos en `analysis.zip` y genera un
    `analysis.xlsx` con todas las tablas en hojas dedicadas más los gráficos solicitados. En la raíz del
  directorio también encontrarás `summary.csv` con los KPIs (`raw_value`) de cada snapshot para
-  facilitar comparaciones rápidas.
+  facilitar comparaciones rápidas. Si las exportaciones PNG están deshabilitadas, el Excel se genera
+  sin gráficos adjuntos y conserva únicamente las tablas de datos.
 
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
    > 0.3.30.10.2 muestra el banner "Hotfix Kaleido: fallback restaurado", mantiene el ZIP de CSV y
-   > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior.
+   > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Si las
+   > exportaciones PNG están deshabilitadas, el Excel se genera sin gráficos adjuntos y queda listo para
+   > compartir con los datos actualizados.
 
 ### Migración fuera de módulos legacy
 

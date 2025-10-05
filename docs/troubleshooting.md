@@ -6,7 +6,8 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 > Nota: Esta guía corresponde a la release 0.3.30.10.2, un hotfix orientado al entorno de Kaleido. Además de
 > preservar la bitácora unificada y las exportaciones multi-formato, documenta cuándo los PNG quedan
-> pendientes porque la librería no está instalada. Mantiene las cotizaciones en vivo sincronizadas, la
+> pendientes porque la librería no está instalada. Si las exportaciones PNG están deshabilitadas, el Excel se
+> genera sin gráficos adjuntos. Mantiene las cotizaciones en vivo sincronizadas, la
 > procedencia propagada hacia `/Titulos/Cotizacion`, los metadatos de país en el portafolio y los refuerzos
 > del fallback jerárquico documentados en la serie 0.3.30.x.
 
@@ -76,7 +77,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
     1. Revisa los logs de `services.quotes.live_quotes_flow` y verifica que `source="titulos"` llegue al `quotes_store`.
     2. Si estás en modo offline, habilita el flag `LIVE_QUOTES_ENABLED=1` y vuelve a iniciar la app para forzar la consulta en vivo.
     3. Comprueba que no existan interceptores sobrescribiendo `st.session_state["live_quotes_status"]`; en caso de encontrarlos, elimínalos o actualízalos para reflejar el nuevo flujo.
-    4. Valida que la ausencia de Kaleido sea intencional: si necesitás los PNG en la exportación instala la dependencia; en caso contrario el banner del hotfix debe permanecer visible.
+    4. Valida que la ausencia de Kaleido sea intencional: si necesitás los PNG en la exportación instala la dependencia; en caso contrario el banner del hotfix debe permanecer visible y el Excel se generará sin gráficos adjuntos aun con las exportaciones PNG deshabilitadas.
 - **El bloque "Snapshots y almacenamiento" aparece vacío o en error.**
   - **Síntomas:** El health sidebar muestra `snapshot_hits = 0` pese a ejecutar screenings consecutivos, o aparece un mensaje "Ruta de snapshots inaccesible".
   - **Diagnóstico rápido:** Ejecuta el siguiente snippet para validar la ruta configurada y los permisos:
