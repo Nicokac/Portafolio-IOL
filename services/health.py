@@ -29,10 +29,17 @@ _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
 _QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 _SNAPSHOT_EVENT_KEY = "snapshot_event"
+_DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"
 _PORTFOLIO_HISTORY_LIMIT = 32
 _QUOTE_HISTORY_LIMIT = 32
 _FX_API_HISTORY_LIMIT = 32
 _FX_CACHE_HISTORY_LIMIT = 32
+_DIAGNOSTICS_SNAPSHOT_KEY = "diagnostics_snapshot"
+_SESSION_MONITORING_KEY = "session_monitoring"
+_ACTIVE_SESSIONS_KEY = "active_sessions"
+_LOGIN_TO_RENDER_STATS_KEY = "login_to_render"
+_LAST_HTTP_ERROR_KEY = "last_http_error"
+_SESSION_MONITORING_TTL_SECONDS = 300.0
 
 
 analysis_logger = logging.getLogger("analysis")
@@ -55,6 +62,17 @@ _QUOTE_PROVIDER_HISTORY_LIMIT = 12
 def _store() -> Dict[str, Any]:
     """Return the mutable health metrics store from the session state."""
     return st.session_state.setdefault(_HEALTH_KEY, {})
+
+
+def _ensure_session_monitoring_store(store: Dict[str, Any]) -> Dict[str, Any]:
+    raw_monitoring = store.get(_SESSION_MONITORING_KEY)
+    if isinstance(raw_monitoring, Mapping):
+        monitoring = dict(raw_monitoring)
+    else:
+        monitoring = {}
+    if monitoring is not raw_monitoring:
+        store[_SESSION_MONITORING_KEY] = monitoring
+    return monitoring
 
 
 def _clean_detail(detail: Optional[str]) -> Optional[str]:
@@ -85,6 +103,28 @@ def _normalize_backend_details(raw_backend: Any) -> Dict[str, Any]:
         else:
             details[key_text] = str(value)
     return details
+
+
+def _normalize_metadata(raw_metadata: Any) -> Dict[str, Any]:
+    if not isinstance(raw_metadata, Mapping):
+        return {}
+
+    normalized: Dict[str, Any] = {}
+    for key, value in raw_metadata.items():
+        key_text = str(key or "").strip()
+        if not key_text:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, (bool, int, float)):
+            normalized[key_text] = value
+        elif isinstance(value, (str, bytes)):
+            text = str(value).strip()
+            if text:
+                normalized[key_text] = text
+        else:
+            normalized[key_text] = str(value)
+    return normalized
 
 
 def record_snapshot_event(
@@ -118,6 +158,213 @@ def record_snapshot_event(
 
     store = _store()
     store[_SNAPSHOT_EVENT_KEY] = event
+
+
+def record_session_started(
+    session_id: str,
+    *,
+    metadata: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Track the start of an interactive session for health dashboards."""
+
+    session_key = str(session_id or "unknown").strip() or "unknown"
+    now = time.time()
+    store = _store()
+    monitoring = _ensure_session_monitoring_store(store)
+
+    active_raw = monitoring.get(_ACTIVE_SESSIONS_KEY)
+    if isinstance(active_raw, Mapping):
+        active_sessions = dict(active_raw)
+    else:
+        active_sessions = {}
+
+    entry: Dict[str, Any] = {"session_id": session_key, "ts": now}
+    metadata_dict = _normalize_metadata(metadata)
+    if metadata_dict:
+        entry["metadata"] = metadata_dict
+
+    active_sessions[session_key] = entry
+    monitoring[_ACTIVE_SESSIONS_KEY] = active_sessions
+    monitoring["total_session_starts"] = int(
+        monitoring.get("total_session_starts", 0) or 0
+    ) + 1
+    monitoring["active_sessions_ts"] = now
+
+    _log_analysis_event(
+        "session_started",
+        entry,
+        {
+            "active_sessions": len(active_sessions),
+            "total_session_starts": monitoring["total_session_starts"],
+        },
+    )
+
+
+def record_login_to_render(
+    elapsed_seconds: float,
+    *,
+    session_id: Optional[str] = None,
+) -> None:
+    """Record timing from login to first render for UX monitoring."""
+
+    elapsed_value = _as_optional_float(elapsed_seconds)
+    if elapsed_value is None or elapsed_value < 0:
+        return
+
+    now = time.time()
+    store = _store()
+    monitoring = _ensure_session_monitoring_store(store)
+    stats_raw = monitoring.get(_LOGIN_TO_RENDER_STATS_KEY)
+    if isinstance(stats_raw, Mapping):
+        stats = dict(stats_raw)
+    else:
+        stats = {"count": 0, "sum": 0.0, "sum_sq": 0.0}
+
+    stats["count"] = int(stats.get("count", 0) or 0) + 1
+    stats["sum"] = float(stats.get("sum", 0.0) or 0.0) + elapsed_value
+    stats["sum_sq"] = float(stats.get("sum_sq", 0.0) or 0.0) + elapsed_value * elapsed_value
+    stats["last_value"] = elapsed_value
+    stats["last_ts"] = now
+    if session_id is not None:
+        stats["last_session_id"] = str(session_id)
+
+    monitoring[_LOGIN_TO_RENDER_STATS_KEY] = stats
+
+    avg = stats["sum"] / stats["count"] if stats["count"] else None
+    latest: Dict[str, Any] = {"value": stats["last_value"], "ts": now}
+    session_ref = stats.get("last_session_id")
+    if isinstance(session_ref, str) and session_ref.strip():
+        latest["session_id"] = session_ref.strip()
+    metrics: Dict[str, Any] = {"count": stats["count"]}
+    if avg is not None:
+        metrics["avg"] = avg
+    _log_analysis_event(
+        "login_to_render",
+        latest,
+        metrics,
+    )
+
+
+def record_http_error(
+    status_code: int,
+    *,
+    method: Optional[str] = None,
+    url: Optional[str] = None,
+    detail: Optional[str] = None,
+) -> None:
+    """Track the latest HTTP error encountered by the UI."""
+
+    code_value = _as_optional_int(status_code)
+    if code_value is None:
+        return
+
+    now = time.time()
+    store = _store()
+    monitoring = _ensure_session_monitoring_store(store)
+
+    entry: Dict[str, Any] = {"status_code": code_value, "ts": now}
+    method_text = str(method or "").strip()
+    if method_text:
+        entry["method"] = method_text
+    url_text = str(url or "").strip()
+    if url_text:
+        entry["url"] = url_text
+    detail_text = _clean_detail(detail)
+    if detail_text:
+        entry["detail"] = detail_text
+
+    monitoring[_LAST_HTTP_ERROR_KEY] = entry
+    monitoring["http_error_count"] = int(monitoring.get("http_error_count", 0) or 0) + 1
+
+    _log_analysis_event(
+        "http_error",
+        entry,
+        {"http_error_count": monitoring["http_error_count"]},
+    )
+
+
+def record_diagnostics_snapshot(
+    snapshot: Mapping[str, Any],
+    *,
+    source: Optional[str] = None,
+) -> None:
+    """Persist a copy of the latest diagnostics snapshot."""
+
+    if not isinstance(snapshot, Mapping):
+        return
+
+    normalized_snapshot = _normalize_metadata(snapshot)
+    now = time.time()
+    entry: Dict[str, Any] = {"snapshot": normalized_snapshot, "ts": now}
+    source_text = str(source or "").strip()
+    if source_text:
+        entry["source"] = source_text
+def record_diagnostics_snapshot(result: Mapping[str, Any]) -> None:
+    """Persist the latest startup diagnostics summary."""
+
+    if not isinstance(result, Mapping):
+        result = {}
+
+    status_text = str(result.get("status") or "unknown").strip() or "unknown"
+    latency_value = _as_optional_float(result.get("latency"))
+    ts_value = _as_optional_float(result.get("timestamp"))
+    if ts_value is None:
+        ts_value = _as_optional_float(result.get("ts"))
+    if ts_value is None:
+        ts_value = time.time()
+
+    entry: Dict[str, Any] = {"status": status_text, "ts": ts_value}
+    if latency_value is not None:
+        entry["latency"] = latency_value
+
+    component = result.get("component")
+    if isinstance(component, str):
+        component_text = component.strip()
+        if component_text:
+            entry["component"] = component_text
+
+    message_value = result.get("message")
+    if message_value is not None:
+        message_text = _clean_detail(message_value)
+        if message_text:
+            entry["message"] = message_text
+
+    checks_raw = result.get("checks")
+    checks: list[Dict[str, Any]] = []
+    if isinstance(checks_raw, Iterable) and not isinstance(
+        checks_raw, (str, bytes, bytearray)
+    ):
+        for item in checks_raw:
+            if not isinstance(item, Mapping):
+                continue
+            check_entry: Dict[str, Any] = {}
+            component_value = item.get("component") or item.get("name")
+            if component_value:
+                component_text = str(component_value).strip()
+                if component_text:
+                    check_entry["component"] = component_text
+            status_value = item.get("status")
+            if status_value is not None:
+                status_text = str(status_value).strip()
+                if status_text:
+                    check_entry["status"] = status_text
+            message_data = item.get("message")
+            detail_text = _clean_detail(message_data)
+            if detail_text:
+                check_entry["message"] = detail_text
+            if check_entry:
+                checks.append(check_entry)
+    if checks:
+        entry["checks"] = checks
+
+    store = _store()
+    store[_DIAGNOSTICS_SNAPSHOT_KEY] = entry
+
+    _log_analysis_event(
+        "diagnostics_snapshot",
+        entry,
+        {"field_count": len(normalized_snapshot)},
+    )
 
 
 def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
@@ -1696,6 +1943,163 @@ def _normalize_provider_event(entry: Any) -> Optional[Dict[str, Any]]:
     return normalized
 
 
+def _compute_freshness(
+    ts: Optional[float],
+    *,
+    now: Optional[float] = None,
+    ttl: float = _SESSION_MONITORING_TTL_SECONDS,
+) -> Dict[str, Any]:
+    if now is None:
+        now = time.time()
+
+    if ts is None:
+        return {"is_fresh": False, "age_seconds": None, "ttl_seconds": ttl}
+
+    age = max(now - ts, 0.0)
+    return {"is_fresh": age <= ttl, "age_seconds": age, "ttl_seconds": ttl, "ts": ts}
+
+
+def _summarize_diagnostics(raw_entry: Any, *, now: Optional[float] = None) -> Dict[str, Any]:
+    if not isinstance(raw_entry, Mapping):
+        return {}
+
+    summary: Dict[str, Any] = {}
+    ts = _as_optional_float(raw_entry.get("ts"))
+    snapshot_raw = raw_entry.get("snapshot")
+    snapshot: Dict[str, Any] = {}
+    if isinstance(snapshot_raw, Mapping):
+        snapshot = {
+            str(key): value
+            for key, value in snapshot_raw.items()
+            if str(key or "").strip()
+        }
+
+    latest: Dict[str, Any] = {}
+    if snapshot:
+        latest["snapshot"] = snapshot
+    if ts is not None:
+        latest["ts"] = ts
+
+    source = raw_entry.get("source")
+    if isinstance(source, str):
+        source_text = source.strip()
+        if source_text:
+            latest["source"] = source_text
+
+    if latest:
+        summary["latest"] = latest
+
+    summary["field_count"] = len(snapshot)
+    summary["freshness"] = _compute_freshness(ts, now=now)
+    return summary
+
+
+def _summarize_session_monitoring(
+    raw_monitoring: Any, *, now: Optional[float] = None
+) -> Dict[str, Any]:
+    if not isinstance(raw_monitoring, Mapping):
+        return {}
+
+    if now is None:
+        now = time.time()
+    summary: Dict[str, Any] = {}
+
+    active_raw = raw_monitoring.get(_ACTIVE_SESSIONS_KEY)
+    sessions: list[Dict[str, Any]] = []
+    latest_session_ts: Optional[float] = None
+    if isinstance(active_raw, Mapping):
+        for key, value in active_raw.items():
+            if not isinstance(value, Mapping):
+                continue
+            entry: Dict[str, Any] = {
+                "session_id": str(value.get("session_id") or key)
+            }
+            session_ts = _as_optional_float(value.get("ts"))
+            if session_ts is not None:
+                entry["ts"] = session_ts
+                latest_session_ts = (
+                    session_ts
+                    if latest_session_ts is None
+                    else max(latest_session_ts, session_ts)
+                )
+            metadata_raw = value.get("metadata")
+            if isinstance(metadata_raw, Mapping):
+                metadata = _normalize_metadata(metadata_raw)
+                if metadata:
+                    entry["metadata"] = metadata
+            sessions.append(entry)
+
+    active_summary: Dict[str, Any] = {"count": len(sessions)}
+    if sessions:
+        active_summary["sessions"] = sessions
+
+    total_session_starts = _as_optional_int(raw_monitoring.get("total_session_starts"))
+    if total_session_starts is not None and total_session_starts >= 0:
+        active_summary["total_session_starts"] = total_session_starts
+
+    active_ts = _as_optional_float(raw_monitoring.get("active_sessions_ts"))
+    if active_ts is None:
+        active_ts = latest_session_ts
+    active_summary["freshness"] = _compute_freshness(active_ts, now=now)
+    summary["active_sessions"] = active_summary
+
+    login_raw = raw_monitoring.get(_LOGIN_TO_RENDER_STATS_KEY)
+    if isinstance(login_raw, Mapping):
+        count = _as_optional_int(login_raw.get("count")) or 0
+        total = _as_optional_float(login_raw.get("sum")) or 0.0
+        sum_sq = _as_optional_float(login_raw.get("sum_sq")) or 0.0
+        login_summary: Dict[str, Any] = {"count": count, "total": total}
+        avg = total / count if count else None
+        if avg is not None:
+            login_summary["avg"] = avg
+            if count > 1:
+                variance = max(sum_sq / count - avg * avg, 0.0)
+                login_summary["stdev"] = math.sqrt(variance)
+        last_value = _as_optional_float(login_raw.get("last_value"))
+        last_ts = _as_optional_float(login_raw.get("last_ts"))
+        if last_value is not None:
+            last_entry: Dict[str, Any] = {"value": last_value}
+            if last_ts is not None:
+                last_entry["ts"] = last_ts
+            session_ref = login_raw.get("last_session_id")
+            if isinstance(session_ref, str):
+                session_text = session_ref.strip()
+                if session_text:
+                    last_entry["session_id"] = session_text
+            login_summary["last"] = last_entry
+        login_summary["freshness"] = _compute_freshness(last_ts, now=now)
+        summary["login_to_render"] = login_summary
+
+    http_count = _as_optional_int(raw_monitoring.get("http_error_count")) or 0
+    http_raw = raw_monitoring.get(_LAST_HTTP_ERROR_KEY)
+    if isinstance(http_raw, Mapping) or http_count:
+        error_summary: Dict[str, Any] = {"count": http_count}
+        last_ts = None
+        if isinstance(http_raw, Mapping):
+            last_error: Dict[str, Any] = {}
+            status_code = _as_optional_int(http_raw.get("status_code"))
+            if status_code is not None:
+                last_error["status_code"] = status_code
+            method = http_raw.get("method")
+            if isinstance(method, str) and method.strip():
+                last_error["method"] = method.strip()
+            url = http_raw.get("url")
+            if isinstance(url, str) and url.strip():
+                last_error["url"] = url.strip()
+            detail = http_raw.get("detail")
+            if isinstance(detail, str) and detail.strip():
+                last_error["detail"] = detail.strip()
+            last_ts = _as_optional_float(http_raw.get("ts"))
+            if last_ts is not None:
+                last_error["ts"] = last_ts
+            if last_error:
+                error_summary["last"] = last_error
+        error_summary["freshness"] = _compute_freshness(last_ts, now=now)
+        summary["http_errors"] = error_summary
+
+    return summary
+
+
 def _normalize_risk_entry(entry: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(entry, Mapping):
         return None
@@ -2184,6 +2588,70 @@ def get_health_metrics() -> Dict[str, Any]:
             event["backend"] = backend
 
         return event
+
+    def _normalize_diagnostics_entry(raw_entry: Any) -> Dict[str, Any]:
+        if not isinstance(raw_entry, Mapping):
+            return {}
+
+        entry: Dict[str, Any] = {}
+
+        status_value = raw_entry.get("status")
+        if status_value is not None:
+            status_text = str(status_value).strip()
+            if status_text:
+                entry["status"] = status_text
+
+        latency_value = _as_optional_float(raw_entry.get("latency"))
+        if latency_value is not None:
+            entry["latency"] = latency_value
+
+        ts_value = _as_optional_float(raw_entry.get("ts"))
+        if ts_value is None:
+            ts_value = _as_optional_float(raw_entry.get("timestamp"))
+        if ts_value is not None:
+            entry["ts"] = ts_value
+
+        component_value = raw_entry.get("component")
+        if component_value is not None:
+            component_text = str(component_value).strip()
+            if component_text:
+                entry["component"] = component_text
+
+        message_value = raw_entry.get("message")
+        if message_value is not None:
+            message_text = _clean_detail(message_value)
+            if message_text:
+                entry["message"] = message_text
+
+        checks_raw = raw_entry.get("checks")
+        if isinstance(checks_raw, Iterable) and not isinstance(
+            checks_raw, (str, bytes, bytearray)
+        ):
+            checks: list[Dict[str, Any]] = []
+            for item in checks_raw:
+                if not isinstance(item, Mapping):
+                    continue
+                check_entry: Dict[str, Any] = {}
+                component_name = item.get("component") or item.get("name")
+                if component_name is not None:
+                    component_text = str(component_name).strip()
+                    if component_text:
+                        check_entry["component"] = component_text
+                status_entry = item.get("status")
+                if status_entry is not None:
+                    status_text = str(status_entry).strip()
+                    if status_text:
+                        check_entry["status"] = status_text
+                message_entry = item.get("message")
+                detail_text = _clean_detail(message_entry)
+                if detail_text:
+                    check_entry["message"] = detail_text
+                if check_entry:
+                    checks.append(check_entry)
+            if checks:
+                entry["checks"] = checks
+
+        return entry
     def _merge_entry(entry: Any, stats_summary: Dict[str, Any]) -> Any:
         if not stats_summary:
             if isinstance(entry, Mapping):
@@ -2918,6 +3386,14 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
+    now = time.time()
+    diagnostics_data = _summarize_diagnostics(
+        store.get(_DIAGNOSTICS_SNAPSHOT_KEY), now=now
+    )
+    session_monitoring_data = _summarize_session_monitoring(
+        store.get(_SESSION_MONITORING_KEY), now=now
+    )
+
     fx_api_data = _merge_entry(
         store.get("fx_api"), _summarize_fx_api_stats(store.get("fx_api_stats"))
     )
@@ -2934,6 +3410,11 @@ def get_health_metrics() -> Dict[str, Any]:
     return {
         "iol_refresh": store.get("iol_refresh"),
         "snapshot_event": _normalize_snapshot_event_entry(store.get(_SNAPSHOT_EVENT_KEY)),
+        "diagnostics": diagnostics_data,
+        "session_monitoring": session_monitoring_data,
+        "startup_diagnostics": _normalize_diagnostics_entry(
+            store.get(_DIAGNOSTICS_SNAPSHOT_KEY)
+        ),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
@@ -2955,16 +3436,21 @@ def get_health_metrics() -> Dict[str, Any]:
 
 __all__ = [
     "get_health_metrics",
+    "record_diagnostics_snapshot",
     "record_fx_api_response",
     "record_fx_cache_usage",
+    "record_http_error",
     "record_iol_refresh",
+    "record_login_to_render",
     "record_portfolio_load",
+    "record_session_started",
     "record_tab_latency",
     "record_adapter_fallback",
     "record_quote_load",
     "record_quote_provider_usage",
     "record_quote_rate_limit_wait",
     "record_snapshot_event",
+    "record_diagnostics_snapshot",
     "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",

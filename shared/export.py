@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from functools import wraps
+from time import monotonic
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 import pandas as pd
@@ -18,11 +19,8 @@ logger = logging.getLogger(__name__)
 _T = TypeVar("_T")
 _GLOBAL_CACHE: Dict[str, Any] = {}
 _KALEIDO_RUNTIME_AVAILABLE: Optional[bool] = None
-_KALEIDO_WARNING_EMITTED = False
-_KALEIDO_WARNING_MESSAGE = (
-    "📉 Exportación a PNG deshabilitada. Instale los requisitos de Kaleido/Chrome para"
-    " habilitar las descargas."
-)
+_KALEIDO_WARNING_LAST_TS: Optional[float] = None
+_KALEIDO_WARNING_WINDOW_SECONDS = 300
 
 
 def _wrap_with_cache(func: Callable[[], _T]) -> Callable[[], _T]:
@@ -52,34 +50,38 @@ def df_to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
-def _log_kaleido_warning(exc: Exception | None = None) -> None:
-    """Registra un único warning si kaleido no está disponible."""
+def _log_noncritical_export_failure(exc: Exception) -> None:
+    """Registra advertencias amortiguadas para fallas no críticas."""
 
-    global _KALEIDO_WARNING_EMITTED
+    global _KALEIDO_WARNING_LAST_TS
 
-    if not _KALEIDO_WARNING_EMITTED:
-        if exc is None:
-            logger.warning(_KALEIDO_WARNING_MESSAGE)
-        else:
-            logger.warning("%s (%s)", _KALEIDO_WARNING_MESSAGE, exc)
-        _KALEIDO_WARNING_EMITTED = True
-    elif exc is not None:
-        logger.debug("Kaleido runtime no disponible: %s", exc)
+    now = monotonic()
+    last_ts = _KALEIDO_WARNING_LAST_TS
+
+    if last_ts is None or (now - last_ts) >= _KALEIDO_WARNING_WINDOW_SECONDS:
+        logger.warning(
+            "⚠️ Exportación no crítica fallida (Kaleido)",
+            exc_info=exc,
+        )
+        _KALEIDO_WARNING_LAST_TS = now
 
 
 def _mark_runtime_unavailable(exc: Exception | None = None) -> None:
-    """Actualiza el estado del runtime y emite el warning correspondiente."""
+    """Actualiza el estado del runtime para evitar reintentos redundantes."""
 
     global _KALEIDO_RUNTIME_AVAILABLE
 
     _KALEIDO_RUNTIME_AVAILABLE = False
-    _log_kaleido_warning(exc)
 
 
 @_wrap_with_cache
 def _get_kaleido_scope():
     """Obtiene un alcance de kaleido cacheado para reutilizar el proceso de Chromium."""
-    return pio.kaleido.scope
+    try:
+        return pio.kaleido.scope
+    except Exception as exc:  # pragma: no cover - depende de la instalación local
+        _log_noncritical_export_failure(exc)
+        raise
 
 
 def ensure_kaleido_runtime() -> bool:
@@ -99,12 +101,15 @@ def ensure_kaleido_runtime() -> bool:
     ensure_chrome = getattr(scope, "ensure_chrome", None)
 
     if not callable(ensure_chrome):  # pragma: no cover - versiones antiguas no soportadas
-        _mark_runtime_unavailable(RuntimeError("kaleido scope lacks ensure_chrome"))
+        exc = RuntimeError("kaleido scope lacks ensure_chrome")
+        _log_noncritical_export_failure(exc)
+        _mark_runtime_unavailable(exc)
         return False
 
     try:
         ensure_chrome()
-    except (RuntimeError, OSError) as exc:
+    except Exception as exc:
+        _log_noncritical_export_failure(exc)
         _mark_runtime_unavailable(exc)
         return False
 
@@ -120,6 +125,7 @@ def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
 
     try:
         return pio.to_image(fig, format="png")
-    except (RuntimeError, OSError) as exc:
+    except Exception as exc:
+        _log_noncritical_export_failure(exc)
         _mark_runtime_unavailable(exc)
         return None
