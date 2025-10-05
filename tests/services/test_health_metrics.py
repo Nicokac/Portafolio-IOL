@@ -66,3 +66,24 @@ def test_quote_provider_summary_returns_dict(monkeypatch):
     assert isinstance(summary, dict)
     assert summary["providers"]
 
+
+def test_record_snapshot_event_stores_backend_details(monkeypatch):
+    fake_state: dict[str, dict] = {}
+    monkeypatch.setattr(health, "st", SimpleNamespace(session_state=fake_state))
+
+    health.record_snapshot_event(
+        kind="portfolio",
+        status="saved",
+        action="save",
+        storage_id="abc123",
+        backend={"name": "json", "path": "/tmp/snapshots.json"},
+    )
+
+    event = health.get_health_metrics()["snapshot_event"]
+
+    assert event["kind"] == "portfolio"
+    assert event["status"] == "saved"
+    assert event["action"] == "save"
+    assert event["storage_id"] == "abc123"
+    assert event["backend"]["name"] == "json"
+
