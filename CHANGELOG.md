@@ -23,6 +23,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.8] - 2025-10-06
+
+### Added
+- Sesiones legacy cacheadas para reutilizar credenciales válidas y reducir latencia al restaurar
+  contextos degradados.
+- Rate limiting integrado en los clientes de datos para proteger los umbrales de APIs externas y
+  evitar bloqueos al ejecutar pipelines intensivos.
+- Recuperación automática de valorizaciones recientes cuando la fuente primaria falla, garantizando
+  que la UI y los reportes mantengan cifras consistentes.
+
 ## [0.3.30.7] - 2025-10-05
 
 ### Fixed
