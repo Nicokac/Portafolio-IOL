@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## [0.3.30.10] - 2025-10-15
+
+### Fixed
+- Se restableció la tubería de logging para que todos los flujos de screening y exportación vuelvan a
+  registrar eventos en `analysis.log`, incluyendo los `snapshot_hits`, degradaciones controladas y la
+  procedencia de los datos consumidos por la UI.
+- Los exports (`analysis.zip`, `analysis.xlsx`, `summary.csv`) vuelven a generarse con el set completo
+  de archivos, preservan los timestamps de ejecución y adjuntan la bitácora consolidada en los artefactos
+  de CI.
+
+### Documentation
+- README, guías de troubleshooting y banners actualizados para recalcar la release 0.3.30.10 y los
+  fixes de logging/export que devuelven la trazabilidad a pipelines y operadores.
+
 ## [0.3.30.9] - 2025-10-10
 
 ### Fixed
