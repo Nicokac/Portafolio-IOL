@@ -510,8 +510,10 @@ class IOLClient(IIOLProvider):
         resolved_market = (mercado if mercado is not None else market or "bcba").lower()
         resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
         base_url = getattr(self, "_base", self.api_base).rstrip("/")
-        url = f"{base_url}/marketdata/{resolved_market}/{resolved_symbol}"
-        url = f"{url}/{panel}" if panel else f"{url}/Cotizacion"
+        url = f"{base_url}/{resolved_market}/Titulos/{resolved_symbol}/Cotizacion"
+        params: dict[str, str] | None = None
+        if panel:
+            params = {"panel": panel}
 
         transitions = ["v2"]
         start = time.time()
@@ -519,7 +521,8 @@ class IOLClient(IIOLProvider):
         v2_error: Exception | None = None
 
         try:
-            response = self._request("GET", url)
+            request_kwargs = {"params": params} if params else {}
+            response = self._request("GET", url, **request_kwargs)
         except InvalidCredentialsError:
             self._log_quote_event(
                 resolved_market,
@@ -540,8 +543,12 @@ class IOLClient(IIOLProvider):
                 v2_error = exc
             else:
                 payload = self._normalize_quote_payload(data)
-                if payload.get("provider") is None:
-                    payload["provider"] = "iol"
+                payload["provider"] = "iol"
+                currency_value = data.get("moneda") if isinstance(data, dict) else None
+                if isinstance(currency_value, str):
+                    payload["currency"] = currency_value.strip() or None
+                elif currency_value is not None:
+                    payload["currency"] = str(currency_value)
                 elapsed_ms = (time.time() - start) * 1000.0
                 provider_name = payload.get("provider") or "iol"
                 record_quote_provider_usage(
@@ -549,6 +556,15 @@ class IOLClient(IIOLProvider):
                     elapsed_ms=elapsed_ms if payload.get("last") is not None else None,
                     stale=payload.get("last") is None,
                     source="v2",
+                )
+                logger.info(
+                    "✅ Quotes OK from /Titulos/Cotizacion",
+                    extra={
+                        "market": resolved_market,
+                        "symbol": resolved_symbol,
+                        "panel": panel,
+                        "currency": payload.get("currency"),
+                    },
                 )
                 return payload
 

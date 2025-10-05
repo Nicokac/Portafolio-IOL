@@ -63,6 +63,43 @@ def _http_error(status: int) -> requests.HTTPError:
     return requests.HTTPError(response=response)
 
 
+def test_primary_endpoint_provides_fresh_quote(
+    monkeypatch: pytest.MonkeyPatch, client: iol_client_module.IOLClient
+) -> None:
+    """The new /Titulos/Cotizacion endpoint should yield a fresh quote without fallbacks."""
+
+    recorded: list[tuple[str, dict[str, Any]]] = []
+
+    def record(provider: str, **kwargs: Any) -> None:
+        recorded.append((provider, kwargs))
+
+    monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
+    monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
+
+    def successful_request(
+        self: iol_client_module.IOLClient, method: str, url: str, **kwargs: Any
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {
+                "ultimoPrecio": 245.75,
+                "variacion": 2.1,
+                "moneda": "ARS",
+                "fecha": "2024-05-20T15:30:00",
+            },
+        )
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", successful_request)
+
+    payload = cache_module._get_quote_cached(client, "bcba", "GGAL", ttl=60)
+
+    assert payload["provider"] == "iol"
+    assert payload["last"] == pytest.approx(245.75)
+    assert payload.get("stale") is not True
+    assert any(entry[0] == "iol" and entry[1].get("stale") is False for entry in recorded)
+
+
 def test_get_quote_uses_legacy_on_primary_http_500(
     monkeypatch: pytest.MonkeyPatch, client: iol_client_module.IOLClient
 ) -> None:
