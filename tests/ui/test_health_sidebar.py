@@ -29,22 +29,73 @@ def health_sidebar(streamlit_stub, monkeypatch: pytest.MonkeyPatch):
 
 def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     metrics = {
-        "iol_refresh": {"status": "success", "detail": "Tokens OK", "ts": 1},
-        "yfinance": {"source": "fallback", "detail": "AAPL", "ts": 2},
+        "authentication": {
+            "status": "authenticated",
+            "user": "demo",
+            "freshness": "fresh",
+            "last_success_ts": 9.0,
+            "last_error_ts": 8.0,
+            "method": "tokens",
+            "token_age_secs": 120.0,
+        },
+        "iol_refresh": {
+            "status": "success",
+            "detail": "Tokens OK",
+            "ts": 1,
+            "freshness": "fresh",
+            "last_fetch_ts": 1,
+        },
+        "yfinance": {
+            "source": "fallback",
+            "detail": "AAPL",
+            "ts": 2,
+            "freshness": "stale",
+            "last_fetch_ts": 2,
+        },
+        "snapshot": {
+            "status": "hit",
+            "freshness": "fresh",
+            "last_used_ts": 10.0,
+            "last_saved_ts": 11.0,
+            "backend": {"kind": "json", "path": "/tmp/snapshots.json"},
+            "hits": 3,
+            "misses": 1,
+            "snapshot_id": "snap-1",
+            "detail": "Recuperado desde snapshot",
+        },
         "fx_api": {
             "status": "success",
             "error": None,
             "elapsed_ms": 123.4,
             "ts": 3,
+            "freshness": "fresh",
+            "last_fetch_ts": 3,
+            "source": "primario",
         },
-        "fx_cache": {"mode": "hit", "age": 5.0, "ts": 4},
-        "portfolio": {"elapsed_ms": 200.0, "source": "api", "ts": 5},
+        "fx_cache": {
+            "mode": "hit",
+            "age": 5.0,
+            "ts": 4,
+            "freshness": "stale",
+            "last_fetch_ts": 4,
+            "detail": "Cache de resiliencia",
+            "hit_ratio": 0.5,
+        },
+        "portfolio": {
+            "elapsed_ms": 200.0,
+            "source": "api",
+            "ts": 5,
+            "freshness": "fresh",
+            "last_fetch_ts": 5,
+        },
         "quotes": {
             "elapsed_ms": 350.0,
             "source": "fallback",
             "count": 3,
             "detail": "cache",
             "ts": 6,
+            "freshness": "stale",
+            "last_fetch_ts": 6,
         },
         "quote_providers": {
             "total": 6,
@@ -180,17 +231,24 @@ def test_render_health_sidebar_with_success_metrics(health_sidebar) -> None:
     sidebar = health_sidebar.st.sidebar
     assert sidebar.headers == [f"🩺 Healthcheck (versión {health_sidebar.__version__})"]
     markdown_calls = sidebar.markdowns
+    assert any("Autenticación" in text for text in markdown_calls)
+    assert any("Sesión activa" in text for text in markdown_calls)
+    assert any("estado actualizado" in text for text in markdown_calls)
     assert any("Conexión IOL" in text for text in markdown_calls)
     assert any("Fallback local" in text for text in markdown_calls)
     assert any("API FX OK" in text for text in markdown_calls)
     assert any("Uso de caché" in text for text in markdown_calls)
+    assert any("estado desactualizado" in text for text in markdown_calls)
+    assert any("💾 Snapshots" in text for text in markdown_calls)
+    assert any("Servido desde snapshot" in text for text in markdown_calls)
+    assert any("ruta: /tmp/snapshots.json" in text for text in markdown_calls)
     assert any("💹 Cotizaciones" in text for text in markdown_calls)
     assert any("Total 6" in text for text in markdown_calls)
     assert any("OK 5/6" in text for text in markdown_calls)
     assert any("Legacy rate-limit 429" in text for text in markdown_calls)
     assert any("Legacy auth fallida" in text for text in markdown_calls)
-    assert any("Portafolio" in text and "200" in text for text in markdown_calls)
-    assert any("Cotizaciones" in text and "350" in text for text in markdown_calls)
+    assert any("Portafolio" in text and "último fetch" in text for text in markdown_calls)
+    assert any("Cotizaciones" in text and "estado desactualizado" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
     assert any("🚨 Incidencias 3" in text for text in markdown_calls)
     assert any("Fallbacks 1/3 (33%)" in text for text in markdown_calls)
@@ -239,11 +297,13 @@ def test_render_health_sidebar_with_missing_metrics(health_sidebar) -> None:
 
     markdown_calls = health_sidebar.st.sidebar.markdowns
     assert any("Error al refrescar" in text for text in markdown_calls)
+    assert "_Sin autenticaciones registradas._" in markdown_calls
+    assert "_Sin snapshots registrados._" in markdown_calls
     assert "_Sin consultas registradas._" in markdown_calls
     assert "_Sin consultas de cotizaciones registradas._" in markdown_calls
     assert any("API FX con errores" in text for text in markdown_calls)
     assert "_Sin uso de caché registrado._" in markdown_calls
-    assert any(text.startswith("- Portafolio: sin registro") for text in markdown_calls)
+    assert any(text.startswith("⚪️ - Portafolio: sin registro") for text in markdown_calls)
     assert any("Cotizaciones" in text and "sin datos" in text for text in markdown_calls)
     assert any("Observabilidad" in text for text in markdown_calls)
     assert "_Sin incidencias de riesgo registradas._" in markdown_calls
