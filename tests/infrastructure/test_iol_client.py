@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from types import SimpleNamespace
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -127,7 +128,12 @@ def test_get_quote_returns_last_and_chg_pct(
 
     class ResponseStub:
         def json(self) -> dict:
-            return {"simbolo": "AAPL", "ultimoPrecio": 123.45, "variacion": 1.5}
+            return {
+                "simbolo": "AAPL",
+                "ultimoPrecio": 123.45,
+                "variacion": 1.5,
+                "moneda": "ARS",
+            }
 
     def fake_request(
         self: iol_client_module.IOLClient, method: str, url: str, **kwargs
@@ -150,7 +156,13 @@ def test_get_quote_returns_last_and_chg_pct(
 
     result = client.get_quote("bcba", "AAPL")
 
-    assert result == {"last": 123.45, "chg_pct": 1.5, "asof": None, "provider": "iol"}
+    assert result == {
+        "last": 123.45,
+        "chg_pct": 1.5,
+        "asof": None,
+        "provider": "iol",
+        "currency": "ARS",
+    }
 
 
 def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -168,7 +180,11 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
         return SimpleNamespace(
             status_code=200,
             raise_for_status=lambda: None,
-            json=lambda: {"ultimoPrecio": 100, "variacionPorcentual": 1.23},
+            json=lambda: {
+                "ultimoPrecio": 100,
+                "variacionPorcentual": 1.23,
+                "moneda": "USD",
+            },
         )
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
@@ -177,22 +193,46 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
 
     payload = client.get_quote("bcba", "AAPL")
 
-    assert calls["url"].endswith("/Cotizacion")
-    assert payload == {"last": 100.0, "chg_pct": 1.23, "asof": None, "provider": "iol"}
+    assert calls["url"].endswith("/bcba/Titulos/AAPL/Cotizacion")
+    assert payload == {
+        "last": 100.0,
+        "chg_pct": 1.23,
+        "asof": None,
+        "provider": "iol",
+        "currency": "USD",
+    }
+
+
+def test_get_quote_passes_panel_query_param(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The primary endpoint should receive the panel as a query parameter."""
+
+    calls: dict[str, Any] = {}
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
+
+    def fake_request(
+        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
+    ) -> SimpleNamespace:
+        calls["params"] = kwargs.get("params")
+        return SimpleNamespace(
+            status_code=200,
+            raise_for_status=lambda: None,
+            json=lambda: {"ultimoPrecio": 90, "variacion": 0.5, "moneda": "ARS"},
+        )
+
+    monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
+
+    client = iol_client_module.IOLClient("", "", auth=False)
+
+    payload = client.get_quote("bcba", "GGAL", panel="PanelGeneral")
+
+    assert calls["params"] == {"panel": "PanelGeneral"}
+    assert payload["provider"] == "iol"
+    assert payload["currency"] == "ARS"
 
 
 def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
     """When v2 and legacy fail, the OHLC adapter should provide a payload."""
-
-    class Response500:
-        status_code = 500
-
-        @staticmethod
-        def raise_for_status() -> None:
-            raise requests.HTTPError(response=SimpleNamespace(status_code=500))
-
-        def json(self) -> dict:
-            return {}
 
     class LegacyStubClient:
         def __init__(self, *args, **kwargs) -> None:
@@ -211,7 +251,13 @@ def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -
     legacy_module = types.SimpleNamespace(IOLClient=LegacyStubClient)
     monkeypatch.setitem(sys.modules, "infrastructure.iol.legacy.iol_client", legacy_module)
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
-    monkeypatch.setattr(iol_client_module.IOLClient, "_request", lambda *_, **__: Response500())
+    monkeypatch.setattr(
+        iol_client_module.IOLClient,
+        "_request",
+        lambda *_, **__: (_ for _ in ()).throw(
+            requests.HTTPError(response=SimpleNamespace(status_code=500))
+        ),
+    )
     monkeypatch.setattr(
         iol_client_module.IOLClient,
         "_fallback_quote_via_ohlc",
@@ -232,7 +278,7 @@ def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(
         iol_client_module.IOLClient,
         "_legacy_quote_fallback",
-        lambda self, market, symbol, panel=None: None,
+        lambda self, market, symbol, panel=None: (None, {}),
     )
     monkeypatch.setattr(
         iol_client_module.IOLClient,
@@ -259,8 +305,8 @@ def test_get_quote_response_none_uses_legacy(
         market: str,
         symbol: str,
         panel: str | None,
-    ) -> dict:
-        return {"last": 250.5, "chg_pct": 2.1}
+    ) -> tuple[dict, dict[str, bool]]:
+        return ({"last": 250.5, "chg_pct": 2.1, "provider": "legacy"}, {})
 
     monkeypatch.setattr(
         iol_client_module.IOLClient,
@@ -283,9 +329,15 @@ def test_get_quote_response_none_uses_legacy(
     assert payload == {"last": 250.5, "chg_pct": 2.1, "provider": "legacy"}
     assert stub_record_usage == [
         {
+            "provider": "iol",
+            "elapsed_ms": None,
+            "stale": True,
+            "source": "v2-error",
+        },
+        {
             "provider": "legacy",
             "elapsed_ms": None,
             "stale": False,
-            "source": "legacy",
-        }
+            "source": "v2->legacy",
+        },
     ]
