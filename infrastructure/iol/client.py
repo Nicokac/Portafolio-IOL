@@ -553,22 +553,42 @@ class IOLClient(IIOLProvider):
                     payload["currency"] = str(currency_value)
                 elapsed_ms = (time.time() - start) * 1000.0
                 provider_name = payload.get("provider") or "iol"
-                record_quote_provider_usage(
-                    provider_name,
-                    elapsed_ms=elapsed_ms if payload.get("last") is not None else None,
-                    stale=payload.get("last") is None,
-                    source="v2",
-                )
-                logger.info(
-                    "✅ Quotes OK from /Titulos/Cotizacion",
+                last_value = payload.get("last")
+                if last_value is not None:
+                    record_quote_provider_usage(
+                        provider_name,
+                        elapsed_ms=elapsed_ms,
+                        stale=False,
+                        source="v2",
+                        ok=True,
+                    )
+                    logger.info(
+                        "✅ Quotes OK from /Titulos/Cotizacion",
+                        extra={
+                            "market": resolved_market,
+                            "symbol": resolved_symbol,
+                            "panel": panel,
+                            "currency": payload.get("currency"),
+                        },
+                    )
+                    return payload
+
+                logger.warning(
+                    "Quote payload missing last price from /Titulos/Cotizacion",
                     extra={
                         "market": resolved_market,
                         "symbol": resolved_symbol,
                         "panel": panel,
-                        "currency": payload.get("currency"),
                     },
                 )
-                return payload
+                record_quote_provider_usage(
+                    provider_name,
+                    elapsed_ms=None,
+                    stale=True,
+                    source="v2-missing-last",
+                    ok=False,
+                )
+                v2_error = RuntimeError("missing-last-price")
 
         if v2_error is None:
             v2_error = RuntimeError("empty-response")
