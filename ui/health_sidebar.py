@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Sidebar panel summarising recent data source health."""
 
+from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import streamlit as st
@@ -61,6 +62,22 @@ _RISK_SEVERITY_LABELS = {
     "warning": "Advertencias",
     "medium": "Medias",
     "low": "Bajas",
+}
+
+
+_GENERIC_STATUS_BADGES = {
+    "ok": ("🟢", "Operativo"),
+    "success": ("🟢", "Operativo"),
+    "healthy": ("🟢", "Operativo"),
+    "pass": ("🟢", "Operativo"),
+    "warning": ("🟡", "Advertencia"),
+    "degraded": ("🟡", "Degradado"),
+    "pending": ("🟡", "Pendiente"),
+    "info": ("ℹ️", "Informativo"),
+    "notice": ("ℹ️", "Informativo"),
+    "error": ("🔴", "Error"),
+    "failed": ("🔴", "Error"),
+    "critical": ("🔴", "Crítico"),
 }
 
 
@@ -141,6 +158,208 @@ def _risk_severity_badge(value: Any) -> tuple[str, str]:
         raw_text = _sanitize_text(value)
         label = raw_text.title() if raw_text else "Desconocido"
     return icon, label
+
+
+def _status_badge(value: Any, *, default_label: str = "Estado desconocido") -> tuple[str, str]:
+    key = _normalize_status_key(value)
+    icon, label = _GENERIC_STATUS_BADGES.get(key, ("ℹ️", default_label))
+    return icon, label
+
+
+def _format_duration_seconds(seconds: Optional[float]) -> Optional[str]:
+    if seconds is None:
+        return None
+
+    try:
+        value = float(seconds)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        return None
+
+    if value >= 3600:
+        hours = value / 3600
+        return f"{hours:.1f} h"
+    if value >= 120:
+        minutes = value / 60
+        return f"{minutes:.1f} min"
+    if value >= 1:
+        return f"{value:.2f} s"
+    return f"{value * 1000:.0f} ms"
+
+
+def _format_session_monitoring(
+    data: Optional[Mapping[str, Any]]
+) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin métricas de sesiones._"]
+
+    lines: list[str] = []
+    status_icon, status_label = _status_badge(data.get("status"))
+    ts_text = _format_timestamp(_coerce_timestamp(data.get("ts")))
+    detail_text = _sanitize_text(data.get("detail") or data.get("message"))
+
+    summary_parts = [f"{status_icon} Estado {status_label.lower()}"]
+    if ts_text:
+        summary_parts.append(ts_text)
+    summary = " • ".join(summary_parts)
+    if detail_text:
+        summary += f" — {detail_text}"
+    lines.append(format_note(summary))
+
+    active_sessions = data.get("active_sessions")
+    active_summary = _format_active_sessions(active_sessions)
+    if active_summary:
+        lines.append(format_note(f"👥 Sesiones activas: {active_summary}"))
+
+    avg_login = _format_avg_login_to_render(data.get("avg_login_to_render"))
+    if avg_login:
+        lines.append(format_note(f"⏱️ Promedio login→render: {avg_login}"))
+
+    last_error = _format_http_error(data.get("last_http_error"))
+    if last_error:
+        lines.append(last_error)
+
+    if len(lines) == 1:
+        lines.append("_Sin datos de sesiones adicionales._")
+
+    return lines
+
+
+def _format_active_sessions(data: Any) -> Optional[str]:
+    if isinstance(data, Mapping):
+        parts: list[str] = []
+        current = data.get("current") or data.get("value")
+        if isinstance(current, (int, float)):
+            parts.append(f"actual {int(current)}")
+        peak = data.get("peak") or data.get("max")
+        if isinstance(peak, (int, float)):
+            parts.append(f"máximo {int(peak)}")
+        window = _sanitize_text(data.get("window"))
+        if window:
+            parts.append(f"ventana {window}")
+        return " • ".join(parts) if parts else None
+    if isinstance(data, (int, float)):
+        return str(int(data))
+    text = _sanitize_text(data)
+    return text
+
+
+def _format_avg_login_to_render(data: Any) -> Optional[str]:
+    if isinstance(data, Mapping):
+        seconds_value: Optional[float] = None
+        for key in ("seconds", "secs", "sec", "value", "avg", "mean"):
+            candidate = data.get(key)
+            if isinstance(candidate, (int, float)):
+                seconds_value = float(candidate)
+                break
+        if seconds_value is None:
+            for key in ("milliseconds", "ms"):
+                candidate = data.get(key)
+                if isinstance(candidate, (int, float)):
+                    seconds_value = float(candidate) / 1000
+                    break
+        formatted = _format_duration_seconds(seconds_value)
+        if not formatted:
+            return None
+        samples = data.get("samples") or data.get("count")
+        if isinstance(samples, (int, float)) and int(samples) > 0:
+            formatted += f" (n={int(samples)})"
+        return formatted
+    if isinstance(data, (int, float)):
+        seconds_value = float(data)
+        if seconds_value >= 1000:
+            seconds_value = seconds_value / 1000
+        return _format_duration_seconds(seconds_value)
+    text = _sanitize_text(data)
+    return text
+
+
+def _format_http_error(data: Any) -> Optional[str]:
+    if not isinstance(data, Mapping):
+        return None
+
+    status_code = data.get("status") or data.get("status_code")
+    path = _sanitize_text(data.get("path") or data.get("endpoint"))
+    ts_text = _format_timestamp(_coerce_timestamp(data.get("ts")))
+    detail_text = _sanitize_text(data.get("detail") or data.get("message"))
+
+    header = "🚨 Último error HTTP"
+    if status_code is not None:
+        header += f" {status_code}"
+    tokens = [header]
+    if path:
+        tokens.append(path)
+    if ts_text:
+        tokens.append(ts_text)
+    summary = " • ".join(tokens)
+    if detail_text:
+        summary += f" — {detail_text}"
+    return format_note(summary)
+
+
+def _iter_diagnostic_checks(
+    checks: Any,
+) -> Iterable[tuple[Optional[str], Mapping[str, Any]]]:
+    if isinstance(checks, Mapping):
+        for key, value in checks.items():
+            if isinstance(value, Mapping):
+                yield str(key), value
+    elif isinstance(checks, Iterable) and not isinstance(checks, (str, bytes, bytearray)):
+        for entry in checks:
+            if isinstance(entry, Mapping):
+                yield None, entry
+
+
+def _format_diagnostic_entry(
+    name: Optional[str], data: Mapping[str, Any]
+) -> Optional[str]:
+    status_icon, status_label = _status_badge(data.get("status"))
+    label = (
+        _sanitize_text(data.get("label") or data.get("name"))
+        or (str(name).strip() if name else None)
+        or "Chequeo"
+    )
+    ts_text = _format_timestamp(_coerce_timestamp(data.get("ts")))
+    detail_text = _sanitize_text(data.get("detail") or data.get("message"))
+
+    summary_parts = [f"{status_icon} {label}", status_label.lower()]
+    if ts_text:
+        summary_parts.append(ts_text)
+    summary = " • ".join(summary_parts)
+    if detail_text:
+        summary += f" — {detail_text}"
+    return format_note(summary)
+
+
+def _format_diagnostics_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin diagnósticos registrados._"]
+
+    group = data.get("initial")
+    if not isinstance(group, Mapping):
+        group = data
+
+    lines: list[str] = []
+    status_icon, status_label = _status_badge(group.get("status"))
+    ts_text = _format_timestamp(_coerce_timestamp(group.get("ts")))
+    detail_text = _sanitize_text(group.get("detail") or group.get("message"))
+
+    summary_parts = [f"{status_icon} Diagnóstico {status_label.lower()}"]
+    if ts_text:
+        summary_parts.append(ts_text)
+    summary = " • ".join(summary_parts)
+    if detail_text:
+        summary += f" — {detail_text}"
+    lines.append(format_note(summary))
+
+    for name, entry in _iter_diagnostic_checks(group.get("checks") or group.get("results")):
+        formatted = _format_diagnostic_entry(name, entry)
+        if formatted:
+            lines.append(formatted)
+
+    if len(lines) == 1:
+        lines.append("_Sin chequeos registrados._")
+
+    return lines
 
 
 def _format_risk_summary(data: Optional[Mapping[str, Any]]) -> str:
@@ -1551,9 +1770,38 @@ def render_health_sidebar() -> None:
         for line in _format_adapter_fallback_section(metrics.get("adapter_fallbacks")):
             st.markdown(line)
 
+    sidebar.markdown("#### 🧭 Monitoreo de sesiones")
+    for line in _format_session_monitoring(metrics.get("session_monitoring")):
+        sidebar.markdown(line)
+
+    sidebar.markdown("#### 🧪 Diagnóstico inicial")
+    for line in _format_diagnostics_section(metrics.get("diagnostics")):
+        sidebar.markdown(line)
+
     sidebar.markdown("#### ⏱️ Latencias")
     for line in _format_latency_section(metrics.get("portfolio"), metrics.get("quotes")):
         sidebar.markdown(format_note(line))
+
+    sidebar.markdown("#### 📄 Logs")
+    log_path = Path("analysis.log")
+    try:
+        log_path.stat()
+    except FileNotFoundError:
+        sidebar.markdown("_No se encontró analysis.log._")
+    except OSError:
+        sidebar.markdown("_No se pudo leer analysis.log._")
+    else:
+        try:
+            log_bytes = log_path.read_bytes()
+        except OSError:
+            sidebar.markdown("_No se pudo leer analysis.log._")
+        else:
+            sidebar.markdown(format_note("📦 analysis.log listo para descargar"))
+            sidebar.download_button(
+                "⬇️ Descargar analysis.log",
+                log_bytes,
+                file_name="analysis.log",
+            )
 
 
 __all__ = ["render_health_sidebar"]
