@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
@@ -49,9 +50,11 @@ from controllers.portfolio.portfolio import (
 )
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
+from services.health import record_dependency_status
 
 
 logger = logging.getLogger(__name__)
+analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
 
 # Configuración de UI centralizada (tema y layout)
@@ -67,6 +70,76 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+def _check_dependency(
+    name: str,
+    label: str,
+    probe: Callable[[], None],
+) -> dict[str, str | None]:
+    status = "ok"
+    detail: str | None = None
+    level = logging.INFO
+    message = f"✅ Dependencia {label} disponible"
+
+    try:
+        probe()
+    except ImportError as exc:
+        status = "error"
+        detail = str(exc)
+        level = logging.WARNING
+        message = f"⚠️ Falta dependencia crítica: {label}"
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        status = "warning"
+        detail = str(exc)
+        level = logging.WARNING
+        message = f"⚠️ Dependencia degradada: {label}"
+
+    payload = {
+        "event": "dependency.check",
+        "dependency": name,
+        "status": status,
+    }
+    if detail:
+        payload["detail"] = detail
+
+    analysis_logger.log(level, message, extra={"analysis": payload})
+    record_dependency_status(
+        name,
+        status=status,
+        detail=detail,
+        label=label,
+        source="startup",
+    )
+
+    return {"status": status, "detail": detail}
+
+
+def _ensure_kaleido_runtime_safe() -> None:
+    try:
+        from shared.export import ensure_kaleido_runtime
+    except Exception as exc:  # pragma: no cover - defensive, depends on runtime
+        raise RuntimeError(f"No se pudo importar utilidades de Kaleido: {exc}") from exc
+
+    try:
+        if not ensure_kaleido_runtime():
+            raise RuntimeError("Runtime de Kaleido no disponible")
+    except Exception as exc:  # pragma: no cover - depends on external runtime
+        raise RuntimeError(str(exc)) from exc
+
+
+def _check_critical_dependencies() -> dict[str, dict[str, str | None]]:
+    def _probe_plotly() -> None:
+        importlib.import_module("plotly")
+
+    def _probe_kaleido() -> None:
+        importlib.import_module("kaleido")
+        _ensure_kaleido_runtime_safe()
+
+    results: dict[str, dict[str, str | None]] = {}
+    results["plotly"] = _check_dependency("plotly", "Plotly", _probe_plotly)
+    results["kaleido"] = _check_dependency("kaleido", "Kaleido", _probe_kaleido)
+    return results
+
+
 def main(argv: list[str] | None = None):
     if "session_id" not in st.session_state:
         st.session_state["session_id"] = uuid4().hex
@@ -74,6 +147,7 @@ def main(argv: list[str] | None = None):
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
     logger.info("requirements.txt es la fuente autorizada de dependencias.")
     ensure_tokens_key()
+    _check_critical_dependencies()
 
     if st.session_state.get("force_login"):
         render_login_page()

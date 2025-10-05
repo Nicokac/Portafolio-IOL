@@ -550,6 +550,46 @@ def _format_diagnostics_section(data: Optional[Mapping[str, Any]]) -> Iterable[s
     return lines
 
 
+def _format_dependencies_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+    if not isinstance(data, Mapping):
+        return ["_Sin registros de dependencias._"]
+
+    items = data.get("items")
+    if not isinstance(items, Mapping) or not items:
+        return ["_Sin registros de dependencias._"]
+
+    lines: list[str] = []
+
+    overall_status = data.get("status")
+    if isinstance(overall_status, str) and overall_status.strip():
+        icon, label = _status_badge(overall_status)
+        summary = f"{icon} Dependencias {label.lower()}"
+        lines.append(format_note(summary))
+
+    for name in sorted(items):
+        entry = items[name]
+        if not isinstance(entry, Mapping):
+            continue
+        icon, status_label = _status_badge(entry.get("status"))
+        label_text = (
+            _sanitize_text(entry.get("label"))
+            or _sanitize_text(name)
+            or "Dependencia"
+        )
+        ts_text = _format_timestamp(_coerce_timestamp(entry.get("ts")))
+        detail_text = _sanitize_text(entry.get("detail"))
+
+        summary_parts = [f"{icon} {label_text}", status_label.lower()]
+        if ts_text:
+            summary_parts.append(ts_text)
+        summary = " • ".join(summary_parts)
+        if detail_text:
+            summary += f" — {detail_text}"
+        lines.append(format_note(summary))
+
+    return lines or ["_Sin registros de dependencias._"]
+
+
 def _format_risk_summary(data: Optional[Mapping[str, Any]]) -> str:
     if not isinstance(data, Mapping):
         return "_Sin incidencias de riesgo registradas._"
@@ -1971,6 +2011,10 @@ def render_health_sidebar() -> None:
 
     sidebar.markdown("#### 🧪 Diagnóstico inicial")
     for line in _format_diagnostics_section(metrics.get("diagnostics")):
+        sidebar.markdown(line)
+
+    sidebar.markdown("#### 🧩 Dependencias críticas")
+    for line in _format_dependencies_section(metrics.get("dependencies")):
         sidebar.markdown(line)
 
     sidebar.markdown("#### ⏱️ Latencias")
