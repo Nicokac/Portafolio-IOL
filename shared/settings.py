@@ -27,6 +27,11 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
+quotes_ttl_seconds: int = getattr(settings, "QUOTES_TTL_SECONDS", 300)
+quotes_rps_iol: float = getattr(settings, "QUOTES_RPS_IOL", 3.0)
+quotes_rps_legacy: float = getattr(settings, "QUOTES_RPS_LEGACY", 1.0)
+legacy_login_max_retries: int = getattr(settings, "LEGACY_LOGIN_MAX_RETRIES", 1)
+legacy_login_backoff_base: float = getattr(settings, "LEGACY_LOGIN_BACKOFF_BASE", 0.5)
 notifications_url: str | None = getattr(settings, "NOTIFICATIONS_URL", None)
 notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
 min_score_threshold: int = settings.min_score_threshold
@@ -108,6 +113,11 @@ __all__ = [
     "max_quote_workers",
     "yahoo_fundamentals_ttl",
     "yahoo_quotes_ttl",
+    "quotes_ttl_seconds",
+    "quotes_rps_iol",
+    "quotes_rps_legacy",
+    "legacy_login_max_retries",
+    "legacy_login_backoff_base",
     "notifications_url",
     "notifications_timeout",
     "min_score_threshold",

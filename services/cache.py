@@ -3,6 +3,10 @@ import json
 import logging
 import re
 import time
+import logging, time, hashlib
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
@@ -35,8 +39,10 @@ from shared.settings import (
     cache_ttl_portfolio,
     cache_ttl_quotes,
     max_quote_workers,
+    quotes_ttl_seconds,
     settings,
 )
+from services.quote_rate_limit import quote_rate_limiter
 
 
 logger = logging.getLogger(__name__)
@@ -97,13 +103,45 @@ _QUOTE_LOCK = Lock()
 _QUOTE_PERSIST_LOCK = Lock()
 _QUOTE_PERSIST_CACHE: Dict[str, Any] | None = None
 
-QUOTE_STALE_TTL_SECONDS = 300.0
+QUOTE_STALE_TTL_SECONDS = float(quotes_ttl_seconds or 0)
 _QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
+
+_MAX_RATE_LIMIT_RETRIES = 2
 
 
 def _quote_cache_key(market: str, symbol: str, panel: str | None) -> str:
     panel_token = "" if panel in (None, "") else str(panel)
     return "|".join([market, symbol, panel_token])
+
+
+def _resolve_rate_limit_provider(cli: Any) -> str:
+    module = getattr(getattr(cli, "__class__", None), "__module__", "")
+    if isinstance(module, str) and module.startswith("infrastructure.iol.legacy"):
+        return "legacy"
+    return "iol"
+
+
+def _parse_retry_after_seconds(response) -> float | None:
+    if response is None:
+        return None
+    headers = getattr(response, "headers", {}) or {}
+    value = headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            dt = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        delta = (dt - now).total_seconds()
+        return max(0.0, delta)
 
 
 def _as_optional_float(value: Any) -> float | None:
@@ -342,22 +380,83 @@ def _get_quote_cached(
                         source="memory",
                     )
                     return data
+    provider_key = _resolve_rate_limit_provider(cli)
     q: dict[str, Any] | None = None
-    try:
-        q = cli.get_quote(norm_market, norm_symbol, panel=panel) or {}
-        data = _normalize_quote(q)
-    except InvalidCredentialsError:
-        auth = _resolve_auth_ref(cli)
-        if auth is not None:
-            try:
-                auth.clear_tokens()
-            except Exception:
-                pass
-        _trigger_logout()
-        q = {"provider": "error"}
-        data = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
-    except Exception as e:
-        logger.warning("get_quote falló para %s:%s -> %s", norm_market, norm_symbol, e)
+    data: dict[str, Any] | None = None
+    last_error: Exception | None = None
+
+    for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
+        quote_rate_limiter.wait_for_slot(provider_key)
+        try:
+            q = cli.get_quote(norm_market, norm_symbol, panel=panel) or {}
+            data = _normalize_quote(q)
+            break
+        except InvalidCredentialsError:
+            auth = _resolve_auth_ref(cli)
+            if auth is not None:
+                try:
+                    auth.clear_tokens()
+                except Exception:
+                    pass
+            _trigger_logout()
+            q = {"provider": "error"}
+            data = {
+                "last": None,
+                "chg_pct": None,
+                "asof": None,
+                "provider": "error",
+            }
+            break
+        except requests.HTTPError as http_exc:
+            last_error = http_exc
+            status_code = (
+                http_exc.response.status_code if http_exc.response is not None else None
+            )
+            if status_code == 429 and attempt < _MAX_RATE_LIMIT_RETRIES:
+                retry_after = _parse_retry_after_seconds(http_exc.response)
+                wait_time = quote_rate_limiter.penalize(
+                    provider_key, minimum_wait=retry_after
+                )
+                logger.info(
+                    "Rate limited (429) %s:%s, waiting %.3fs before retry",
+                    norm_market,
+                    norm_symbol,
+                    wait_time,
+                )
+                continue
+            logger.warning(
+                "get_quote HTTP error %s:%s -> %s",
+                norm_market,
+                norm_symbol,
+                status_code or http_exc,
+            )
+            q = {"provider": "error"}
+            data = {
+                "last": None,
+                "chg_pct": None,
+                "asof": None,
+                "provider": "error",
+            }
+            break
+        except Exception as e:
+            last_error = e
+            logger.warning("get_quote falló para %s:%s -> %s", norm_market, norm_symbol, e)
+            q = {"provider": "error"}
+            data = {
+                "last": None,
+                "chg_pct": None,
+                "asof": None,
+                "provider": "error",
+            }
+            break
+
+    if data is None:
+        logger.warning(
+            "get_quote no pudo recuperar datos para %s:%s (error=%s)",
+            norm_market,
+            norm_symbol,
+            last_error,
+        )
         q = {"provider": "error"}
         data = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
     store_time = time.time()

@@ -2,27 +2,27 @@
 from __future__ import annotations
 
 from pathlib import Path
-from datetime import datetime
 from typing import Dict, Any, Optional, Iterable, Tuple
 import time
 import logging
 import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
-from iolConn import Iol
-from iolConn.common.exceptions import NoAuthException  # <- importante
-import streamlit as st
 
 from shared.config import settings
+from shared.settings import legacy_login_backoff_base, legacy_login_max_retries
 from shared.utils import _to_float
-from shared.time_provider import TimeProvider
 from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
+from services.quote_rate_limit import quote_rate_limiter
+from infrastructure.iol.legacy.session import LegacySession
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio"
 
 REQ_TIMEOUT = 30
-RETRIES = 3                # reintentos además del primer intento
-BACKOFF_SEC = 0.5
+RETRIES = max(int(legacy_login_max_retries), 0)  # reintentos adicionales
+BACKOFF_SEC = max(float(legacy_login_backoff_base), 0.0)
 USER_AGENT = "IOL-Portfolio/1.0 (+iol_client)"
 
 logger = logging.getLogger(__name__)
@@ -68,11 +68,7 @@ class IOLClient:
         # Sesión HTTP para endpoints de cuenta
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": USER_AGENT})
-        # iolConn para mercado
-        self.iol_market: Optional[Iol] = None
-        self._market_ready = False
-        self._market_lock = threading.RLock()
-        self._ensure_market_auth()
+        self._legacy_session = LegacySession.get()
 
     # -------- Base request con retry/refresh --------
     def _request(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
@@ -88,7 +84,22 @@ class IOLClient:
             headers.update(self.auth.auth_header())
             delay = BACKOFF_SEC * (attempt + 1)
             try:
-                r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
+                quote_rate_limiter.wait_for_slot("legacy")
+                r = self.session.request(
+                    method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
+                )
+                if r.status_code == 429:
+                    wait_time = quote_rate_limiter.penalize(
+                        "legacy", minimum_wait=_parse_retry_after_seconds(r)
+                    )
+                    logger.info(
+                        "Legacy IOL 429 %s %s, esperando %.3fs antes de reintentar",
+                        method,
+                        url,
+                        wait_time,
+                    )
+                    if attempt < RETRIES:
+                        continue
                 if r.status_code == 401:
                     # Token expirado o inválido -> refresh y reintento 1 vez
                     try:
@@ -97,9 +108,23 @@ class IOLClient:
                         raise
                     headers = kwargs.pop("headers", {})
                     headers.update(self.auth.auth_header())
-                    r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
+                    quote_rate_limiter.wait_for_slot("legacy")
+                    r = self.session.request(
+                        method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
+                    )
                     if r.status_code == 401:
                         raise InvalidCredentialsError("Credenciales inválidas")
+                    if r.status_code == 429:
+                        wait_time = quote_rate_limiter.penalize(
+                            "legacy", minimum_wait=_parse_retry_after_seconds(r)
+                        )
+                        logger.info(
+                            "Legacy IOL 429 tras refresh %s, espera %.3fs",
+                            url,
+                            wait_time,
+                        )
+                        if attempt < RETRIES:
+                            continue
                 r.raise_for_status()
                 return r
             except requests.HTTPError as e:
@@ -108,8 +133,22 @@ class IOLClient:
                 if status_code == 404:
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
-                if status_code == 429:
-                    delay = BACKOFF_SEC * (2**attempt)
+                if (
+                    e.response is not None
+                    and e.response.status_code == 429
+                    and attempt < RETRIES
+                ):
+                    wait_time = quote_rate_limiter.penalize(
+                        "legacy",
+                        minimum_wait=_parse_retry_after_seconds(e.response),
+                    )
+                    logger.info(
+                        "Legacy IOL HTTP 429 %s %s, espera %.3fs",
+                        method,
+                        url,
+                        wait_time,
+                    )
+                    continue
             except requests.RequestException as e:
                 last_exc = e
             if attempt < RETRIES:
@@ -126,51 +165,29 @@ class IOLClient:
         return r.json() if r is not None else {}
 
     # -------- Mercado (iolConn) --------
-    def _ensure_market_auth(self) -> None:
-        """
-        Inicializa/Reautentica iolConn una vez (thread-safe).
-        """
-        if self._market_ready and self.iol_market is not None:
-            return
-        with self._market_lock:
-            if self._market_ready and self.iol_market is not None:
-                return
-            if self.password:
-                self.iol_market = Iol(self.user, self.password)
-            else:
-                self.iol_market = Iol(self.user, self.password)
-                bearer = self.auth.tokens.get("access_token")
-                refresh = self.auth.tokens.get("refresh_token")
-                if bearer and refresh:
-                    self.iol_market.bearer = bearer
-                    self.iol_market.refresh_token = refresh
-                    # <== LÍNEA CORREGIDA: Usa la nueva API de TimeProvider
-                    # iolConn requiere un datetime naive para compatibilidad
-                    bearer_time = TimeProvider.now_datetime().replace(tzinfo=None)
-                    self.iol_market.bearer_time = bearer_time
-                else:
-                    st.session_state["force_login"] = True
-                    raise InvalidCredentialsError("Token inválido")
-            try:
-                # algunas versiones requieren gestionar() para renovar bearer interno
-                logger.debug("Autenticando mercado con bearer")
-                self.iol_market.gestionar()
-                logger.info("Autenticación mercado con bearer ok")
-            except NoAuthException:
-                logger.info("Bearer inválido; autenticando con contraseña")
-                if self.password:
-                    # recrea sesión y reintenta una vez
-                    self.iol_market = Iol(self.user, self.password)
-                try:
-                    self.iol_market.gestionar()
-                    logger.info("Autenticación mercado con contraseña ok")
-                except NoAuthException as e:
-                    logger.error("Autenticación mercado con contraseña falló", exc_info=True)
-                    raise e
-                else:
-                    st.session_state["force_login"] = True
-                    raise InvalidCredentialsError("Token inválido")
-            self._market_ready = True
+    def _fetch_market_payload(
+        self,
+        mercado: str,
+        simbolo: str,
+        panel: str | None = None,
+    ) -> tuple[Optional[Dict[str, Any]], bool]:
+        data, auth_failed = self._legacy_session.fetch_with_backoff(
+            mercado,
+            simbolo,
+            panel=panel,
+            auth_user=self.user,
+            auth_password=self.password,
+            auth=self.auth,
+        )
+        if data is not None and not isinstance(data, dict):
+            return None, auth_failed
+        return data, auth_failed
+
+    def _inject_flags(self, payload: Dict[str, Any], auth_failed: bool) -> Dict[str, Any]:
+        if auth_failed or self._legacy_session.is_auth_unavailable():
+            payload = dict(payload)
+            payload["legacy_auth_unavailable"] = True
+        return payload
 
     @staticmethod
     def _parse_price_fields(d: Dict[str, Any]) -> Optional[float]:
@@ -246,17 +263,14 @@ class IOLClient:
         mercado = (mercado or "bcba").lower()
         simbolo = (simbolo or "").upper()
         try:
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
-        except NoAuthException:
-            self._market_ready = False
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=mercado, simbolo=simbolo)
+            data, auth_failed = self._fetch_market_payload(mercado, simbolo)
         except Exception as e:
             logger.warning("get_last_price error %s:%s -> %s", mercado, simbolo, e)
             return None
 
-        return self._parse_price_fields(data) if isinstance(data, dict) else None
+        if data is None or auth_failed:
+            return None
+        return self._parse_price_fields(data)
 
     def get_quote(
         self,
@@ -274,24 +288,22 @@ class IOLClient:
         resolved_market = (mercado if mercado is not None else market or "bcba").lower()
         resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
         try:
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=resolved_market, simbolo=resolved_symbol)
-        except NoAuthException:
-            self._market_ready = False
-            self._ensure_market_auth()
-            data = self.iol_market.price_to_json(mercado=resolved_market, simbolo=resolved_symbol)
+            data, auth_failed = self._fetch_market_payload(resolved_market, resolved_symbol, panel)
         except Exception as e:
             logger.warning("get_quote error %s:%s -> %s", resolved_market, resolved_symbol, e)
-            return {"last": None, "chg_pct": None}
+            empty = {"last": None, "chg_pct": None}
+            return self._inject_flags(empty, False)
 
-        if not isinstance(data, dict):
-            return {"last": None, "chg_pct": None}
+        if data is None:
+            empty = {"last": None, "chg_pct": None}
+            return self._inject_flags(empty, auth_failed)
 
         last = self._parse_price_fields(data)
         chg_pct = self._parse_chg_pct_fields(data, last)
         if chg_pct is None:
             logger.warning("chg_pct indeterminado para %s:%s", resolved_market, resolved_symbol)
-        return {"last": last, "chg_pct": chg_pct}
+        payload = {"last": last, "chg_pct": chg_pct}
+        return self._inject_flags(payload, auth_failed)
 
     # -------- Opcional: cotizaciones en batch --------
     def get_quotes_bulk(
@@ -329,8 +341,6 @@ class IOLClient:
 
         if not requests:
             return {}
-        self._ensure_market_auth()
-
         out: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
         with ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(requests)))) as ex:
             fut_map = {
@@ -345,3 +355,24 @@ class IOLClient:
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
                     out[key] = {"last": None, "chg_pct": None}
         return out
+def _parse_retry_after_seconds(response) -> Optional[float]:
+    if response is None:
+        return None
+    headers = getattr(response, "headers", {}) or {}
+    value = headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        try:
+            dt = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if dt is None:
+            return None
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        return max(0.0, (dt - now).total_seconds())
+

@@ -24,6 +24,7 @@ _TAB_LATENCY_HISTORY_LIMIT = 32
 _ADAPTER_FALLBACK_KEY = "adapter_fallbacks"
 _RISK_INCIDENTS_KEY = "risk_incidents"
 _RISK_INCIDENT_HISTORY_LIMIT = 50
+_QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
 
 _PROVIDER_LABELS = {
     "alpha_vantage": "Alpha Vantage",
@@ -60,6 +61,49 @@ def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
         "detail": _clean_detail(detail),
         "ts": time.time(),
     }
+
+
+def record_quote_rate_limit_wait(provider: str, wait_seconds: float, *, reason: str) -> None:
+    """Track waiting time introduced by quote provider rate limiting."""
+
+    provider_label = str(provider or "unknown").strip() or "unknown"
+    provider_key = provider_label.casefold()
+    wait = _as_optional_float(wait_seconds)
+    if wait is None:
+        return
+
+    store = _store()
+    raw_limits = store.get(_QUOTE_RATE_LIMIT_KEY)
+    if isinstance(raw_limits, Mapping):
+        limits = dict(raw_limits)
+    else:
+        limits = {}
+
+    raw_entry = limits.get(provider_key)
+    if isinstance(raw_entry, Mapping):
+        entry = dict(raw_entry)
+    else:
+        entry = {}
+
+    entry["provider"] = provider_key
+    entry["label"] = _PROVIDER_LABELS.get(provider_key, provider_label)
+    entry["count"] = int(entry.get("count", 0) or 0) + 1
+    entry["wait_total"] = float(entry.get("wait_total", 0.0) or 0.0) + wait
+    entry["wait_last"] = wait
+    entry["last_reason"] = str(reason or "throttle").strip() or "throttle"
+    entry["ts"] = time.time()
+
+    reason_counts = entry.get("reason_counts")
+    if isinstance(reason_counts, Mapping):
+        reason_counts = dict(reason_counts)
+    else:
+        reason_counts = {}
+    reason_key = entry["last_reason"]
+    reason_counts[reason_key] = int(reason_counts.get(reason_key, 0) or 0) + 1
+    entry["reason_counts"] = reason_counts
+
+    limits[provider_key] = entry
+    store[_QUOTE_RATE_LIMIT_KEY] = limits
 
 
 def _ensure_history_deque(raw_history: Any, *, limit: int) -> Deque[Dict[str, Any]]:
@@ -785,12 +829,45 @@ def record_quote_load(
 ) -> None:
     """Persist response time and source for the latest quote load."""
     store = _store()
-    store["quotes"] = {
+    summary: Dict[str, Any] = {
         "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
         "source": source,
         "count": int(count) if count is not None else None,
         "ts": time.time(),
     }
+
+    total_attempts = _as_optional_int(store.get("quotes_total"))
+    if total_attempts is not None:
+        summary["total"] = total_attempts
+
+    ok_attempts = _as_optional_int(store.get("quotes_ok"))
+    if ok_attempts is not None:
+        summary["ok"] = ok_attempts
+        if total_attempts:
+            summary["ok_ratio"] = ok_attempts / total_attempts
+
+    http_counters_raw = store.get("quote_http_counters")
+    if isinstance(http_counters_raw, Mapping):
+        counters: Dict[str, int] = {}
+        for key, value in http_counters_raw.items():
+            numeric = _as_optional_int(value)
+            if numeric is None or numeric <= 0:
+                continue
+            counters[str(key)] = numeric
+        if counters:
+            summary["http_counters"] = counters
+
+    by_provider_raw = store.get("quotes_by_provider")
+    if isinstance(by_provider_raw, Mapping):
+        provider_summary: Dict[str, Any] = {}
+        for key, value in by_provider_raw.items():
+            if not isinstance(value, Mapping):
+                continue
+            provider_summary[str(key)] = dict(value)
+        if provider_summary:
+            summary["by_provider"] = provider_summary
+
+    store["quotes"] = summary
 
 
 def record_quote_provider_usage(
@@ -799,6 +876,8 @@ def record_quote_provider_usage(
     elapsed_ms: Optional[float],
     stale: bool,
     source: Optional[str] = None,
+    http_status: Optional[str] = None,
+    ok: Optional[bool] = None,
 ) -> None:
     """Track per-provider latency and usage statistics for quotes."""
 
@@ -819,6 +898,9 @@ def record_quote_provider_usage(
 
     entry["provider"] = provider_key
     entry["label"] = _PROVIDER_LABELS.get(provider_key, provider_label)
+    total_prev = _as_optional_int(store.get("quotes_total")) or 0
+    store["quotes_total"] = total_prev + 1
+
     entry["count"] = int(entry.get("count", 0) or 0) + 1
     if stale:
         entry["stale_count"] = int(entry.get("stale_count", 0) or 0) + 1
@@ -833,23 +915,76 @@ def record_quote_provider_usage(
     now = time.time()
     entry["ts"] = now
 
+    ok_flag = bool(ok) if ok is not None else (not stale and elapsed_ms is not None)
+    if ok_flag:
+        entry["ok_count"] = int(entry.get("ok_count", 0) or 0) + 1
+    entry["ok_last"] = ok_flag
+
+    ok_prev = _as_optional_int(store.get("quotes_ok")) or 0
+    if ok_flag:
+        store["quotes_ok"] = ok_prev + 1
+    else:
+        store.setdefault("quotes_ok", ok_prev)
+
     if elapsed_ms is not None:
         elapsed_value = float(elapsed_ms)
         history_raw = entry.get("elapsed_history")
-        history: list[float] = []
-        if isinstance(history_raw, Iterable) and not isinstance(
-            history_raw, (str, bytes, bytearray)
-        ):
-            for value in history_raw:
-                numeric = _as_optional_float(value)
-                if numeric is not None:
-                    history.append(numeric)
+        history = _ensure_latency_history(history_raw, limit=_QUOTE_PROVIDER_HISTORY_LIMIT)
         history.append(elapsed_value)
-        entry["elapsed_history"] = history[-_QUOTE_PROVIDER_HISTORY_LIMIT:]
+        samples = list(history)
+        entry["elapsed_history"] = samples
         entry["elapsed_last"] = elapsed_value
+
+        percentiles = _compute_percentiles(samples, (0.5, 0.95)) if samples else {}
+        if percentiles:
+            p50 = percentiles.get("p50")
+            p95 = percentiles.get("p95")
+            if p50 is not None:
+                entry["p50_ms"] = float(p50)
+            if p95 is not None:
+                entry["p95_ms"] = float(p95)
+        else:
+            entry.pop("p50_ms", None)
+            entry.pop("p95_ms", None)
+    else:
+        entry.pop("elapsed_last", None)
+
+    if http_status:
+        status_key = str(http_status).strip()
+        if status_key:
+            http_raw = store.get("quote_http_counters")
+            if isinstance(http_raw, Mapping):
+                counters = dict(http_raw)
+            else:
+                counters = {}
+            current = _as_optional_int(counters.get(status_key)) or 0
+            counters[status_key] = current + 1
+            store["quote_http_counters"] = counters
+    else:
+        store.setdefault("quote_http_counters", store.get("quote_http_counters", {}))
 
     providers[provider_key] = entry
     store["quote_providers"] = providers
+
+    by_provider_raw = store.get("quotes_by_provider")
+    if isinstance(by_provider_raw, Mapping):
+        by_provider = dict(by_provider_raw)
+    else:
+        by_provider = {}
+
+    provider_summary: Dict[str, Any] = {
+        "provider": provider_key,
+        "label": entry["label"],
+        "total": int(entry.get("count", 0) or 0),
+        "ok": int(entry.get("ok_count", 0) or 0),
+        "stale": int(entry.get("stale_count", 0) or 0),
+    }
+    if "p50_ms" in entry:
+        provider_summary["p50_ms"] = entry["p50_ms"]
+    if "p95_ms" in entry:
+        provider_summary["p95_ms"] = entry["p95_ms"]
+    by_provider[provider_key] = provider_summary
+    store["quotes_by_provider"] = by_provider
 
 
 def _as_optional_int(value: Any) -> Optional[int]:
@@ -1548,13 +1683,23 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
-    def _summarize_quote_providers(raw_providers: Any) -> Dict[str, Any]:
+    def _summarize_quote_providers(
+        raw_providers: Any, raw_rate_limits: Any
+    ) -> Dict[str, Any]:
         if not isinstance(raw_providers, Mapping):
             return {}
 
         providers: list[Dict[str, Any]] = []
         total_count = 0
         stale_total = 0
+        rate_total = 0
+        rate_wait_total = 0.0
+
+        rate_limit_map: Dict[str, Dict[str, Any]] = {}
+        if isinstance(raw_rate_limits, Mapping):
+            for rate_key, rate_entry in raw_rate_limits.items():
+                if isinstance(rate_entry, Mapping):
+                    rate_limit_map[str(rate_key).casefold()] = dict(rate_entry)
 
         for key, entry in raw_providers.items():
             if not isinstance(entry, Mapping):
@@ -1567,6 +1712,8 @@ def get_health_metrics() -> Dict[str, Any]:
             stale_count = _as_optional_int(entry.get("stale_count")) or 0
             total_count += count
             stale_total += max(stale_count, 0)
+            ok_count = _as_optional_int(entry.get("ok_count")) or 0
+            ok_total += max(ok_count, 0)
 
             label = str(entry.get("label") or entry.get("provider") or key)
 
@@ -1583,6 +1730,7 @@ def get_health_metrics() -> Dict[str, Any]:
             avg_ms: Optional[float] = None
             if latencies:
                 avg_ms = sum(latencies) / len(latencies)
+            percentiles = _compute_percentiles(latencies, (0.5, 0.95)) if latencies else {}
 
             provider_summary: Dict[str, Any] = {
                 "provider": str(key),
@@ -1591,12 +1739,22 @@ def get_health_metrics() -> Dict[str, Any]:
             }
             if stale_count:
                 provider_summary["stale_count"] = stale_count
+            if ok_count:
+                provider_summary["ok_count"] = ok_count
+                provider_summary["ok_ratio"] = ok_count / count if count else 0.0
 
             last_ms = _as_optional_float(entry.get("elapsed_last"))
             if avg_ms is not None:
                 provider_summary["avg_ms"] = avg_ms
             if last_ms is not None:
                 provider_summary["last_ms"] = last_ms
+            if percentiles:
+                p50 = percentiles.get("p50")
+                p95 = percentiles.get("p95")
+                if p50 is not None:
+                    provider_summary["p50_ms"] = float(p50)
+                if p95 is not None:
+                    provider_summary["p95_ms"] = float(p95)
 
             ts_value = _as_optional_float(entry.get("ts"))
             if ts_value is not None:
@@ -1609,15 +1767,42 @@ def get_health_metrics() -> Dict[str, Any]:
             if entry.get("stale_last"):
                 provider_summary["stale_last"] = True
 
+            rate_entry = rate_limit_map.get(str(key).casefold())
+            if isinstance(rate_entry, Mapping):
+                rate_count = _as_optional_int(rate_entry.get("count"))
+                if rate_count:
+                    provider_summary["rate_limit_count"] = rate_count
+                    rate_total += rate_count
+                    wait_total = _as_optional_float(rate_entry.get("wait_total")) or 0.0
+                    rate_wait_total += wait_total
+                    last_wait = _as_optional_float(rate_entry.get("wait_last"))
+                    if last_wait is not None:
+                        provider_summary["rate_limit_last_ms"] = last_wait * 1000.0
+                    if wait_total and rate_count:
+                        provider_summary["rate_limit_avg_ms"] = (
+                            wait_total / rate_count
+                        ) * 1000.0
+                    last_reason = rate_entry.get("last_reason")
+                    if last_reason:
+                        provider_summary["rate_limit_last_reason"] = str(last_reason)
+                    limit_ts = _as_optional_float(rate_entry.get("ts"))
+                    if limit_ts is not None:
+                        provider_summary["rate_limit_ts"] = limit_ts
+
             providers.append(provider_summary)
 
         if not providers:
             return {}
 
         providers.sort(key=lambda item: str(item.get("label", "")).casefold())
-        summary = {"providers": providers, "total": total_count}
+        summary_total = _as_optional_int(store.get("quotes_total")) or total_count
+        summary: Dict[str, Any] = {"providers": providers, "total": summary_total}
         if stale_total:
             summary["stale_total"] = stale_total
+        if rate_total:
+            summary["rate_limit_total"] = rate_total
+        if rate_wait_total:
+            summary["rate_limit_total_wait_ms"] = rate_wait_total * 1000.0
         return summary
 
     def _summarize_adapter_fallbacks(raw_data: Any) -> Dict[str, Any]:
@@ -2039,7 +2224,9 @@ def get_health_metrics() -> Dict[str, Any]:
         "macro_api": _summarize_macro(store.get("macro_api")),
         "portfolio": store.get("portfolio"),
         "quotes": store.get("quotes"),
-        "quote_providers": _summarize_quote_providers(store.get("quote_providers")),
+        "quote_providers": _summarize_quote_providers(
+            store.get("quote_providers"), store.get(_QUOTE_RATE_LIMIT_KEY)
+        ),
         "opportunities": store.get("opportunities"),
         "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
         "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
@@ -2058,6 +2245,7 @@ __all__ = [
     "record_adapter_fallback",
     "record_quote_load",
     "record_quote_provider_usage",
+    "record_quote_rate_limit_wait",
     "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",

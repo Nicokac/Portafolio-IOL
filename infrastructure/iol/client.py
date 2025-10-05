@@ -5,7 +5,6 @@ import json
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
@@ -22,6 +21,7 @@ from shared.utils import _to_float
 from .auth import IOLAuth
 from .ports import IIOLProvider
 from services.health import record_quote_provider_usage
+from infrastructure.iol.legacy.session import LegacySession
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,8 @@ class IOLClient(IIOLProvider):
         self.iol_market: Optional[Iol] = None
         self._market_ready = False
         self._market_lock = threading.RLock()
+        self._quotes_lock = threading.RLock()
+        self._legacy_session = LegacySession.get()
         self._ensure_market_auth()
 
         safe_user = f"{self.user[:3]}***" if self.user else ""
@@ -77,6 +79,8 @@ class IOLClient(IIOLProvider):
             "IOLClient init",
             extra={"user": safe_user, "tokens_file": tokens_path, "has_refresh": has_refresh},
         )
+
+        self._legacy_last_http_label: Optional[str] = None
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -394,6 +398,35 @@ class IOLClient(IIOLProvider):
             "provider": provider_key or None,
         }
 
+    def _log_quote_event(
+        self,
+        market: str,
+        symbol: str,
+        *,
+        phase: str,
+        result: str,
+        provider: Optional[str] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        payload: Dict[str, Any] = {
+            "quote_market": market,
+            "quote_symbol": symbol,
+            "quote_phase": phase,
+            "quote_result": result,
+        }
+        if provider:
+            payload["quote_provider"] = provider
+        if detail:
+            payload["quote_detail"] = detail
+        logger.info(
+            "quote_event %s:%s phase=%s result=%s",
+            market,
+            symbol,
+            phase,
+            result,
+            extra=payload,
+        )
+
     def _fallback_quote_via_ohlc(
         self,
         market: str,
@@ -422,6 +455,13 @@ class IOLClient(IIOLProvider):
                     symbol,
                     payload.get("provider"),
                 )
+                self._log_quote_event(
+                    market,
+                    symbol,
+                    phase="ohlc",
+                    result="success",
+                    provider=str(payload.get("provider") or "ohlc"),
+                )
                 return payload
         except Exception as exc:
             logger.warning(
@@ -429,6 +469,13 @@ class IOLClient(IIOLProvider):
                 market,
                 symbol,
                 exc,
+            )
+            self._log_quote_event(
+                market,
+                symbol,
+                phase="ohlc",
+                result="error",
+                detail=str(exc),
             )
         return None
 
@@ -466,133 +513,158 @@ class IOLClient(IIOLProvider):
         url = f"{base_url}/marketdata/{resolved_market}/{resolved_symbol}"
         url = f"{url}/{panel}" if panel else f"{url}/Cotizacion"
 
+        transitions = ["v2"]
+        start = time.time()
+        response: Optional[requests.Response] = None
+        v2_error: Exception | None = None
+
         try:
             response = self._request("GET", url)
-            if response is None:
-                logger.warning(
-                    "get_quote sin respuesta %s:%s (%s)",
-                    resolved_market,
-                    resolved_symbol,
-                    "response=None",
-                )
-                logger.info(
-                    "get_quote fallback -> legacy %s:%s",
-                    resolved_market,
-                    resolved_symbol,
-                )
-                legacy_payload = self._legacy_quote_fallback(
-                    resolved_market, resolved_symbol, panel
-                )
-                if legacy_payload is not None:
-                    provider_name = legacy_payload.get("provider") or "legacy"
-                    if legacy_payload.get("provider") is None:
-                        legacy_payload["provider"] = "legacy"
-                    record_quote_provider_usage(
-                        provider_name,
-                        elapsed_ms=None,
-                        stale=legacy_payload.get("last") is None,
-                        source="legacy",
-                    )
-                    return legacy_payload
-                record_quote_provider_usage(
-                    "legacy",
-                    elapsed_ms=None,
-                    stale=True,
-                    source="legacy",
-                )
-                fallback = self._fallback_quote_via_ohlc(
-                    resolved_market, resolved_symbol, panel=panel
-                )
-                if fallback is not None:
-                    return fallback
-                return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
-            raise_for_status = getattr(response, "raise_for_status", None)
-            if callable(raise_for_status):
-                raise_for_status()
         except InvalidCredentialsError:
-            raise
-        except requests.HTTPError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            if status_code == 500:
-                logger.warning("IOL 500 → omitiendo símbolo %s:%s", resolved_market, resolved_symbol)
-                try:
-                    from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
-
-                    legacy_client = LegacyIOLClient(
-                        self.user,
-                        self.password,
-                        tokens_file=getattr(self.auth, "tokens_path", None),
-                        auth=self.auth,
-                    )
-                    return legacy_client.get_quote(
-                        market=resolved_market,
-                        symbol=resolved_symbol,
-                        panel=panel,
-                    )
-                except Exception as fallback_exc:  # pragma: no cover - defensive guard
-                    logger.error(
-                        "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
-                        resolved_market,
-                        resolved_symbol,
-                        fallback_exc,
-                        exc_info=True,
-                    )
-                    fallback = self._fallback_quote_via_ohlc(
-                        resolved_market, resolved_symbol, panel=panel
-                    )
-                    if fallback is not None:
-                        return fallback
-                    return {
-                        "last": None,
-                        "chg_pct": None,
-                        "asof": None,
-                        "provider": "stale",
-                    }
+            self._log_quote_event(
+                resolved_market,
+                resolved_symbol,
+                phase="iol_v2",
+                result="auth_error",
+            )
             raise
         except Exception as exc:  # pragma: no cover - defensive guard
-            logger.warning(
-                "get_quote sin respuesta %s:%s (%s)",
+            v2_error = exc
+
+        if response is not None:
+            status_code = getattr(response, "status_code", "n/a")
+            logger.debug("IOLClient.get_quote -> %s [%s]", url, status_code)
+            try:
+                data = response.json() or {}
+            except ValueError as exc:
+                v2_error = exc
+            else:
+                payload = self._normalize_quote_payload(data)
+                if payload.get("provider") is None:
+                    payload["provider"] = "iol"
+                elapsed_ms = (time.time() - start) * 1000.0
+                provider_name = payload.get("provider") or "iol"
+                record_quote_provider_usage(
+                    provider_name,
+                    elapsed_ms=elapsed_ms if payload.get("last") is not None else None,
+                    stale=payload.get("last") is None,
+                    source="v2",
+                )
+                return payload
+
+        if v2_error is None:
+            v2_error = RuntimeError("empty-response")
+
+        record_quote_provider_usage(
+            "iol",
+            elapsed_ms=None,
+            stale=True,
+            source="v2-error",
+        )
+        transitions.append("legacy")
+        logger.info(
+            "Quote fallback transition: %s for %s:%s -> %s",
+            " -> ".join(transitions[-2:]),
+            resolved_market,
+            resolved_symbol,
+            v2_error,
+        )
+
+        legacy_payload, legacy_flags = self._legacy_quote_fallback(
+            resolved_market, resolved_symbol, panel
+        )
+        legacy_auth_unavailable = bool(legacy_flags.get("legacy_auth_unavailable"))
+        legacy_provider = (
+            legacy_payload.get("provider")
+            if isinstance(legacy_payload, dict)
+            else "legacy"
+        ) or "legacy"
+
+        if (
+            legacy_payload is not None
+            and not legacy_auth_unavailable
+            and legacy_payload.get("last") is not None
+        ):
+            record_quote_provider_usage(
+                legacy_provider,
+                elapsed_ms=None,
+                stale=False,
+                source="v2->legacy",
+            )
+            logger.info(
+                "Quote fallback chain resolved: %s for %s:%s",
+                " -> ".join(transitions),
                 resolved_market,
                 resolved_symbol,
-                exc,
             )
-            fallback = self._fallback_quote_via_ohlc(
-                resolved_market, resolved_symbol, panel=panel
+            return legacy_payload
+
+        record_quote_provider_usage(
+            legacy_provider,
+            elapsed_ms=None,
+            stale=True,
+            source="v2->legacy",
+        )
+
+        transitions.append("ohlc")
+        logger.info(
+            "Quote fallback transition: %s for %s:%s",
+            " -> ".join(transitions[-2:]),
+            resolved_market,
+            resolved_symbol,
+        )
+        fallback = self._fallback_quote_via_ohlc(
+            resolved_market, resolved_symbol, panel=panel
+        )
+        if fallback is not None:
+            if legacy_auth_unavailable:
+                fallback = dict(fallback)
+                fallback["legacy_auth_unavailable"] = True
+            provider = fallback.get("provider") or "ohlc"
+            record_quote_provider_usage(
+                provider,
+                elapsed_ms=None,
+                stale=fallback.get("last") is None,
+                source="legacy->ohlc",
             )
-            if fallback is not None:
-                return fallback
-            return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
-
-        status_code = getattr(response, "status_code", "n/a")
-        logger.debug("IOLClient.get_quote -> %s [%s]", url, status_code)
-
-        try:
-            data = response.json() or {}
-        except ValueError as exc:
-            logger.warning(
-                "get_quote sin respuesta %s:%s (%s)",
+            logger.info(
+                "Quote fallback chain resolved: %s for %s:%s",
+                " -> ".join(transitions),
                 resolved_market,
                 resolved_symbol,
-                exc,
             )
-            fallback = self._fallback_quote_via_ohlc(
-                resolved_market, resolved_symbol, panel=panel
-            )
-            if fallback is not None:
-                return fallback
-            return {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
+            return fallback
 
-        payload = self._normalize_quote_payload(data)
-        if payload.get("provider") is None:
-            payload["provider"] = "iol"
-        return payload
+        transitions.append("stale")
+        stale_payload: Dict[str, Optional[float]] = {
+            "last": None,
+            "chg_pct": None,
+            "asof": None,
+            "provider": "stale",
+        }
+        if legacy_auth_unavailable:
+            stale_payload["legacy_auth_unavailable"] = True
+        record_quote_provider_usage(
+            "stale",
+            elapsed_ms=None,
+            stale=True,
+            source="ohlc->stale",
+        )
+        logger.info(
+            "Quote fallback chain resolved: %s for %s:%s",
+            " -> ".join(transitions),
+            resolved_market,
+            resolved_symbol,
+        )
+        return stale_payload
 
     def _legacy_quote_fallback(
         self,
         resolved_market: str,
         resolved_symbol: str,
         panel: str | None,
-    ) -> Optional[Dict[str, Optional[float]]]:
+    ) -> tuple[Optional[Dict[str, Optional[float]]], Dict[str, bool]]:
+        flags: Dict[str, bool] = {}
         try:
             from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
 
@@ -611,13 +683,21 @@ class IOLClient(IIOLProvider):
             status = None
             if getattr(http_exc, "response", None) is not None:
                 status = http_exc.response.status_code
+            if status == 429:
+                self._legacy_last_http_label = "legacy_429"
+                result_label = "http_429"
+            elif status in (401, 403):
+                self._legacy_last_http_label = "legacy_auth_fail"
+                result_label = f"http_{status}"
+            else:
+                result_label = "http_error"
             logger.warning(
                 "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
                 resolved_market,
                 resolved_symbol,
                 status or http_exc,
             )
-            return None
+            return None, flags
         except requests.RequestException as req_exc:
             logger.warning(
                 "Legacy IOLClient.get_quote request error %s:%s -> %s",
@@ -625,7 +705,7 @@ class IOLClient(IIOLProvider):
                 resolved_symbol,
                 req_exc,
             )
-            return None
+            return None, flags
         except Exception as fallback_exc:  # pragma: no cover - defensive guard
             logger.error(
                 "Fallback legacy IOLClient.get_quote falló %s:%s -> %s",
@@ -634,14 +714,16 @@ class IOLClient(IIOLProvider):
                 fallback_exc,
                 exc_info=True,
             )
-            return None
+            return None, flags
 
         if not isinstance(payload, dict):
-            return None
+            return None, flags
 
         normalized = dict(payload)
+        if normalized.get("legacy_auth_unavailable"):
+            flags["legacy_auth_unavailable"] = True
         normalized.setdefault("provider", "legacy")
-        return normalized
+        return normalized, flags
 
     def get_quotes_bulk(
         self,
@@ -677,31 +759,16 @@ class IOLClient(IIOLProvider):
         self._ensure_market_auth()
 
         result: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
-        workers = min(max_workers, max(1, len(requests)))
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            future_map = {
-                executor.submit(self.get_quote, market, symbol, panel): (market, symbol)
-                for market, symbol, panel in requests
-            }
-            for future in as_completed(future_map):
-                key = future_map[future]
+        with self._quotes_lock:
+            for market, symbol, panel in requests:
                 try:
-                    payload = future.result()
-                    if payload is None:
-                        payload = {"last": None, "chg_pct": None}
-                    result[key] = payload
-                except requests.HTTPError as exc:
-                    response = exc.response
-                    if response is not None and response.status_code == 500:
-                        market, symbol = key
-                        logger.warning(
-                            "IOL 500 → omitiendo símbolo %s:%s", market, symbol
-                        )
-                        continue
-                    raise
+                    payload = self.get_quote(market, symbol, panel)
                 except Exception as exc:  # pragma: no cover - defensive guard
-                    logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], exc)
-                    result[key] = {"last": None, "chg_pct": None}
+                    logger.warning("get_quotes_bulk %s:%s error -> %s", market, symbol, exc)
+                    payload = {"last": None, "chg_pct": None}
+                if payload is None:
+                    payload = {"last": None, "chg_pct": None}
+                result[(market, symbol)] = payload
         return result
 
 
