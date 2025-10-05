@@ -1,7 +1,7 @@
 import json
 import logging
+from datetime import datetime
 from pathlib import Path
-from logging.handlers import RotatingFileHandler
 
 import pytest
 
@@ -58,12 +58,16 @@ def test_configure_logging_adds_rotating_file_handler(tmp_path, monkeypatch, jso
     try:
         config.configure_logging(level="INFO", json_format=json_format)
         file_handlers = [
-            handler for handler in root_logger.handlers if isinstance(handler, RotatingFileHandler)
+            handler
+            for handler in root_logger.handlers
+            if isinstance(handler, config.DailyTimedRotatingFileHandler)
         ]
         assert len(file_handlers) == 1
 
         log_file = Path(file_handlers[0].baseFilename)
         assert log_file.parent == tmp_path
+        today = datetime.now().strftime("%Y-%m-%d")
+        assert log_file.name == f"analysis_{today}.log"
 
         root_logger.info("hello world")
 

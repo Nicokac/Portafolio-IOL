@@ -36,6 +36,7 @@ notifications_url: str | None = getattr(settings, "NOTIFICATIONS_URL", None)
 notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
+log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
@@ -122,6 +123,7 @@ __all__ = [
     "notifications_timeout",
     "min_score_threshold",
     "max_results",
+    "log_retention_days",
     "stub_max_runtime_warn",
     "STUB_MAX_RUNTIME_WARN",
     "snapshot_backend",

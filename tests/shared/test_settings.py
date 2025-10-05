@@ -130,6 +130,16 @@ def test_settings_score_parameters_from_config(monkeypatch):
         assert settings.max_results == 12
 
 
+def test_settings_log_retention_defaults_to_seven_days(monkeypatch):
+    with _fresh_settings(monkeypatch) as settings:
+        assert settings.LOG_RETENTION_DAYS == 7
+
+
+def test_settings_log_retention_respects_environment(monkeypatch):
+    with _fresh_settings(monkeypatch, env={"LOG_RETENTION_DAYS": "15"}) as settings:
+        assert settings.LOG_RETENTION_DAYS == 15
+
+
 def test_shared_settings_reload_reflects_overrides(monkeypatch):
     """``shared.settings`` should surface env overrides and keep aliases."""
 
