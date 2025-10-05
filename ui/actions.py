@@ -12,16 +12,17 @@ logger = logging.getLogger(__name__)
 
 
 def render_action_menu() -> None:
-    """Render refresh and logout actions in a compact popover."""
+    """Render refresh and logout actions in a compact control panel."""
 
-    pop = st.popover("⚙️ Acciones")
-    with pop:
-        st.caption("Operaciones rápidas")
+    action_panel = st.container(border=True)
+    with action_panel:
+        st.markdown("#### ⚙️ Acciones rápidas")
+        st.caption("Mantén esta sección a la vista para actuar sin perder contexto.")
         c1, c2 = st.columns(2)
         if c1.button("⟳ Refrescar", width="stretch"):
             st.session_state["refresh_pending"] = True
             st.rerun()
-        if c2.button("🔒 Cerrar sesión", width="stretch"):
+        if c2.button("🔒 Cerrar sesión", width="stretch", help="Cierra inmediatamente tu sesión actual"):
             st.session_state["logout_pending"] = True
             st.rerun()
 
