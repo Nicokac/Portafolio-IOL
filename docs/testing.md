@@ -27,6 +27,16 @@ Ejecuta todas las pruebas desde la raíz del repositorio:
 pytest
 ```
 
+Cuando necesites una corrida rápida sin la sobrecarga de cobertura puedes
+invocar Pytest anulando el valor de `addopts` definido en `pyproject.toml`:
+
+```bash
+pytest --override-ini addopts=''
+```
+
+Esto resulta útil para los ciclos de TDD locales o al depurar suites nuevas
+que no requieren medir cobertura.
+
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
 usa los stubs deterministas para mantener resultados reproducibles.
 
