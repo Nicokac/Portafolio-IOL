@@ -9,7 +9,6 @@ iolConn==0.4.2
 plotly==6.3.0
 matplotlib==3.10.6
 kaleido==0.2.1
-plotly-get-chrome>=0.1.0
 XlsxWriter==3.2.0
 tomli==2.0.1
 cryptography==41.0.3

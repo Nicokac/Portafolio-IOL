@@ -67,7 +67,7 @@ def test_fig_to_png_bytes_returns_none_and_warns_when_runtime_missing(
 
     class _Scope:
         def ensure_chrome(self) -> None:
-            raise export.ChromeNotFoundError("chromium not found")
+            raise OSError("chromium not found")
 
     monkeypatch.setattr(export, "_get_kaleido_scope", lambda: _Scope())
     monkeypatch.setattr(export.pio, "to_image", lambda *_args, **_kwargs: _DUMMY_PNG)
