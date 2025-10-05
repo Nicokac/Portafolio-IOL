@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import time
+import json
 import logging
-from uuid import uuid4
-
+import time
 from collections.abc import Sequence
 from contextlib import nullcontext
+from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 
@@ -51,6 +52,7 @@ from controllers.auth import build_iol_client
 
 
 logger = logging.getLogger(__name__)
+ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
 
 # Configuración de UI centralizada (tema y layout)
 init_ui()
@@ -124,6 +126,39 @@ def main(argv: list[str] | None = None):
         )
         if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
             logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
+    if not st.session_state.get("iol_startup_metric_logged"):
+        login_ts_raw = st.session_state.get("iol_login_ok_ts")
+        try:
+            login_ts = float(login_ts_raw) if login_ts_raw is not None else None
+        except (TypeError, ValueError):
+            login_ts = None
+        if login_ts is not None:
+            render_ts = time.time()
+            elapsed_ms = max(int((render_ts - login_ts) * 1000), 0)
+            event_name = "startup.render_portfolio_complete"
+            payload = {
+                "event": event_name,
+                "elapsed_ms": elapsed_ms,
+                "login_ts": login_ts,
+                "render_ts": render_ts,
+                "session_id": st.session_state.get("session_id"),
+            }
+            logger.info(event_name, extra=payload)
+            analysis_entry = dict(payload)
+            analysis_entry["logged_at"] = TimeProvider.now()
+            login_snapshot = TimeProvider.from_timestamp(login_ts)
+            render_snapshot = TimeProvider.from_timestamp(render_ts)
+            if login_snapshot:
+                analysis_entry["login_at"] = login_snapshot.text
+            if render_snapshot:
+                analysis_entry["render_at"] = render_snapshot.text
+            try:
+                with ANALYSIS_LOG_PATH.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(analysis_entry, ensure_ascii=False) + "\n")
+            except OSError as exc:
+                logger.warning("No se pudo escribir analysis.log: %s", exc)
+            st.session_state["iol_startup_metric_logged"] = True
+
     render_footer()
     render_health_sidebar()
 
