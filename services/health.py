@@ -1689,6 +1689,7 @@ def get_health_metrics() -> Dict[str, Any]:
         if not isinstance(raw_providers, Mapping):
             return {}
 
+        store = _store()
         providers: list[Dict[str, Any]] = []
         total_count = 0
         stale_total = 0
