@@ -108,6 +108,15 @@ def render_portfolio_exports(
 
         metric_keys = metric_selection or default_metric_keys or metrics_options[:5]
 
+        _render_export_summary(
+            metric_keys=metric_keys,
+            chart_keys=chart_selection,
+            include_rankings=include_rankings,
+            include_history=include_history,
+            ranking_limit=limit,
+            df_view=df_view,
+        )
+
         csv_bundle = create_csv_bundle(
             export_snapshot,
             metric_keys=metric_keys,
@@ -132,10 +141,14 @@ def render_portfolio_exports(
                 include_history=include_history,
                 limit=limit,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Failed to generate portfolio export workbook")
+            reason = str(exc).strip()
+            detail = f" ({reason})" if reason else ""
             st.warning(
-                "⚠️ No se pudo generar el Excel completo. Revise los logs para más detalles."
+                "⚠️ No se pudo generar el Excel completo{detail}. Revise los logs para más detalles.".format(
+                    detail=detail
+                )
             )
         else:
             st.download_button(
@@ -195,3 +208,63 @@ def df_to_frame(data) -> pd.DataFrame:
         return pd.DataFrame(data)
     except ValueError:
         return pd.DataFrame()
+
+
+def _render_export_summary(
+    *,
+    metric_keys: Sequence[str],
+    chart_keys: Sequence[str],
+    include_rankings: bool,
+    include_history: bool,
+    ranking_limit: int,
+    df_view: pd.DataFrame,
+) -> None:
+    """Renderiza un resumen compacto de los elementos incluidos en la exportación."""
+
+    metric_labels = [METRIC_LOOKUP[key].label for key in metric_keys if key in METRIC_LOOKUP]
+    chart_titles = [CHART_LOOKUP[key].title for key in chart_keys if key in CHART_LOOKUP]
+    extras: list[str] = []
+    if include_rankings:
+        extras.append(f"🏆 Rankings Top {ranking_limit}")
+    if include_history:
+        extras.append("⏱️ Evolución histórica")
+
+    st.markdown("#### 📊 Resumen antes de exportar")
+    cols = st.columns(3)
+
+    _render_summary_column(cols[0], "Métricas", metric_labels)
+    _render_summary_column(cols[1], "Gráficos", chart_titles)
+    _render_summary_column(cols[2], "Extras", extras, empty_text="Sin complementos")
+
+    st.caption("Vista previa de posiciones incluidas (máx. 5 filas)")
+    preview_df = df_view.head(5)
+    dataframe_fn = getattr(st, "dataframe", None)
+    if callable(dataframe_fn):
+        dataframe_fn(
+            preview_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:  # pragma: no cover - exercised via lightweight stubs in tests
+        st.write(preview_df)
+
+
+def _render_summary_column(
+    column,
+    title: str,
+    items: Sequence[str],
+    *,
+    empty_text: str = "Sin elementos seleccionados",
+) -> None:
+    items = list(items)
+    count = len(items)
+    column.metric(title, count)
+    if count:
+        preview = " · ".join(items[:3])
+        if count > 3:
+            preview += " · …"
+        target = column if hasattr(column, "caption") else st
+        target.caption(preview)
+    else:
+        target = column if hasattr(column, "caption") else st
+        target.caption(empty_text)

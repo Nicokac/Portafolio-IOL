@@ -135,10 +135,17 @@ def tab_badge_suffix(variant: BadgeVariant) -> str:
     return _BADGE_CONFIG[variant]["suffix"]
 
 
+def tab_badge_label(variant: BadgeVariant) -> str:
+    """Return the human readable label for the badge variant."""
+
+    return _BADGE_CONFIG[variant]["label"]
+
+
 __all__ = [
     "render_notification_badge",
     "render_risk_badge",
     "render_technical_badge",
     "render_earnings_badge",
     "tab_badge_suffix",
+    "tab_badge_label",
 ]
