@@ -13,6 +13,17 @@ if str(ROOT) not in sys.path:
 from services import health  # noqa: E402
 
 
+class FakeTime:
+    def __init__(self, start: float) -> None:
+        self.value = start
+
+    def advance(self, delta: float) -> None:
+        self.value += delta
+
+    def time(self) -> float:
+        return self.value
+
+
 def test_quote_provider_summary_handles_mixed_data(monkeypatch):
     fake_state: dict[str, dict] = {}
     monkeypatch.setattr(health, "st", SimpleNamespace(session_state=fake_state))
@@ -86,4 +97,58 @@ def test_record_snapshot_event_stores_backend_details(monkeypatch):
     assert event["action"] == "save"
     assert event["storage_id"] == "abc123"
     assert event["backend"]["name"] == "json"
+
+
+def test_session_monitoring_metrics(monkeypatch):
+    fake_state: dict[str, dict] = {}
+    monkeypatch.setattr(health, "st", SimpleNamespace(session_state=fake_state))
+
+    clock = FakeTime(1_700_000_000.0)
+    monkeypatch.setattr(health.time, "time", clock.time)
+
+    health.record_session_started("sess-1", metadata={"user": "alice", "empty": "  "})
+    clock.advance(2.0)
+    health.record_login_to_render(1.5, session_id="sess-1")
+    clock.advance(1.0)
+    health.record_http_error(500, method="GET", url="/api", detail=" boom ")
+    clock.advance(5.0)
+
+    metrics = health.get_health_metrics()
+    monitoring = metrics["session_monitoring"]
+
+    active = monitoring["active_sessions"]
+    assert active["count"] == 1
+    assert active["sessions"][0]["session_id"] == "sess-1"
+    assert active["sessions"][0]["metadata"]["user"] == "alice"
+    assert active["freshness"]["is_fresh"] is True
+
+    login_stats = monitoring["login_to_render"]
+    assert login_stats["count"] == 1
+    assert login_stats["avg"] == pytest.approx(1.5)
+    assert login_stats["last"]["session_id"] == "sess-1"
+    assert login_stats["freshness"]["is_fresh"] is True
+
+    http_errors = monitoring["http_errors"]
+    assert http_errors["count"] == 1
+    assert http_errors["last"]["status_code"] == 500
+    assert http_errors["last"]["detail"] == "boom"
+    assert http_errors["freshness"]["is_fresh"] is True
+
+
+def test_diagnostics_snapshot_summary(monkeypatch):
+    fake_state: dict[str, dict] = {}
+    monkeypatch.setattr(health, "st", SimpleNamespace(session_state=fake_state))
+
+    clock = FakeTime(1_800_000_000.0)
+    monkeypatch.setattr(health.time, "time", clock.time)
+
+    health.record_diagnostics_snapshot({"status": "ok", " empty ": ""}, source="engine")
+    clock.advance(10.0)
+
+    metrics = health.get_health_metrics()["diagnostics"]
+
+    assert metrics["latest"]["snapshot"]["status"] == "ok"
+    assert metrics["field_count"] == 1
+    assert metrics["latest"]["source"] == "engine"
+    assert metrics["freshness"]["is_fresh"] is True
 
