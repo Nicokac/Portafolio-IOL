@@ -51,7 +51,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.10.2)
+## CI Checklist (0.3.30.11)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -65,15 +65,16 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
  (o reutiliza `tmp_path` en las suites) y revisa que cada snapshot incluya los CSV (`kpis.csv`,
   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
   `analysis.xlsx`, el resumen `summary.csv` y el log consolidado `analysis.log` en la raíz del directorio de exportaciones.
-5. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
+5. **TTLs y salud visibles.** Ejecuta la app en modo headless y capturá el health sidebar para confirmar que cada proveedor muestra el TTL restante configurado en `CACHE_TTL_*`. Adjunta la captura o los logs en el pipeline.
+6. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
   confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
-  `analysis.log` estén adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
-6. **Puerta de seguridad.** Ejecuta `bandit -r application controllers services` para auditar llamadas inseguras
+  `analysis.log` (desde `~/.portafolio_iol/logs/`) estén adjuntos. Si falta alguno, la ejecución debe considerarse fallida.
+7. **Puerta de seguridad.** Ejecuta `bandit -r application controllers services` para auditar llamadas inseguras
   y `pip-audit --requirement requirements.txt --requirement requirements-dev.txt` para identificar
   dependencias vulnerables. Ambos comandos deben formar parte del pipeline y bloquear el merge ante
   hallazgos críticos.
-7. **Verificación del feed live.** Incluye un paso que ejecute `pytest tests/integration/test_quotes_flow.py`
-   (o el job equivalente) y aserte que la UI muestre la etiqueta "Hotfix Kaleido: fallback restaurado" cuando
+8. **Verificación del feed live.** Incluye un paso que ejecute `pytest tests/integration/test_quotes_flow.py`
+   (o el job equivalente) y aserte que la UI muestre la etiqueta "Telemetría y caché reforzadas" con el TTL restante cuando
    `/Titulos/Cotizacion` entrega precios en tiempo real y `analysis.log` queda actualizado.
 
 ### Suites legacy (deprecated)
@@ -119,12 +120,12 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.10.2 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
-el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio y documenta
-el hotfix de Kaleido para que los exports indiquen cuándo los PNG quedan pendientes. Las
+La release 0.3.30.11 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
+el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio y expone los TTL configurados para cada proveedor dentro del health sidebar.
+Las
 pruebas continúan reforzando el fallback jerárquico mientras verifican que el feed live quede etiquetado
-correctamente en la UI, que `analysis.log` capture cada screening y que los artefactos por país lleguen a
-los exports aun cuando Kaleido no esté instalado. Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
+correctamente en la UI, que `~/.portafolio_iol/logs/analysis.log` capture cada screening y que los artefactos por país lleguen a
+los exports aun cuando Kaleido no esté instalado (Excel siempre se genera con tablas aunque falten PNG). Para cubrirlos en QA combina pruebas automáticas y verificaciones manuales:
 
 - `pytest tests/test_sidebar_controls.py -k snapshot`: comprueba que los presets persistan en
   `st.session_state["controls_snapshot"]` y que el estado se limpie correctamente al cerrar sesión.
