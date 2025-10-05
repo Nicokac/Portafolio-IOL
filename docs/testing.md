@@ -61,7 +61,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.12)
+## CI Checklist (0.3.30.12.1)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -130,7 +130,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.12 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
+La release 0.3.30.12.1 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
 el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio, expone los TTL configurados para cada proveedor dentro del health sidebar y despliega un timeline de sesión con los hitos (login, screenings, exportaciones, fallbacks) asociados a cada ejecución.
 Las
 pruebas continúan reforzando el fallback jerárquico mientras verifican que el feed live quede etiquetado

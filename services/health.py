@@ -42,6 +42,7 @@ _LAST_HTTP_ERROR_KEY = "last_http_error"
 _SESSION_MONITORING_TTL_SECONDS = 300.0
 
 
+logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
 
 _PROVIDER_LABELS = {
@@ -283,27 +284,14 @@ def record_http_error(
     )
 
 
-def record_diagnostics_snapshot(
-    snapshot: Mapping[str, Any],
+def _normalize_diagnostics_snapshot_entry(
+    result: Mapping[str, Any],
     *,
     source: Optional[str] = None,
-) -> None:
-    """Persist a copy of the latest diagnostics snapshot."""
-
-    if not isinstance(snapshot, Mapping):
-        return
-
-    normalized_snapshot = _normalize_metadata(snapshot)
-    now = time.time()
-    entry: Dict[str, Any] = {"snapshot": normalized_snapshot, "ts": now}
-    source_text = str(source or "").strip()
-    if source_text:
-        entry["source"] = source_text
-def record_diagnostics_snapshot(result: Mapping[str, Any]) -> None:
-    """Persist the latest startup diagnostics summary."""
-
-    if not isinstance(result, Mapping):
-        result = {}
+    now: Optional[float] = None,
+) -> Dict[str, Any]:
+    if now is None:
+        now = time.time()
 
     status_text = str(result.get("status") or "unknown").strip() or "unknown"
     latency_value = _as_optional_float(result.get("latency"))
@@ -311,35 +299,39 @@ def record_diagnostics_snapshot(result: Mapping[str, Any]) -> None:
     if ts_value is None:
         ts_value = _as_optional_float(result.get("ts"))
     if ts_value is None:
-        ts_value = time.time()
+        ts_value = now
 
+    normalized_snapshot: Dict[str, Any] = {"status": status_text}
     entry: Dict[str, Any] = {"status": status_text, "ts": ts_value}
     if latency_value is not None:
         entry["latency"] = latency_value
+        normalized_snapshot["latency"] = latency_value
 
     component = result.get("component")
-    if isinstance(component, str):
-        component_text = component.strip()
+    if component is not None:
+        component_text = str(component).strip()
         if component_text:
             entry["component"] = component_text
+            normalized_snapshot["component"] = component_text
 
     message_value = result.get("message")
     if message_value is not None:
         message_text = _clean_detail(message_value)
         if message_text:
             entry["message"] = message_text
+            normalized_snapshot["message"] = message_text
 
     checks_raw = result.get("checks")
-    checks: list[Dict[str, Any]] = []
     if isinstance(checks_raw, Iterable) and not isinstance(
         checks_raw, (str, bytes, bytearray)
     ):
+        checks: list[Dict[str, Any]] = []
         for item in checks_raw:
             if not isinstance(item, Mapping):
                 continue
             check_entry: Dict[str, Any] = {}
             component_value = item.get("component") or item.get("name")
-            if component_value:
+            if component_value is not None:
                 component_text = str(component_value).strip()
                 if component_text:
                     check_entry["component"] = component_text
@@ -354,17 +346,56 @@ def record_diagnostics_snapshot(result: Mapping[str, Any]) -> None:
                 check_entry["message"] = detail_text
             if check_entry:
                 checks.append(check_entry)
-    if checks:
-        entry["checks"] = checks
+        if checks:
+            entry["checks"] = checks
+            normalized_snapshot["checks"] = checks
+
+    source_text = str(source or "").strip()
+    if source_text:
+        entry["source"] = source_text
+
+    entry["snapshot"] = normalized_snapshot
+    return entry
+
+
+def record_diagnostics_snapshot(
+    result: Mapping[str, Any],
+    *,
+    source: Optional[str] = None,
+) -> None:
+    """Persist the latest startup diagnostics summary."""
+
+    if not isinstance(result, Mapping):
+        result = {}
 
     store = _store()
-    store[_DIAGNOSTICS_SNAPSHOT_KEY] = entry
+    now = time.time()
 
-    _log_analysis_event(
-        "diagnostics_snapshot",
-        entry,
-        {"field_count": len(normalized_snapshot)},
-    )
+    try:
+        entry = _normalize_diagnostics_snapshot_entry(result, source=source, now=now)
+        store[_DIAGNOSTICS_SNAPSHOT_KEY] = entry
+
+        normalized_snapshot = entry.get("snapshot")
+        metrics: Dict[str, Any] = {}
+        if isinstance(normalized_snapshot, dict):
+            metrics["field_count"] = len(normalized_snapshot)
+
+        if metrics:
+            _log_analysis_event("diagnostics_snapshot", entry, metrics)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "⚠️ No se pudo registrar el diagnóstico de inicio",
+            exc_info=exc,
+        )
+        fallback_entry: Dict[str, Any] = {
+            "status": "unknown",
+            "ts": now,
+            "snapshot": {"status": "unknown"},
+        }
+        source_text = str(source or "").strip()
+        if source_text:
+            fallback_entry["source"] = source_text
+        store[_DIAGNOSTICS_SNAPSHOT_KEY] = fallback_entry
 
 
 def record_iol_refresh(success: bool, *, detail: Optional[str] = None) -> None:
