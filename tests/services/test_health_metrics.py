@@ -53,3 +53,16 @@ def test_quote_provider_summary_handles_mixed_data(monkeypatch):
     assert alpha["ok_ratio"] == pytest.approx(2 / 3)
     assert "rate_limit_count" in alpha
 
+
+def test_quote_provider_summary_returns_dict(monkeypatch):
+    fake_state: dict[str, dict] = {}
+    monkeypatch.setattr(health, "st", SimpleNamespace(session_state=fake_state))
+
+    store = health._store()
+    store["quote_providers"] = {"alpha": {"count": 1, "ok_count": 1}}
+
+    summary = health.get_health_metrics()["quote_providers"]
+
+    assert isinstance(summary, dict)
+    assert summary["providers"]
+
