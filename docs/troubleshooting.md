@@ -4,12 +4,15 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 ## Claves API
 
-> Nota: Esta guía corresponde a la release 0.3.30.13, centrada en observabilidad operativa. La aplicación ahora captura un snapshot de entorno,
+> Nota: Esta guía corresponde a la release 0.3.4.0, centrada en observabilidad operativa. La aplicación ahora captura un snapshot de entorno,
 > rota `analysis.log` diariamente, expone los TTL de caché y la telemetría de salud directamente en la UI y guía la descarga de logs/snapshots
 > desde el bloque **Descargas de observabilidad**. Cada screening registra el `session_tag` activo, documenta cuándo los PNG quedan pendientes por ausencia de Kaleido
 > y adjunta el entorno en `environment.json` junto con los logs comprimidos.
 
-## CI Checklist (0.3.30.13)
+### UI inconsistencies (v0.3.4.0)
+Si la interfaz muestra desalineaciones o badges incorrectos tras actualizar, forzar `st.cache_data.clear()` y recargar la aplicación.
+
+## CI Checklist (0.3.4.0)
 
 - **Suite legacy detectada.** Si el resumen de `pytest` menciona archivos dentro de `tests/legacy/`,
   ajustá el comando (`pytest --ignore=tests/legacy`) o revisá `norecursedirs` en `pyproject.toml` para
@@ -62,13 +65,13 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **El timeline de resiliencia o los TTL no persisten tras un rerun.**
   - **Síntomas:** Luego de presionar **⟳ Refrescar**, el bloque **Resiliencia de proveedores** se vacía o pierde la insignia con el TTL restante.
-  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.30.13 o superior, que `analysis.log` se regenere tras cada screening, que `CACHE_TTL_*` no estén fijados en valores extremos y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]` ni `st.session_state["ttl_seconds"]`.
+  - **Diagnóstico rápido:** Verifica que estés en la release 0.3.4.0 o superior, que `analysis.log` se regenere tras cada screening, que `CACHE_TTL_*` no estén fijados en valores extremos y que no haya código externo reescribiendo `st.session_state["resilience_timeline"]` ni `st.session_state["ttl_seconds"]`.
   - **Resolución:**
     1. Actualiza el repositorio y reinstala dependencias si trabajas con un build antiguo.
     2. Comprueba que el stub de tests (`tests/conftest.py`) conserve los datos de sesión entre llamadas; limpia `st.session_state` solo al finalizar las aserciones.
 
 - **La etiqueta "Observabilidad operativa" o la insignia de TTL no aparece en el sidebar.**
-  - **Síntomas:** El banner superior muestra la versión `0.3.30.13`, pero el bloque de salud no adjunta el mensaje, no muestra el TTL restante y las exportaciones omiten los PNG sin explicar el motivo.
+  - **Síntomas:** El banner superior muestra la versión `0.3.4.0`, pero el bloque de salud no adjunta el mensaje, no muestra el TTL restante y las exportaciones omiten los PNG sin explicar el motivo.
   - **Diagnóstico rápido:** Ejecuta `python tests/helpers/check_live_quotes.py` (o el script equivalente) para confirmar que el
     proveedor activo devuelve `last = price`, que `shared.version.DEFAULT_VERSION` coincide con la release actual, que `CACHE_TTL_*` esté inicializado en `shared.settings` y que `python -c "import kaleido"` falle cuando el entorno no dispone de la librería.
   - **Resolución:**
@@ -177,7 +180,7 @@ Esta guía resume los síntomas más comunes que reportan usuarios y QA al opera
 
 - **Las notificaciones internas no aparecen tras refrescar el dashboard.**
   - **Síntomas:** El menú **⚙️ Acciones** ejecuta `⟳ Refrescar`, pero no se muestra el toast "Proveedor primario restablecido" ni el mensaje de cierre de sesión.
-  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.30.13` en el header/footer, que el banner mencione "Observabilidad operativa" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
+  - **Diagnóstico rápido:** Verifica que la versión visible indique `0.3.4.0` en el header/footer, que el banner mencione "Observabilidad operativa" y que `st.toast` no esté sobreescrito en el entorno (suele ocurrir en notebooks o shells sin UI).
   - **Resolución:**
     1. Ejecuta la app en Streamlit 1.32+ (requerido para `st.toast`) o, en suites headless, garantiza que el stub defina el método antes de lanzar la UI.
     2. Confirma que `st.session_state["show_refresh_toast"]` y `st.session_state["logout_done"]` no queden fijados en `False` permanente por código externo; limpia la sesión (`st.session_state.clear()`) y vuelve a probar.
