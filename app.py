@@ -36,7 +36,7 @@ if not hasattr(st, "columns"):
 from shared.config import configure_logging, ensure_tokens_key
 from shared.settings import FEATURE_OPPORTUNITIES_TAB
 from shared.time_provider import TimeProvider
-from ui.ui_settings import init_ui
+from ui.ui_settings import init_ui, render_ui_controls
 from ui.header import render_header
 from ui.actions import render_action_menu
 from ui.health_sidebar import render_health_sidebar
@@ -161,16 +161,21 @@ def main(argv: list[str] | None = None):
     if fx_error:
         st.warning(fx_error)
     render_header(rates=fx_rates)
-    content_col, controls_col = st.columns([5, 2], gap="large")
-    with controls_col:
-        controls_area = st.container()
-        with controls_area:
+
+    controls_panel = st.container()
+    with controls_panel:
+        info_col, settings_col = st.columns([4, 2], gap="large")
+        with info_col:
             st.markdown("#### 🎛️ Panel de control")
             st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
             timestamp = TimeProvider.now()
             st.markdown(f"**🕒 {timestamp}**")
             render_action_menu()
-    main_col = content_col.container()
+        with settings_col:
+            render_ui_controls(container=settings_col)
+
+    controls_container = controls_panel.container()
+    main_col = st.container()
 
     cli = build_iol_client()
 
@@ -189,6 +194,7 @@ def main(argv: list[str] | None = None):
             portfolio_tab,
             cli,
             fx_rates,
+            controls_container=controls_container,
             **portfolio_section_kwargs,
         )
         with opportunities_tab:
@@ -200,6 +206,7 @@ def main(argv: list[str] | None = None):
             main_col,
             cli,
             fx_rates,
+            controls_container=controls_container,
             **portfolio_section_kwargs,
         )
         if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):

@@ -92,114 +92,165 @@ def _render_filter_overview(container, chips: list[str]) -> None:
     )
 
 
-def render_sidebar(all_symbols: list[str], available_types: list[str]) -> Controls:
-    st.sidebar.header("🎛️ Controles")
+def render_sidebar(
+    all_symbols: list[str],
+    available_types: list[str],
+    *,
+    container=None,
+) -> Controls:
+    host = container if container is not None else st.sidebar
 
     all_symbols = list(all_symbols or [])
     available_types = list(available_types or [])
 
     defaults = {
         "refresh_secs": st.session_state.get("refresh_secs", 30),
-        "hide_cash":    st.session_state.get("hide_cash", True),
-        "show_usd":     st.session_state.get("show_usd", False),
-        "order_by":     st.session_state.get("order_by", "valor_actual"),
-        "desc":         st.session_state.get("desc", True),
-        "top_n":        st.session_state.get("top_n", 20),
+        "hide_cash": st.session_state.get("hide_cash", True),
+        "show_usd": st.session_state.get("show_usd", False),
+        "order_by": st.session_state.get("order_by", "valor_actual"),
+        "desc": st.session_state.get("desc", True),
+        "top_n": st.session_state.get("top_n", 20),
         "selected_syms": st.session_state.get("selected_syms", all_symbols),
         "selected_types": st.session_state.get("selected_types", available_types),
         "symbol_query": st.session_state.get("symbol_query", ""),
     }
 
-    order_options = ["valor_actual", "pl", "pl_%", "pl_d", "chg_%", "costo", "ultimo", "cantidad", "simbolo"]
-    order_index = order_options.index(defaults["order_by"]) if defaults["order_by"] in order_options else 0
+    order_options = [
+        "valor_actual",
+        "pl",
+        "pl_%",
+        "pl_d",
+        "chg_%",
+        "costo",
+        "ultimo",
+        "cantidad",
+        "simbolo",
+    ]
+    order_index = (
+        order_options.index(defaults["order_by"])
+        if defaults["order_by"] in order_options
+        else 0
+    )
 
-    with st.sidebar.form("controls_form"):
-        st.markdown("### ⏱️ Actualización")
-        st.caption("Controlá cada cuánto se refrescan tablas, totales y gráficos.")
-        refresh_secs = st.slider(
-            "Intervalo (seg)",
-            5,
-            120,
-            defaults["refresh_secs"],
-            step=5,
-            help="Un intervalo menor mantiene los datos frescos pero puede aumentar el uso de recursos.",
-        )
+    if hasattr(host, "markdown"):
+        host.markdown("#### 🎛️ Controles")
+        if hasattr(host, "caption"):
+            host.caption("Configura filtros, orden y visualizaciones del portafolio.")
 
-        st.markdown("### 🔍 Filtros")
-        st.caption("Limitá la vista para enfocarte en activos específicos o categorías.")
-        hide_cash = st.checkbox(
-            "Ocultar IOLPORA / PARKING",
-            value=defaults["hide_cash"],
-            help="Quita el efectivo de las tablas y métricas para concentrarte en posiciones invertidas.",
-        )
-        symbol_query = st.text_input(
-            "Buscar símbolo",
-            value=defaults["symbol_query"],
-            placeholder="p.ej. NVDA",
-            help="Filtra dinámicamente la tabla principal y los gráficos según coincidencias con el ticker.",
-        )
-        selected_syms = st.multiselect(
-            "Filtrar por símbolo",
-            all_symbols,
-            default=[s for s in (defaults["selected_syms"] or []) if s in all_symbols] or all_symbols,
-            help="Los símbolos seleccionados se utilizarán en tablas, rankings y comparativas visuales.",
-        )
-        selected_types = st.multiselect(
-            "Filtrar por tipo",
-            available_types,
-            default=[t for t in (defaults["selected_types"] or available_types) if t in available_types],
-            help="Restringe la vista a clases de activo específicas, afectando gráficos y totales.",
+    form = host.form("controls_form") if hasattr(host, "form") else st.form("controls_form")
+
+    with form:
+        update_col, filter_col, currency_col, order_col, charts_col = form.columns(
+            (1.6, 3.2, 1.6, 1.6, 1.6)
         )
 
-        st.markdown("### 💱 Moneda")
-        st.caption("Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones.")
-        show_usd = st.toggle(
-            "Mostrar valores en USD CCL",
-            value=defaults["show_usd"],
-            help="Transforma los importes a dólares CCL en tablas, métricas y exportaciones.",
+        with update_col:
+            update_col.markdown("##### ⏱️ Actualización")
+            update_col.caption("Controlá cada cuánto se refrescan tablas, totales y gráficos.")
+            refresh_secs = update_col.slider(
+                "Intervalo (seg)",
+                5,
+                120,
+                defaults["refresh_secs"],
+                step=5,
+                help="Un intervalo menor mantiene los datos frescos pero puede aumentar el uso de recursos.",
+            )
+
+        with filter_col:
+            filter_col.markdown("##### 🔍 Filtros")
+            filter_col.caption(
+                "Limitá la vista para enfocarte en activos específicos o categorías."
+            )
+            hide_cash = filter_col.checkbox(
+                "Ocultar IOLPORA / PARKING",
+                value=defaults["hide_cash"],
+                help="Quita el efectivo de las tablas y métricas para concentrarte en posiciones invertidas.",
+            )
+            symbol_query = filter_col.text_input(
+                "Buscar símbolo",
+                value=defaults["symbol_query"],
+                placeholder="p.ej. NVDA",
+                help="Filtra dinámicamente la tabla principal y los gráficos según coincidencias con el ticker.",
+            )
+            selected_syms = filter_col.multiselect(
+                "Filtrar por símbolo",
+                all_symbols,
+                default=[
+                    s
+                    for s in (defaults["selected_syms"] or [])
+                    if s in all_symbols
+                ]
+                or all_symbols,
+                help="Los símbolos seleccionados se utilizarán en tablas, rankings y comparativas visuales.",
+            )
+            selected_types = filter_col.multiselect(
+                "Filtrar por tipo",
+                available_types,
+                default=[
+                    t
+                    for t in (defaults["selected_types"] or available_types)
+                    if t in available_types
+                ],
+                help="Restringe la vista a clases de activo específicas, afectando gráficos y totales.",
+            )
+
+        with currency_col:
+            currency_col.markdown("##### 💱 Moneda")
+            currency_col.caption(
+                "Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones."
+            )
+            show_usd = currency_col.toggle(
+                "Mostrar valores en USD CCL",
+                value=defaults["show_usd"],
+                help="Transforma los importes a dólares CCL en tablas, métricas y exportaciones.",
+            )
+
+        chips = _active_filter_chips(
+            hide_cash=hide_cash,
+            show_usd=show_usd,
+            symbol_query=symbol_query,
+            selected_syms=selected_syms,
+            all_symbols=all_symbols,
+            selected_types=selected_types,
+            available_types=available_types,
         )
 
-        _render_filter_overview(
-            st.sidebar,
-            _active_filter_chips(
-                hide_cash=hide_cash,
-                show_usd=show_usd,
-                symbol_query=symbol_query,
-                selected_syms=selected_syms,
-                all_symbols=all_symbols,
-                selected_types=selected_types,
-                available_types=available_types,
-            ),
-        )
+        with order_col:
+            order_col.markdown("##### ↕️ Orden")
+            order_col.caption(
+                "Definí cómo ordenarás la tabla de posiciones y rankings asociados."
+            )
+            order_by = order_col.selectbox(
+                "Ordenar por",
+                order_options,
+                index=order_index,
+                help="Aplica el criterio seleccionado tanto en la tabla principal como en exportaciones.",
+            )
+            desc = order_col.checkbox(
+                "Descendente",
+                value=defaults["desc"],
+                help="Mostrá primero los valores más altos (o más bajos si se desactiva).",
+            )
 
-        st.markdown("### ↕️ Orden")
-        st.caption("Definí cómo ordenarás la tabla de posiciones y rankings asociados.")
-        order_by = st.selectbox(
-            "Ordenar por",
-            order_options,
-            index=order_index,
-            help="Aplica el criterio seleccionado tanto en la tabla principal como en exportaciones.",
-        )
-        desc = st.checkbox(
-            "Descendente",
-            value=defaults["desc"],
-            help="Mostrá primero los valores más altos (o más bajos si se desactiva).",
-        )
+        with charts_col:
+            charts_col.markdown("##### 📈 Gráficos")
+            charts_col.caption(
+                "Controlá cuántos elementos se visualizan en rankings y gráficos destacados."
+            )
+            top_n = charts_col.slider(
+                "Top N",
+                5,
+                50,
+                defaults["top_n"],
+                step=5,
+                help="Determina la cantidad de barras o puntos que verás en los gráficos comparativos.",
+            )
 
-        st.markdown("### 📈 Gráficos")
-        st.caption("Controlá cuántos elementos se visualizan en rankings y gráficos destacados.")
-        top_n = st.slider(
-            "Top N",
-            5,
-            50,
-            defaults["top_n"],
-            step=5,
-            help="Determina la cantidad de barras o puntos que verás en los gráficos comparativos.",
-        )
+        _render_filter_overview(filter_col, chips)
 
-        c1, c2 = st.columns(2)
-        apply_btn = c1.form_submit_button("Aplicar")
-        reset_btn = c2.form_submit_button("Reset")
+        action_cols = form.columns(2)
+        apply_btn = action_cols[0].form_submit_button("Aplicar")
+        reset_btn = action_cols[1].form_submit_button("Reset")
 
     controls = Controls(
         refresh_secs=refresh_secs,

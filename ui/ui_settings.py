@@ -54,22 +54,30 @@ def init_ui() -> UISettings:
     return s
 
 
-def render_ui_controls() -> UISettings:
-    """Render controls in sidebar allowing the user to tweak layout/theme."""
+def render_ui_controls(container=None) -> UISettings:
+    """Render controls allowing the user to tweak layout/theme."""
+
+    host = container if container is not None else st
+
     current = get_settings()
-    with st.sidebar.expander("Apariencia"):
-        layout = st.radio(
-            "Layout",
-            ("wide", "centered"),
-            index=0 if current.layout == "wide" else 1,
-        )
-        theme = st.radio(
-            "Tema",
-            ("light", "dark"),
-            index=0 if current.theme == "light" else 1,
-        )
+
+    if hasattr(host, "markdown"):
+        host.markdown("##### Apariencia")
+
+    layout = host.radio(
+        "Layout",
+        ("wide", "centered"),
+        index=0 if current.layout == "wide" else 1,
+    )
+    theme = host.radio(
+        "Tema",
+        ("light", "dark"),
+        index=0 if current.theme == "light" else 1,
+    )
+
     if layout != current.layout or theme != current.theme:
         st.session_state["ui_layout"] = layout
         st.session_state["ui_theme"] = theme
         st.rerun()
+
     return get_settings()
