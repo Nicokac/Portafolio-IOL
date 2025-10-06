@@ -23,6 +23,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## v0.3.4.1 — Layout y Filtros de Análisis de Riesgo (Nov 2025)
+
+### Summary
+- El panel superior del dashboard de análisis se reposicionó como una franja horizontal fija, sobre
+  la grilla de contenido, liberando espacio lateral para los gráficos.
+- Se adoptó un layout de ancho completo en la vista principal para priorizar la lectura del heatmap
+  de riesgo y los indicadores asociados.
+- Los filtros del heatmap incorporan un selector por tipo de instrumento que permite acotar el
+  análisis sin depender de la antigua barra lateral.
+
+### Documentation
+- `README.md`, `docs/testing.md` y `banners/README` reflejan el nuevo layout horizontal y la
+  liberación del sidebar para controles.
+
 ## v0.3.4.0 — UI Experience Refresh (Oct 2025)
 
 ### Summary
