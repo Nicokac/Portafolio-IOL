@@ -541,6 +541,7 @@ def render_portfolio_section(
     cli,
     fx_rates,
     *,
+    controls_container: Any | None = None,
     view_model_service_factory: Callable[[], PortfolioViewModelService] | None = None,
     notifications_service_factory: Callable[[], NotificationsService] | None = None,
 ):
@@ -565,8 +566,13 @@ def render_portfolio_section(
         df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
         favorites = get_persistent_favorites()
 
-        controls: Controls = render_sidebar(all_symbols, available_types)
-        render_ui_controls()
+        controls: Controls = render_sidebar(
+            all_symbols,
+            available_types,
+            container=controls_container,
+        )
+        if controls_container is None:
+            render_ui_controls()
 
         refresh_secs = controls.refresh_secs
         snapshot = view_model_service.get_portfolio_view(

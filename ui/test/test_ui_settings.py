@@ -1,4 +1,3 @@
-import contextlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -24,10 +23,14 @@ def test_get_settings_reads_session_state(monkeypatch):
 
 
 def test_apply_settings_invokes_set_page_config(monkeypatch):
-    monkeypatch.setattr(st, "set_page_config", MagicMock())
-    monkeypatch.setattr(st, "markdown", MagicMock())
+    mock_st = SimpleNamespace(
+        set_page_config=MagicMock(),
+        markdown=MagicMock(),
+        session_state={},
+    )
+    monkeypatch.setattr(ui_settings, "st", mock_st)
     apply_settings(UISettings(layout="centered", theme="dark"))
-    st.set_page_config.assert_called_once_with(
+    mock_st.set_page_config.assert_called_once_with(
         page_title="IOL — Portafolio en vivo (solo lectura)",
         layout="centered",
     )
@@ -36,28 +39,27 @@ def test_apply_settings_invokes_set_page_config(monkeypatch):
 def test_render_ui_controls_reruns_on_changes(monkeypatch):
     state = {"ui_layout": "wide", "ui_theme": "dark"}
 
-    def expander(label):
-        return contextlib.nullcontext()
-
-    def radio(label, options, index=0):
-        return {"Layout": "centered", "Tema": "light"}[label]
-
     rerun_called = {"called": False}
 
     def rerun():
         rerun_called["called"] = True
 
+    class FakeContainer:
+        def markdown(self, *args, **kwargs):
+            return None
+
+        def radio(self, label, options, index=0):
+            return {"Layout": "centered", "Tema": "light"}[label]
+
     mock_st = SimpleNamespace(
         session_state=state,
-        sidebar=SimpleNamespace(expander=expander),
-        radio=radio,
         rerun=rerun,
         set_page_config=MagicMock(),
         markdown=MagicMock(),
     )
     monkeypatch.setattr(ui_settings, "st", mock_st)
 
-    settings = ui_settings.render_ui_controls()
+    settings = ui_settings.render_ui_controls(container=FakeContainer())
     assert rerun_called["called"] is True
     assert state["ui_layout"] == "centered"
     assert state["ui_theme"] == "light"
