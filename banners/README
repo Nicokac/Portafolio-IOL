@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: 0.3.30.13
-- Fecha de publicación: 2025-11-06
-- Mensaje destacado: "Observabilidad operativa"
+- Versión actual: v0.3.4.0
+- Fecha de publicación: 2025-10-15
+- Mensaje destacado: "UI Experience Refresh — Octubre 2025"
 - Elementos complementarios: incluir badge de `session_tag` activo, timeline resumido de eventos, acceso rápido a "Descargas de observabilidad" y recordatorio de logs rotados en la esquina inferior.

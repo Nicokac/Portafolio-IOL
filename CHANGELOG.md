@@ -23,6 +23,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## v0.3.4.0 — UI Experience Refresh (Oct 2025)
+
+### Summary
+Consolidación del roadmap UX/UI iniciado en la release 0.3.30.13, con foco en accesibilidad, jerarquía visual y coherencia narrativa dentro del panel de usuario.  
+La versión 0.3.4.0 representa una evolución estética y funcional del dashboard, manteniendo la estabilidad del backend y el enfoque en observabilidad operativa.
+
+### Highlights
+- **Refinamiento visual (Fase 1):** Reestructuración del encabezado en formato hero de dos columnas, nuevo resumen FX y reorganización del bloque de seguridad en la pantalla de login.  
+- **Experiencia interactiva (Fase 2):** Conversión del menú de acciones en panel persistente con tooltips, layout de doble columna con control fijo y health sidebar expandible con secciones delimitadas.  
+- **Personalización guiada (Fase 3):** Chips visuales para filtros activos, vista previa de exportaciones con métricas y fallbacks Kaleido reforzados, además de badges dinámicos por pestaña.  
+- Unificación de estilos, tamaños de fuente y espaciado entre secciones clave.  
+- Coherencia entre encabezado, footer y panel lateral bajo la narrativa “Observabilidad operativa”.
+
+### Testing
+- Validado con `python -m compileall` en módulos UI y layout actualizados.  
+- Ejecución parcial de `pytest --override-ini addopts=''` confirmando integridad de componentes.  
+- CI visual manual en entorno Streamlit (QA offline).
+
 ## [0.3.30.13] — Observabilidad reforzada en ejecución
 
 ### Added

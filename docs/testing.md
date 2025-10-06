@@ -38,9 +38,11 @@ Esto resulta útil para los ciclos de TDD locales o al depurar suites nuevas
 que no requieren medir cobertura.
 
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
-usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.30.13 añade
+usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.4.0 añade
 telemetría de entorno y rotación automática de `analysis.log`, por lo que los tests deben verificar
 que los snapshots y los logs comprimidos generados por la app se publiquen como artefactos.
+
+> Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
 
 ### Generadores aleatorios reproducibles
 
@@ -63,7 +65,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.30.13)
+## CI Checklist (0.3.4.0)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -133,7 +135,7 @@ frecuentes:
 
 ### Validación de snapshots y almacenamiento persistente
 
-La release 0.3.30.13 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
+La release 0.3.4.0 restablece la bitácora unificada, mantiene el flujo de cotizaciones en vivo, propaga
 el indicador de procedencia a `/Titulos/Cotizacion`, añade el país al view-model del portafolio, expone los TTL configurados para cada proveedor dentro del health sidebar y despliega un timeline de sesión con los hitos (login, screenings, exportaciones, fallbacks) asociados a cada ejecución.
 Las
 pruebas continúan reforzando el fallback jerárquico mientras verifican que el feed live quede etiquetado
