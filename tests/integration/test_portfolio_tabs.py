@@ -102,11 +102,15 @@ class _FakeStreamlit:
     def selectbox(self, label: str, options, index: int = 0, key: str | None = None, **_: object):
         self.selectboxes.append({"label": label, "options": list(options), "key": key})
         if not options:
-            return None
-        try:
-            return options[index]
-        except IndexError:
-            return options[0]
+            result = None
+        else:
+            try:
+                result = options[index]
+            except IndexError:
+                result = options[0]
+        if key is not None:
+            self.session_state[key] = result
+        return result
 
     def number_input(
         self,
@@ -355,7 +359,12 @@ def _base_dataframe() -> pd.DataFrame:
     )
 
 
-def _run_for_tab(tab_index: int, monkeypatch: pytest.MonkeyPatch) -> _FakeStreamlit:
+def _run_for_tab(
+    tab_index: int,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    selected_type: str | None = None,
+) -> _FakeStreamlit:
     df = _base_dataframe()
     controls = Controls(refresh_secs=45, top_n=3)
     favorites = _DummyFavorites(["GGAL"])
@@ -367,6 +376,8 @@ def _run_for_tab(tab_index: int, monkeypatch: pytest.MonkeyPatch) -> _FakeStream
     from ui import favorites as favorites_mod
 
     fake_st = _FakeStreamlit(radio_sequence=[tab_index])
+    if selected_type is not None:
+        fake_st.session_state["risk_selected_type"] = selected_type
     monkeypatch.setattr(portfolio_mod, "st", fake_st)
     portfolio_mod.reset_portfolio_services()
     monkeypatch.setattr(charts_mod, "st", fake_st)
@@ -378,7 +389,11 @@ def _run_for_tab(tab_index: int, monkeypatch: pytest.MonkeyPatch) -> _FakeStream
     monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     monkeypatch.setattr(portfolio_mod, "PortfolioService", lambda: object())
     monkeypatch.setattr(portfolio_mod, "TAService", lambda: ta_stub)
-    monkeypatch.setattr(portfolio_mod, "load_portfolio_data", lambda cli, svc: (df, ["GGAL", "AAPL"], ["ACCION", "CEDEAR"]))
+    monkeypatch.setattr(
+        portfolio_mod,
+        "load_portfolio_data",
+        lambda cli, svc: (df, ["GGAL", "AAPL"], ["ACCION", "CEDEAR", "BONO"]),
+    )
     monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda syms, types: controls)
     monkeypatch.setattr(portfolio_mod, "render_ui_controls", lambda: None)
     monkeypatch.setattr(portfolio_mod, "get_persistent_favorites", lambda: favorites)
@@ -435,6 +450,7 @@ def test_risk_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = _run_for_tab(2, monkeypatch)
     assert any(label.startswith("Volatilidad") for label, *_ in fake_st.metrics)
     assert any("VaR" in label for label, *_ in fake_st.metrics)
+    assert any(sb["label"] == "Tipo de activo a incluir" for sb in fake_st.selectboxes)
 
 
 def test_technical_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -442,3 +458,9 @@ def test_technical_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:
     keys = {call["kwargs"].get("key") for call in fake_st.plot_calls}
     assert "ta_chart" in keys
     assert fake_st.line_charts, "Expected backtest chart to be rendered"
+
+
+def test_risk_tab_warns_when_selected_type_has_no_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _run_for_tab(2, monkeypatch, selected_type="BONO")
+    assert any("No hay datos para el tipo seleccionado" in msg for msg in fake_st.warnings)
+    assert not fake_st.metrics

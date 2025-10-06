@@ -1,4 +1,5 @@
 import logging
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -62,6 +63,7 @@ def render_risk_analysis(
     favorites: FavoriteSymbols | None = None,
     *,
     notifications: NotificationFlags | None = None,
+    available_types: Sequence[str] | None = None,
 ):
     """Render correlation and risk analysis for the portfolio."""
     favorites = favorites or get_persistent_favorites()
@@ -92,12 +94,52 @@ def render_risk_analysis(
             help_text="Tus favoritos se sincronizan entre portafolio, riesgo, técnico y fundamental.",
         )
 
+    combined_types: set[str] = set()
+    if available_types:
+        combined_types.update(
+            str(t).strip()
+            for t in available_types
+            if isinstance(t, str) and str(t).strip()
+        )
+    if "tipo" in df_view:
+        combined_types.update(
+            str(t).strip()
+            for t in df_view["tipo"].dropna().unique()
+            if str(t).strip()
+        )
+    sorted_types = sorted(combined_types)
+    filtered_df = df_view
+    selected_type: str | None = None
+    if sorted_types:
+        type_options = ["Todos"] + sorted_types
+        current_selection = st.session_state.get("risk_selected_type")
+        if current_selection not in type_options:
+            current_selection = type_options[0]
+        selected_index = type_options.index(current_selection)
+        selected_type = st.selectbox(
+            "Tipo de activo a incluir",
+            type_options,
+            index=selected_index,
+            key="risk_selected_type",
+        )
+        if selected_type != "Todos":
+            if "tipo" in df_view:
+                filtered_df = df_view[df_view["tipo"].astype(str) == selected_type]
+            else:
+                filtered_df = df_view.iloc[0:0]
+            if filtered_df.empty:
+                st.warning("No hay datos para el tipo seleccionado.")
+                st.info("Seleccioná otro tipo para ver el análisis de correlación y riesgo.")
+                st.subheader("Análisis de Riesgo")
+                st.info("No hay símbolos en el portafolio para analizar.")
+                return
+
     corr_period = st.selectbox(
         "Calcular correlación sobre el último período:",
         ["3mo", "6mo", "1y", "2y", "5y"],
         index=2,
     )
-    portfolio_symbols = df_view["simbolo"].tolist()
+    portfolio_symbols = filtered_df["simbolo"].tolist()
     if len(portfolio_symbols) >= 2:
         corr_latency: float | None = None
         with st.spinner(f"Calculando correlación ({corr_period})…"):
@@ -225,7 +267,7 @@ def render_risk_analysis(
         else:
             returns_df = compute_returns(prices_df)
             weights = (
-                df_view.set_index("simbolo")["valor_actual"].astype(float)
+                filtered_df.set_index("simbolo")["valor_actual"].astype(float)
                 .reindex(returns_df.columns)
                 .dropna()
             )

@@ -139,8 +139,12 @@ class FakeStreamlit:
     def selectbox(self, label: str, options: Sequence[Any], index: int = 0, key: str | None = None, **_: Any) -> Any:
         self.selectbox_calls.append({"label": label, "options": list(options), "key": key})
         if label in self._selectbox_defaults:
-            return self._selectbox_defaults[label]
-        return options[index] if options else None
+            result = self._selectbox_defaults[label]
+        else:
+            result = options[index] if options else None
+        if key is not None:
+            self.session_state[key] = result
+        return result
 
     def multiselect(
         self,
@@ -627,6 +631,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
             "Escenario": "Leve",
             "Ventana para correlaciones móviles": "3 meses (63)",
             "Nivel de confianza para VaR/CVaR": "95%",
+            "Tipo de activo a incluir": "ACCION",
         },
     )
     risk_mod.st = fake_st
@@ -634,18 +639,32 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [100.0, 200.0]})
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["A1", "A2", "B"],
+            "valor_actual": [100.0, 150.0, 200.0],
+            "tipo": ["ACCION", "ACCION", "BONO"],
+        }
+    )
+
+    history_calls: list[dict[str, Any]] = []
 
     def fake_history(simbolos=None, period="1y"):
+        call = {"simbolos": list(simbolos or []), "period": period}
+        history_calls.append(call)
         if simbolos == ["S&P 500 (^GSPC)"] or simbolos == ["^GSPC"]:
             return pd.DataFrame({"^GSPC": [100.0, 102.0, 101.0, 103.0]})
-        return pd.DataFrame({"A": [10.0, 10.5, 10.2, 10.8], "B": [20.0, 19.5, 20.5, 21.0]})
+        assert set(simbolos or []) == {"A1", "A2"}, f"Unexpected symbols received: {simbolos}"
+        return pd.DataFrame({
+            "A1": [10.0, 10.5, 10.2, 10.8],
+            "A2": [20.0, 19.5, 20.5, 21.0],
+        })
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
     fake_port_ret = pd.Series([0.01, -0.02, 0.03])
-    asset_vols = pd.Series({"A": 0.12, "B": 0.09})
-    asset_drawdowns = pd.Series({"A": -0.2, "B": -0.1})
+    asset_vols = pd.Series({"A1": 0.12, "A2": 0.09})
+    asset_drawdowns = pd.Series({"A1": -0.2, "A2": -0.1})
     port_drawdown = -0.25
 
     monkeypatch.setattr(
@@ -660,7 +679,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
             1.1,
             0.05,
             0.07,
-            pd.Series({"A": 0.6, "B": 0.4}),
+                pd.Series({"A1": 0.6, "A2": 0.4}),
             fake_port_ret,
             asset_vols,
             asset_drawdowns,
@@ -674,7 +693,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
 
     rolling_corr_output = pd.DataFrame(
         {
-            "A↔B": [0.1, 0.2, 0.3],
+            "A1↔A2": [0.1, 0.2, 0.3],
         },
         index=pd.date_range("2024-01-01", periods=3, freq="D"),
     )
@@ -728,6 +747,14 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
     assert {"volatility_dist", "portfolio_drawdown", "beta_scatter", "rolling_corr"}.issubset(tags)
     assert any("CVaR" in label for label, *_ in fake_st.metrics)
+    labels = [call["label"] for call in fake_st.selectbox_calls]
+    assert "Tipo de activo a incluir" in labels
+    filtered_calls = [
+        call for call in history_calls if call["simbolos"] and not call["simbolos"][0].startswith("^")
+    ]
+    assert filtered_calls, "Expected history calls for portfolio symbols"
+    for call in filtered_calls:
+        assert set(call["simbolos"]) == {"A1", "A2"}, call
 
 
 def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -739,6 +766,7 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
             "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
             "Escenario": "Leve",
             "Nivel de confianza para VaR/CVaR": "95%",
+            "Tipo de activo a incluir": "Todos",
         },
     )
     risk_mod.st = fake_st
@@ -746,7 +774,9 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0]})
+    df_view = pd.DataFrame(
+        {"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]}
+    )
     def single_history(simbolos=None, period="1y"):
         if simbolos and simbolos[0] == "^GSPC":
             return pd.DataFrame({"^GSPC": [100.0, 101.0, 102.0]})
@@ -797,9 +827,45 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: DummyFigure("volatility_dist"))
 
     pm = risk_mod
-    pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
+    pm.render_risk_analysis(
+        df_view,
+        tasvc,
+        favorites=FavoriteSymbols({}),
+        available_types=["ACCION", "BONO"],
+    )
 
     assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
+
+
+def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import controllers.portfolio.risk as risk_mod
+
+    fake_st = FakeStreamlit(
+        radio_sequence=[],
+        selectbox_defaults={"Tipo de activo a incluir": "BONO"},
+    )
+    risk_mod.st = fake_st
+
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    df_view = pd.DataFrame(
+        {"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]}
+    )
+
+    def _should_not_run(*_, **__):
+        raise AssertionError("No debería consultarse histórico cuando no hay datos para el tipo")
+
+    tasvc = SimpleNamespace(portfolio_history=_should_not_run)
+
+    risk_mod.render_risk_analysis(
+        df_view,
+        tasvc,
+        favorites=FavoriteSymbols({}),
+        available_types=["ACCION", "BONO"],
+    )
+
+    assert any("No hay datos para el tipo seleccionado" in msg for msg in fake_st.warnings)
 def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
     fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]

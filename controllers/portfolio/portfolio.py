@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Any, Callable, Iterable, Mapping, cast
+from typing import Any, Callable, Iterable, Mapping, Sequence, cast
 
 import streamlit as st
 
@@ -262,7 +262,14 @@ def render_basic_tab(viewmodel, favorites, snapshot) -> None:
     )
 
 
-def render_risk_tab(df_view, tasvc: TAService, favorites, notifications: NotificationFlags) -> None:
+def render_risk_tab(
+    df_view,
+    tasvc: TAService,
+    favorites,
+    notifications: NotificationFlags,
+    *,
+    available_types: Sequence[str] | None = None,
+) -> None:
     """Render risk analysis information for the given snapshot."""
 
     render_risk_analysis(
@@ -270,6 +277,7 @@ def render_risk_tab(df_view, tasvc: TAService, favorites, notifications: Notific
         tasvc,
         favorites=favorites,
         notifications=notifications,
+        available_types=available_types,
     )
 
 
@@ -600,7 +608,13 @@ def render_portfolio_section(
         elif tab_idx == 1:
             render_advanced_analysis(df_view, tasvc)
         elif tab_idx == 2:
-            render_risk_tab(df_view, tasvc, favorites, notifications)
+            render_risk_tab(
+                df_view,
+                tasvc,
+                favorites,
+                notifications,
+                available_types=available_types,
+            )
         elif tab_idx == 3:
             render_fundamentals_tab(df_view, tasvc, favorites, notifications)
         else:
