@@ -6,25 +6,25 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.4.0)
+## Quick-start (release 0.3.4.1)
 
-La versión **0.3.4.0** culmina el roadmap de UI Experience Refresh iniciado en 0.3.30.13: reorganiza el encabezado en un hero de dos columnas, actualiza el login con mensajes de seguridad escaneables, convierte el menú de acciones en un panel persistente y simplifica la lectura del sidebar con agrupaciones progresivas. Los filtros activos ahora se resaltan con chips visibles, las exportaciones muestran un anticipo de métricas y se mantiene la coherencia visual con el footer y los badges del dashboard.
+La versión **0.3.4.1** extiende el roadmap de UI Experience Refresh iniciado en 0.3.30.13: reubica el panel superior en una franja horizontal fija, libera la barra lateral para el contenido principal y traslada los controles de riesgo al encabezado de la vista. El heatmap incorpora un selector por tipo de instrumento, se mantiene la coherencia visual con el footer y los badges del dashboard, y se garantiza el ancho completo del layout en la vista central.
 
-## Quick-start (release 0.3.4.0 — UI Experience Refresh)
+## Quick-start (release 0.3.4.1 — Layout y filtros de riesgo)
 
-La versión **0.3.4.0** refuerza los siguientes ejes:
-- El **header en formato hero** distribuye título, disclaimers y accesos directos en dos columnas, añade un resumen FX jerárquico y alinea los estilos con el mensaje "UI Experience Refresh — Octubre 2025".
-- La **pantalla de login** integra iconografía y copy compacto para reforzar las pautas de seguridad, mantiene el client salt visible y sincroniza la versión con el mensaje de observabilidad operativa.
-- El **panel de acciones** se vuelve persistente, añade tooltips descriptivos y conserva el espacio fijo para refresco y logout en resoluciones medianas.
-- El **health sidebar expandible** agrupa sus bloques en secciones plegables (diagnósticos, descargas, resiliencia) para facilitar una lectura escalonada sin perder detalle.
-- Los **controles de filtros y exportaciones** incluyen chips de filtros activos, resúmenes visuales de los artefactos y avisos explícitos cuando Kaleido está ausente.
-- La **CI Checklist reforzada** conserva los artefactos (`analysis.zip`, `analysis.xlsx`, `summary.csv`) y valida que los banners del login/sidebar destaquen "UI Experience Refresh" junto con la versión `0.3.4.0`.
+La versión **0.3.4.1** refuerza los siguientes ejes:
+- El **panel superior horizontal** ahora concentra KPIs, accesos rápidos y controles de refresco sin ocupar espacio lateral, lo que mantiene visible la narrativa de "Observabilidad operativa" aun en pantallas medianas.
+- La **pantalla de login** conserva el copy compacto de seguridad, muestra la versión `0.3.4.1` y enlaza el mensaje "Layout y filtros de análisis de riesgo" con el timestamp provisto por `TimeProvider`.
+- El **panel de acciones** permanece persistente pero comparte estilo con la barra horizontal para que el layout se adapte fluidamente a pantallas anchas.
+- El **health sidebar expandible** continúa dedicado a telemetría, mientras que la vista principal adopta **ancho completo** para priorizar el heatmap y los gráficos derivados.
+- Los **controles de riesgo** migran al encabezado del heatmap e incorporan un selector por tipo de instrumento que reemplaza los toggles de la barra lateral.
+- La **CI Checklist reforzada** sigue validando los artefactos (`analysis.zip`, `analysis.xlsx`, `summary.csv`) y ahora exige capturas del panel horizontal en sus estados responsive.
 
 ## Historial de versiones
 
-### Versión 0.3.4.0 — UI Experience Refresh
-Esta versión completa el roadmap de rediseño visual iniciado en 0.3.30.13.
-Incluye un refinamiento del encabezado, login y footer, una barra lateral más clara y nuevas ayudas contextuales para filtros y exportaciones.
+### Versión 0.3.4.1 — Layout y filtros de análisis de riesgo
+Esta versión profundiza el rediseño visual iniciado en 0.3.4.0.
+Incluye la relocalización del panel superior como franja horizontal, la adopción de un layout de ancho completo para el contenido de análisis y un filtro por tipo dentro del heatmap de riesgo.
 La actualización no introduce cambios funcionales en servicios, pero mejora la consistencia visual y la usabilidad general.
 El backend, las métricas y el sistema de caché mantienen compatibilidad plena con versiones anteriores.
 
@@ -44,8 +44,8 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.0` junto con
-   el mensaje "UI Experience Refresh — Octubre 2025" y el timestamp generado por `TimeProvider`, conservando la narrativa de observabilidad operativa. Abre el panel
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.1` junto con
+   el mensaje "Layout y filtros de análisis de riesgo" y el timestamp generado por `TimeProvider`, conservando la narrativa de observabilidad operativa. Abre el panel
    **Salud del sistema**: además del estado de cada proveedor verás el bloque **Snapshots y
    almacenamiento**, que expone la ruta activa del disco, el contador de recuperaciones desde snapshot,
    la insignia de TTL restante para `/Titulos/Cotizacion`, el resumen de cache hits, la latencia
@@ -77,7 +77,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.4.0 muestra el banner "UI Experience Refresh — Octubre 2025", mantiene el ZIP de CSV y
+   > 0.3.4.1 muestra el banner "Layout y filtros de análisis de riesgo", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
    > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
@@ -143,7 +143,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### CI Checklist (0.3.4.0)
+### CI Checklist (0.3.4.1)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
@@ -157,7 +157,8 @@ validar escenarios sin depender de módulos obsoletos.
    `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
    `analysis.xlsx`, el resumen `summary.csv` y el paquete de logs rotados (`analysis.log` más sus `.gz` diarios) en la raíz de `exports/ci`.
 5. **Audita TTLs y salud.** Ejecuta `streamlit run app.py` en modo headless (`--server.headless true`) y guarda una captura del health sidebar. Confirmá que cada proveedor muestre la insignia con el TTL restante y que el resumen coincida con los valores configurados en `CACHE_TTL_*`. Adjunta la captura o los logs en el pipeline.
-6. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
+6. **Captura el panel horizontal responsive.** Valida que el panel superior conserve alineación, tooltips y accesos rápidos tanto en desktop como en resoluciones medianas, incluyendo el selector de tipo del heatmap sin depender del sidebar.
+7. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
 
