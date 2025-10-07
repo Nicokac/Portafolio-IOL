@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.1
-- Fecha de publicación: 2025-11-05
-- Mensaje destacado: "Layout y filtros de análisis de riesgo"
-- Elementos complementarios: incluir badge de `session_tag` activo, timeline resumido de eventos, acceso rápido a "Descargas de observabilidad", recordatorio de logs rotados en la esquina inferior y mención al nuevo selector de tipo en el heatmap.
+- Versión actual: v0.3.4.2
+- Fecha de publicación: 2025-11-12
+- Mensaje destacado: "Visual Polish Pass"
+- Elementos complementarios: incluir badge de `session_tag` activo, timeline resumido de eventos, acceso rápido a "Descargas de observabilidad", recordatorio de logs rotados en la esquina inferior, mención al selector de tipo centrado en el heatmap y contraste reforzado en tarjetas clave.

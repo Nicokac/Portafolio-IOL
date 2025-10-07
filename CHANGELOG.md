@@ -23,6 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## v0.3.4.2 — Visual Polish Pass (Nov 2025)
+
+### Summary
+- Incremento de padding y márgenes clave para asegurar el respiro visual del panel superior y las
+  tarjetas de KPIs en resoluciones medianas.
+- Tarjetas contrastadas y tipografía reajustada para reforzar la jerarquía de información en los
+  indicadores del dashboard.
+- Alineación central consistente de los bloques del header y filtros, evitando saltos laterales en el
+  selector de riesgo.
+- Ajustes en el footer: espaciado, alineación de enlaces y consistencia con la narrativa “Observabilidad
+  operativa”.
+
 ## v0.3.4.1 — Layout y Filtros de Análisis de Riesgo (Nov 2025)
 
 ### Summary
