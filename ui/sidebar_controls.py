@@ -24,17 +24,36 @@ def _ensure_chip_styles(container) -> None:
                 margin: 0.25rem 0 1rem;
             }
             .sidebar-chip {
-                background: rgba(16, 163, 127, 0.08);
-                color: rgb(24, 79, 73);
+                background: rgba(16, 163, 127, 0.12);
+                background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+                color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text) 30%);
                 border-radius: 999px;
                 padding: 0.2rem 0.65rem;
                 font-size: 0.78rem;
                 font-weight: 600;
-                border: 1px solid rgba(16, 163, 127, 0.22);
+                border: 1px solid color-mix(in srgb, var(--color-accent) 32%, transparent);
                 display: inline-flex;
                 align-items: center;
                 gap: 0.35rem;
                 white-space: nowrap;
+                transition: background-color 150ms ease, border-color 150ms ease,
+                    box-shadow 150ms ease, color 150ms ease, transform 120ms ease;
+            }
+            .sidebar-chip:hover,
+            .sidebar-chip:focus-visible {
+                background: color-mix(in srgb, var(--color-accent) 24%, var(--color-bg) 76%);
+                border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+                color: color-mix(in srgb, var(--color-accent) 82%, var(--color-text) 18%);
+            }
+            .sidebar-chip:active {
+                background: color-mix(in srgb, var(--color-accent) 32%, var(--color-bg) 68%);
+                border-color: color-mix(in srgb, var(--color-accent) 58%, transparent);
+                color: color-mix(in srgb, var(--color-accent) 88%, var(--color-text) 12%);
+                transform: translateY(1px);
+            }
+            .sidebar-chip:focus-visible {
+                outline: none;
+                box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 35%, transparent);
             }
             .sidebar-chip__label {
                 line-height: 1.1;
@@ -80,7 +99,7 @@ def _render_filter_overview(container, chips: list[str]) -> None:
 
     _ensure_chip_styles(container)
     chip_html = "".join(
-        "<span class='sidebar-chip'>"
+        "<span class='sidebar-chip' tabindex='0' role='status'>"
         "<span class='sidebar-chip__label'>{label}</span>"
         "</span>".format(label=html.escape(label))
         for label in chips
