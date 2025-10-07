@@ -179,6 +179,10 @@ def render_sidebar(
     if flash_active:
         _ensure_flash_styles()
 
+    selected_types_state = st.session_state.get("selected_types")
+    if selected_types_state is None:
+        selected_types_state = st.session_state.get("selected_asset_types")
+
     defaults = {
         "refresh_secs": st.session_state.get("refresh_secs", 30),
         "hide_cash": st.session_state.get("hide_cash", True),
@@ -187,7 +191,9 @@ def render_sidebar(
         "desc": st.session_state.get("desc", True),
         "top_n": st.session_state.get("top_n", 20),
         "selected_syms": st.session_state.get("selected_syms", all_symbols),
-        "selected_types": st.session_state.get("selected_types", available_types),
+        "selected_types": selected_types_state
+        if selected_types_state is not None
+        else available_types,
         "symbol_query": st.session_state.get("symbol_query", ""),
     }
 
@@ -359,15 +365,19 @@ def render_sidebar(
         for k in asdict(controls).keys():
             st.session_state.pop(k, None)
         st.session_state["controls_snapshot"] = None
+        st.session_state.pop("selected_asset_types", None)
         st.rerun()
 
     if apply_btn:
         st.session_state.update(asdict(controls))
         st.session_state["controls_snapshot"] = asdict(controls)
         st.session_state[_FLASH_FLAG_KEY] = True
+        st.session_state["selected_asset_types"] = list(controls.selected_types)
         _show_apply_feedback()
 
     snap = st.session_state.get("controls_snapshot")
     if snap:
+        st.session_state["selected_asset_types"] = list(snap.get("selected_types", []))
         return Controls(**snap)
+    st.session_state["selected_asset_types"] = list(controls.selected_types)
     return controls
