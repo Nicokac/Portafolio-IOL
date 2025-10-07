@@ -204,7 +204,10 @@ def render_risk_analysis(
                     continue
 
                 subset_hist = hist_df[sorted(set(subset_symbols))]
-                fig = plot_correlation_heatmap(subset_hist)
+                fig = plot_correlation_heatmap(
+                    subset_hist,
+                    title=f"Matriz de Correlación — {type_name}",
+                )
                 if fig:
                     st.plotly_chart(
                         fig,

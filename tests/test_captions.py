@@ -34,6 +34,7 @@ def test_render_basic_section_captions(monkeypatch):
         lambda df, top_n: {k: object() for k in ["pl_topn", "donut_tipo", "dist_tipo", "pl_diario"]},
     )
     monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: None, raising=False)
     monkeypatch.setattr(charts_mod.st, "plotly_chart", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod.st, "info", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod.st, "columns", lambda n: (DummyCtx(), DummyCtx()))
@@ -62,12 +63,17 @@ def test_render_risk_analysis_caption(monkeypatch):
     monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "selectbox", lambda *a, **k: "1y")
     monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
+    monkeypatch.setattr(risk_mod.st, "container", lambda *a, **k: DummyCtx(), raising=False)
     monkeypatch.setattr(risk_mod.st, "plotly_chart", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "info", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "warning", lambda *a, **k: None)
     mock_caption = MagicMock()
     monkeypatch.setattr(risk_mod.st, "caption", mock_caption)
-    monkeypatch.setattr(risk_mod, "plot_correlation_heatmap", lambda df: object())
+    monkeypatch.setattr(
+        risk_mod,
+        "plot_correlation_heatmap",
+        lambda df, **kwargs: object(),
+    )
     monkeypatch.setattr(risk_mod, "compute_returns", lambda df: pd.DataFrame())
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
