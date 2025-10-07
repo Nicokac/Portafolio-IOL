@@ -24,13 +24,13 @@ def _ensure_chip_styles(container) -> None:
                 margin: 0.25rem 0 1rem;
             }
             .sidebar-chip {
-                background: rgba(16, 163, 127, 0.12);
-                color: rgb(7, 89, 73);
+                background: rgba(16, 163, 127, 0.08);
+                color: rgb(24, 79, 73);
                 border-radius: 999px;
                 padding: 0.2rem 0.65rem;
                 font-size: 0.78rem;
                 font-weight: 600;
-                border: 1px solid rgba(16, 163, 127, 0.35);
+                border: 1px solid rgba(16, 163, 127, 0.22);
                 display: inline-flex;
                 align-items: center;
                 gap: 0.35rem;
@@ -132,8 +132,20 @@ def render_sidebar(
         else 0
     )
 
+    body_opened = False
+    wrapper_opened = False
     if hasattr(host, "markdown"):
-        host.markdown("#### 🎛️ Controles")
+        host.markdown(
+            "<div class='control-panel__body control-panel__body--sidebar'>",
+            unsafe_allow_html=True,
+        )
+        body_opened = True
+        host.markdown(
+            "<div class='control-panel__section control-panel__section--sidebar'>",
+            unsafe_allow_html=True,
+        )
+        wrapper_opened = True
+        host.markdown("### 🎛️ Controles")
         if hasattr(host, "caption"):
             host.caption("Configura filtros, orden y visualizaciones del portafolio.")
 
@@ -145,7 +157,7 @@ def render_sidebar(
         )
 
         with update_col:
-            update_col.markdown("##### ⏱️ Actualización")
+            update_col.markdown("### ⏱️ Actualización")
             update_col.caption("Controlá cada cuánto se refrescan tablas, totales y gráficos.")
             refresh_secs = update_col.slider(
                 "Intervalo (seg)",
@@ -157,7 +169,7 @@ def render_sidebar(
             )
 
         with filter_col:
-            filter_col.markdown("##### 🔍 Filtros")
+            filter_col.markdown("### 🔍 Filtros")
             filter_col.caption(
                 "Limitá la vista para enfocarte en activos específicos o categorías."
             )
@@ -195,7 +207,7 @@ def render_sidebar(
             )
 
         with currency_col:
-            currency_col.markdown("##### 💱 Moneda")
+            currency_col.markdown("### 💱 Moneda")
             currency_col.caption(
                 "Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones."
             )
@@ -216,7 +228,7 @@ def render_sidebar(
         )
 
         with order_col:
-            order_col.markdown("##### ↕️ Orden")
+            order_col.markdown("### ↕️ Orden")
             order_col.caption(
                 "Definí cómo ordenarás la tabla de posiciones y rankings asociados."
             )
@@ -233,7 +245,7 @@ def render_sidebar(
             )
 
         with charts_col:
-            charts_col.markdown("##### 📈 Gráficos")
+            charts_col.markdown("### 📈 Gráficos")
             charts_col.caption(
                 "Controlá cuántos elementos se visualizan en rankings y gráficos destacados."
             )
@@ -251,6 +263,11 @@ def render_sidebar(
         action_cols = form.columns(2)
         apply_btn = action_cols[0].form_submit_button("Aplicar")
         reset_btn = action_cols[1].form_submit_button("Reset")
+
+    if wrapper_opened:
+        host.markdown("</div>", unsafe_allow_html=True)
+    if body_opened:
+        host.markdown("</div>", unsafe_allow_html=True)
 
     controls = Controls(
         refresh_secs=refresh_secs,
