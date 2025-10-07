@@ -395,7 +395,6 @@ def _run_for_tab(
         lambda cli, svc: (df, ["GGAL", "AAPL"], ["ACCION", "CEDEAR", "BONO"]),
     )
     monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda syms, types: controls)
-    monkeypatch.setattr(portfolio_mod, "render_ui_controls", lambda: None)
     monkeypatch.setattr(portfolio_mod, "get_persistent_favorites", lambda: favorites)
     monkeypatch.setattr(portfolio_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(portfolio_mod, "render_favorite_toggle", lambda *a, **k: None)
