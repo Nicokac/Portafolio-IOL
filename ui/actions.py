@@ -42,17 +42,24 @@ def render_action_menu(container=None) -> None:
         st.session_state["show_refresh_toast"] = True
         st.rerun()
 
-    if st.session_state.pop("logout_pending", False):
-        with st.spinner("Cerrando sesión..."):
-            try:
+    if st.session_state.get("logout_pending", False):
+        st.markdown(
+            "<div class='control-panel__banner control-panel__banner--logout fade-out'>"
+            "Iniciando cierre de sesión..."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.session_state.pop("logout_pending", None)
+        try:
+            with st.spinner("Cerrando sesión..."):
                 auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
-            except AppError as err:
-                st.error(str(err))
-                st.stop()
-            except Exception:
-                logger.exception("Error inesperado al cerrar sesión")
-                st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
-                st.stop()
+        except AppError as err:
+            st.error(str(err))
+            st.stop()
+        except Exception:
+            logger.exception("Error inesperado al cerrar sesión")
+            st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
+            st.stop()
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

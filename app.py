@@ -121,6 +121,41 @@ st.markdown(
             margin-bottom: 0;
         }
 
+        .control-panel__banner {
+            padding: 0.85rem 1.2rem;
+            border-radius: 0.95rem;
+            background: rgba(16, 163, 127, 0.12);
+            border: 1px solid rgba(16, 163, 127, 0.28);
+            color: rgb(7, 65, 55);
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .control-panel__banner--logout {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .control-panel__banner--logout::before {
+            content: "\1F512";
+        }
+
+        .fade-out {
+            animation: fade-out 0.9s ease-in forwards;
+            animation-delay: 0.9s;
+        }
+
+        @keyframes fade-out {
+            0% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0;
+            }
+        }
+
         .control-panel__actions .stButton button {
             border-radius: 999px;
             background: rgba(16, 163, 127, 0.12);
