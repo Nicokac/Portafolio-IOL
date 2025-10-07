@@ -73,7 +73,7 @@ def render_footer():
             <div class='footer-column'>
                 <div class='footer-title'>Resumen de release</div>
                 <div class='footer-meta'>
-                    <p><strong>v0.3.4.3</strong> Layout consolidado y controles unificados.</p>
+                    <p><strong>v0.3.4.3.1</strong> Sidebar vertical y header sin bloques redundantes.</p>
                     <p>Explorá el tab Monitoreo para revisar el healthcheck completo.</p>
                 </div>
             </div>

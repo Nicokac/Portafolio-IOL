@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## v0.3.4.3.1 — Sidebar Controls & Header Cleanup (Nov 2025)
+
+### Summary
+- Se eliminó el bloque redundante de “Enlaces útiles” del encabezado para mantener el foco en el título y las cotizaciones FX.
+- Los controles del sidebar ahora se presentan en tarjetas apiladas verticalmente con mayor separación y legibilidad.
+- Release de mantenimiento visual sin cambios funcionales en la lógica del portafolio.
+
 ## v0.3.4.3 — Layout Consolidation & Sidebar Unification (Nov 2025)
 
 ### Summary

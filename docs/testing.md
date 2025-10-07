@@ -38,6 +38,19 @@ Esto resulta útil para los ciclos de TDD locales o al depurar suites nuevas
 que no requieren medir cobertura.
 
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
+usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.4.3 (y el pulido
+0.3.4.3.1) consolida la telemetría dentro de la pestaña Monitoreo, mantiene la rotación automática de
+`analysis.log` y añade verificaciones visuales sobre el sidebar unificado, el badge global de estado y
+el bloque de enlaces del footer —ahora únicamente en el footer—, por lo que los tests deben asegurar
+que los snapshots y los logs comprimidos generados por la app se publiquen como artefactos.
+
+> Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
+
+### Pruebas manuales sugeridas (0.3.4.3.1)
+
+1. **Sidebar de controles unificado.** Abrí la aplicación en resoluciones desktop y medianas para validar que el formulario de filtros y el contenedor **⚙️ Configuración general** conviven en la barra lateral con tarjetas apiladas verticalmente, chips activos, tooltips y los botones de refresco/cierre funcionando sin desbordes horizontales.
+2. **Pestaña Monitoreo activa.** Navegá a la pestaña **Monitoreo** y confirmá que el healthcheck conserva las secciones de dependencias, snapshots, oportunidades y diagnósticos, registrando TTLs y latencias con la misma profundidad que el antiguo sidebar.
+3. **Badge global y footer.** Revisá que bajo el encabezado principal aparezca el badge de estado general y que el bloque de “Enlaces útiles” sólo esté presente dentro del footer con el contraste reducido en los metadatos.
 usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.4.3 consolida la
 telemetría dentro de la pestaña Monitoreo, mantiene la rotación automática de `analysis.log` y
 añade verificaciones visuales sobre el sidebar unificado, el badge global de estado y el nuevo bloque
@@ -73,6 +86,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
+## CI Checklist (0.3.4.3.1)
 ## CI Checklist (0.3.4.3)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y

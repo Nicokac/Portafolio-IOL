@@ -6,6 +6,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Quick-start (release 0.3.4.3.1 — Sidebar Controls & Header Cleanup)
+
+La versión **0.3.4.3.1** es un refinamiento visual sobre la base de 0.3.4.3: elimina el bloque redundante
+de enlaces del encabezado y reorganiza todos los controles del sidebar en tarjetas apiladas con mejor
+espaciado. No introduce cambios funcionales, pero mejora la lectura en pantallas angostas y mantiene
+la paleta suave estrenada en releases anteriores.
+
 ## Quick-start (release 0.3.4.3 — Layout Consolidation & Sidebar Unification)
 
 La versión **0.3.4.3** consolida el trabajo de UI Experience Refresh reubicando todos los filtros y controles en la barra lateral. El panel superior desaparece para liberar el ancho completo del portafolio, se estrena un badge global de estado bajo el encabezado y el healthcheck migra a la nueva pestaña **Monitoreo**, manteniendo toda la telemetría en un espacio dedicado.
@@ -18,9 +25,15 @@ La versión **0.3.4.3** refuerza los siguientes ejes:
 - La pestaña **Monitoreo** reemplaza al antiguo health sidebar y ofrece el healthcheck completo junto a historiales y diagnósticos.
 - El **footer** añade un bloque de enlaces útiles que enlaza documentación y soporte en una tarjeta destacada con menor contraste para los metadatos.
 
-> Desde la versión 0.3.4.3 el histórico "health sidebar" se encuentra dentro de la pestaña **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
+> Desde la versión 0.3.4.3 (y su actualización 0.3.4.3.1) el histórico "health sidebar" se encuentra dentro de la pestaña **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
 
 ## Historial de versiones
+
+### Versión 0.3.4.3.1 — Sidebar Controls & Header Cleanup
+La actualización 0.3.4.3.1 pule la interfaz presentada en 0.3.4.3: remueve el bloque duplicado de "Enlaces útiles" del encabezado,
+deja la cabecera centrada en el título y el badge de salud, y reorganiza el formulario del sidebar en tarjetas verticales con
+mejor separación entre secciones. No hay cambios en servicios, autenticación ni cálculos de portafolio; todo el énfasis recae en
+la legibilidad y el orden visual.
 
 ### Versión 0.3.4.3 — Layout Consolidation & Sidebar Unification
 La release 0.3.4.3 elimina el panel superior para expandir la vista del portafolio, consolida filtros y acciones en la barra lateral y traslada el healthcheck a la pestaña Monitoreo con el mismo nivel de detalle disponible previamente.
@@ -54,7 +67,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.3` junto con
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.3.1` junto con
    el mensaje "Layout Consolidation & Sidebar Unification" y el timestamp generado por `TimeProvider`.
    Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud
    y accedé a la pestaña **Monitoreo**: allí encontrarás los mismos bloques de telemetría,
@@ -83,6 +96,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
+   > 0.3.4.3.1 muestra el banner "Layout Consolidation & Sidebar Unification", mantiene el ZIP de CSV y
    > 0.3.4.3 muestra el banner "Layout Consolidation & Sidebar Unification", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
@@ -149,6 +163,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
+### CI Checklist (0.3.4.3.1)
 ### CI Checklist (0.3.4.3)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
