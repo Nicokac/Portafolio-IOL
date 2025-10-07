@@ -9,6 +9,8 @@ import streamlit as st
 from domain.models import Controls
 
 _CHIP_STYLE_KEY = "_sidebar_filter_chip_css"
+_FLASH_STYLE_KEY = "_sidebar_controls_flash_css"
+_FLASH_FLAG_KEY = "_sidebar_controls_flash_flag"
 
 
 def _ensure_chip_styles(container) -> None:
@@ -44,6 +46,44 @@ def _ensure_chip_styles(container) -> None:
         unsafe_allow_html=True,
     )
     st.session_state[_CHIP_STYLE_KEY] = True
+
+
+def _ensure_flash_styles() -> None:
+    if st.session_state.get(_FLASH_STYLE_KEY):
+        return
+    st.markdown(
+        """
+        <style>
+            .control-panel__section--flash {
+                animation: sidebar-controls-flash 1.6s ease-out;
+            }
+            @keyframes sidebar-controls-flash {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(16, 163, 127, 0.45);
+                    background-color: rgba(16, 163, 127, 0.12);
+                }
+                60% {
+                    box-shadow: 0 0 0 6px rgba(16, 163, 127, 0);
+                    background-color: rgba(16, 163, 127, 0.06);
+                }
+                100% {
+                    box-shadow: 0 0 0 0 rgba(16, 163, 127, 0);
+                    background-color: transparent;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.session_state[_FLASH_STYLE_KEY] = True
+
+
+def _show_apply_feedback() -> None:
+    message = "Filtros aplicados"
+    if hasattr(st, "toast"):
+        st.toast(message, icon="✅")
+    elif hasattr(st, "info"):
+        st.info(message)
 
 
 def _active_filter_chips(
@@ -103,6 +143,10 @@ def render_sidebar(
     all_symbols = list(all_symbols or [])
     available_types = list(available_types or [])
 
+    flash_active = bool(st.session_state.get(_FLASH_FLAG_KEY))
+    if flash_active:
+        _ensure_flash_styles()
+
     defaults = {
         "refresh_secs": st.session_state.get("refresh_secs", 30),
         "hide_cash": st.session_state.get("hide_cash", True),
@@ -140,8 +184,11 @@ def render_sidebar(
             unsafe_allow_html=True,
         )
         body_opened = True
+        wrapper_classes = "control-panel__section control-panel__section--sidebar"
+        if flash_active:
+            wrapper_classes += " control-panel__section--flash"
         host.markdown(
-            "<div class='control-panel__section control-panel__section--sidebar'>",
+            "<div class='{classes}'>".format(classes=wrapper_classes),
             unsafe_allow_html=True,
         )
         wrapper_opened = True
@@ -268,6 +315,8 @@ def render_sidebar(
         host.markdown("</div>", unsafe_allow_html=True)
     if body_opened:
         host.markdown("</div>", unsafe_allow_html=True)
+    if flash_active:
+        st.session_state.pop(_FLASH_FLAG_KEY, None)
 
     controls = Controls(
         refresh_secs=refresh_secs,
@@ -290,6 +339,8 @@ def render_sidebar(
     if apply_btn:
         st.session_state.update(asdict(controls))
         st.session_state["controls_snapshot"] = asdict(controls)
+        st.session_state[_FLASH_FLAG_KEY] = True
+        _show_apply_feedback()
 
     snap = st.session_state.get("controls_snapshot")
     if snap:
