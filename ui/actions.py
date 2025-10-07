@@ -11,20 +11,30 @@ from shared.errors import AppError
 logger = logging.getLogger(__name__)
 
 
-def render_action_menu() -> None:
+def render_action_menu(container=None) -> None:
     """Render refresh and logout actions in a compact control panel."""
 
-    action_panel = st.container(border=True)
-    with action_panel:
-        st.markdown("#### ⚙️ Acciones rápidas")
+    host = container if container is not None else st.container(border=True)
+    with host:
+        st.markdown(
+            "<div class='control-panel__section control-panel__actions'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("### ⚙️ Acciones rápidas")
         st.caption("Mantén esta sección a la vista para actuar sin perder contexto.")
         c1, c2 = st.columns(2)
-        if c1.button("⟳ Refrescar", width="stretch"):
+        if c1.button("⟳ Refrescar", width="stretch", type="secondary"):
             st.session_state["refresh_pending"] = True
             st.rerun()
-        if c2.button("🔒 Cerrar sesión", width="stretch", help="Cierra inmediatamente tu sesión actual"):
+        if c2.button(
+            "🔒 Cerrar sesión",
+            width="stretch",
+            help="Cierra inmediatamente tu sesión actual",
+            type="secondary",
+        ):
             st.session_state["logout_pending"] = True
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.pop("refresh_pending", False):
         with st.spinner("Actualizando datos..."):

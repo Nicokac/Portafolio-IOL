@@ -19,7 +19,7 @@ if not hasattr(st, "stop"):
     st.stop = lambda: None  # type: ignore[attr-defined]
 
 if not hasattr(st, "container"):
-    st.container = lambda: nullcontext()  # type: ignore[attr-defined]
+    st.container = lambda *_, **__: nullcontext()  # type: ignore[attr-defined]
 
 if not hasattr(st, "columns"):
     def _dummy_columns(spec: Sequence[int] | int | None = None, *args, **kwargs):
@@ -59,6 +59,66 @@ ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
 
 # Configuración de UI centralizada (tema y layout)
 init_ui()
+
+st.markdown(
+    """
+    <style>
+        [data-testid="block-container"] {
+            max-width: 1100px;
+            margin-left: auto;
+            margin-right: auto;
+            padding-top: 3.5rem;
+        }
+
+        .control-panel__body {
+            background: rgba(15, 23, 42, 0.06);
+            border-radius: 1.25rem;
+            padding: 1.75rem 2rem;
+        }
+
+        .control-panel__body--sidebar {
+            padding: 1.5rem 1.75rem;
+        }
+
+        .control-panel__section {
+            background: rgba(15, 23, 42, 0.04);
+            border-radius: 1rem;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.4rem;
+        }
+
+        .control-panel__section:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-panel__actions .stButton button {
+            border-radius: 999px;
+            background: rgba(16, 163, 127, 0.12);
+            border: 1px solid rgba(16, 163, 127, 0.28);
+            color: rgb(11, 83, 69);
+        }
+
+        .control-panel__actions .stButton button:hover {
+            background: rgba(16, 163, 127, 0.18);
+            border-color: rgba(16, 163, 127, 0.35);
+            color: rgb(7, 65, 55);
+        }
+
+        .control-panel__actions .stButton button:focus {
+            box-shadow: 0 0 0 0.2rem rgba(16, 163, 127, 0.25);
+        }
+
+        .control-panel__body .stCaption, .control-panel__section .stCaption {
+            color: rgba(15, 23, 42, 0.65);
+        }
+
+        .control-panel__section + .control-panel__section {
+            margin-top: 0.2rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -162,19 +222,30 @@ def main(argv: list[str] | None = None):
         st.warning(fx_error)
     render_header(rates=fx_rates)
 
-    controls_panel = st.container()
+    controls_panel = st.container(border=True)
     with controls_panel:
+        st.markdown("<div class='control-panel__body'>", unsafe_allow_html=True)
         info_col, settings_col = st.columns([4, 2], gap="large")
         with info_col:
-            st.markdown("#### 🎛️ Panel de control")
-            st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
-            timestamp = TimeProvider.now()
-            st.markdown(f"**🕒 {timestamp}**")
-            render_action_menu()
+            summary_section = st.container()
+            with summary_section:
+                st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+                st.markdown("### 🎛️ Panel de control")
+                st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
+                timestamp = TimeProvider.now()
+                st.markdown(f"**🕒 {timestamp}**")
+                st.markdown("</div>", unsafe_allow_html=True)
+            actions_section = st.container()
+            render_action_menu(container=actions_section)
         with settings_col:
-            render_ui_controls(container=settings_col)
+            ui_section = st.container()
+            with ui_section:
+                st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+                render_ui_controls(container=ui_section)
+                st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    controls_container = controls_panel.container()
+    controls_container = st.container(border=True)
     main_col = st.container()
 
     cli = build_iol_client()
@@ -245,7 +316,8 @@ def main(argv: list[str] | None = None):
             st.session_state["iol_startup_metric_logged"] = True
 
     render_footer()
-    render_health_sidebar()
+    if hasattr(st, "sidebar"):
+        render_health_sidebar()
 
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()

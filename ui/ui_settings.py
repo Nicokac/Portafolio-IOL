@@ -62,7 +62,7 @@ def render_ui_controls(container=None) -> UISettings:
     current = get_settings()
 
     if hasattr(host, "markdown"):
-        host.markdown("##### Apariencia")
+        host.markdown("### Apariencia")
 
     layout = host.radio(
         "Layout",
@@ -75,9 +75,12 @@ def render_ui_controls(container=None) -> UISettings:
         index=0 if current.theme == "light" else 1,
     )
 
-    if layout != current.layout or theme != current.theme:
-        st.session_state["ui_layout"] = layout
-        st.session_state["ui_theme"] = theme
+    new_layout = layout if isinstance(layout, str) else current.layout
+    new_theme = theme if isinstance(theme, str) else current.theme
+
+    if new_layout != current.layout or new_theme != current.theme:
+        st.session_state["ui_layout"] = new_layout
+        st.session_state["ui_theme"] = new_theme
         st.rerun()
 
     return get_settings()
