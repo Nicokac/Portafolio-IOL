@@ -36,16 +36,20 @@ def render_footer():
                 color: #212529;
             }}
             .footer-links a {{
-                color: #0d6efd;
-                text-decoration: none;
+                color: #4f6f8f;
+                text-decoration: underline;
                 font-weight: 600;
             }}
             .footer-links a:hover,
             .footer-links a:focus {{
-                text-decoration: underline;
+                color: #3c4f65;
+            }}
+            .footer-meta {{
+                color: #5c636a;
             }}
             .footer-meta strong {{
-                color: #0b7285;
+                color: #495057;
+                font-weight: 600;
             }}
             .footer-disclaimer {{
                 font-size: 0.75rem;
