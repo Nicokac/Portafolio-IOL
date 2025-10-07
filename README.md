@@ -6,9 +6,9 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.4.4.2 — Vertical Sidebar Layout)
+## Quick-start (release 0.3.4.4.4 — Asset Type Alignment)
 
-La versión **0.3.4.4.2** reorganiza el panel lateral en tarjetas apiladas verticalmente. Cada bloque —Actualización, Filtros, Moneda, Orden, Gráficos y Acciones— ocupa ahora una fila completa con padding uniforme, manteniendo la coherencia tipográfica y los tooltips cortos introducidos en 0.3.4.4.
+La versión **0.3.4.4.4** refuerza el análisis de riesgo alineando el heatmap de correlaciones con la clasificación del portafolio base. Antes de descargar históricos se aplica un mapeo canónico por símbolo, evitando que los CEDEARs compartan matriz con acciones locales y descartando explícitamente tickers como LOMA, YPFD o TECO2 cuando el payload de precios los etiqueta de forma ambigua.
 
 ## Quick-start (release 0.3.4.4.2 — Sidebar apilado y feedback guiado)
 
@@ -21,6 +21,13 @@ La versión **0.3.4.4.2** refuerza los siguientes ejes:
 > Desde la versión 0.3.4.4 las confirmaciones de acciones (guardar preset, refrescar, reintentar exportes) muestran el mismo mensaje en el panel principal y en **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
 
 ## Historial de versiones
+
+### Versión 0.3.4.4.4 — Asset Type Alignment in Risk Analysis
+La release 0.3.4.4.4 alinea el heatmap de correlaciones con el catálogo maestro del portafolio, aplica
+un mapeo canónico por símbolo antes de solicitar históricos y excluye explícitamente los tickers
+locales de los grupos de CEDEARs. El objetivo es garantizar que cada matriz refleje únicamente los
+activos del tipo seleccionado, incluso cuando los datos de cotizaciones lleguen con etiquetas
+inconsistentes.
 
 ### Versión 0.3.4.4.2 — Vertical Sidebar Layout
 La versión 0.3.4.4.2 apila todos los grupos de controles en tarjetas verticales dentro del sidebar. Cada bloque conserva su título, descripción y tooltips, pero ahora ocupa una fila dedicada para facilitar la lectura y reducir el scroll horizontal. El feedback temporal de filtros mantiene el pulso suave incorporado en 0.3.4.4 y destaca únicamente la sección afectada.
@@ -66,8 +73,8 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.2` junto con
-   el mensaje "Vertical Sidebar Layout" y el timestamp generado por `TimeProvider`.
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.4` junto con
+   el mensaje "Asset Type Alignment in Risk Analysis" y el timestamp generado por `TimeProvider`.
    Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
    verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
    allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
@@ -96,7 +103,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.4.4.2 muestra el banner "Vertical Sidebar Layout", mantiene el ZIP de CSV y
+   > 0.3.4.4.4 muestra el banner "Asset Type Alignment in Risk Analysis", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
    > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
@@ -182,6 +189,15 @@ validar escenarios sin depender de módulos obsoletos.
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
 
+### Correlaciones segmentadas (0.3.4.4.4)
+
+- El heatmap de riesgo consulta históricos solo después de validar el tipo de activo en el catálogo
+  base, aplicando un mapeo canónico por símbolo que impide mezclar categorías (CEDEAR, Bonos, ETF,
+  FCI, Acciones locales, etc.).
+- Los grupos de CEDEARs excluyen explícitamente tickers locales como LOMA, YPFD o TECO2 incluso si la
+  fuente de precios los etiqueta como CEDEARs, asegurando correlaciones homogéneas.
+- Se mantiene el descarte de columnas con rendimientos de varianza nula o indefinida antes de calcular
+  la correlación para evitar coeficientes erráticos y comparar únicamente activos con movimiento real.
 ### Correlaciones segmentadas (0.3.4.4.3)
 
 - Los heatmaps de correlación del módulo de riesgo se construyen únicamente con los símbolos del tipo

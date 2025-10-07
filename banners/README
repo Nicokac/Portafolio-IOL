@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.4.2
-- Fecha de publicación: 2025-11-27
-- Mensaje destacado: "Vertical Sidebar Layout"
-- Elementos complementarios: destacar que el formulario lateral muestra tarjetas apiladas (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) con feedback visual consistente al aplicar cambios.
+- Versión actual: v0.3.4.4.4
+- Fecha de publicación: 2025-11-28
+- Mensaje destacado: "Asset Type Alignment in Risk Analysis"
+- Elementos complementarios: resaltar que el heatmap de riesgo segmenta los activos según el catálogo base y que los CEDEARs excluyen símbolos locales (LOMA, YPFD, TECO2) incluso si las cotizaciones los etiquetan distinto.

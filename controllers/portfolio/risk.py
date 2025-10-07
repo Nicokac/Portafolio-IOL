@@ -1,4 +1,6 @@
 import logging
+import re
+import unicodedata
 from typing import Sequence
 
 import numpy as np
@@ -23,6 +25,7 @@ from application.risk_service import (
     max_drawdown,
     drawdown_series,
 )
+from application.portfolio_service import classify_symbol
 from services.notifications import NotificationFlags
 from ui.charts import plot_correlation_heatmap, _apply_layout
 from ui.export import PLOTLY_CONFIG
@@ -32,6 +35,142 @@ from services.health import record_tab_latency
 
 
 logger = logging.getLogger(__name__)
+
+_LOCAL_SYMBOL_BLACKLIST = {"LOMA", "YPFD", "TECO2"}
+
+_TYPE_ALIASES = {
+    "ACCION": "ACCION_LOCAL",
+    "ACCIONES": "ACCION_LOCAL",
+    "ACCION LOCAL": "ACCION_LOCAL",
+    "ACCION ARG": "ACCION_LOCAL",
+    "ACCION ARGENTINA": "ACCION_LOCAL",
+    "ACCION ARGENTINAS": "ACCION_LOCAL",
+    "ACCION_LOCAL": "ACCION_LOCAL",
+    "ACCIONES LOCALES": "ACCION_LOCAL",
+    "ACCIONES NACIONALES": "ACCION_LOCAL",
+    "BONO": "BONO",
+    "BONOS": "BONO",
+    "BONOS SOBERANOS": "BONO",
+    "BONOS CORPORATIVOS": "BONO",
+    "LETRA": "LETRA",
+    "LETRAS": "LETRA",
+    "CEDEAR": "CEDEAR",
+    "CEDEARS": "CEDEAR",
+    "ETF": "ETF",
+    "ETFS": "ETF",
+    "FONDO": "FCI",
+    "FONDOS": "FCI",
+    "FONDO COMUN": "FCI",
+    "FONDO COMUN DE INVERSION": "FCI",
+    "FONDO DE INVERSION": "FCI",
+    "FCI": "FCI",
+    "OTRO": "OTRO",
+    "OTROS": "OTRO",
+}
+
+_TYPE_DISPLAY_OVERRIDES = {
+    "ACCION_LOCAL": "Acciones locales",
+    "CEDEAR": "CEDEARs",
+    "BONO": "Bonos",
+    "LETRA": "Letras",
+    "ETF": "ETFs",
+    "FCI": "Fondos comunes (FCI)",
+    "OTRO": "Otros",
+}
+
+_SYMBOL_TYPE_OVERRIDES = {sym: "ACCION_LOCAL" for sym in _LOCAL_SYMBOL_BLACKLIST}
+
+
+def _string_or_empty(value) -> str:
+    """Return a trimmed string representation or ``""`` when not meaningful."""
+
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+        return "" if not text or text.lower() in {"nan", "none"} else text
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    text = str(value).strip()
+    return "" if not text or text.lower() in {"nan", "none"} else text
+
+
+def _normalize_type_token(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.replace("-", " ")
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized.upper()
+
+
+def _normalize_type_label(value) -> str:
+    text = _string_or_empty(value)
+    if not text:
+        return ""
+    token = _normalize_type_token(text)
+    if not token:
+        return ""
+    return _TYPE_ALIASES.get(token, token)
+
+
+def _normalize_symbol(symbol) -> str:
+    text = _string_or_empty(symbol)
+    return text.upper()
+
+
+def _canonical_type(symbol: str, raw_type) -> str:
+    sym_key = _normalize_symbol(symbol)
+    override = _SYMBOL_TYPE_OVERRIDES.get(sym_key)
+    if override:
+        return override
+
+    normalized = _normalize_type_label(raw_type)
+    if normalized:
+        return normalized
+
+    if sym_key:
+        fallback = classify_symbol(sym_key)
+        normalized = _normalize_type_label(fallback)
+        if normalized:
+            return _SYMBOL_TYPE_OVERRIDES.get(sym_key, normalized)
+    return ""
+
+
+def _build_type_metadata(df: pd.DataFrame | None) -> tuple[pd.Series, dict[str, str], dict[str, str]]:
+    """Return normalized type series, display labels and symbol→type map."""
+
+    if df is None or df.empty or "simbolo" not in df.columns:
+        empty_index = getattr(df, "index", pd.Index([])) if df is not None else pd.Index([])
+        return pd.Series(pd.NA, index=empty_index, dtype="object"), {}, {}
+
+    raw_types = df["tipo"] if "tipo" in df.columns else pd.Series(pd.NA, index=df.index)
+    normalized_values: list[object] = []
+    display_labels: dict[str, str] = {}
+    symbol_type_map: dict[str, str] = {}
+
+    for idx, symbol in enumerate(df["simbolo"].tolist()):
+        raw_value = raw_types.iloc[idx] if idx < len(raw_types) else None
+        canonical = _canonical_type(symbol, raw_value)
+        normalized_values.append(canonical if canonical else pd.NA)
+        if canonical:
+            sym_key = _normalize_symbol(symbol)
+            symbol_type_map[sym_key] = canonical
+            if sym_key not in _SYMBOL_TYPE_OVERRIDES:
+                raw_label = _string_or_empty(raw_value)
+                if raw_label and canonical not in display_labels:
+                    display_labels[canonical] = raw_label
+
+    for canonical, label in _TYPE_DISPLAY_OVERRIDES.items():
+        display_labels.setdefault(canonical, label)
+
+    for canonical in symbol_type_map.values():
+        display_labels.setdefault(canonical, canonical.replace("_", " ").title())
+
+    series = pd.Series(normalized_values, index=df.index, dtype="object")
+    return series, display_labels, symbol_type_map
 
 
 def compute_risk_metrics(returns_df, bench_ret, weights, *, var_confidence: float = 0.95):
@@ -94,24 +233,40 @@ def render_risk_analysis(
             help_text="Tus favoritos se sincronizan entre portafolio, riesgo, técnico y fundamental.",
         )
 
-    filtered_df = df_view.copy() if hasattr(df_view, "copy") else df_view
+    filtered_df = df_view.copy() if isinstance(df_view, pd.DataFrame) else df_view
     selected_type_filters = st.session_state.get("selected_asset_types") or []
     normalized_filters = [
-        str(t).strip()
+        _normalize_type_label(t)
         for t in selected_type_filters
-        if isinstance(t, str) and str(t).strip()
+        if isinstance(t, str) and _normalize_type_label(t)
     ]
 
-    if "tipo" in df_view:
-        type_series = df_view["tipo"].astype(str).str.strip()
-        type_series = type_series.replace("", pd.NA)
-        filtered_df = df_view.assign(_normalized_type=type_series)
+    normalized_series, type_display_map, symbol_type_map = _build_type_metadata(
+        filtered_df if isinstance(filtered_df, pd.DataFrame) else None
+    )
+
+    if isinstance(filtered_df, pd.DataFrame):
+        filtered_df["_normalized_type"] = normalized_series.reindex(
+            filtered_df.index
+        )
         if normalized_filters:
             filtered_df = filtered_df[
                 filtered_df["_normalized_type"].isin(normalized_filters)
-            ]
+            ].copy()
+
+        if not filtered_df.empty:
+            normalized_symbols = (
+                filtered_df["simbolo"].astype(str).str.strip().str.upper()
+            )
+            blacklist_mask = (
+                filtered_df["_normalized_type"].eq("CEDEAR")
+                & normalized_symbols.isin(_LOCAL_SYMBOL_BLACKLIST)
+            )
+            if blacklist_mask.any():
+                filtered_df = filtered_df.loc[~blacklist_mask].copy()
     else:
-        filtered_df = df_view.assign(_normalized_type=pd.NA)
+        type_display_map = {}
+        symbol_type_map = {}
 
     if filtered_df.empty:
         st.warning("No hay datos para los tipos seleccionados.")
@@ -125,11 +280,34 @@ def render_risk_analysis(
         ["3mo", "6mo", "1y", "2y", "5y"],
         index=2,
     )
-    portfolio_symbols = [
-        str(sym).strip()
-        for sym in filtered_df.get("simbolo", [])
-        if str(sym).strip()
-    ]
+    portfolio_symbols: list[str] = []
+    if isinstance(filtered_df, pd.DataFrame):
+        for sym, canon in zip(
+            filtered_df.get("simbolo", []),
+            filtered_df.get("_normalized_type", []),
+        ):
+            sym_str = str(sym).strip()
+            if not sym_str:
+                continue
+            sym_key = sym_str.upper()
+            canon_str = symbol_type_map.get(sym_key)
+            if not canon_str:
+                canon_str = (
+                    _normalize_type_label(canon)
+                    if isinstance(canon, str)
+                    else _canonical_type(sym_key, None)
+                )
+            if normalized_filters and canon_str not in normalized_filters:
+                continue
+            if canon_str == "CEDEAR" and sym_str.upper() in _LOCAL_SYMBOL_BLACKLIST:
+                continue
+            portfolio_symbols.append(sym_str)
+    else:
+        portfolio_symbols = [
+            str(sym).strip()
+            for sym in getattr(filtered_df, "get", lambda *_: [])("simbolo", [])
+            if str(sym).strip()
+        ]
     if len(portfolio_symbols) >= 2:
         corr_latency: float | None = None
         with st.spinner(f"Calculando correlación ({corr_period})…"):
@@ -158,11 +336,11 @@ def render_risk_analysis(
         record_tab_latency("riesgo", corr_latency, status="success")
         returns_for_corr = compute_returns(hist_df)
         available_types_in_view: list[str] = []
-        if "_normalized_type" in filtered_df:
+        if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
             available_types_in_view = [
-                t
+                str(t)
                 for t in filtered_df["_normalized_type"].dropna().unique()
-                if isinstance(t, str)
+                if isinstance(t, str) and str(t)
             ]
 
         if normalized_filters:
@@ -172,41 +350,62 @@ def render_risk_analysis(
 
         type_groups: list[tuple[str, pd.DataFrame]] = []
         for type_name in ordered_types:
-            subset = filtered_df[filtered_df["_normalized_type"] == type_name]
-            if not subset.empty:
-                type_groups.append((type_name, subset))
+            subset = (
+                filtered_df[filtered_df["_normalized_type"] == type_name]
+                if isinstance(filtered_df, pd.DataFrame)
+                else pd.DataFrame()
+            )
+            if isinstance(subset, pd.DataFrame) and not subset.empty:
+                type_groups.append((type_name, subset.copy()))
 
         if not type_groups:
-            type_groups = [("Portafolio", filtered_df)]
+            label = "Portafolio"
+            type_groups = [(label, filtered_df if isinstance(filtered_df, pd.DataFrame) else pd.DataFrame())]
 
         display_targets: list = []
         if len(type_groups) > 1:
             display_targets = st.tabs(
-                [f"{type_name}" for type_name, _ in type_groups]
+                [
+                    type_display_map.get(
+                        type_name,
+                        type_name.replace("_", " ").title(),
+                    )
+                    for type_name, _ in type_groups
+                ]
             )
         else:
             display_targets = [st.container()]
 
         for (type_name, subset_df), display_host in zip(type_groups, display_targets):
             with display_host:
+                display_label = type_display_map.get(
+                    type_name,
+                    type_name.replace("_", " ").title(),
+                )
                 subset_symbols = [
                     str(sym).strip()
                     for sym in subset_df.get("simbolo", [])
                     if str(sym).strip()
                 ]
+                if type_name == "CEDEAR":
+                    subset_symbols = [
+                        sym
+                        for sym in subset_symbols
+                        if sym.upper() not in _LOCAL_SYMBOL_BLACKLIST
+                    ]
                 subset_symbols = [
                     sym for sym in subset_symbols if sym in hist_df.columns
                 ]
                 if len(set(subset_symbols)) < 2:
                     st.warning(
-                        f"⚠️ No hay suficientes activos del tipo {type_name} para calcular correlaciones."
+                        f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones."
                     )
                     continue
 
                 subset_hist = hist_df[sorted(set(subset_symbols))]
                 fig = plot_correlation_heatmap(
                     subset_hist,
-                    title=f"Matriz de Correlación — {type_name}",
+                    title=f"Matriz de Correlación — {display_label}",
                 )
                 if fig:
                     st.plotly_chart(
@@ -226,7 +425,7 @@ def render_risk_analysis(
                     )
                 else:
                     st.warning(
-                        f"⚠️ No hay suficientes datos históricos para calcular la correlación de {type_name}."
+                        f"⚠️ No hay suficientes datos históricos para calcular la correlación de {display_label}."
                     )
 
         if returns_for_corr.shape[1] >= 2:
@@ -276,7 +475,7 @@ def render_risk_analysis(
             "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
         )
 
-    if "_normalized_type" in filtered_df:
+    if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
         filtered_df = filtered_df.drop(columns="_normalized_type")
 
     st.subheader("Análisis de Riesgo")

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4.4 — Asset Type Alignment in Risk Analysis (Nov 2025)
+
+### Summary
+- El cálculo de correlaciones ahora se apoya exclusivamente en la clasificación del portafolio
+  base antes de solicitar históricos, aplicando un mapeo canónico por símbolo para evitar que
+  instrumentos de distintos tipos se mezclen en el heatmap.
+- Los CEDEARs filtran explícitamente los tickers locales (LOMA, YPFD, TECO2) aunque el payload
+  de precios o cotizaciones los etiquete erróneamente, manteniendo matrices homogéneas por
+  categoría.
+- Se añadieron pruebas de controlador que validan el filtro corregido y la asignación de tipos
+  desde el catálogo maestro, junto con documentación y materiales de release actualizados para la
+  versión 0.3.4.4.4.
+
 ## v0.3.4.4.3 — Risk Heatmap Polishing Pass (Nov 2025)
 
 ### Summary
