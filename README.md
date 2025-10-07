@@ -6,21 +6,26 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.4.3 — Layout Consolidation & Sidebar Unification)
+## Quick-start (release 0.3.4.4 — UX Consistency & Interaction Pass)
 
-La versión **0.3.4.3** consolida el trabajo de UI Experience Refresh reubicando todos los filtros y controles en la barra lateral. El panel superior desaparece para liberar el ancho completo del portafolio, se estrena un badge global de estado bajo el encabezado y el healthcheck migra a la nueva pestaña **Monitoreo**, manteniendo toda la telemetría en un espacio dedicado.
+La versión **0.3.4.4** profundiza el rediseño UI al unificar microinteracciones, asegurando que cada control entregue feedback inmediato y consistente. Los estados _hover_ y de enfoque ahora son visibles y accesibles, los toasts mantienen el mismo tono en toda la app y las cargas muestran _skeletons_ alineados con los bloques reales para evitar saltos visuales.
 
-## Quick-start (release 0.3.4.3 — Flujo de navegación actualizado)
+## Quick-start (release 0.3.4.4 — Microinteracciones y feedback guiado)
 
-La versión **0.3.4.3** refuerza los siguientes ejes:
-- La **barra lateral** concentra filtros, selección de símbolos y el formulario de actualización en un único bloque con chips activos y tooltips.
-- El contenedor colapsable **⚙️ Configuración general** agrupa el panel de control (timestamp y acciones rápidas), los botones de refresco/cierre de sesión y las preferencias de apariencia.
-- La pestaña **Monitoreo** reemplaza al antiguo health sidebar y ofrece el healthcheck completo junto a historiales y diagnósticos.
-- El **footer** añade un bloque de enlaces útiles que enlaza documentación y soporte en una tarjeta destacada con menor contraste para los metadatos.
+La versión **0.3.4.4** refuerza los siguientes ejes:
+- La **barra lateral** sincroniza tooltips, estados activos y contadores de presets, mostrando confirmaciones instantáneas cuando se guardan filtros o se actualizan símbolos.
+- El contenedor colapsable **⚙️ Configuración general** añade indicadores de progreso mientras se disparan screenings o exportaciones, y reutiliza los mismos toasts del panel principal para cerrar el ciclo de feedback.
+- La pestaña **Monitoreo** replica los mensajes del tablero principal (toasts, contadores de resiliencia y alertas de snapshot) para que el seguimiento posterior conserve el contexto de cada acción.
+- El **footer** mantiene el bloque de enlaces útiles, ahora con badges de estado que cambian en sincronía con el badge global situado bajo el encabezado.
 
-> Desde la versión 0.3.4.3 el histórico "health sidebar" se encuentra dentro de la pestaña **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
+> Desde la versión 0.3.4.4 las confirmaciones de acciones (guardar preset, refrescar, reintentar exportes) muestran el mismo mensaje en el panel principal y en **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
 
 ## Historial de versiones
+
+### Versión 0.3.4.4 — UX Consistency & Interaction Pass
+La release 0.3.4.4 alinea microinteracciones en toda la experiencia: los mismos toasts, badges y contadores acompañan a cada acción sin importar si se dispara desde el panel principal o desde **Monitoreo**.
+Los formularios de la barra lateral muestran estados de foco visibles, errores en línea y tooltips sincronizados; además, los _skeletons_ de carga sostienen la estructura original para eliminar saltos mientras se rehidratan datos.
+El objetivo es reforzar la predictibilidad y el feedback inmediato sin introducir cambios en servicios o APIs, manteniendo la estabilidad alcanzada en releases previas.
 
 ### Versión 0.3.4.3 — Layout Consolidation & Sidebar Unification
 La release 0.3.4.3 elimina el panel superior para expandir la vista del portafolio, consolida filtros y acciones en la barra lateral y traslada el healthcheck a la pestaña Monitoreo con el mismo nivel de detalle disponible previamente.
@@ -54,11 +59,12 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.3` junto con
-   el mensaje "Layout Consolidation & Sidebar Unification" y el timestamp generado por `TimeProvider`.
-   Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud
-   y accedé a la pestaña **Monitoreo**: allí encontrarás los mismos bloques de telemetría,
-   snapshots, latencias y descargas de observabilidad que antes vivían en la barra lateral.
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4` junto con
+   el mensaje "UX Consistency & Interaction Pass" y el timestamp generado por `TimeProvider`.
+   Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
+   verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
+   allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
+   sincronizados que describen cada acción reciente.
 3. **Lanza un screening con presets personalizados y comprueba la persistencia.**
    - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
    - Guarda el preset y ejecútalo al menos dos veces. Tras la primera corrida, el panel de Monitoreo
@@ -83,7 +89,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.4.3 muestra el banner "Layout Consolidation & Sidebar Unification", mantiene el ZIP de CSV y
+   > 0.3.4.4 muestra el banner "UX Consistency & Interaction Pass", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
    > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
@@ -149,7 +155,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### CI Checklist (0.3.4.3)
+### CI Checklist (0.3.4.4)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
@@ -162,9 +168,9 @@ validar escenarios sin depender de módulos obsoletos.
    o reutiliza los snapshots de `tmp_path`. Revisa que cada snapshot genere los CSV (`kpis.csv`,
    `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
    `analysis.xlsx`, el resumen `summary.csv` y el paquete de logs rotados (`analysis.log` más sus `.gz` diarios) en la raíz de `exports/ci`.
-5. **Audita TTLs y salud.** Ejecuta `streamlit run app.py` en modo headless (`--server.headless true`) y guarda una captura de la pestaña **Monitoreo**. Confirmá que cada proveedor muestre la insignia con el TTL restante y que el resumen coincida con los valores configurados en `CACHE_TTL_*`. Adjunta la captura o los logs en el pipeline.
-6. **Captura el sidebar unificado.** Valida que el formulario de controles y el contenedor **⚙️ Configuración general** convivan en la barra lateral con chips activos, tooltips y las acciones de refresco/cierre funcionando.
-7. **Documenta badge global y footer.** Adjunta evidencia del badge de estado bajo el encabezado principal y del nuevo bloque de enlaces útiles en el footer, verificando contraste reducido en los metadatos.
+5. **Audita TTLs y salud con feedback sincronizado.** Ejecuta `streamlit run app.py` en modo headless (`--server.headless true`) y guarda una captura de la pestaña **Monitoreo**. Confirmá que cada proveedor muestre la insignia con el TTL restante y que los toasts/contadores reflejen las acciones más recientes con el mismo texto que aparece en el tablero principal.
+6. **Captura el sidebar unificado.** Valida que el formulario de controles y el contenedor **⚙️ Configuración general** convivan en la barra lateral con chips activos, tooltips y las acciones de refresco/cierre funcionando, registrando los toasts correspondientes en los logs de la sesión.
+7. **Documenta badge global y footer sincronizados.** Adjunta evidencia del badge de estado bajo el encabezado principal y del bloque de enlaces útiles en el footer, verificando que ambos cambien de estado al mismo tiempo durante un screening.
 8. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.

@@ -7,13 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4 — UX Consistency & Interaction Pass (Nov 2025)
+
+### Summary
+- Consolidación de microinteracciones en la barra lateral y los formularios clave: estados _hover_, enfoque visible y tooltips sincronizados con los controles de presets y filtros.
+- Confirmaciones in-app homogéneas: toasts, banners y contadores sincronizados entre el panel principal y la pestaña **Monitoreo** para que cada acción de screening muestre feedback inmediato.
+- Ajustes de ritmo visual y tiempos de carga: skeletons y spinners consistentes en dashboards, exportaciones y healthcheck para reducir saltos al cambiar de contexto.
+
 ### Added
 - Puerta de calidad de seguridad en CI que ejecuta `bandit` sobre el código crítico y `pip-audit`
   sobre los requirements para bloquear vulnerabilidades antes del merge.
-
-### Changed
-
-### Fixed
 
 ### Documentation
 - `docs/testing.md` actualizado con los comandos oficiales de auditoría (`bandit` y `pip-audit`) y
