@@ -6,3 +6,7 @@ Los assets de login y sidebar deben mostrar la versión activa de la aplicación
 - Fecha de publicación: 2025-11-20
 - Mensaje destacado: "Layout consolidado y controles unificados"
 - Elementos complementarios: resaltar badge global de salud bajo el título principal, indicar que la pestaña "Monitoreo" concentra el healthcheck completo, destacar el footer con enlaces útiles y la nueva disposición vertical de controles/acciones dentro del sidebar.
+- Versión actual: v0.3.4.3
+- Fecha de publicación: 2025-11-18
+- Mensaje destacado: "Layout consolidado y controles unificados"
+- Elementos complementarios: resaltar badge global de salud bajo el título principal, indicar que la pestaña "Monitoreo" concentra el healthcheck completo, mencionar el nuevo bloque de enlaces útiles del footer y la unificación de filtros/acciones dentro del sidebar.

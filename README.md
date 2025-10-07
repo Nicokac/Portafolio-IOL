@@ -97,6 +97,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
    > 0.3.4.3.1 muestra el banner "Layout Consolidation & Sidebar Unification", mantiene el ZIP de CSV y
+   > 0.3.4.3 muestra el banner "Layout Consolidation & Sidebar Unification", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
    > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
@@ -163,6 +164,7 @@ validar escenarios sin depender de módulos obsoletos.
   la persistencia de snapshots durante la sesión.
 
 ### CI Checklist (0.3.4.3.1)
+### CI Checklist (0.3.4.3)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
