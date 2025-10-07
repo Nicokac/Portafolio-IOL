@@ -6,3 +6,7 @@ Los assets de login y sidebar deben mostrar la versión activa de la aplicación
 - Fecha de publicación: 2025-11-27
 - Mensaje destacado: "Vertical Sidebar Layout"
 - Elementos complementarios: destacar que el formulario lateral muestra tarjetas apiladas (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) con feedback visual consistente al aplicar cambios.
+- Versión actual: v0.3.4.4.1
+- Fecha de publicación: 2025-11-26
+- Mensaje destacado: "Header Centering & Cleanup Hotfix"
+- Elementos complementarios: resaltar que el encabezado principal queda centrado y despejado, mientras que el bloque de "Enlaces útiles" permanece en el footer junto a los badges sincronizados.
