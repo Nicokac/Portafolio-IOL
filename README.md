@@ -198,6 +198,13 @@ validar escenarios sin depender de módulos obsoletos.
   fuente de precios los etiqueta como CEDEARs, asegurando correlaciones homogéneas.
 - Se mantiene el descarte de columnas con rendimientos de varianza nula o indefinida antes de calcular
   la correlación para evitar coeficientes erráticos y comparar únicamente activos con movimiento real.
+### Correlaciones segmentadas (0.3.4.4.3)
+
+- Los heatmaps de correlación del módulo de riesgo se construyen únicamente con los símbolos del tipo
+  seleccionado y muestran un título contextualizado (por ejemplo, "Matriz de Correlación — Bonos"),
+  lo que ayuda a distinguir rápidamente el grupo analizado.
+- Antes de calcular la correlación se descartan columnas con rendimientos de varianza nula o indefinida
+  para evitar coeficientes erráticos y garantizar que solo se comparen activos con movimiento real.
 
 ### Validaciones Markowitz reforzadas (0.3.4.0)
 
