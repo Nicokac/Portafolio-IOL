@@ -272,18 +272,76 @@ st.markdown(
         .control-panel__actions .stButton button {
             border-radius: 999px;
             background: rgba(16, 163, 127, 0.12);
-            border: 1px solid rgba(16, 163, 127, 0.28);
-            color: rgb(11, 83, 69);
+            background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+            border: 1px solid color-mix(in srgb, var(--color-accent) 36%, transparent);
+            color: color-mix(in srgb, var(--color-accent) 78%, var(--color-text) 22%);
+            transition: background-color 150ms ease, border-color 150ms ease,
+                color 150ms ease, box-shadow 150ms ease, transform 120ms ease;
         }
 
-        .control-panel__actions .stButton button:hover {
-            background: rgba(16, 163, 127, 0.18);
-            border-color: rgba(16, 163, 127, 0.35);
-            color: rgb(7, 65, 55);
+        .control-panel__actions .stButton button:hover,
+        .control-panel__actions .stButton button:focus-visible {
+            background: color-mix(in srgb, var(--color-accent) 26%, var(--color-bg) 74%);
+            border-color: color-mix(in srgb, var(--color-accent) 48%, transparent);
+            color: color-mix(in srgb, var(--color-accent) 86%, var(--color-text) 14%);
         }
 
-        .control-panel__actions .stButton button:focus {
-            box-shadow: 0 0 0 0.2rem rgba(16, 163, 127, 0.25);
+        .control-panel__actions .stButton button:active {
+            background: color-mix(in srgb, var(--color-accent) 34%, var(--color-bg) 66%);
+            border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+            transform: translateY(1px);
+        }
+
+        .control-panel__actions .stButton button:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 32%, transparent);
+        }
+
+        [data-testid="stSidebar"] [role="switch"] {
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--color-text) 14%, transparent);
+            border: 1px solid color-mix(in srgb, var(--color-text) 22%, transparent);
+            transition: background-color 150ms ease, border-color 150ms ease,
+                box-shadow 150ms ease;
+            outline: none;
+        }
+
+        [data-testid="stSidebar"] [role="switch"][aria-checked="true"] {
+            background: color-mix(in srgb, var(--color-accent) 40%, var(--color-bg) 60%);
+            border-color: color-mix(in srgb, var(--color-accent) 58%, transparent);
+        }
+
+        [data-testid="stSidebar"] [role="switch"]:hover {
+            border-color: color-mix(in srgb, var(--color-accent) 46%, transparent);
+        }
+
+        [data-testid="stSidebar"] [role="switch"]:active {
+            background: color-mix(in srgb, var(--color-accent) 48%, var(--color-bg) 52%);
+        }
+
+        [data-testid="stSidebar"] [role="switch"]:focus-visible {
+            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 34%, transparent);
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="select"] {
+            border-radius: 0.75rem;
+            border: 1px solid color-mix(in srgb, var(--color-text) 22%, transparent);
+            transition: border-color 150ms ease, box-shadow 150ms ease,
+                background-color 150ms ease;
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="select"]:hover {
+            border-color: color-mix(in srgb, var(--color-accent) 48%, transparent);
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within {
+            border-color: color-mix(in srgb, var(--color-accent) 66%, transparent);
+            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 30%, transparent);
+            background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg) 88%);
+        }
+
+        [data-testid="stSidebar"] div[data-baseweb="select"]:active {
+            border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
         }
 
         .control-panel__body .stCaption, .control-panel__section .stCaption {
