@@ -145,10 +145,120 @@ st.markdown(
         .control-panel__section + .control-panel__section {
             margin-top: 0.2rem;
         }
+
+        div[data-baseweb="tab-panel"] {
+            position: relative;
+            transition: opacity 0.18s ease-out, transform 0.22s ease-out;
+            will-change: opacity, transform;
+        }
+
+        div[data-baseweb="tab-panel"][data-tab-visible="false"] {
+            opacity: 0;
+            transform: translateY(0.6rem) scale(0.985);
+            pointer-events: none;
+        }
+
+        div[data-baseweb="tab-panel"][data-tab-visible="true"] {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        div[data-baseweb="tab-panel"].tab-panel--fade-expand {
+            animation: tab-fade-expand 0.24s ease-out both;
+        }
+
+        @keyframes tab-fade-expand {
+            from {
+                opacity: 0;
+                transform: translateY(0.6rem) scale(0.985);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def _inject_tab_animation_support() -> None:
+    """Ensure tab panels receive attributes to drive CSS animations."""
+
+    if st.session_state.get("_tab_animation_hook_injected"):
+        return
+
+    st.session_state["_tab_animation_hook_injected"] = True
+
+    from streamlit.components.v1 import html
+
+    html(
+        """
+        <script>
+        (function () {
+            const rootDoc = window.parent && window.parent.document ? window.parent.document : null;
+            if (!rootDoc) {
+                return;
+            }
+
+            if (rootDoc.body && rootDoc.body.dataset.tabAnimationHook === "ready") {
+                return;
+            }
+
+            if (rootDoc.body) {
+                rootDoc.body.dataset.tabAnimationHook = "ready";
+            }
+
+            const updatePanel = (panel) => {
+                if (!panel) {
+                    return;
+                }
+
+                const isHidden = panel.getAttribute("aria-hidden") === "true";
+                panel.setAttribute("data-tab-visible", isHidden ? "false" : "true");
+
+                if (!isHidden) {
+                    panel.classList.remove("tab-panel--fade-expand");
+                    void panel.offsetWidth;
+                    panel.classList.add("tab-panel--fade-expand");
+                }
+            };
+
+            const panelObserver = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.type === "attributes" && mutation.attributeName === "aria-hidden") {
+                        updatePanel(mutation.target);
+                    }
+                });
+            });
+
+            const bindPanel = (panel) => {
+                if (!panel || panel.dataset.tabAnimationBound === "true") {
+                    return;
+                }
+
+                panel.dataset.tabAnimationBound = "true";
+                updatePanel(panel);
+                panelObserver.observe(panel, { attributes: true, attributeFilter: ["aria-hidden"] });
+            };
+
+            const scanPanels = () => {
+                const panels = rootDoc.querySelectorAll('div[data-baseweb="tab-panel"]');
+                panels.forEach(bindPanel);
+            };
+
+            const treeObserver = new MutationObserver(scanPanels);
+            treeObserver.observe(rootDoc.body, { childList: true, subtree: true });
+
+            scanPanels();
+        })();
+        </script>
+        """,
+        height=0,
+    )
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -290,6 +400,7 @@ def main(argv: list[str] | None = None):
         with main_col:
             tab_labels = ["Portafolio", "Empresas con oportunidad", monitoring_label]
             portfolio_tab, opportunities_tab, monitoring_tab = st.tabs(tab_labels)
+            _inject_tab_animation_support()
         refresh_secs = render_portfolio_section(
             portfolio_tab,
             cli,
@@ -307,6 +418,7 @@ def main(argv: list[str] | None = None):
             with main_col:
                 tab_labels = ["Portafolio", monitoring_label]
                 portfolio_tab, monitoring_tab = st.tabs(tab_labels)
+                _inject_tab_animation_support()
         else:
             portfolio_tab = main_col
             monitoring_tab = main_col
