@@ -38,18 +38,19 @@ Esto resulta útil para los ciclos de TDD locales o al depurar suites nuevas
 que no requieren medir cobertura.
 
 El proyecto incorpora `pytest.ini` con marcadores y configuración de logging. La ejecución completa
-usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.4.2 mantiene la
-telemetría de entorno y la rotación automática de `analysis.log`, y suma verificaciones visuales
-sobre el panel horizontal refinado, el contraste de las tarjetas de KPIs y el footer alineado, por lo que los
-tests deben asegurar que los snapshots y los logs comprimidos generados por la app se publiquen como artefactos.
+usa los stubs deterministas para mantener resultados reproducibles. La release 0.3.4.3 (y el pulido
+0.3.4.3.1) consolida la telemetría dentro de la pestaña Monitoreo, mantiene la rotación automática de
+`analysis.log` y añade verificaciones visuales sobre el sidebar unificado, el badge global de estado y
+el bloque de enlaces del footer —ahora únicamente en el footer—, por lo que los tests deben asegurar
+que los snapshots y los logs comprimidos generados por la app se publiquen como artefactos.
 
 > Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
 
-### Pruebas manuales sugeridas (0.3.4.2)
+### Pruebas manuales sugeridas (0.3.4.3.1)
 
-1. **Panel superior con padding ampliado.** Abrí la aplicación en resoluciones desktop y medianas para validar que la franja horizontal conserve alineación de KPIs, muestre el incremento de padding y mantenga tooltips activos sin volver a la barra lateral para controles.
-2. **Selector por tipo centrado.** En la pestaña de análisis de riesgo, alterná el filtro por tipo de instrumento y confirmá que el heatmap se actualiza en consecuencia, con el bloque de filtros centrado y sin saltos laterales.
-3. **Tarjetas contrastadas y footer.** Revisá que las tarjetas de KPIs y avisos mantengan el contraste reforzado y que el footer preserve los enlaces alineados con el nuevo espaciado en desktop y vistas comprimidas.
+1. **Sidebar de controles unificado.** Abrí la aplicación en resoluciones desktop y medianas para validar que el formulario de filtros y el contenedor **⚙️ Configuración general** conviven en la barra lateral con tarjetas apiladas verticalmente, chips activos, tooltips y los botones de refresco/cierre funcionando sin desbordes horizontales.
+2. **Pestaña Monitoreo activa.** Navegá a la pestaña **Monitoreo** y confirmá que el healthcheck conserva las secciones de dependencias, snapshots, oportunidades y diagnósticos, registrando TTLs y latencias con la misma profundidad que el antiguo sidebar.
+3. **Badge global y footer.** Revisá que bajo el encabezado principal aparezca el badge de estado general y que el bloque de “Enlaces útiles” sólo esté presente dentro del footer con el contraste reducido en los metadatos.
 
 ### Generadores aleatorios reproducibles
 
@@ -72,7 +73,7 @@ result = monte_carlo_simulation(
 De esta manera cada test controla explícitamente la semilla sin depender de `numpy.random.seed`, y
 los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralelo.
 
-## CI Checklist (0.3.4.2)
+## CI Checklist (0.3.4.3.1)
 
 1. **Suite determinista sin legacy.** Ejecuta `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy` y
    verifica que el resumen final no recolecte casos desde `tests/legacy/`.
@@ -86,9 +87,9 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
  (o reutiliza `tmp_path` en las suites) y revisa que cada snapshot incluya los CSV (`kpis.csv`,
   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
   `analysis.xlsx`, el resumen `summary.csv`, el snapshot de entorno (`environment.json`) y el paquete de logs rotados (`analysis.log` + `.gz`).
-5. **TTLs y monitoreo visibles.** Ejecuta la app en modo headless y capturá el health sidebar para confirmar que cada proveedor muestra el TTL restante configurado en `CACHE_TTL_*` y que el timeline de sesión despliega los hitos (login, screenings, exportaciones) en orden. Adjunta la captura o los logs en el pipeline.
-6. **Panel horizontal y filtros refinados.** Capturá el panel superior responsive con el padding ampliado y documentá el selector por tipo centrado en el heatmap de riesgo, verificando que no reaparezca una barra lateral para controles y que los KPIs se mantengan visibles.
-7. **Contraste y footer alineado.** Acompañá el pipeline con capturas o vídeos que muestren las tarjetas de KPIs contrastadas y el footer con el nuevo espaciado uniforme.
+5. **TTLs y monitoreo visibles.** Ejecuta la app en modo headless y capturá la pestaña **Monitoreo** para confirmar que cada proveedor muestra el TTL restante configurado en `CACHE_TTL_*` y que el timeline de sesión despliega los hitos (login, screenings, exportaciones) en orden.
+6. **Sidebar y badge global.** Capturá el sidebar con el formulario de controles y el bloque **⚙️ Configuración general**, verificando que los botones de acciones rápidas funcionen y que el badge global de salud se renderice bajo el encabezado principal.
+7. **Footer con enlaces útiles.** Acompañá el pipeline con capturas o vídeos que muestren el bloque de enlaces útiles en el footer y el contraste suavizado de los metadatos.
 8. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
   confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv`, el snapshot de entorno y
   los archivos `analysis.log*` rotados (desde `~/.portafolio_iol/logs/`) estén adjuntos. Si falta alguno, la ejecución debe considerarse fallida.

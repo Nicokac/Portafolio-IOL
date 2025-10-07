@@ -7,38 +7,21 @@ def render_header(rates=None):
     """Render the application header with contextual actions."""
 
     pal = get_active_palette()
-    info_col, links_col = st.columns([3, 2])
 
-    with info_col:
-        st.markdown(
-            """
-            <div style="display:flex; gap:0.8rem; align-items:flex-start;">
-                <span style="font-size:2.2rem; line-height:1;">📈</span>
-                <div>
-                    <h1 style="margin:0; font-size:1.8rem;">IOL — Portafolio en vivo</h1>
-                    <p style="margin:0.4rem 0 0; color:#555;">
-                        Acceso operativo en modo <strong>solo lectura</strong> para monitorear posiciones y cotizaciones.
-                    </p>
-                </div>
+    st.markdown(
+        """
+        <div style="display:flex; gap:0.8rem; align-items:flex-start; flex-wrap:wrap;">
+            <span style="font-size:2.2rem; line-height:1;">📈</span>
+            <div>
+                <h1 style="margin:0; font-size:1.8rem;">IOL — Portafolio en vivo</h1>
+                <p style="margin:0.4rem 0 0; color:#555;">
+                    Acceso operativo en modo <strong>solo lectura</strong> para monitorear posiciones y cotizaciones.
+                </p>
             </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with links_col:
-        st.markdown(
-            """
-            <div style="padding:0.8rem 1rem; border-radius:0.6rem; background-color:rgba(0,0,0,0.04); font-size:0.95rem;">
-                <div style="font-weight:600; margin-bottom:0.4rem;">Enlaces útiles</div>
-                <div>📘 <a href="https://github.com/caliari/Portafolio-IOL#readme" target="_blank">Documentación</a></div>
-                <div>🆘 <a href="https://github.com/caliari/Portafolio-IOL/issues" target="_blank">Centro de ayuda</a></div>
-                <div style="margin-top:0.6rem; color:#666; font-size:0.85rem;">
-                    Datos provistos sin garantía ni recomendación de inversión.
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     if rates:
         render_fx_summary_in_header(rates, palette=pal)

@@ -75,7 +75,6 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
          patch('controllers.portfolio.portfolio.TAService'), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
@@ -109,7 +108,6 @@ def test_ta_section_without_symbols_shows_message():
          patch('controllers.portfolio.portfolio.TAService'), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
@@ -155,7 +153,6 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
          patch('controllers.portfolio.portfolio.TAService'), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
@@ -204,7 +201,6 @@ def test_ta_section_symbol_without_us_ticker():
          patch('controllers.portfolio.portfolio.TAService'), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
@@ -261,7 +257,6 @@ def test_ta_section_symbol_with_empty_df():
          patch('controllers.portfolio.portfolio.TAService', return_value=mock_tasvc), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
@@ -315,7 +310,6 @@ def test_ta_section_symbol_with_data():
          patch('controllers.portfolio.portfolio.TAService', return_value=mock_tasvc), \
          patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
          patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch('controllers.portfolio.portfolio.render_ui_controls'), \
          patch(
              'controllers.portfolio.portfolio.get_portfolio_view_service',
              return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),

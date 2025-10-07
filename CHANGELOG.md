@@ -23,6 +23,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuración de `pytest` actualizada para imponer cobertura sobre `application`, `controllers` y
   `services` en cada ejecución, alineada con la nueva puerta de seguridad de CI.
 
+## v0.3.4.3.1 — Sidebar Controls & Header Cleanup (Nov 2025)
+
+### Summary
+- Se eliminó el bloque redundante de “Enlaces útiles” del encabezado para mantener el foco en el título y las cotizaciones FX.
+- Los controles del sidebar ahora se presentan en tarjetas apiladas verticalmente con mayor separación y legibilidad.
+- Release de mantenimiento visual sin cambios funcionales en la lógica del portafolio.
+
+## v0.3.4.3 — Layout Consolidation & Sidebar Unification (Nov 2025)
+
+### Summary
+- Se creó la pestaña **Monitoreo** para alojar el healthcheck completo y se añadió un badge global de estado en la cabecera.
+- Todos los controles del portafolio, el panel de control y las preferencias de apariencia se reubicaron en la barra lateral bajo un contenedor colapsable.
+- La vista principal del portafolio aprovecha el ancho completo con espaciado uniforme tras retirar el panel superior.
+- El footer incorpora un bloque de enlaces útiles con acceso directo a documentación y soporte.
+
+### Documentation
+- `README.md`, `docs/testing.md` y `banners/README` describen el nuevo flujo con sidebar unificado y la pestaña de Monitoreo.
+- La versión de la aplicación se actualizó a 0.3.4.3 en código y materiales de release.
+
 ## v0.3.4.2 — Visual Polish Pass (Nov 2025)
 
 ### Summary
