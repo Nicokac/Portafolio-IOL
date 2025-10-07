@@ -165,7 +165,7 @@ def render_sidebar(
                 120,
                 defaults["refresh_secs"],
                 step=5,
-                help="Un intervalo menor mantiene los datos frescos pero puede aumentar el uso de recursos.",
+                help="Refresca tus datos cada N segundos. Intervalos cortos usan más recursos.",
             )
 
         with filter_col:
@@ -176,13 +176,13 @@ def render_sidebar(
             hide_cash = filter_col.checkbox(
                 "Ocultar IOLPORA / PARKING",
                 value=defaults["hide_cash"],
-                help="Quita el efectivo de las tablas y métricas para concentrarte en posiciones invertidas.",
+                help="Oculta el efectivo para enfocarte en las posiciones invertidas.",
             )
             symbol_query = filter_col.text_input(
                 "Buscar símbolo",
                 value=defaults["symbol_query"],
                 placeholder="p.ej. NVDA",
-                help="Filtra dinámicamente la tabla principal y los gráficos según coincidencias con el ticker.",
+                help="Busca tickers y actualiza tablas y gráficos al instante.",
             )
             selected_syms = filter_col.multiselect(
                 "Filtrar por símbolo",
@@ -193,7 +193,7 @@ def render_sidebar(
                     if s in all_symbols
                 ]
                 or all_symbols,
-                help="Los símbolos seleccionados se utilizarán en tablas, rankings y comparativas visuales.",
+                help="Aplica solo los símbolos elegidos en tablas, rankings y gráficos.",
             )
             selected_types = filter_col.multiselect(
                 "Filtrar por tipo",
@@ -203,7 +203,7 @@ def render_sidebar(
                     for t in (defaults["selected_types"] or available_types)
                     if t in available_types
                 ],
-                help="Restringe la vista a clases de activo específicas, afectando gráficos y totales.",
+                help="Muestra únicamente las clases de activo seleccionadas.",
             )
 
         with currency_col:
@@ -214,7 +214,7 @@ def render_sidebar(
             show_usd = currency_col.toggle(
                 "Mostrar valores en USD CCL",
                 value=defaults["show_usd"],
-                help="Transforma los importes a dólares CCL en tablas, métricas y exportaciones.",
+                help="Convierte todos los valores a dólares CCL.",
             )
 
         chips = _active_filter_chips(
@@ -236,12 +236,12 @@ def render_sidebar(
                 "Ordenar por",
                 order_options,
                 index=order_index,
-                help="Aplica el criterio seleccionado tanto en la tabla principal como en exportaciones.",
+                help="Ordena tablas y exportaciones con este criterio.",
             )
             desc = order_col.checkbox(
                 "Descendente",
                 value=defaults["desc"],
-                help="Mostrá primero los valores más altos (o más bajos si se desactiva).",
+                help="Muestra primero los valores más altos. Desactivalo para invertir el orden.",
             )
 
         with charts_col:
@@ -255,7 +255,7 @@ def render_sidebar(
                 50,
                 defaults["top_n"],
                 step=5,
-                help="Determina la cantidad de barras o puntos que verás en los gráficos comparativos.",
+                help="Elige cuántos elementos ver en rankings y gráficos comparativos.",
             )
 
         _render_filter_overview(filter_col, chips)
