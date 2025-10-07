@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4.2 — Vertical Sidebar Layout (Nov 2025)
+
+### Summary
+- Reorganiza los grupos de controles de la barra lateral en tarjetas apiladas verticalmente, manteniendo títulos, captions y tooltips consistentes.
+- Mejora la lectura de filtros y acciones al asignar una fila completa a cada bloque (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) con padding uniforme.
+- Conserva el feedback visual al aplicar filtros, resaltando únicamente la sección afectada sin alterar la lógica del formulario.
+
+## v0.3.4.4.1 – Header Centering & Cleanup Hotfix (Nov 2025)
+
+### Summary
+- Centra el hero principal del dashboard y elimina el bloque redundante de "Enlaces útiles" del encabezado, manteniendo el bloque únicamente en el footer.
+- Refina la composición visual inicial para que el título, subtítulo y resumen FX queden alineados sin alterar datos ni microinteracciones previas.
+
 ## v0.3.4.4 — UX Consistency & Interaction Pass (Nov 2025)
 
 ### Summary

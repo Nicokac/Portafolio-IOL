@@ -94,59 +94,50 @@ def render_risk_analysis(
             help_text="Tus favoritos se sincronizan entre portafolio, riesgo, técnico y fundamental.",
         )
 
-    combined_types: set[str] = set()
-    if available_types:
-        combined_types.update(
-            str(t).strip()
-            for t in available_types
-            if isinstance(t, str) and str(t).strip()
-        )
+    filtered_df = df_view.copy() if hasattr(df_view, "copy") else df_view
+    selected_type_filters = st.session_state.get("selected_asset_types") or []
+    normalized_filters = [
+        str(t).strip()
+        for t in selected_type_filters
+        if isinstance(t, str) and str(t).strip()
+    ]
+
     if "tipo" in df_view:
-        combined_types.update(
-            str(t).strip()
-            for t in df_view["tipo"].dropna().unique()
-            if str(t).strip()
-        )
-    sorted_types = sorted(combined_types)
-    filtered_df = df_view
-    selected_type: str | None = None
-    if sorted_types:
-        type_options = ["Todos"] + sorted_types
-        current_selection = st.session_state.get("risk_selected_type")
-        if current_selection not in type_options:
-            current_selection = type_options[0]
-        selected_index = type_options.index(current_selection)
-        selected_type = st.selectbox(
-            "Tipo de activo a incluir",
-            type_options,
-            index=selected_index,
-            key="risk_selected_type",
-        )
-        if selected_type != "Todos":
-            if "tipo" in df_view:
-                filtered_df = df_view[df_view["tipo"].astype(str) == selected_type]
-            else:
-                filtered_df = df_view.iloc[0:0]
-            if filtered_df.empty:
-                st.warning("No hay datos para el tipo seleccionado.")
-                st.info("Seleccioná otro tipo para ver el análisis de correlación y riesgo.")
-                st.subheader("Análisis de Riesgo")
-                st.info("No hay símbolos en el portafolio para analizar.")
-                return
+        type_series = df_view["tipo"].astype(str).str.strip()
+        type_series = type_series.replace("", pd.NA)
+        filtered_df = df_view.assign(_normalized_type=type_series)
+        if normalized_filters:
+            filtered_df = filtered_df[
+                filtered_df["_normalized_type"].isin(normalized_filters)
+            ]
+    else:
+        filtered_df = df_view.assign(_normalized_type=pd.NA)
+
+    if filtered_df.empty:
+        st.warning("No hay datos para los tipos seleccionados.")
+        st.info("Ajustá los filtros de tipo de activo para ver correlaciones y métricas de riesgo.")
+        st.subheader("Análisis de Riesgo")
+        st.info("No hay símbolos en el portafolio para analizar.")
+        return
 
     corr_period = st.selectbox(
         "Calcular correlación sobre el último período:",
         ["3mo", "6mo", "1y", "2y", "5y"],
         index=2,
     )
-    portfolio_symbols = filtered_df["simbolo"].tolist()
+    portfolio_symbols = [
+        str(sym).strip()
+        for sym in filtered_df.get("simbolo", [])
+        if str(sym).strip()
+    ]
     if len(portfolio_symbols) >= 2:
         corr_latency: float | None = None
         with st.spinner(f"Calculando correlación ({corr_period})…"):
             start_time = time.perf_counter()
             try:
+                unique_symbols = sorted(set(portfolio_symbols))
                 hist_df = tasvc.portfolio_history(
-                    simbolos=portfolio_symbols, period=corr_period
+                    simbolos=unique_symbols, period=corr_period
                 )
             except AppError as err:
                 corr_latency = (time.perf_counter() - start_time) * 1000.0
@@ -166,61 +157,113 @@ def render_risk_analysis(
             corr_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", corr_latency, status="success")
         returns_for_corr = compute_returns(hist_df)
-        fig = plot_correlation_heatmap(hist_df)
-        if fig:
-            st.plotly_chart(
-                fig,
-                width="stretch",
-                key="corr_heatmap",
-                config=PLOTLY_CONFIG,
+        available_types_in_view: list[str] = []
+        if "_normalized_type" in filtered_df:
+            available_types_in_view = [
+                t
+                for t in filtered_df["_normalized_type"].dropna().unique()
+                if isinstance(t, str)
+            ]
+
+        if normalized_filters:
+            ordered_types = [t for t in normalized_filters if t in available_types_in_view]
+        else:
+            ordered_types = sorted(available_types_in_view)
+
+        type_groups: list[tuple[str, pd.DataFrame]] = []
+        for type_name in ordered_types:
+            subset = filtered_df[filtered_df["_normalized_type"] == type_name]
+            if not subset.empty:
+                type_groups.append((type_name, subset))
+
+        if not type_groups:
+            type_groups = [("Portafolio", filtered_df)]
+
+        display_targets: list = []
+        if len(type_groups) > 1:
+            display_targets = st.tabs(
+                [f"{type_name}" for type_name, _ in type_groups]
             )
-            st.caption(
-                """
-                Un heatmap de correlación muestra cómo se mueven los activos entre sí.
-                **Azul (cercano a 1)**: Se mueven juntos.
-                **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
-                **Blanco (cercano a 0)**: No tienen relación.
-                Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
-                """
-            )
-            if returns_for_corr.shape[1] >= 2:
-                window_options = {"1 mes (21)": 21, "3 meses (63)": 63, "6 meses (126)": 126}
-                selected_window_label = st.selectbox(
-                    "Ventana para correlaciones móviles",
-                    list(window_options.keys()),
-                    index=1,
-                    key="rolling_corr_window",
-                )
-                selected_window = window_options[selected_window_label]
-                rolling_df = rolling_correlations(returns_for_corr, selected_window)
-                if not rolling_df.empty:
-                    roll_fig = px.line(
-                        rolling_df,
-                        labels={"index": "Fecha", "value": "Correlación", "variable": "Par"},
+        else:
+            display_targets = [st.container()]
+
+        for (type_name, subset_df), display_host in zip(type_groups, display_targets):
+            with display_host:
+                subset_symbols = [
+                    str(sym).strip()
+                    for sym in subset_df.get("simbolo", [])
+                    if str(sym).strip()
+                ]
+                subset_symbols = [
+                    sym for sym in subset_symbols if sym in hist_df.columns
+                ]
+                if len(set(subset_symbols)) < 2:
+                    st.warning(
+                        f"⚠️ No hay suficientes activos del tipo {type_name} para calcular correlaciones."
                     )
-                    roll_fig = _apply_layout(
-                        roll_fig,
-                        title=f"Correlaciones móviles ({selected_window} ruedas)",
-                    )
+                    continue
+
+                subset_hist = hist_df[sorted(set(subset_symbols))]
+                fig = plot_correlation_heatmap(subset_hist)
+                if fig:
                     st.plotly_chart(
-                        roll_fig,
+                        fig,
                         width="stretch",
-                        key="rolling_corr_chart",
+                        key=f"corr_heatmap_{type_name.lower().replace(' ', '_')}",
                         config=PLOTLY_CONFIG,
                     )
-                    latest = rolling_df.dropna(how="all").tail(1)
-                    if not latest.empty:
-                        latest_tidy = (
-                            latest.T.reset_index().rename(columns={"index": "Par", latest.index[-1]: "Correlación"})
-                        )
-                        st.markdown(
-                            latest_tidy.to_html(index=False, float_format="{:.2f}".format),
-                            unsafe_allow_html=True,
-                        )
-                else:
-                    st.info(
-                        "No se pudieron calcular correlaciones móviles con la ventana seleccionada."
+                    st.caption(
+                        """
+                        Un heatmap de correlación muestra cómo se mueven los activos entre sí.
+                        **Azul (cercano a 1)**: Se mueven juntos.
+                        **Rojo (cercano a -1)**: Se mueven en direcciones opuestas.
+                        **Blanco (cercano a 0)**: No tienen relación.
+                        Una buena diversificación busca valores bajos (cercanos a 0 o negativos).
+                        """
                     )
+                else:
+                    st.warning(
+                        f"⚠️ No hay suficientes datos históricos para calcular la correlación de {type_name}."
+                    )
+
+        if returns_for_corr.shape[1] >= 2:
+            window_options = {"1 mes (21)": 21, "3 meses (63)": 63, "6 meses (126)": 126}
+            selected_window_label = st.selectbox(
+                "Ventana para correlaciones móviles",
+                list(window_options.keys()),
+                index=1,
+                key="rolling_corr_window",
+            )
+            selected_window = window_options[selected_window_label]
+            rolling_df = rolling_correlations(returns_for_corr, selected_window)
+            if not rolling_df.empty:
+                roll_fig = px.line(
+                    rolling_df,
+                    labels={"index": "Fecha", "value": "Correlación", "variable": "Par"},
+                )
+                roll_fig = _apply_layout(
+                    roll_fig,
+                    title=f"Correlaciones móviles ({selected_window} ruedas)",
+                )
+                st.plotly_chart(
+                    roll_fig,
+                    width="stretch",
+                    key="rolling_corr_chart",
+                    config=PLOTLY_CONFIG,
+                )
+                latest = rolling_df.dropna(how="all").tail(1)
+                if not latest.empty:
+                    latest_tidy = (
+                        latest.T.reset_index().rename(columns={"index": "Par", latest.index[-1]: "Correlación"})
+                    )
+                    st.markdown(
+                        latest_tidy.to_html(index=False, float_format="{:.2f}".format),
+                        unsafe_allow_html=True,
+                    )
+            else:
+                st.info(
+                    "No se pudieron calcular correlaciones móviles con la ventana seleccionada."
+                )
         else:
             st.warning(
                 f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación."
@@ -229,6 +272,9 @@ def render_risk_analysis(
         st.info(
             "Necesitas al menos 2 activos en tu portafolio (después de aplicar filtros) para calcular la correlación."
         )
+
+    if "_normalized_type" in filtered_df:
+        filtered_df = filtered_df.drop(columns="_normalized_type")
 
     st.subheader("Análisis de Riesgo")
     if notifications and notifications.risk_alert:
