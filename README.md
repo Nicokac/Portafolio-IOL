@@ -162,7 +162,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### CI Checklist (0.3.4.4.2)
+### CI Checklist (0.3.4.4.3)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
@@ -181,6 +181,14 @@ validar escenarios sin depender de módulos obsoletos.
 8. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
+
+### Correlaciones segmentadas (0.3.4.4.3)
+
+- Los heatmaps de correlación del módulo de riesgo se construyen únicamente con los símbolos del tipo
+  seleccionado y muestran un título contextualizado (por ejemplo, "Matriz de Correlación — Bonos"),
+  lo que ayuda a distinguir rápidamente el grupo analizado.
+- Antes de calcular la correlación se descartan columnas con rendimientos de varianza nula o indefinida
+  para evitar coeficientes erráticos y garantizar que solo se comparen activos con movimiento real.
 
 ### Validaciones Markowitz reforzadas (0.3.4.0)
 

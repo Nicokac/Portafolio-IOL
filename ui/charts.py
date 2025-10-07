@@ -588,7 +588,7 @@ def plot_volume(df: pd.DataFrame):
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title="Volumen", show_legend=False)
 
-def plot_correlation_heatmap(prices_df: pd.DataFrame):
+def plot_correlation_heatmap(prices_df: pd.DataFrame, *, title: str | None = None):
     """
     Calcula y grafica una matriz de correlación de los rendimientos diarios.
     """
@@ -597,12 +597,28 @@ def plot_correlation_heatmap(prices_df: pd.DataFrame):
 
     # 1) Rendimientos diarios (sin forward/back fill implícito)
     returns = prices_df.pct_change(fill_method=None)
-    returns = returns.replace([np.inf, -np.inf], np.nan).dropna(how="all").fillna(0.0)
+    returns = returns.replace([np.inf, -np.inf], np.nan)
+    returns = returns.dropna(axis=0, how="all")
+    if returns.empty:
+        return None
+
+    valid_variance = returns.var(skipna=True)
+    if valid_variance.empty:
+        return None
+
+    valid_columns = valid_variance[valid_variance > 0].index.tolist()
+    if len(valid_columns) < 2:
+        return None
+
+    returns = returns[valid_columns]
+    returns = returns.dropna(axis=1, how="all")
     if returns.empty or len(returns.columns) < 2:
         return None
 
     # 2) Matriz de correlación
     corr_matrix = returns.corr()
+    if corr_matrix.empty or len(corr_matrix.columns) < 2:
+        return None
 
     # 3) Heatmap
     fig = px.imshow(
@@ -614,7 +630,8 @@ def plot_correlation_heatmap(prices_df: pd.DataFrame):
     )
     fig.update_traces(hovertemplate='Correlación entre %{x} y %{y}:<br><b>%{z:.2f}</b><extra></extra>')
     fig.update_xaxes(side="bottom")
-    return _apply_layout(fig, title="Matriz de Correlación de Rendimientos Diarios")
+    chart_title = title or "Matriz de Correlación de Rendimientos Diarios"
+    return _apply_layout(fig, title=chart_title)
 
 def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow: int):
     """

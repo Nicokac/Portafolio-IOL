@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4.3 — Risk Heatmap Polishing Pass (Nov 2025)
+
+### Summary
+- Elimina del cálculo de correlaciones a los activos con rendimientos de varianza nula o indefinida,
+  evitando coeficientes erráticos y matrices singulares.
+- Los heatmaps de correlación ahora muestran títulos contextualizados por tipo de activo (por
+  ejemplo, "Matriz de Correlación — CEDEARs"), lo que refuerza la segmentación aplicada en los
+  filtros del análisis de riesgo.
+- README y materiales de release actualizados para documentar el descarte de columnas sin
+  movimiento y el nuevo etiquetado por grupo.
+
 ## v0.3.4.4.2 — Vertical Sidebar Layout (Nov 2025)
 
 ### Summary
