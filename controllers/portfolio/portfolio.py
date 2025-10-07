@@ -6,7 +6,6 @@ import streamlit as st
 
 from domain.models import Controls
 from ui.sidebar_controls import render_sidebar
-from ui.ui_settings import render_ui_controls
 from ui.fundamentals import render_fundamental_data
 from ui.export import PLOTLY_CONFIG
 from ui.charts import plot_technical_analysis_chart
@@ -549,7 +548,6 @@ def render_portfolio_section(
     cli,
     fx_rates,
     *,
-    controls_container: Any | None = None,
     view_model_service_factory: Callable[[], PortfolioViewModelService] | None = None,
     notifications_service_factory: Callable[[], NotificationsService] | None = None,
 ):
@@ -577,10 +575,7 @@ def render_portfolio_section(
         controls: Controls = render_sidebar(
             all_symbols,
             available_types,
-            container=controls_container,
         )
-        if controls_container is None:
-            render_ui_controls()
 
         refresh_secs = controls.refresh_secs
         snapshot = view_model_service.get_portfolio_view(

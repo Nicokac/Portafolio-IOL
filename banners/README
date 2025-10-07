@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.2
-- Fecha de publicación: 2025-11-12
-- Mensaje destacado: "Visual Polish Pass"
-- Elementos complementarios: incluir badge de `session_tag` activo, timeline resumido de eventos, acceso rápido a "Descargas de observabilidad", recordatorio de logs rotados en la esquina inferior, mención al selector de tipo centrado en el heatmap y contraste reforzado en tarjetas clave.
+- Versión actual: v0.3.4.3
+- Fecha de publicación: 2025-11-18
+- Mensaje destacado: "Layout consolidado y controles unificados"
+- Elementos complementarios: resaltar badge global de salud bajo el título principal, indicar que la pestaña "Monitoreo" concentra el healthcheck completo, mencionar el nuevo bloque de enlaces útiles del footer y la unificación de filtros/acciones dentro del sidebar.

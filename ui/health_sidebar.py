@@ -383,13 +383,13 @@ def _format_recent_http_error(metrics: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
-def _render_recent_stats(sidebar: Any, metrics: Mapping[str, Any]) -> None:
+def _render_recent_stats(host: Any, metrics: Mapping[str, Any]) -> None:
     charts_rendered = False
 
     latency_series = _collect_latency_series(metrics)
     latency_frame = _build_series_dataframe(latency_series)
     if latency_frame is not None:
-        sidebar.line_chart(latency_frame)
+        host.line_chart(latency_frame)
         charts_rendered = True
 
     cache_samples = _extract_stat_samples(metrics.get("fx_cache"), "age")
@@ -397,16 +397,16 @@ def _render_recent_stats(sidebar: Any, metrics: Mapping[str, Any]) -> None:
         cache_frame = pd.DataFrame({"Edad caché (s)": pd.Series(cache_samples, dtype="float64")})
         cache_frame.index = cache_frame.index + 1
         cache_frame.index.name = "Muestra"
-        sidebar.area_chart(cache_frame)
+        host.area_chart(cache_frame)
         charts_rendered = True
 
     http_note = _format_recent_http_error(metrics)
     if http_note:
-        sidebar.markdown(http_note)
+        host.markdown(http_note)
         charts_rendered = True
 
     if not charts_rendered:
-        sidebar.markdown("_Sin estadísticas recientes._")
+        host.markdown("_Sin estadísticas recientes._")
 
 
 def _format_active_sessions(data: Any) -> Optional[str]:
@@ -1930,12 +1930,10 @@ def _format_opportunities_history(
     return [table_block]
 
 
-def render_health_sidebar() -> None:
-    """Render the health summary panel inside the sidebar."""
-    metrics = get_health_metrics()
-    sidebar = st.sidebar
-    sidebar.header(f"🩺 Healthcheck (versión {__version__})")
-    sidebar.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
+def _render_health_panel(host: Any, metrics: Mapping[str, Any]) -> None:
+    """Render the health summary panel inside the given container."""
+    host.header(f"🩺 Healthcheck (versión {__version__})")
+    host.caption("Monitorea la procedencia y el rendimiento de los datos cargados.")
 
     env_badge = _format_environment_badge(metrics.get("environment_snapshot"))
 
@@ -1949,7 +1947,7 @@ def render_health_sidebar() -> None:
     iol_summary = _format_iol_status(metrics.get("iol_refresh"))
     session_lines = list(_format_session_monitoring(metrics.get("session_monitoring")))
 
-    overview_section = sidebar.container(border=True)
+    overview_section = host.container(border=True)
     with overview_section:
         st.markdown("#### 🔍 Resumen operativo")
         if env_badge:
@@ -1987,7 +1985,7 @@ def render_health_sidebar() -> None:
     fx_lines = list(_format_fx_section(metrics.get("fx_api"), metrics.get("fx_cache")))
     macro_lines = list(_format_macro_section(metrics.get("macro_api")))
 
-    data_section = sidebar.container(border=True)
+    data_section = host.container(border=True)
     with data_section:
         st.markdown("#### 📊 Salud de datos")
         st.markdown(yfinance_summary)
@@ -2022,7 +2020,7 @@ def render_health_sidebar() -> None:
                     for line in macro_lines:
                         st.markdown(line)
 
-    opportunities_section = sidebar.container(border=True)
+    opportunities_section = host.container(border=True)
     with opportunities_section:
         st.markdown("#### 💡 Oportunidades")
         opportunities_summary = _format_opportunities_status(
@@ -2048,7 +2046,7 @@ def render_health_sidebar() -> None:
     tab_latency_lines = list(_format_tab_latency_section(metrics.get("tab_latencies")))
     fallback_lines = list(_format_adapter_fallback_section(metrics.get("adapter_fallbacks")))
 
-    observability_section = sidebar.container(border=True)
+    observability_section = host.container(border=True)
     with observability_section:
         st.markdown("#### 🚨 Riesgo y observabilidad")
         if risk_lines:
@@ -2078,7 +2076,7 @@ def render_health_sidebar() -> None:
                 for line in fallback_lines:
                     st.markdown(line)
 
-    diagnostics_section = sidebar.container(border=True)
+    diagnostics_section = host.container(border=True)
     with diagnostics_section:
         st.markdown("#### 🧪 Diagnóstico y soporte")
         _render_recent_stats(diagnostics_section, metrics)
@@ -2131,4 +2129,70 @@ def render_health_sidebar() -> None:
                 )
 
 
-__all__ = ["render_health_sidebar"]
+def _resolve_health_metrics(metrics: Optional[Mapping[str, Any]]) -> Mapping[str, Any]:
+    if isinstance(metrics, Mapping):
+        return metrics
+    return get_health_metrics()
+
+
+def render_health_sidebar(*, metrics: Optional[Mapping[str, Any]] = None) -> None:
+    """Render the health summary inside Streamlit's sidebar."""
+
+    resolved = _resolve_health_metrics(metrics)
+    _render_health_panel(st.sidebar, resolved)
+
+
+def render_health_monitor_tab(
+    container: Any, *, metrics: Optional[Mapping[str, Any]] = None
+) -> None:
+    """Render the health summary within the provided tab container."""
+
+    resolved = _resolve_health_metrics(metrics)
+    _render_health_panel(container, resolved)
+
+
+def summarize_health_status(
+    *, metrics: Optional[Mapping[str, Any]] = None
+) -> tuple[str, str, Optional[str]]:
+    """Return a tuple with icon, label and detail summarising global health."""
+
+    resolved = _resolve_health_metrics(metrics)
+
+    diagnostics = resolved.get("diagnostics")
+    status_value: Any = None
+    detail_value: Any = None
+    ts_value: Optional[float] = None
+
+    if isinstance(diagnostics, Mapping):
+        primary = diagnostics.get("initial")
+        if isinstance(primary, Mapping):
+            status_value = primary.get("status") or status_value
+            detail_value = primary.get("detail") or primary.get("message") or detail_value
+            ts_value = _coerce_timestamp(primary.get("ts")) or ts_value
+        status_value = status_value or diagnostics.get("status")
+        detail_value = detail_value or diagnostics.get("detail") or diagnostics.get("message")
+        ts_value = ts_value or _coerce_timestamp(diagnostics.get("ts"))
+
+    if status_value is None:
+        environment = resolved.get("environment_snapshot")
+        if isinstance(environment, Mapping):
+            status_value = environment.get("status")
+            detail_value = detail_value or environment.get("detail") or environment.get("message")
+            ts_value = ts_value or _coerce_timestamp(environment.get("ts"))
+
+    icon, label = _status_badge(status_value or "", default_label="Sin datos")
+
+    detail_text = _sanitize_text(detail_value)
+    if ts_value is not None:
+        ts_text = _format_timestamp(ts_value)
+        if ts_text:
+            detail_text = f"{detail_text} • {ts_text}" if detail_text else ts_text
+
+    return icon, label, detail_text
+
+
+__all__ = [
+    "render_health_monitor_tab",
+    "render_health_sidebar",
+    "summarize_health_status",
+]

@@ -39,7 +39,7 @@ from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.header import render_header
 from ui.actions import render_action_menu
-from ui.health_sidebar import render_health_sidebar
+from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.login import render_login_page
 from ui.footer import render_footer
 #from controllers.fx import render_fx_section
@@ -50,7 +50,7 @@ from controllers.portfolio.portfolio import (
 )
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
-from services.health import record_dependency_status
+from services.health import get_health_metrics, record_dependency_status
 
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,39 @@ st.markdown(
     """
     <style>
         [data-testid="block-container"] {
-            max-width: 1100px;
-            margin-left: auto;
-            margin-right: auto;
-            padding-top: 3.5rem;
+            max-width: 100%;
+            padding: 3.5rem 3.25rem 2.75rem;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 992px) {
+            [data-testid="block-container"] {
+                padding: 3rem 2.2rem 2.25rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            [data-testid="block-container"] {
+                padding: 2.4rem 1.3rem 2rem;
+            }
+        }
+
+        .health-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.4rem 0.9rem;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.08);
+            color: rgb(24, 40, 58);
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 1.75rem;
+        }
+
+        .health-status-badge__detail {
+            font-weight: 500;
+            color: rgba(15, 23, 42, 0.65);
         }
 
         .control-panel__body {
@@ -77,7 +106,8 @@ st.markdown(
         }
 
         .control-panel__body--sidebar {
-            padding: 1.5rem 1.75rem;
+            padding: 1.6rem 1.75rem;
+            margin-bottom: 1.6rem;
         }
 
         .control-panel__section {
@@ -222,30 +252,27 @@ def main(argv: list[str] | None = None):
         st.warning(fx_error)
     render_header(rates=fx_rates)
 
-    controls_panel = st.container(border=True)
-    with controls_panel:
-        st.markdown("<div class='control-panel__body'>", unsafe_allow_html=True)
-        info_col, settings_col = st.columns([4, 2], gap="large")
-        with info_col:
-            summary_section = st.container()
-            with summary_section:
-                st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
-                st.markdown("### 🎛️ Panel de control")
-                st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
-                timestamp = TimeProvider.now()
-                st.markdown(f"**🕒 {timestamp}**")
-                st.markdown("</div>", unsafe_allow_html=True)
-            actions_section = st.container()
-            render_action_menu(container=actions_section)
-        with settings_col:
-            ui_section = st.container()
-            with ui_section:
-                st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
-                render_ui_controls(container=ui_section)
-                st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    health_metrics = get_health_metrics()
+    status_icon, status_label, status_detail = summarize_health_status(
+        metrics=health_metrics
+    )
+    detail_html = (
+        f"<span class='health-status-badge__detail'>{status_detail}</span>"
+        if status_detail
+        else ""
+    )
+    status_container = st.container()
+    status_container.markdown(
+        f"""
+        <div class='health-status-badge'>
+            <span class='health-status-badge__icon'>{status_icon}</span>
+            <span class='health-status-badge__label'>{status_label}</span>
+            {detail_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    controls_container = st.container(border=True)
     main_col = st.container()
 
     cli = build_iol_client()
@@ -257,31 +284,59 @@ def main(argv: list[str] | None = None):
         "notifications_service_factory": default_notifications_service_factory,
     }
 
-    if can_render_opportunities:
+    monitoring_label = "Monitoreo"
+
+    if can_render_opportunities and hasattr(st, "tabs"):
         with main_col:
-            tab_labels = ["Portafolio", "Empresas con oportunidad"]
-            portfolio_tab, opportunities_tab = st.tabs(tab_labels)
+            tab_labels = ["Portafolio", "Empresas con oportunidad", monitoring_label]
+            portfolio_tab, opportunities_tab, monitoring_tab = st.tabs(tab_labels)
         refresh_secs = render_portfolio_section(
             portfolio_tab,
             cli,
             fx_rates,
-            controls_container=controls_container,
             **portfolio_section_kwargs,
         )
         with opportunities_tab:
             from ui.tabs.opportunities import render_opportunities_tab
 
             render_opportunities_tab()
+        with monitoring_tab:
+            render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
     else:
+        if hasattr(st, "tabs"):
+            with main_col:
+                tab_labels = ["Portafolio", monitoring_label]
+                portfolio_tab, monitoring_tab = st.tabs(tab_labels)
+        else:
+            portfolio_tab = main_col
+            monitoring_tab = main_col
         refresh_secs = render_portfolio_section(
-            main_col,
+            portfolio_tab,
             cli,
             fx_rates,
-            controls_container=controls_container,
             **portfolio_section_kwargs,
         )
         if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
             logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
+        if hasattr(st, "tabs"):
+            with monitoring_tab:
+                render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
+        else:
+            render_health_monitor_tab(main_col, metrics=health_metrics)
+
+    config_panel = st.sidebar.expander("⚙️ Configuración general", expanded=False)
+    with config_panel:
+        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+        st.markdown("### 🎛️ Panel de control")
+        st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
+        st.markdown(f"**🕒 {TimeProvider.now()}**")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_action_menu(container=config_panel)
+
+        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+        render_ui_controls(container=config_panel)
+        st.markdown("</div>", unsafe_allow_html=True)
     if not st.session_state.get("iol_startup_metric_logged"):
         login_ts_raw = st.session_state.get("iol_login_ok_ts")
         try:
@@ -316,8 +371,6 @@ def main(argv: list[str] | None = None):
             st.session_state["iol_startup_metric_logged"] = True
 
     render_footer()
-    if hasattr(st, "sidebar"):
-        render_health_sidebar()
 
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()

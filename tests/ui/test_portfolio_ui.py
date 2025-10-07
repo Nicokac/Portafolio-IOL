@@ -356,7 +356,6 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
             symbol_query="",
         )
         monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda *a, **k: controls)
-        monkeypatch.setattr(portfolio_mod, "render_ui_controls", lambda: None)
 
         df_view = df_view or pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [1200.0]})
 
