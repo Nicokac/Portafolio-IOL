@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.4
-- Fecha de publicación: 2025-11-25
-- Mensaje destacado: "Microinteracciones y feedback consistente"
-- Elementos complementarios: destacar que los toasts y contadores de resiliencia se ven iguales en el panel principal y en "Monitoreo", remarcar los estados activos de la barra lateral (hover/foco) y alinear el badge global con los badges del footer.
+- Versión actual: v0.3.4.4.2
+- Fecha de publicación: 2025-11-27
+- Mensaje destacado: "Vertical Sidebar Layout"
+- Elementos complementarios: destacar que el formulario lateral muestra tarjetas apiladas (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) con feedback visual consistente al aplicar cambios.

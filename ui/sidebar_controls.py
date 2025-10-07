@@ -1,5 +1,6 @@
 # ui\sidebar_controls.py
 from __future__ import annotations
+from contextlib import contextmanager
 from dataclasses import asdict
 from textwrap import shorten
 
@@ -151,6 +152,18 @@ def _render_filter_overview(container, chips: list[str]) -> None:
     )
 
 
+@contextmanager
+def _section_card(host, *, extra_classes: str = ""):
+    classes = "control-panel__section control-panel__section--sidebar"
+    if extra_classes:
+        classes = f"{classes} {extra_classes}".strip()
+    host.markdown(f"<div class='{classes}'>", unsafe_allow_html=True)
+    container = host.container()
+    with container:
+        yield container
+    host.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_sidebar(
     all_symbols: list[str],
     available_types: list[str],
@@ -196,21 +209,12 @@ def render_sidebar(
     )
 
     body_opened = False
-    wrapper_opened = False
     if hasattr(host, "markdown"):
         host.markdown(
             "<div class='control-panel__body control-panel__body--sidebar'>",
             unsafe_allow_html=True,
         )
         body_opened = True
-        wrapper_classes = "control-panel__section control-panel__section--sidebar"
-        if flash_active:
-            wrapper_classes += " control-panel__section--flash"
-        host.markdown(
-            "<div class='{classes}'>".format(classes=wrapper_classes),
-            unsafe_allow_html=True,
-        )
-        wrapper_opened = True
         host.markdown("### 🎛️ Controles")
         if hasattr(host, "caption"):
             host.caption("Configura filtros, orden y visualizaciones del portafolio.")
@@ -218,14 +222,12 @@ def render_sidebar(
     form = host.form("controls_form") if hasattr(host, "form") else st.form("controls_form")
 
     with form:
-        update_col, filter_col, currency_col, order_col, charts_col = form.columns(
-            (1.6, 3.2, 1.6, 1.6, 1.6)
-        )
-
-        with update_col:
-            update_col.markdown("### ⏱️ Actualización")
-            update_col.caption("Controlá cada cuánto se refrescan tablas, totales y gráficos.")
-            refresh_secs = update_col.slider(
+        with _section_card(form) as update_section:
+            update_section.markdown("### ⏱️ Actualización")
+            update_section.caption(
+                "Controlá cada cuánto se refrescan tablas, totales y gráficos."
+            )
+            refresh_secs = update_section.slider(
                 "Intervalo (seg)",
                 5,
                 120,
@@ -234,23 +236,26 @@ def render_sidebar(
                 help="Refresca tus datos cada N segundos. Intervalos cortos usan más recursos.",
             )
 
-        with filter_col:
-            filter_col.markdown("### 🔍 Filtros")
-            filter_col.caption(
+        with _section_card(
+            form,
+            extra_classes="control-panel__section--flash" if flash_active else "",
+        ) as filter_section:
+            filter_section.markdown("### 🔍 Filtros")
+            filter_section.caption(
                 "Limitá la vista para enfocarte en activos específicos o categorías."
             )
-            hide_cash = filter_col.checkbox(
+            hide_cash = filter_section.checkbox(
                 "Ocultar IOLPORA / PARKING",
                 value=defaults["hide_cash"],
                 help="Oculta el efectivo para enfocarte en las posiciones invertidas.",
             )
-            symbol_query = filter_col.text_input(
+            symbol_query = filter_section.text_input(
                 "Buscar símbolo",
                 value=defaults["symbol_query"],
                 placeholder="p.ej. NVDA",
                 help="Busca tickers y actualiza tablas y gráficos al instante.",
             )
-            selected_syms = filter_col.multiselect(
+            selected_syms = filter_section.multiselect(
                 "Filtrar por símbolo",
                 all_symbols,
                 default=[
@@ -261,7 +266,7 @@ def render_sidebar(
                 or all_symbols,
                 help="Aplica solo los símbolos elegidos en tablas, rankings y gráficos.",
             )
-            selected_types = filter_col.multiselect(
+            selected_types = filter_section.multiselect(
                 "Filtrar por tipo",
                 available_types,
                 default=[
@@ -271,16 +276,48 @@ def render_sidebar(
                 ],
                 help="Muestra únicamente las clases de activo seleccionadas.",
             )
+            overview_container = filter_section.container()
 
-        with currency_col:
-            currency_col.markdown("### 💱 Moneda")
-            currency_col.caption(
+        with _section_card(form) as currency_section:
+            currency_section.markdown("### 💱 Moneda")
+            currency_section.caption(
                 "Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones."
             )
-            show_usd = currency_col.toggle(
+            show_usd = currency_section.toggle(
                 "Mostrar valores en USD CCL",
                 value=defaults["show_usd"],
                 help="Convierte todos los valores a dólares CCL.",
+            )
+
+        with _section_card(form) as order_section:
+            order_section.markdown("### ↕️ Orden")
+            order_section.caption(
+                "Definí cómo ordenarás la tabla de posiciones y rankings asociados."
+            )
+            order_by = order_section.selectbox(
+                "Ordenar por",
+                order_options,
+                index=order_index,
+                help="Ordena tablas y exportaciones con este criterio.",
+            )
+            desc = order_section.checkbox(
+                "Descendente",
+                value=defaults["desc"],
+                help="Muestra primero los valores más altos. Desactivalo para invertir el orden.",
+            )
+
+        with _section_card(form) as charts_section:
+            charts_section.markdown("### 📈 Gráficos")
+            charts_section.caption(
+                "Controlá cuántos elementos se visualizan en rankings y gráficos destacados."
+            )
+            top_n = charts_section.slider(
+                "Top N",
+                5,
+                50,
+                defaults["top_n"],
+                step=5,
+                help="Elige cuántos elementos ver en rankings y gráficos comparativos.",
             )
 
         chips = _active_filter_chips(
@@ -293,45 +330,14 @@ def render_sidebar(
             available_types=available_types,
         )
 
-        with order_col:
-            order_col.markdown("### ↕️ Orden")
-            order_col.caption(
-                "Definí cómo ordenarás la tabla de posiciones y rankings asociados."
-            )
-            order_by = order_col.selectbox(
-                "Ordenar por",
-                order_options,
-                index=order_index,
-                help="Ordena tablas y exportaciones con este criterio.",
-            )
-            desc = order_col.checkbox(
-                "Descendente",
-                value=defaults["desc"],
-                help="Muestra primero los valores más altos. Desactivalo para invertir el orden.",
-            )
+        _render_filter_overview(overview_container, chips)
 
-        with charts_col:
-            charts_col.markdown("### 📈 Gráficos")
-            charts_col.caption(
-                "Controlá cuántos elementos se visualizan en rankings y gráficos destacados."
-            )
-            top_n = charts_col.slider(
-                "Top N",
-                5,
-                50,
-                defaults["top_n"],
-                step=5,
-                help="Elige cuántos elementos ver en rankings y gráficos comparativos.",
-            )
+        with _section_card(form, extra_classes="control-panel__actions") as actions_section:
+            actions_section.caption("Aplicá tus cambios o volvé a los valores originales.")
+            action_cols = actions_section.columns(2)
+            apply_btn = action_cols[0].form_submit_button("Aplicar")
+            reset_btn = action_cols[1].form_submit_button("Reset")
 
-        _render_filter_overview(filter_col, chips)
-
-        action_cols = form.columns(2)
-        apply_btn = action_cols[0].form_submit_button("Aplicar")
-        reset_btn = action_cols[1].form_submit_button("Reset")
-
-    if wrapper_opened:
-        host.markdown("</div>", unsafe_allow_html=True)
     if body_opened:
         host.markdown("</div>", unsafe_allow_html=True)
     if flash_active:

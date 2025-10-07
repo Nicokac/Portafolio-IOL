@@ -42,13 +42,16 @@ usa los stubs deterministas para mantener resultados reproducibles. La release 0
 telemetría dentro de la pestaña Monitoreo, mantiene la rotación automática de `analysis.log` y
 añade verificaciones visuales sobre el sidebar unificado, el badge global de estado y el nuevo bloque
 de enlaces del footer, por lo que los tests deben asegurar que los snapshots y los logs comprimidos
-generados por la app se publiquen como artefactos.
+generados por la app se publiquen como artefactos. La release 0.3.4.4.2 profundiza este trabajo al
+apilar los controles del sidebar en tarjetas verticales con feedback visual específico por sección,
+por lo que las verificaciones manuales deben incluir capturas del nuevo layout y la animación de
+feedback al aplicar filtros.
 
 > Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
 
 ### Pruebas manuales sugeridas (0.3.4.3)
 
-1. **Sidebar de controles unificado.** Abrí la aplicación en resoluciones desktop y medianas para validar que el formulario de filtros y el contenedor **⚙️ Configuración general** conviven en la barra lateral con chips activos, tooltips y los botones de refresco/cierre funcionando.
+1. **Sidebar de controles apilado.** Abrí la aplicación en resoluciones desktop y medianas para validar que las tarjetas de Actualización, Filtros, Moneda, Orden, Gráficos y Acciones se rendericen una debajo de la otra con padding uniforme, chips activos, tooltips cortos y botones de refresco/cierre funcionando.
 2. **Pestaña Monitoreo activa.** Navegá a la pestaña **Monitoreo** y confirmá que el healthcheck conserva las secciones de dependencias, snapshots, oportunidades y diagnósticos, registrando TTLs y latencias con la misma profundidad que el antiguo sidebar.
 3. **Badge global y footer.** Revisá que bajo el encabezado principal aparezca el badge de estado general y que el footer incluya el bloque de enlaces útiles con contraste reducido en los metadatos.
 
@@ -88,7 +91,7 @@ los escenarios siguen siendo reproducibles incluso cuando se ejecutan en paralel
   `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
   `analysis.xlsx`, el resumen `summary.csv`, el snapshot de entorno (`environment.json`) y el paquete de logs rotados (`analysis.log` + `.gz`).
 5. **TTLs y monitoreo visibles.** Ejecuta la app en modo headless y capturá la pestaña **Monitoreo** para confirmar que cada proveedor muestra el TTL restante configurado en `CACHE_TTL_*` y que el timeline de sesión despliega los hitos (login, screenings, exportaciones) en orden.
-6. **Sidebar y badge global.** Capturá el sidebar con el formulario de controles y el bloque **⚙️ Configuración general**, verificando que los botones de acciones rápidas funcionen y que el badge global de salud se renderice bajo el encabezado principal.
+6. **Sidebar apilado y badge global.** Capturá el sidebar con los bloques apilados (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) verificando que cada tarjeta conserve padding uniforme, tooltips cortos y feedback visual al aplicar filtros. Confirmá también que el bloque **⚙️ Configuración general** y el badge global de salud se rendericen sin solaparse con el nuevo layout.
 7. **Footer con enlaces útiles.** Acompañá el pipeline con capturas o vídeos que muestren el bloque de enlaces útiles en el footer y el contraste suavizado de los metadatos.
 8. **Checklist previa al merge.** Antes de aprobar la release inspecciona los artefactos del pipeline y
   confirma que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv`, el snapshot de entorno y

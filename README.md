@@ -6,21 +6,28 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
-## Quick-start (release 0.3.4.4 — UX Consistency & Interaction Pass)
+## Quick-start (release 0.3.4.4.2 — Vertical Sidebar Layout)
 
-La versión **0.3.4.4** profundiza el rediseño UI al unificar microinteracciones, asegurando que cada control entregue feedback inmediato y consistente. Los estados _hover_ y de enfoque ahora son visibles y accesibles, los toasts mantienen el mismo tono en toda la app y las cargas muestran _skeletons_ alineados con los bloques reales para evitar saltos visuales.
+La versión **0.3.4.4.2** reorganiza el panel lateral en tarjetas apiladas verticalmente. Cada bloque —Actualización, Filtros, Moneda, Orden, Gráficos y Acciones— ocupa ahora una fila completa con padding uniforme, manteniendo la coherencia tipográfica y los tooltips cortos introducidos en 0.3.4.4.
 
-## Quick-start (release 0.3.4.4 — Microinteracciones y feedback guiado)
+## Quick-start (release 0.3.4.4.2 — Sidebar apilado y feedback guiado)
 
-La versión **0.3.4.4** refuerza los siguientes ejes:
-- La **barra lateral** sincroniza tooltips, estados activos y contadores de presets, mostrando confirmaciones instantáneas cuando se guardan filtros o se actualizan símbolos.
-- El contenedor colapsable **⚙️ Configuración general** añade indicadores de progreso mientras se disparan screenings o exportaciones, y reutiliza los mismos toasts del panel principal para cerrar el ciclo de feedback.
-- La pestaña **Monitoreo** replica los mensajes del tablero principal (toasts, contadores de resiliencia y alertas de snapshot) para que el seguimiento posterior conserve el contexto de cada acción.
-- El **footer** mantiene el bloque de enlaces útiles, ahora con badges de estado que cambian en sincronía con el badge global situado bajo el encabezado.
+La versión **0.3.4.4.2** refuerza los siguientes ejes:
+- El **sidebar** presenta un flujo de lectura vertical con tarjetas independientes que agrupan los controles relacionados. El formulario conserva el mismo `st.form`, pero reemplaza columnas por contenedores apilados para mejorar la lectura en pantallas medianas y chicas.
+- Las **secciones de filtros** mantienen los chips activos, con feedback visual que resalta el bloque al aplicar cambios y un mensaje temporal en la barra lateral.
+- El selector de **Moneda**, las opciones de **Orden** y el bloque de **Gráficos** preservan los tooltips homogéneos y los estados `hover/focus/active` ya implementados, ahora dentro de tarjetas con padding uniforme.
+- El bloque **🎛 Acciones** consolida los botones de aplicar y reset en una tarjeta final, manteniendo los microestados y el resumen visual de acciones rápidas.
 
 > Desde la versión 0.3.4.4 las confirmaciones de acciones (guardar preset, refrescar, reintentar exportes) muestran el mismo mensaje en el panel principal y en **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
 
 ## Historial de versiones
+
+### Versión 0.3.4.4.2 — Vertical Sidebar Layout
+La versión 0.3.4.4.2 apila todos los grupos de controles en tarjetas verticales dentro del sidebar. Cada bloque conserva su título, descripción y tooltips, pero ahora ocupa una fila dedicada para facilitar la lectura y reducir el scroll horizontal. El feedback temporal de filtros mantiene el pulso suave incorporado en 0.3.4.4 y destaca únicamente la sección afectada.
+
+### Versión 0.3.4.4.1 — Header Centering & Cleanup Hotfix
+La hotfix 0.3.4.4.1 centra el encabezado principal, eliminando el bloque redundante de enlaces en la parte superior y manteniendo el resumen FX inmediatamente debajo del hero. El objetivo es mejorar la composición visual inicial sin alterar los datos ni las microinteracciones establecidas en 0.3.4.4.
+El footer conserva los accesos útiles, ahora como único bloque de enlaces, y el ajuste asegura que las tarjetas de cotización sigan distribuidas horizontalmente sin saltos ni huecos.
 
 ### Versión 0.3.4.4 — UX Consistency & Interaction Pass
 La release 0.3.4.4 alinea microinteracciones en toda la experiencia: los mismos toasts, badges y contadores acompañan a cada acción sin importar si se dispara desde el panel principal o desde **Monitoreo**.
@@ -59,8 +66,8 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4` junto con
-   el mensaje "UX Consistency & Interaction Pass" y el timestamp generado por `TimeProvider`.
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.2` junto con
+   el mensaje "Vertical Sidebar Layout" y el timestamp generado por `TimeProvider`.
    Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
    verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
    allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
@@ -89,7 +96,7 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
    > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
    > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.4.4 muestra el banner "UX Consistency & Interaction Pass", mantiene el ZIP de CSV y
+   > 0.3.4.4.2 muestra el banner "Vertical Sidebar Layout", mantiene el ZIP de CSV y
    > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
    > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
    > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
@@ -155,7 +162,7 @@ validar escenarios sin depender de módulos obsoletos.
   invertido en descarga remota vs. normalización y calcula el ahorro neto de la caché cooperativa y de
   la persistencia de snapshots durante la sesión.
 
-### CI Checklist (0.3.4.4)
+### CI Checklist (0.3.4.4.2)
 
 1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
    (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
@@ -169,8 +176,8 @@ validar escenarios sin depender de módulos obsoletos.
    `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel
    `analysis.xlsx`, el resumen `summary.csv` y el paquete de logs rotados (`analysis.log` más sus `.gz` diarios) en la raíz de `exports/ci`.
 5. **Audita TTLs y salud con feedback sincronizado.** Ejecuta `streamlit run app.py` en modo headless (`--server.headless true`) y guarda una captura de la pestaña **Monitoreo**. Confirmá que cada proveedor muestre la insignia con el TTL restante y que los toasts/contadores reflejen las acciones más recientes con el mismo texto que aparece en el tablero principal.
-6. **Captura el sidebar unificado.** Valida que el formulario de controles y el contenedor **⚙️ Configuración general** convivan en la barra lateral con chips activos, tooltips y las acciones de refresco/cierre funcionando, registrando los toasts correspondientes en los logs de la sesión.
-7. **Documenta badge global y footer sincronizados.** Adjunta evidencia del badge de estado bajo el encabezado principal y del bloque de enlaces útiles en el footer, verificando que ambos cambien de estado al mismo tiempo durante un screening.
+6. **Captura el sidebar apilado.** Valida que cada tarjeta del formulario (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) se renderice en vertical dentro del sidebar, con chips activos y tooltips visibles. Comprueba que el bloque de filtros destaque temporalmente al aplicar cambios y que los toasts correspondientes queden registrados en los logs de la sesión.
+7. **Documenta header centrado y footer sincronizados.** Adjunta evidencia del badge de estado bajo el encabezado centrado y del bloque de enlaces útiles en el footer, verificando que el hero quede alineado y que los badges cambien de estado al mismo tiempo durante un screening.
 8. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
