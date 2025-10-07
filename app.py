@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import importlib
 import json
 import logging
@@ -82,21 +83,133 @@ st.markdown(
         }
 
         .health-status-badge {
+            --badge-bg: rgba(15, 23, 42, 0.08);
+            --badge-fg: rgb(24, 40, 58);
+            --badge-detail: rgba(15, 23, 42, 0.65);
+            --badge-indicator: rgba(16, 163, 127, 0.85);
+            --badge-indicator-shadow: rgba(16, 163, 127, 0.35);
             display: inline-flex;
             align-items: center;
-            gap: 0.55rem;
-            padding: 0.4rem 0.9rem;
+            gap: 0.65rem;
+            padding: 0.45rem 1.1rem 0.45rem 0.95rem;
             border-radius: 999px;
-            background: rgba(15, 23, 42, 0.08);
-            color: rgb(24, 40, 58);
+            background: var(--badge-bg);
+            color: var(--badge-fg);
             font-weight: 600;
             font-size: 0.95rem;
             margin-bottom: 1.75rem;
+            transition: background-color 200ms ease, color 200ms ease;
+        }
+
+        .health-status-badge__pulse {
+            width: 0.6rem;
+            height: 0.6rem;
+            border-radius: 50%;
+            background: var(--badge-indicator);
+            box-shadow: 0 0 0 0 var(--badge-indicator-shadow);
+            animation: healthPulse 3.2s ease-in-out infinite;
+            flex-shrink: 0;
+        }
+
+        .health-status-badge__icon {
+            line-height: 1;
         }
 
         .health-status-badge__detail {
             font-weight: 500;
-            color: rgba(15, 23, 42, 0.65);
+            color: var(--badge-detail);
+        }
+
+        .health-status-badge--success {
+            --badge-bg: rgba(16, 163, 127, 0.12);
+            --badge-fg: rgb(7, 65, 55);
+            --badge-detail: rgba(7, 65, 55, 0.7);
+            --badge-indicator: rgba(16, 163, 127, 0.95);
+            --badge-indicator-shadow: rgba(16, 163, 127, 0.35);
+        }
+
+        .health-status-badge--warning {
+            --badge-bg: rgba(202, 138, 4, 0.14);
+            --badge-fg: rgb(133, 77, 14);
+            --badge-detail: rgba(133, 77, 14, 0.75);
+            --badge-indicator: rgba(217, 119, 6, 0.92);
+            --badge-indicator-shadow: rgba(217, 119, 6, 0.36);
+        }
+
+        .health-status-badge--danger {
+            --badge-bg: rgba(220, 38, 38, 0.14);
+            --badge-fg: rgb(153, 27, 27);
+            --badge-detail: rgba(153, 27, 27, 0.75);
+            --badge-indicator: rgba(239, 68, 68, 0.92);
+            --badge-indicator-shadow: rgba(239, 68, 68, 0.4);
+        }
+
+        .health-status-badge--unknown {
+            --badge-bg: rgba(100, 116, 139, 0.14);
+            --badge-fg: rgb(71, 85, 105);
+            --badge-detail: rgba(71, 85, 105, 0.7);
+            --badge-indicator: rgba(148, 163, 184, 0.9);
+            --badge-indicator-shadow: rgba(148, 163, 184, 0.36);
+        }
+
+        @keyframes healthPulse {
+            0% {
+                box-shadow: 0 0 0 0 var(--badge-indicator-shadow);
+                transform: scale(0.98);
+            }
+            60% {
+                box-shadow: 0 0 0 0.9rem rgba(0, 0, 0, 0);
+                transform: scale(1);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+                transform: scale(0.98);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .health-status-badge__pulse {
+                animation: none;
+            }
+        }
+
+        [data-theme="dark"] .health-status-badge {
+            --badge-bg: rgba(148, 163, 184, 0.16);
+            --badge-fg: rgba(226, 232, 240, 0.92);
+            --badge-detail: rgba(226, 232, 240, 0.65);
+            --badge-indicator-shadow: rgba(94, 234, 212, 0.28);
+        }
+
+        [data-theme="dark"] .health-status-badge--success {
+            --badge-bg: rgba(16, 185, 129, 0.22);
+            --badge-fg: rgba(190, 242, 100, 0.92);
+            --badge-detail: rgba(190, 242, 100, 0.72);
+            --badge-indicator: rgba(16, 185, 129, 0.95);
+            --badge-indicator-shadow: rgba(16, 185, 129, 0.4);
+        }
+
+        [data-theme="dark"] .health-status-badge--warning {
+            --badge-bg: rgba(202, 138, 4, 0.28);
+            --badge-fg: rgba(253, 224, 71, 0.92);
+            --badge-detail: rgba(253, 224, 71, 0.72);
+            --badge-indicator: rgba(234, 179, 8, 0.95);
+            --badge-indicator-shadow: rgba(234, 179, 8, 0.42);
+        }
+
+        [data-theme="dark"] .health-status-badge--danger {
+            --badge-bg: rgba(239, 68, 68, 0.28);
+            --badge-fg: rgba(252, 165, 165, 0.94);
+            --badge-detail: rgba(252, 165, 165, 0.72);
+            --badge-indicator: rgba(248, 113, 113, 0.95);
+            --badge-indicator-shadow: rgba(248, 113, 113, 0.45);
+        }
+
+        [data-theme="dark"] .health-status-badge--unknown {
+            --badge-bg: rgba(100, 116, 139, 0.32);
+            --badge-fg: rgba(226, 232, 240, 0.85);
+            --badge-detail: rgba(226, 232, 240, 0.62);
+            --badge-indicator: rgba(148, 163, 184, 0.9);
+            --badge-indicator-shadow: rgba(148, 163, 184, 0.36);
         }
 
         .control-panel__body {
@@ -203,6 +316,42 @@ def _check_dependency(
     return {"status": status, "detail": detail}
 
 
+def _format_failure_tooltip_text(last_failure_ts: float | None) -> str | None:
+    if last_failure_ts is None:
+        return None
+
+    snapshot = TimeProvider.from_timestamp(last_failure_ts)
+    if snapshot is None:
+        return None
+
+    delta = TimeProvider.now_datetime() - snapshot.moment
+    seconds = int(delta.total_seconds())
+    if seconds < 0:
+        seconds = 0
+
+    if seconds < 60:
+        label = "1 segundo" if seconds == 1 else f"{seconds} segundos"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        label = "1 minuto" if minutes == 1 else f"{minutes} minutos"
+    elif seconds < 86400:
+        hours = seconds / 3600
+        if hours.is_integer():
+            hours_int = int(hours)
+            label = "1 hora" if hours_int == 1 else f"{hours_int} horas"
+        else:
+            label = f"{hours:.1f} horas"
+    else:
+        days = seconds / 86400
+        if days.is_integer():
+            days_int = int(days)
+            label = "1 día" if days_int == 1 else f"{days_int} días"
+        else:
+            label = f"{days:.1f} días"
+
+    return f"Última conexión fallida hace {label} • {snapshot.text}"
+
+
 def _ensure_kaleido_runtime_safe() -> None:
     try:
         from shared.export import ensure_kaleido_runtime
@@ -253,18 +402,34 @@ def main(argv: list[str] | None = None):
     render_header(rates=fx_rates)
 
     health_metrics = get_health_metrics()
-    status_icon, status_label, status_detail = summarize_health_status(
-        metrics=health_metrics
-    )
+    (
+        status_icon,
+        status_label,
+        status_detail,
+        status_severity,
+        last_failure_ts,
+    ) = summarize_health_status(metrics=health_metrics)
     detail_html = (
         f"<span class='health-status-badge__detail'>{status_detail}</span>"
         if status_detail
         else ""
     )
+    tooltip_text = _format_failure_tooltip_text(last_failure_ts)
+    tooltip_attr = ""
+    if tooltip_text:
+        safe_tooltip = html.escape(tooltip_text, quote=True)
+        tooltip_attr = f" title=\"{safe_tooltip}\" data-tooltip=\"{safe_tooltip}\""
+    badge_classes = " ".join(
+        [
+            "health-status-badge",
+            f"health-status-badge--{status_severity or 'unknown'}",
+        ]
+    )
     status_container = st.container()
     status_container.markdown(
         f"""
-        <div class='health-status-badge'>
+        <div class='{badge_classes}'{tooltip_attr}>
+            <span class='health-status-badge__pulse' aria-hidden='true'></span>
             <span class='health-status-badge__icon'>{status_icon}</span>
             <span class='health-status-badge__label'>{status_label}</span>
             {detail_html}

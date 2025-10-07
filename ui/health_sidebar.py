@@ -81,6 +81,7 @@ _GENERIC_STATUS_BADGES = {
     "error": ("🔴", "Error"),
     "failed": ("🔴", "Error"),
     "critical": ("🔴", "Crítico"),
+    "timeout": ("🔴", "Timeout"),
 }
 
 
@@ -167,6 +168,28 @@ def _status_badge(value: Any, *, default_label: str = "Estado desconocido") -> t
     key = _normalize_status_key(value)
     icon, label = _GENERIC_STATUS_BADGES.get(key, ("ℹ️", default_label))
     return icon, label
+
+
+_STATUS_SEVERITY_SUCCESS = {"ok", "success", "healthy", "pass"}
+_STATUS_SEVERITY_WARNING = {"warning", "degraded", "pending", "info", "notice"}
+_STATUS_SEVERITY_DANGER = {
+    "error",
+    "failed",
+    "critical",
+    "timeout",
+    "missing",
+}
+
+
+def _categorize_status(value: Any) -> str:
+    key = _normalize_status_key(value)
+    if key in _STATUS_SEVERITY_SUCCESS:
+        return "success"
+    if key in _STATUS_SEVERITY_WARNING:
+        return "warning"
+    if key in _STATUS_SEVERITY_DANGER:
+        return "danger"
+    return "unknown"
 
 
 def _format_duration_seconds(seconds: Optional[float]) -> Optional[str]:
@@ -2153,8 +2176,8 @@ def render_health_monitor_tab(
 
 def summarize_health_status(
     *, metrics: Optional[Mapping[str, Any]] = None
-) -> tuple[str, str, Optional[str]]:
-    """Return a tuple with icon, label and detail summarising global health."""
+) -> tuple[str, str, Optional[str], str, Optional[float]]:
+    """Return icon, label, detail, severity and last failure timestamp for health."""
 
     resolved = _resolve_health_metrics(metrics)
 
@@ -2162,6 +2185,27 @@ def summarize_health_status(
     status_value: Any = None
     detail_value: Any = None
     ts_value: Optional[float] = None
+    failure_candidates: list[float] = []
+
+    def _track_failure(entry: Mapping[str, Any] | None) -> None:
+        if not isinstance(entry, Mapping):
+            return
+
+        status_key = _normalize_status_key(entry.get("status"))
+        if status_key in _STATUS_SEVERITY_DANGER:
+            ts_candidate = (
+                _coerce_timestamp(entry.get("ts"))
+                or _coerce_timestamp(entry.get("last_fetch_ts"))
+                or _coerce_timestamp(entry.get("last_error_ts"))
+                or _coerce_timestamp(entry.get("last_failure_ts"))
+            )
+            if ts_candidate is not None:
+                failure_candidates.append(ts_candidate)
+
+        for key in ("last_error_ts", "last_failure_ts", "last_failure", "last_error"):
+            ts_candidate = _coerce_timestamp(entry.get(key))
+            if ts_candidate is not None:
+                failure_candidates.append(ts_candidate)
 
     if isinstance(diagnostics, Mapping):
         primary = diagnostics.get("initial")
@@ -2169,9 +2213,17 @@ def summarize_health_status(
             status_value = primary.get("status") or status_value
             detail_value = primary.get("detail") or primary.get("message") or detail_value
             ts_value = _coerce_timestamp(primary.get("ts")) or ts_value
+            _track_failure(primary)
+
+            checks = primary.get("checks")
+            if isinstance(checks, Sequence):
+                for check in checks:
+                    if isinstance(check, Mapping):
+                        _track_failure(check)
         status_value = status_value or diagnostics.get("status")
         detail_value = detail_value or diagnostics.get("detail") or diagnostics.get("message")
         ts_value = ts_value or _coerce_timestamp(diagnostics.get("ts"))
+        _track_failure(diagnostics)
 
     if status_value is None:
         environment = resolved.get("environment_snapshot")
@@ -2179,8 +2231,26 @@ def summarize_health_status(
             status_value = environment.get("status")
             detail_value = detail_value or environment.get("detail") or environment.get("message")
             ts_value = ts_value or _coerce_timestamp(environment.get("ts"))
+            _track_failure(environment)
+
+    for key in ("authentication", "iol_refresh"):
+        entry = resolved.get(key)
+        if isinstance(entry, Mapping):
+            _track_failure(entry)
+
+    dependencies = resolved.get("dependencies")
+    if isinstance(dependencies, Mapping):
+        items = dependencies.get("items")
+        if isinstance(items, Mapping):
+            iterable = items.values()
+        else:
+            iterable = dependencies.values()
+        for entry in iterable:
+            if isinstance(entry, Mapping):
+                _track_failure(entry)
 
     icon, label = _status_badge(status_value or "", default_label="Sin datos")
+    severity = _categorize_status(status_value or "")
 
     detail_text = _sanitize_text(detail_value)
     if ts_value is not None:
@@ -2188,7 +2258,9 @@ def summarize_health_status(
         if ts_text:
             detail_text = f"{detail_text} • {ts_text}" if detail_text else ts_text
 
-    return icon, label, detail_text
+    last_failure_ts = max(failure_candidates) if failure_candidates else None
+
+    return icon, label, detail_text, severity, last_failure_ts
 
 
 __all__ = [
