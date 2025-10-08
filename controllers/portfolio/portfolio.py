@@ -592,6 +592,12 @@ def render_portfolio_section(
             all_symbols=all_symbols,
         )
 
+        try:
+            st.session_state["portfolio_last_viewmodel"] = viewmodel
+            st.session_state["portfolio_last_positions"] = viewmodel.positions
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo almacenar el viewmodel en session_state", exc_info=True)
+
         notifications = notifications_service.get_flags()
         tab_labels = _apply_tab_badges(list(viewmodel.tab_options), notifications)
 
