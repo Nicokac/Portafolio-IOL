@@ -49,6 +49,10 @@ feedback al aplicar filtros. La release 0.3.4.4.5 extiende esta validación al h
 exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
 homogéneos, que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) y que existe una pestaña
 específica para las Acciones locales con su propio tablero de correlaciones.
+feedback al aplicar filtros. La release 0.3.4.4.4 extiende esta validación al heatmap de riesgo,
+exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
+homogéneos y que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) incluso cuando las
+cotizaciones llegan etiquetadas de forma inconsistente.
 
 > Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
 

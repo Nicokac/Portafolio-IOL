@@ -6,3 +6,7 @@ Los assets de login y sidebar deben mostrar la versión activa de la aplicación
 - Fecha de publicación: 2025-11-30
 - Mensaje destacado: "Local Equity Tab in Risk Analysis"
 - Elementos complementarios: resaltar que las Acciones locales cuentan con su propio heatmap y que los CEDEARs continúan excluyendo LOMA, YPFD y TECO2 para evitar mezclas entre plazas.
+- Versión actual: v0.3.4.4.4
+- Fecha de publicación: 2025-11-28
+- Mensaje destacado: "Asset Type Alignment in Risk Analysis"
+- Elementos complementarios: resaltar que el heatmap de riesgo segmenta los activos según el catálogo base y que los CEDEARs excluyen símbolos locales (LOMA, YPFD, TECO2) incluso si las cotizaciones los etiquetan distinto.
