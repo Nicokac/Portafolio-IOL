@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4.6 — Clasificación y visualización completa por tipo de activo (Nov 2025)
+
+### Summary
+- El heatmap de riesgo ahora genera pestañas para cada tipo de activo detectado en el portafolio
+  (CEDEAR, Acciones locales, Bonos, Letras, FCI, ETFs y Otros) aun cuando no existan suficientes
+  símbolos para calcular correlaciones, mostrando advertencias contextuales cuando corresponde.
+- Se amplió el mapeo canónico de tipos (`_TYPE_ALIASES`) para contemplar variantes frecuentes como
+  "Bonos Dólar", "Letras del Tesoro" o fondos money market, manteniendo etiquetas visuales
+  estandarizadas.
+- Nuevas pruebas en `tests/controllers/test_risk_filtering.py` cubren la presencia de todas las
+  pestañas y las advertencias asociadas; README y documentación de testing actualizados junto con el
+  incremento de versión a 0.3.4.4.6.
+
 ## v0.3.4.4.5 — Local Equity Tab in Risk Heatmap (Nov 2025)
 
 ### Summary

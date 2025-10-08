@@ -48,25 +48,60 @@ _TYPE_ALIASES = {
     "ACCION_LOCAL": "ACCION_LOCAL",
     "ACCIONES LOCALES": "ACCION_LOCAL",
     "ACCIONES NACIONALES": "ACCION_LOCAL",
+    "ACCIONES ARGENTINAS": "ACCION_LOCAL",
     "BONO": "BONO",
     "BONOS": "BONO",
+    "BONO DOLAR": "BONO",
+    "BONOS DOLAR": "BONO",
+    "BONO DOLAR LINK": "BONO",
+    "BONO USD": "BONO",
+    "BONO PESO": "BONO",
+    "BONOS PESO": "BONO",
+    "BONO CER": "BONO",
+    "BONO UVA": "BONO",
     "BONOS SOBERANOS": "BONO",
     "BONOS CORPORATIVOS": "BONO",
+    "BONOS DEL TESORO": "BONO",
+    "BONOS TESORO": "BONO",
     "LETRA": "LETRA",
     "LETRAS": "LETRA",
+    "LETRAS DEL TESORO": "LETRA",
+    "LETRA DEL TESORO": "LETRA",
+    "LETRA DOLAR LINK": "LETRA",
+    "LETRA CER": "LETRA",
     "CEDEAR": "CEDEAR",
     "CEDEARS": "CEDEAR",
     "ETF": "ETF",
     "ETFS": "ETF",
     "FONDO": "FCI",
     "FONDOS": "FCI",
+    "FONDOS COMUNES": "FCI",
     "FONDO COMUN": "FCI",
+    "FONDOS COMUNES DE INVERSION": "FCI",
     "FONDO COMUN DE INVERSION": "FCI",
+    "FONDO COMUN DE INVERSION T+0": "FCI",
+    "FONDO COMUN DE INVERSION T+1": "FCI",
+    "FONDO COMUN DE INVERSION T+2": "FCI",
     "FONDO DE INVERSION": "FCI",
+    "FONDO DE INVERSION ABIERTA": "FCI",
+    "FONDO MONEY MARKET": "FCI",
+    "FONDOS MONEY MARKET": "FCI",
+    "MONEY MARKET": "FCI",
     "FCI": "FCI",
     "OTRO": "OTRO",
     "OTROS": "OTRO",
+    "OTROS ACTIVOS": "OTRO",
 }
+
+_DEFAULT_TYPE_ORDER = [
+    "CEDEAR",
+    "ACCION_LOCAL",
+    "BONO",
+    "LETRA",
+    "FCI",
+    "ETF",
+    "OTRO",
+]
 
 _TYPE_DISPLAY_OVERRIDES = {
     "ACCION_LOCAL": "Acciones locales",
@@ -79,6 +114,51 @@ _TYPE_DISPLAY_OVERRIDES = {
 }
 
 _SYMBOL_TYPE_OVERRIDES = {sym: "ACCION_LOCAL" for sym in _LOCAL_SYMBOL_BLACKLIST}
+
+
+def _extend_unique_types(target: list[str], values) -> None:
+    """Append canonical types from *values* preserving order."""
+
+    if values is None:
+        return
+
+    if isinstance(values, str):
+        iterator = [values]
+    else:
+        try:
+            iterator = list(values)
+        except TypeError:
+            iterator = [values]
+
+    for value in iterator:
+        canonical = _normalize_type_label(value)
+        if canonical and canonical not in target:
+            target.append(canonical)
+
+
+def _order_types(types: Sequence[str]) -> list[str]:
+    """Return canonical types sorted by preferred order preserving extras."""
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    normalized = []
+    for value in types:
+        canonical = _normalize_type_label(value)
+        if canonical:
+            normalized.append(canonical)
+
+    for preferred in _DEFAULT_TYPE_ORDER:
+        if preferred in normalized and preferred not in seen:
+            ordered.append(preferred)
+            seen.add(preferred)
+
+    for canonical in normalized:
+        if canonical not in seen:
+            ordered.append(canonical)
+            seen.add(canonical)
+
+    return ordered
 
 
 def _string_or_empty(value) -> str:
@@ -164,7 +244,7 @@ def _build_type_metadata(df: pd.DataFrame | None) -> tuple[pd.Series, dict[str, 
                     display_labels[canonical] = raw_label
 
     for canonical, label in _TYPE_DISPLAY_OVERRIDES.items():
-        display_labels.setdefault(canonical, label)
+        display_labels[canonical] = label
 
     for canonical in symbol_type_map.values():
         display_labels.setdefault(canonical, canonical.replace("_", " ").title())
@@ -372,30 +452,39 @@ def render_risk_analysis(
 
         available_types_in_view: list[str] = []
         if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
-            available_types_in_view = [
-                str(t)
-                for t in filtered_df["_normalized_type"].dropna().unique()
-                if isinstance(t, str) and str(t)
-            ]
-        for canonical in symbol_groups:
-            if canonical not in available_types_in_view:
-                available_types_in_view.append(canonical)
+            _extend_unique_types(
+                available_types_in_view,
+                filtered_df["_normalized_type"].dropna().unique(),
+            )
+        _extend_unique_types(available_types_in_view, available_types)
+        _extend_unique_types(available_types_in_view, symbol_groups.keys())
 
         if normalized_filters:
-            ordered_types = [t for t in normalized_filters if t in symbol_groups]
+            ordered_types: list[str] = []
+            for raw in normalized_filters:
+                canonical = _normalize_type_label(raw)
+                if canonical and canonical not in ordered_types:
+                    ordered_types.append(canonical)
         else:
-            ordered_types = sorted(symbol_groups) if symbol_groups else sorted(available_types_in_view)
+            base_types = available_types_in_view if available_types_in_view else list(symbol_groups.keys())
+            ordered_types = _order_types(base_types)
 
         type_groups: list[tuple[str, pd.DataFrame, list[str]]] = []
         for type_name in ordered_types:
+            if not isinstance(type_name, str) or not type_name:
+                continue
             subset = (
                 filtered_df[filtered_df["_normalized_type"] == type_name]
                 if isinstance(filtered_df, pd.DataFrame)
                 else pd.DataFrame()
             )
-            symbols_for_type = sorted({sym for sym in symbol_groups.get(type_name, []) if sym in hist_df.columns})
-            if subset.empty and not symbols_for_type:
-                continue
+            symbols_for_type = sorted(
+                {
+                    sym
+                    for sym in symbol_groups.get(type_name, [])
+                    if sym in hist_df.columns
+                }
+            )
             subset_df = subset.copy() if isinstance(subset, pd.DataFrame) else pd.DataFrame()
             type_groups.append((type_name, subset_df, symbols_for_type))
 

@@ -180,3 +180,119 @@ def test_build_type_metadata_respects_catalog_overrides():
     assert symbol_map["LOMA"] == "ACCION_LOCAL"
     assert symbol_map["TECO2"] == "ACCION_LOCAL"
     assert display_map["ACCION_LOCAL"].lower().startswith("accion")
+
+
+def test_all_asset_tabs_render_with_warnings_for_insufficient_data(monkeypatch, streamlit_stub):
+    """Every asset type present in the portfolio should render a tab with friendly labels."""
+
+    df = pd.DataFrame(
+        {
+            "simbolo": [
+                "AAPL",
+                "NVDA",
+                "LOMA",
+                "GD30",
+                "S31Y5",
+                "FIMA",
+                "SPY",
+                "BTCUSDT",
+            ],
+            "valor_actual": [
+                1000.0,
+                950.0,
+                400.0,
+                300.0,
+                200.0,
+                150.0,
+                500.0,
+                250.0,
+            ],
+            "tipo": [
+                "CEDEAR",
+                "CEDEAR",
+                "Acciones Argentinas",
+                "Bonos Dólar",
+                "Letras del Tesoro",
+                "Fondo Money Market",
+                "ETF",
+                "Otros",
+            ],
+        }
+    )
+
+    streamlit_stub.reset()
+    streamlit_stub.session_state["selected_asset_types"] = []
+    monkeypatch.setattr(risk_mod, "st", streamlit_stub)
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    original_selectbox = streamlit_stub.selectbox
+
+    def fake_selectbox(label, options, *, index=0, key=None, help=None, format_func=None):
+        return original_selectbox(label, options, index=index, key=key, help=help)
+
+    monkeypatch.setattr(streamlit_stub, "selectbox", fake_selectbox, raising=False)
+
+    history_calls: list[list[str]] = []
+
+    def fake_history(*, simbolos, period):
+        symbols_list = list(simbolos)
+        history_calls.append(symbols_list)
+        idx = pd.date_range("2024-02-01", periods=6, freq="B")
+        available = {
+            "AAPL": np.linspace(100.0, 104.0, len(idx)),
+            "NVDA": np.linspace(200.0, 208.0, len(idx)),
+            "LOMA": np.linspace(50.0, 55.0, len(idx)),
+        }
+        data = {sym: available[sym] for sym in symbols_list if sym in available}
+        return pd.DataFrame(data, index=idx)
+
+    tasvc = SimpleNamespace(portfolio_history=fake_history)
+
+    heatmap_payloads: list[tuple[str, list[str]]] = []
+
+    def fake_heatmap(prices_df: pd.DataFrame, *, title: str | None = None):
+        heatmap_payloads.append((title or "", list(prices_df.columns)))
+        return MagicMock()
+
+    monkeypatch.setattr(risk_mod, "plot_correlation_heatmap", fake_heatmap)
+
+    def fake_compute_returns(df_hist: pd.DataFrame) -> pd.DataFrame:
+        if df_hist.empty:
+            return pd.DataFrame()
+        returns = df_hist.pct_change(fill_method=None).dropna(how="all")
+        return returns.replace([np.inf, -np.inf], np.nan).dropna(axis=1, how="all")
+
+    monkeypatch.setattr(risk_mod, "compute_returns", fake_compute_returns)
+
+    favorites = FavoriteSymbols({})
+
+    risk_mod.render_risk_analysis(
+        df,
+        tasvc,
+        favorites=favorites,
+        available_types=["CEDEAR", "ACCION_LOCAL", "BONO", "LETRA", "FCI", "ETF", "OTRO"],
+    )
+
+    assert history_calls, "portfolio_history should be invoked"
+    assert heatmap_payloads, "At least one heatmap should be rendered"
+    heatmap_title, heatmap_columns = heatmap_payloads[0]
+    assert "Matriz de Correlación — CEDEARs" in heatmap_title
+    assert set(heatmap_columns) == {"AAPL", "NVDA"}
+
+    tab_entries = streamlit_stub.get_records("tabs")
+    assert tab_entries, "Tabs should be rendered for all asset types"
+    expected_labels = [
+        "CEDEARs",
+        "Acciones locales",
+        "Bonos",
+        "Letras",
+        "Fondos comunes (FCI)",
+        "ETFs",
+        "Otros",
+    ]
+    assert tab_entries[0]["labels"] == expected_labels
+
+    warnings = [entry["text"] for entry in streamlit_stub.get_records("warning")]
+    for label in expected_labels[1:]:
+        assert any(label in warning for warning in warnings), f"Missing warning for {label}"
