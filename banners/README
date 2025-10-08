@@ -2,11 +2,15 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.4.5
+- Versión actual: v0.4.0
+- Fecha de publicación: 2025-12-05
+- Mensaje destacado: "Factor & Benchmark Analysis"
+- Elementos complementarios: destacar que el tablero de riesgo ahora muestra Tracking Error, Active Return e Information Ratio frente al benchmark elegido, con gráfico de betas y exportación CSV/XLSX cuando hay factores disponibles.
+- Versión anterior: v0.3.4.4.5
 - Fecha de publicación: 2025-11-30
 - Mensaje destacado: "Local Equity Tab in Risk Analysis"
 - Elementos complementarios: resaltar que las Acciones locales cuentan con su propio heatmap y que los CEDEARs continúan excluyendo LOMA, YPFD y TECO2 para evitar mezclas entre plazas.
-- Versión actual: v0.3.4.4.4
+- Versión anterior: v0.3.4.4.4
 - Fecha de publicación: 2025-11-28
 - Mensaje destacado: "Asset Type Alignment in Risk Analysis"
 - Elementos complementarios: resaltar que el heatmap de riesgo segmenta los activos según el catálogo base y que los CEDEARs excluyen símbolos locales (LOMA, YPFD, TECO2) incluso si las cotizaciones los etiquetan distinto.

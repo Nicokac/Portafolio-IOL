@@ -1,6 +1,7 @@
 import logging
 import re
 import unicodedata
+from io import BytesIO, StringIO
 from typing import Sequence
 
 import numpy as np
@@ -27,7 +28,8 @@ from application.risk_service import (
 )
 from application.portfolio_service import classify_symbol
 from services.notifications import NotificationFlags
-from ui.charts import plot_correlation_heatmap, _apply_layout
+from application.benchmark_service import benchmark_analysis
+from ui.charts import plot_correlation_heatmap, plot_factor_betas, _apply_layout
 from ui.export import PLOTLY_CONFIG
 from ui.notifications import render_risk_badge
 from shared.errors import AppError
@@ -680,6 +682,27 @@ def render_risk_analysis(
                     )
                     return
 
+                factors_df = None
+                factor_fetcher = getattr(tasvc, "factor_history", None)
+                if callable(factor_fetcher):
+                    try:
+                        try:
+                            factors_df = factor_fetcher(benchmark=benchmark_symbol, period="1y")
+                        except TypeError:
+                            try:
+                                factors_df = factor_fetcher(period="1y")
+                            except TypeError:
+                                factors_df = factor_fetcher()
+                    except AppError as err:
+                        st.warning(
+                            f"⚠️ No se pudieron obtener factores para el benchmark seleccionado: {err}"
+                        )
+                    except Exception:
+                        logger.exception("Error al obtener factores para análisis de benchmark")
+                        st.warning(
+                            "⚠️ No se pudieron obtener factores para el análisis de benchmark."
+                        )
+
                 confidence_options = {"90%": 0.90, "95%": 0.95, "99%": 0.99}
                 selected_conf_label = st.selectbox(
                     "Nivel de confianza para VaR/CVaR",
@@ -705,6 +728,8 @@ def render_risk_analysis(
                     weights,
                     var_confidence=var_confidence,
                 )
+
+                factor_results = benchmark_analysis(port_ret, bench_ret, factors_df=factors_df)
 
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric(
@@ -927,5 +952,94 @@ def render_risk_analysis(
                 base_prices = pd.Series(1.0, index=weights.index)
                 stressed_val = apply_stress(base_prices, weights, shocks)
                 st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
+
+                st.subheader("Análisis de Factores y Benchmark")
+
+                tracking_error = factor_results.get("tracking_error") if factor_results else float("nan")
+                active_return = factor_results.get("active_return") if factor_results else float("nan")
+                information_ratio = (
+                    factor_results.get("information_ratio") if factor_results else float("nan")
+                )
+
+                metrics_cols = st.columns(3)
+                metrics_cols[0].metric(
+                    "Tracking Error",
+                    f"{tracking_error:.2%}" if pd.notna(tracking_error) else "N/A",
+                )
+                metrics_cols[1].metric(
+                    "Active Return",
+                    f"{active_return:.2%}" if pd.notna(active_return) else "N/A",
+                )
+                metrics_cols[2].metric(
+                    "Information Ratio",
+                    f"{information_ratio:.2f}" if pd.notna(information_ratio) else "N/A",
+                )
+
+                betas: dict[str, float] = {}
+                r_squared = float("nan")
+                if factor_results:
+                    betas = factor_results.get("factor_betas", {}) or {}
+                    r_squared_raw = factor_results.get("r_squared", float("nan"))
+                    if isinstance(r_squared_raw, (int, float, np.floating)):
+                        r_squared = float(r_squared_raw)
+
+                if betas:
+                    fig_betas = plot_factor_betas(betas, r_squared)
+                    st.plotly_chart(fig_betas, use_container_width=True, config=PLOTLY_CONFIG)
+                    if pd.notna(r_squared):
+                        st.caption(f"R² del modelo: {r_squared:.2%}")
+                else:
+                    if factors_df is None or (isinstance(factors_df, pd.DataFrame) and factors_df.empty):
+                        st.info(
+                            "No hay factores disponibles para estimar betas contra el benchmark seleccionado."
+                        )
+                    else:
+                        st.info(
+                            "No se pudieron estimar betas estadísticamente significativas con los factores provistos."
+                        )
+
+                metrics_export = [
+                    {"metric": "Tracking Error", "value": tracking_error},
+                    {"metric": "Active Return", "value": active_return},
+                    {"metric": "Information Ratio", "value": information_ratio},
+                ]
+                if pd.notna(r_squared):
+                    metrics_export.append({"metric": "R_squared", "value": r_squared})
+
+                metrics_df = pd.DataFrame(metrics_export)
+                betas_df = pd.DataFrame(
+                    [(factor, beta) for factor, beta in betas.items()],
+                    columns=["factor", "beta"],
+                )
+
+                csv_buffer = StringIO()
+                metrics_df.to_csv(csv_buffer, index=False)
+                if not betas_df.empty:
+                    csv_buffer.write("\n")
+                    betas_df.to_csv(csv_buffer, index=False)
+                csv_bytes = csv_buffer.getvalue().encode("utf-8")
+
+                st.download_button(
+                    "⬇️ Descargar análisis (CSV)",
+                    csv_bytes,
+                    file_name="factor_benchmark_analysis.csv",
+                    mime="text/csv",
+                    key="factor_analysis_csv",
+                )
+
+                excel_buffer = BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+                    metrics_df.to_excel(writer, index=False, sheet_name="metricas")
+                    if not betas_df.empty:
+                        betas_df.to_excel(writer, index=False, sheet_name="betas")
+                excel_bytes = excel_buffer.getvalue()
+
+                st.download_button(
+                    "⬇️ Descargar análisis (XLSX)",
+                    excel_bytes,
+                    file_name="factor_benchmark_analysis.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="factor_analysis_xlsx",
+                )
     else:
         st.info("No hay símbolos en el portafolio para analizar.")
