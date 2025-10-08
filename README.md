@@ -103,6 +103,12 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
     `0.3.4.4.5` "Local Equity Tab in Risk Analysis" y `0.3.4.4.4`
     "Asset Type Alignment in Risk Analysis") permanecen documentadas en el historial para auditorías
     comparativas.
+   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.6` junto con
+   el mensaje "Clasificación y visualización completa por tipo de activo" y el timestamp generado
+   por `TimeProvider`.
+   Las notas de las releases previas (`0.3.4.4.5` "Local Equity Tab in Risk Analysis" y `0.3.4.4.4`
+   "Asset Type Alignment in Risk Analysis") permanecen documentadas en el historial para auditorías
+   comparativas.
    Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
    verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
    allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
