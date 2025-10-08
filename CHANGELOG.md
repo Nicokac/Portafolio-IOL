@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.3.4.4.5 — Local Equity Tab in Risk Heatmap (Nov 2025)
+
+### Summary
+- El análisis de correlaciones crea una pestaña dedicada para **Acciones locales**, reutilizando la
+  clasificación del catálogo base para separar claramente CEDEARs y renta variable doméstica.
+- Se preserva la exclusión de tickers locales al seleccionar el grupo de CEDEARs, evitando que
+  LOMA, YPFD o TECO2 aparezcan en matrices cruzadas con instrumentos del exterior.
+- Documentación, guías de prueba y materiales de comunicación actualizados para reflejar el
+  comportamiento del nuevo heatmap junto con el incremento de versión a 0.3.4.4.5.
+
 ## v0.3.4.4.4 — Asset Type Alignment in Risk Analysis (Nov 2025)
 
 ### Summary

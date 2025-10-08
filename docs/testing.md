@@ -45,6 +45,10 @@ de enlaces del footer, por lo que los tests deben asegurar que los snapshots y l
 generados por la app se publiquen como artefactos. La release 0.3.4.4.2 profundiza este trabajo al
 apilar los controles del sidebar en tarjetas verticales con feedback visual específico por sección,
 por lo que las verificaciones manuales deben incluir capturas del nuevo layout y la animación de
+feedback al aplicar filtros. La release 0.3.4.4.5 extiende esta validación al heatmap de riesgo,
+exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
+homogéneos, que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) y que existe una pestaña
+específica para las Acciones locales con su propio tablero de correlaciones.
 feedback al aplicar filtros. La release 0.3.4.4.4 extiende esta validación al heatmap de riesgo,
 exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
 homogéneos y que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) incluso cuando las

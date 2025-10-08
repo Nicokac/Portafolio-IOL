@@ -335,6 +335,41 @@ def render_risk_analysis(
             corr_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", corr_latency, status="success")
         returns_for_corr = compute_returns(hist_df)
+        # Map each historical symbol to its canonical type so tabs remain aligned
+        symbol_groups: dict[str, list[str]] = {}
+        df_symbols_upper = pd.Series(dtype="object")
+        df_types_series = pd.Series(dtype="object")
+        if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
+            df_symbols_upper = (
+                filtered_df["simbolo"].astype(str).str.strip().str.upper()
+            )
+            df_types_series = filtered_df["_normalized_type"]
+
+        for sym in hist_df.columns:
+            sym_str = str(sym).strip()
+            if not sym_str:
+                continue
+            sym_key = sym_str.upper()
+            canonical = symbol_type_map.get(sym_key)
+            if not canonical and not df_symbols_upper.empty:
+                matches = df_types_series.loc[df_symbols_upper == sym_key]
+                if not matches.empty:
+                    candidate = matches.iloc[0]
+                    canonical = (
+                        _normalize_type_label(candidate)
+                        if isinstance(candidate, str)
+                        else _canonical_type(sym_key, None)
+                    )
+            if not canonical:
+                canonical = _canonical_type(sym_key, None)
+            if canonical == "CEDEAR" and sym_key in _LOCAL_SYMBOL_BLACKLIST:
+                canonical = "ACCION_LOCAL"
+            if not canonical:
+                continue
+            if normalized_filters and canonical not in normalized_filters:
+                continue
+            symbol_groups.setdefault(canonical, []).append(sym_str)
+
         available_types_in_view: list[str] = []
         if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
             available_types_in_view = [
@@ -342,25 +377,33 @@ def render_risk_analysis(
                 for t in filtered_df["_normalized_type"].dropna().unique()
                 if isinstance(t, str) and str(t)
             ]
+        for canonical in symbol_groups:
+            if canonical not in available_types_in_view:
+                available_types_in_view.append(canonical)
 
         if normalized_filters:
-            ordered_types = [t for t in normalized_filters if t in available_types_in_view]
+            ordered_types = [t for t in normalized_filters if t in symbol_groups]
         else:
-            ordered_types = sorted(available_types_in_view)
+            ordered_types = sorted(symbol_groups) if symbol_groups else sorted(available_types_in_view)
 
-        type_groups: list[tuple[str, pd.DataFrame]] = []
+        type_groups: list[tuple[str, pd.DataFrame, list[str]]] = []
         for type_name in ordered_types:
             subset = (
                 filtered_df[filtered_df["_normalized_type"] == type_name]
                 if isinstance(filtered_df, pd.DataFrame)
                 else pd.DataFrame()
             )
-            if isinstance(subset, pd.DataFrame) and not subset.empty:
-                type_groups.append((type_name, subset.copy()))
+            symbols_for_type = sorted({sym for sym in symbol_groups.get(type_name, []) if sym in hist_df.columns})
+            if subset.empty and not symbols_for_type:
+                continue
+            subset_df = subset.copy() if isinstance(subset, pd.DataFrame) else pd.DataFrame()
+            type_groups.append((type_name, subset_df, symbols_for_type))
 
         if not type_groups:
             label = "Portafolio"
-            type_groups = [(label, filtered_df if isinstance(filtered_df, pd.DataFrame) else pd.DataFrame())]
+            fallback_df = filtered_df if isinstance(filtered_df, pd.DataFrame) else pd.DataFrame()
+            fallback_symbols = [sym for sym in hist_df.columns if sym in portfolio_symbols]
+            type_groups = [(label, fallback_df, fallback_symbols)]
 
         display_targets: list = []
         if len(type_groups) > 1:
@@ -370,32 +413,18 @@ def render_risk_analysis(
                         type_name,
                         type_name.replace("_", " ").title(),
                     )
-                    for type_name, _ in type_groups
+                    for type_name, _, _ in type_groups
                 ]
             )
         else:
             display_targets = [st.container()]
 
-        for (type_name, subset_df), display_host in zip(type_groups, display_targets):
+        for (type_name, subset_df, subset_symbols), display_host in zip(type_groups, display_targets):
             with display_host:
                 display_label = type_display_map.get(
                     type_name,
                     type_name.replace("_", " ").title(),
                 )
-                subset_symbols = [
-                    str(sym).strip()
-                    for sym in subset_df.get("simbolo", [])
-                    if str(sym).strip()
-                ]
-                if type_name == "CEDEAR":
-                    subset_symbols = [
-                        sym
-                        for sym in subset_symbols
-                        if sym.upper() not in _LOCAL_SYMBOL_BLACKLIST
-                    ]
-                subset_symbols = [
-                    sym for sym in subset_symbols if sym in hist_df.columns
-                ]
                 if len(set(subset_symbols)) < 2:
                     st.warning(
                         f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones."

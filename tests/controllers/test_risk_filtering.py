@@ -83,6 +83,87 @@ def test_heatmap_excludes_local_symbols_in_cedear_group(monkeypatch, streamlit_s
     assert set(heatmap_columns[0]) == {"AAPL", "NVDA"}
 
 
+def test_accion_local_tab_renders_independent_heatmap(monkeypatch, streamlit_stub):
+    """The analysis should render a dedicated tab for local equities."""
+
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AAPL", "NVDA", "LOMA", "YPFD", "TECO2"],
+            "valor_actual": [1000.0, 950.0, 400.0, 380.0, 360.0],
+            "mercado": ["nyse", "nyse", "bcba", "bcba", "bcba"],
+            "tipo": ["CEDEAR", "CEDEAR", "Accion", "Accion", None],
+        }
+    )
+
+    streamlit_stub.reset()
+    streamlit_stub.session_state["selected_asset_types"] = []
+    monkeypatch.setattr(risk_mod, "st", streamlit_stub)
+    monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    original_selectbox = streamlit_stub.selectbox
+
+    def fake_selectbox(label, options, *, index=0, key=None, help=None, format_func=None):
+        return original_selectbox(label, options, index=index, key=key, help=help)
+
+    monkeypatch.setattr(streamlit_stub, "selectbox", fake_selectbox, raising=False)
+
+    history_calls: list[list[str]] = []
+
+    def fake_history(*, simbolos, period):
+        symbols_list = list(simbolos)
+        history_calls.append(symbols_list)
+        if len(history_calls) >= 2:
+            return pd.DataFrame()
+        idx = pd.date_range("2024-01-01", periods=10, freq="B")
+        data = {
+            sym: np.linspace(100.0 + i * 2, 110.0 + i * 2, len(idx)) for i, sym in enumerate(symbols_list)
+        }
+        return pd.DataFrame(data, index=idx)
+
+    tasvc = SimpleNamespace(portfolio_history=fake_history)
+
+    heatmap_payloads: list[tuple[str, list[str]]] = []
+
+    def fake_heatmap(prices_df: pd.DataFrame, *, title: str | None = None):
+        heatmap_payloads.append((title or "", list(prices_df.columns)))
+        return MagicMock()
+
+    monkeypatch.setattr(risk_mod, "plot_correlation_heatmap", fake_heatmap)
+
+    def fake_compute_returns(df_hist: pd.DataFrame) -> pd.DataFrame:
+        returns = df_hist.pct_change(fill_method=None).dropna(how="all")
+        return returns.replace([np.inf, -np.inf], np.nan).dropna(axis=1, how="all")
+
+    monkeypatch.setattr(risk_mod, "compute_returns", fake_compute_returns)
+
+    favorites = FavoriteSymbols({})
+
+    risk_mod.render_risk_analysis(df, tasvc, favorites=favorites)
+
+    assert history_calls, "Expected portfolio_history to be invoked"
+    corr_call = history_calls[0]
+    assert set(corr_call) == {"AAPL", "NVDA", "LOMA", "YPFD", "TECO2"}
+
+    tab_entries = streamlit_stub.get_records("tabs")
+    assert tab_entries, "Tabs should be rendered when multiple types exist"
+    rendered_labels = tab_entries[0]["labels"]
+    assert any("CEDEAR" in label for label in rendered_labels)
+    assert any("Acciones locales" in label for label in rendered_labels)
+
+    assert len(heatmap_payloads) >= 2, "Expected separate heatmaps for each type"
+    cedear_heatmap = next(
+        (cols for title, cols in heatmap_payloads if "CEDEAR" in title),
+        None,
+    )
+    local_heatmap = next(
+        (cols for title, cols in heatmap_payloads if "Acciones locales" in title),
+        None,
+    )
+    assert cedear_heatmap == ["AAPL", "NVDA"]
+    assert set(local_heatmap or []) == {"LOMA", "YPFD", "TECO2"}
+
+
 def test_build_type_metadata_respects_catalog_overrides():
     """Local tickers are forced to ACCION_LOCAL even if raw type mislabels them."""
 
