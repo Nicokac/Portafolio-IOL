@@ -153,6 +153,9 @@ frecuentes:
   controlador de oportunidades.
 - `pytest tests/ui/test_portfolio_ui.py -k risk`: limita la ejecución a los escenarios que cubren
   las visualizaciones de riesgo renderizadas en la UI.
+- `pytest --override-ini addopts='' tests/controllers/test_risk_filtering.py`: verifica la
+  clasificación canónica por tipo en el heatmap, incluyendo la nueva cobertura de pestañas vacías con
+  advertencias específicas por categoría.
 
 ### Validación de snapshots y almacenamiento persistente
 
