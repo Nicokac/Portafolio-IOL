@@ -20,6 +20,8 @@ import pandas as pd
 LOGGER = logging.getLogger(__name__)
 
 SUPPORTED_MODES: tuple[str, ...] = ("diversify", "max_return", "low_risk")
+MIN_ALLOCATION: float = 0.10
+MAX_ALLOCATION: float = 0.40
 LOW_RISK_SECTORS: frozenset[str] = frozenset(
     {
         "Consumer Defensive",
@@ -47,6 +49,11 @@ class Recommendation:
     score: float
     expected_return: float
     rationale: str
+    sector: str
+    currency: str
+    tipo: str
+    is_existing: bool
+    max_allocation: float
 
 
 def _normalise_amount(amount: float) -> float:
@@ -72,7 +79,9 @@ class RecommendationService:
     ) -> None:
         self._portfolio_df = portfolio_df.copy() if isinstance(portfolio_df, pd.DataFrame) else pd.DataFrame()
         self._opportunities_df = opportunities_df.copy() if isinstance(opportunities_df, pd.DataFrame) else pd.DataFrame()
-        self._risk_metrics_df = risk_metrics_df.copy() if isinstance(risk_metrics_df, pd.DataFrame) else pd.DataFrame()
+        self._risk_metrics_df = (
+            risk_metrics_df.copy() if isinstance(risk_metrics_df, pd.DataFrame) else pd.DataFrame()
+        )
         self._fundamentals_df = fundamentals_df.copy() if isinstance(fundamentals_df, pd.DataFrame) else pd.DataFrame()
         self._analysis: dict[str, object] | None = None
 
@@ -90,6 +99,14 @@ class RecommendationService:
             self._portfolio_df["valor_actual"] = pd.to_numeric(
                 self._portfolio_df["valor_actual"], errors="coerce"
             ).fillna(0.0)
+
+        if not self._risk_metrics_df.empty:
+            self._risk_metrics_df = self._risk_metrics_df.copy()
+            self._risk_metrics_df.columns = [str(col) for col in self._risk_metrics_df.columns]
+            if "simbolo" in self._risk_metrics_df.columns:
+                self._risk_metrics_df["simbolo"] = (
+                    self._risk_metrics_df["simbolo"].astype("string").str.upper()
+                )
 
         if not self._opportunities_df.empty:
             self._opportunities_df = self._opportunities_df.copy()
@@ -289,6 +306,7 @@ class RecommendationService:
         *,
         sector: str,
         currency: str,
+        tipo: str | None,
         mode: str,
         estimated_beta: float,
         analysis: dict[str, object],
@@ -306,10 +324,10 @@ class RecommendationService:
         if currency in under.get("moneda", set()):
             updated += 12
 
-        tipo = "CEDEAR" if currency.upper() == "USD" else "ACCION"
-        if tipo in over.get("tipo", set()):
+        tipo_value = tipo if tipo else ("CEDEAR" if currency.upper() == "USD" else "ACCION")
+        if tipo_value in over.get("tipo", set()):
             updated -= 6
-        if tipo in under.get("tipo", set()):
+        if tipo_value in under.get("tipo", set()):
             updated += 8
 
         beta_bucket = None
@@ -342,6 +360,7 @@ class RecommendationService:
         estimated_beta: float,
         mode: str,
         analysis: dict[str, object],
+        is_existing: bool = False,
     ) -> str:
         reasons: list[str] = []
         under = analysis["underrepresented"]
@@ -383,7 +402,259 @@ class RecommendationService:
         else:
             reasons.append("Optimiza la diversificación global")
 
+        if is_existing:
+            reasons.append("Refuerza una posición ya presente en tu cartera")
+
         return ", ".join(reasons)
+
+    @staticmethod
+    def _infer_tipo(tipo: str | None, currency: str) -> str:
+        if tipo:
+            return str(tipo).strip().upper()
+        return "CEDEAR" if str(currency).upper() == "USD" else "ACCION"
+
+    def _lookup_beta(self, symbol: str, sector: str) -> float:
+        if not self._risk_metrics_df.empty and "simbolo" in self._risk_metrics_df.columns:
+            matches = self._risk_metrics_df[self._risk_metrics_df["simbolo"] == symbol]
+            if not matches.empty:
+                beta = pd.to_numeric(matches.iloc[0].get("beta"), errors="coerce")
+                if np.isfinite(beta):
+                    return float(beta)
+        return self._estimate_beta_from_sector(sector)
+
+    @staticmethod
+    def _max_allocation_for_existing(
+        current_weight: float,
+        *,
+        additional_amount: float,
+        total_portfolio_value: float,
+    ) -> float:
+        if additional_amount <= 0 or total_portfolio_value <= 0:
+            return MAX_ALLOCATION
+        allowed = (
+            (MAX_ALLOCATION * (total_portfolio_value + additional_amount))
+            - (current_weight * total_portfolio_value)
+        ) / additional_amount
+        if not np.isfinite(allowed):
+            return MAX_ALLOCATION
+        return float(max(0.0, min(MAX_ALLOCATION, allowed)))
+
+    @staticmethod
+    def _apply_weight_constraints(
+        weights: pd.Series,
+        min_weights: pd.Series,
+        max_weights: pd.Series,
+    ) -> pd.Series:
+        if weights.empty:
+            return weights
+
+        weights = weights.clip(lower=0.0)
+        total = float(weights.sum())
+        if total <= 0:
+            weights = pd.Series(
+                np.repeat(1.0 / len(weights), len(weights)), index=weights.index
+            )
+        else:
+            weights = weights / total
+
+        min_weights = min_weights.reindex_like(weights).fillna(MIN_ALLOCATION)
+        max_weights = max_weights.reindex_like(weights).fillna(MAX_ALLOCATION)
+
+        weights = weights.clip(lower=min_weights, upper=max_weights)
+
+        for _ in range(12):
+            total = float(weights.sum())
+            if abs(total - 1.0) <= 1e-6:
+                break
+            if total > 1.0:
+                excess = total - 1.0
+                adjustable = weights > (min_weights + 1e-6)
+                if not adjustable.any():
+                    break
+                available = float((weights[adjustable] - min_weights[adjustable]).sum())
+                if available <= 0:
+                    break
+                ratio = min(1.0, excess / available)
+                adjustment = (weights[adjustable] - min_weights[adjustable]) * ratio
+                weights.loc[adjustable] -= adjustment
+            else:
+                deficit = 1.0 - total
+                adjustable = weights < (max_weights - 1e-6)
+                if not adjustable.any():
+                    break
+                capacity = float((max_weights[adjustable] - weights[adjustable]).sum())
+                if capacity <= 0:
+                    break
+                ratio = min(1.0, deficit / capacity)
+                adjustment = (max_weights[adjustable] - weights[adjustable]) * ratio
+                weights.loc[adjustable] += adjustment
+
+            weights = weights.clip(lower=min_weights, upper=max_weights)
+
+        total = float(weights.sum())
+        diff = 1.0 - total
+        if abs(diff) > 1e-6:
+            if diff > 0:
+                adjustable = (max_weights - weights).astype(float)
+                adjustable = adjustable[adjustable > 1e-6]
+                if not adjustable.empty:
+                    idx = adjustable.idxmax()
+                    weights.loc[idx] = min(max_weights.loc[idx], weights.loc[idx] + diff)
+            else:
+                adjustable = (weights - min_weights).astype(float)
+                adjustable = adjustable[adjustable > 1e-6]
+                if not adjustable.empty:
+                    idx = adjustable.idxmax()
+                    weights.loc[idx] = max(min_weights.loc[idx], weights.loc[idx] + diff)
+
+        weights = weights.clip(lower=min_weights, upper=max_weights)
+        total = float(weights.sum())
+        if not np.isclose(total, 1.0, atol=1e-6):
+            diff = 1.0 - total
+            if diff > 0:
+                adjustable = (max_weights - weights).astype(float)
+                adjustable = adjustable[adjustable > 1e-9]
+                if not adjustable.empty:
+                    idx = adjustable.idxmax()
+                    weights.loc[idx] = min(
+                        max_weights.loc[idx], weights.loc[idx] + diff
+                    )
+            else:
+                adjustable = (weights - min_weights).astype(float)
+                adjustable = adjustable[adjustable > 1e-9]
+                if not adjustable.empty:
+                    idx = adjustable.idxmax()
+                    weights.loc[idx] = max(
+                        min_weights.loc[idx], weights.loc[idx] + diff
+                    )
+
+            weights = weights.clip(lower=min_weights, upper=max_weights)
+            total = float(weights.sum())
+
+        if not np.isclose(total, 1.0, atol=1e-6):
+            residual = 1.0 - total
+            if residual > 0:
+                adjustable = (max_weights - weights).astype(float)
+                capacity = float(adjustable.sum())
+                if capacity > 0:
+                    increment = residual * (adjustable / capacity)
+                    weights = (weights + increment).clip(lower=min_weights, upper=max_weights)
+            else:
+                adjustable = (weights - min_weights).astype(float)
+                capacity = float(adjustable.sum())
+                if capacity > 0:
+                    decrement = (-residual) * (adjustable / capacity)
+                    weights = (weights - decrement).clip(lower=min_weights, upper=max_weights)
+
+            total = float(weights.sum())
+
+        if not np.isclose(total, 1.0, atol=1e-6):
+            weights = weights / total
+
+        return weights
+
+    def _existing_candidates(
+        self,
+        *,
+        amount: float,
+        analysis: dict[str, object],
+        mode: str,
+    ) -> list[Recommendation]:
+        if self._portfolio_df.empty:
+            return []
+
+        weights = self._weight_series()
+        if weights.empty:
+            return []
+
+        portfolio = self._merge_fundamentals()
+        total_value = float(
+            analysis.get(
+                "total_value",
+                float(self._portfolio_df.get("valor_actual", pd.Series(dtype=float)).sum()),
+            )
+        )
+
+        recommendations: list[Recommendation] = []
+        for idx, row in portfolio.iterrows():
+            symbol = str(row.get("simbolo") or "").strip().upper()
+            if not symbol:
+                continue
+            current_weight = float(weights.get(idx, 0.0))
+            if current_weight >= MAX_ALLOCATION - 1e-6:
+                continue
+
+            sector = str(row.get("sector") or "Sin sector").strip() or "Sin sector"
+            currency = str(row.get("moneda") or "ARS").upper()
+            tipo = self._infer_tipo(str(row.get("tipo")) if row.get("tipo") is not None else None, currency)
+
+            expected_return = pd.to_numeric(row.get("expected_return"), errors="coerce")
+            if not np.isfinite(expected_return):
+                expected_return = 5.0 + (1.0 - current_weight) * 5.0
+
+            info_row = pd.Series(
+                {
+                    "pe_ratio": row.get("pe_ratio"),
+                    "market_cap": row.get("market_cap"),
+                    "dividend_yield": row.get("dividend_yield"),
+                    "cagr": row.get("cagr"),
+                }
+            )
+
+            base_score = 65.0 + expected_return + (1.0 - current_weight) * 20.0
+            estimated_beta = self._lookup_beta(symbol, sector)
+            score = self._adjust_score_for_mode(
+                base_score,
+                info_row,
+                mode=mode,
+                expected_return=expected_return,
+                estimated_beta=estimated_beta,
+            )
+            score = self._apply_exposure_bias(
+                score,
+                sector=sector,
+                currency=currency,
+                tipo=tipo,
+                mode=mode,
+                estimated_beta=estimated_beta,
+                analysis=analysis,
+            )
+
+            allocation_cap = self._max_allocation_for_existing(
+                current_weight,
+                additional_amount=amount,
+                total_portfolio_value=total_value,
+            )
+
+            if allocation_cap < MIN_ALLOCATION:
+                continue
+
+            rationale = self._build_rationale(
+                symbol=symbol,
+                sector=sector,
+                currency=currency,
+                expected_return=expected_return,
+                estimated_beta=estimated_beta,
+                mode=mode,
+                analysis=analysis,
+                is_existing=True,
+            )
+
+            recommendations.append(
+                Recommendation(
+                    symbol,
+                    float(score),
+                    float(expected_return),
+                    rationale,
+                    sector,
+                    currency,
+                    tipo,
+                    True,
+                    float(allocation_cap),
+                )
+            )
+
+        return recommendations
 
     # ------------------------------------------------------------------
     # Public API
@@ -403,7 +674,7 @@ class RecommendationService:
         opportunities = self._ensure_opportunities()
         analysis = self.analyze_portfolio()
 
-        if normalized_amount <= 0 or opportunities.empty:
+        if normalized_amount <= 0:
             return pd.DataFrame(
                 columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
             )
@@ -415,9 +686,10 @@ class RecommendationService:
                 continue
             sector = str(row.get("sector") or "Sin sector").strip() or "Sin sector"
             currency = str(row.get("currency") or "USD").upper()
+            tipo = self._infer_tipo(str(row.get("tipo")) if row.get("tipo") is not None else None, currency)
             expected_return = self._expected_return(row)
             base_score = self._base_score(row)
-            estimated_beta = self._estimate_beta_from_sector(sector)
+            estimated_beta = self._lookup_beta(symbol, sector)
             score = self._adjust_score_for_mode(
                 base_score,
                 row,
@@ -429,6 +701,7 @@ class RecommendationService:
                 score,
                 sector=sector,
                 currency=currency,
+                tipo=tipo,
                 mode=mode,
                 estimated_beta=estimated_beta,
                 analysis=analysis,
@@ -443,7 +716,23 @@ class RecommendationService:
                 mode=mode,
                 analysis=analysis,
             )
-            candidates.append(Recommendation(symbol, score, expected_return, rationale))
+            candidates.append(
+                Recommendation(
+                    symbol,
+                    float(score),
+                    float(expected_return),
+                    rationale,
+                    sector,
+                    currency,
+                    tipo,
+                    False,
+                    MAX_ALLOCATION,
+                )
+            )
+
+        candidates.extend(
+            self._existing_candidates(amount=normalized_amount, analysis=analysis, mode=mode)
+        )
 
         if not candidates:
             return pd.DataFrame(
@@ -451,6 +740,53 @@ class RecommendationService:
             )
 
         df = pd.DataFrame([rec.__dict__ for rec in candidates])
+        df = df.sort_values("score", ascending=False)
+        df = df.drop_duplicates(subset="symbol", keep="first")
+
+        def _apply_balance(frame: pd.DataFrame) -> pd.DataFrame:
+            over_sector = analysis.get("overexposed", {}).get("sector", set())
+            over_tipo = analysis.get("overexposed", {}).get("tipo", set())
+            selected_indices: list[int] = []
+            sector_counts: dict[str, int] = {}
+            tipo_counts: dict[str, int] = {}
+
+            for idx, row in frame.iterrows():
+                if len(selected_indices) >= top_n:
+                    break
+                sector = row.get("sector", "Sin sector")
+                tipo = row.get("tipo", "ACCION")
+                max_sector = 1 if sector in over_sector else 2
+                max_tipo = 1 if tipo in over_tipo else 3
+                if sector_counts.get(sector, 0) >= max_sector:
+                    continue
+                if tipo_counts.get(tipo, 0) >= max_tipo:
+                    continue
+                selected_indices.append(idx)
+                sector_counts[sector] = sector_counts.get(sector, 0) + 1
+                tipo_counts[tipo] = tipo_counts.get(tipo, 0) + 1
+
+            if len(selected_indices) < top_n:
+                for idx in frame.index:
+                    if len(selected_indices) >= top_n:
+                        break
+                    if idx not in selected_indices:
+                        selected_indices.append(idx)
+
+            return frame.loc[selected_indices].head(top_n)
+
+        df = _apply_balance(df)
+
+        if not df["is_existing"].any():
+            existing_candidates = [rec for rec in candidates if rec.is_existing]
+            best_existing = max(existing_candidates, key=lambda rec: rec.score, default=None)
+            if best_existing is not None and best_existing.symbol not in set(df["symbol"]):
+                df = pd.concat(
+                    [
+                        df.iloc[:-1],
+                        pd.DataFrame([best_existing.__dict__]),
+                    ]
+                )
+
         df = df.sort_values("score", ascending=False).head(int(max(top_n, 1)))
 
         if callable(post_filter):
@@ -461,15 +797,26 @@ class RecommendationService:
 
         scores = df["score"].clip(lower=0.0)
         if float(scores.sum()) <= 0:
-            weights = np.repeat(1.0 / len(df), len(df))
+            base_weights = pd.Series(
+                np.repeat(1.0 / len(df), len(df)), index=df.index
+            )
         else:
-            weights = scores / float(scores.sum())
+            base_weights = scores / float(scores.sum())
+
+        min_constraints = pd.Series(MIN_ALLOCATION, index=df.index)
+        max_constraints = pd.Series(
+            df["max_allocation"].astype(float).clip(lower=MIN_ALLOCATION, upper=MAX_ALLOCATION),
+            index=df.index,
+        )
+        weights = self._apply_weight_constraints(base_weights, min_constraints, max_constraints)
 
         df["allocation_%"] = weights * 100
         df["allocation_amount"] = df["allocation_%"] * normalized_amount / 100
         df["symbol"] = df["symbol"].astype(str)
 
-        return df[["symbol", "allocation_%", "allocation_amount", "rationale"]]
+        df = df[["symbol", "allocation_%", "allocation_amount", "rationale"]]
+
+        return df
 
 
 __all__ = [

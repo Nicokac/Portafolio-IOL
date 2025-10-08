@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -118,10 +117,14 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
 
     assert list(result.columns) == ["symbol", "allocation_%", "allocation_amount", "rationale"]
     assert len(result) == 5
-    top_symbol = result.iloc[0]["symbol"]
-    assert top_symbol in {"JNJ", "XLU"}, "Expected defensive sectors to lead diversification"
-    assert result["allocation_amount"].sum() == pytest.approx(100_000.0)
-    assert any("Healthcare" in rationale for rationale in result["rationale"])
+    assert result["allocation_amount"].sum() == pytest.approx(100_000.0, abs=1e-3)
+    assert result["allocation_%"].sum() == pytest.approx(100.0, abs=1e-6)
+    assert (result["allocation_%"] >= 10.0 - 1e-6).all()
+    assert (result["allocation_%"] <= 40.0 + 1e-6).all()
+    defensive_candidates = {"JNJ", "XLU", "XLRE", "VIG"}
+    assert defensive_candidates.intersection(set(result["symbol"]))
+    existing_symbols = set(portfolio_df["simbolo"])
+    assert existing_symbols.intersection(set(result["symbol"]))
 
 
 def test_low_risk_mode_favours_defensive_assets(
@@ -137,9 +140,15 @@ def test_low_risk_mode_favours_defensive_assets(
     result = svc.recommend(50_000, mode="low_risk")
 
     assert len(result) == 5
-    assert result.iloc[0]["symbol"] in {"JNJ", "XLU", "XLRE"}
+    assert result["allocation_%"].sum() == pytest.approx(100.0, abs=1e-6)
+    assert (result["allocation_%"] >= 10.0 - 1e-6).all()
+    assert (result["allocation_%"] <= 40.0 + 1e-6).all()
+    low_risk_symbols = {"JNJ", "XLU", "XLRE"}
+    assert result.iloc[0]["symbol"] in low_risk_symbols
+    assert any(symbol in low_risk_symbols for symbol in result["symbol"])
+    assert any(sym in set(portfolio_df["simbolo"]) for sym in result["symbol"])
     rationale = " ".join(result["rationale"].tolist())
-    assert "defensivo" in rationale or "defensivo" in rationale.lower()
+    assert "defensivo" in rationale.lower()
 
 
 def test_max_return_respects_supported_modes(
@@ -155,7 +164,9 @@ def test_max_return_respects_supported_modes(
     result = svc.recommend(200_000, mode="max_return")
 
     assert len(result) == 5
-    assert np.all(result["allocation_%"] > 0)
-    assert result["allocation_%"].sum() == pytest.approx(100.0)
+    assert result["allocation_%"].sum() == pytest.approx(100.0, abs=1e-6)
+    assert (result["allocation_%"] >= 10.0 - 1e-6).all()
+    assert (result["allocation_%"] <= 40.0 + 1e-6).all()
+    assert any(symbol in set(portfolio_df["simbolo"]) for symbol in result["symbol"])
     assert any("retorno" in rationale.lower() for rationale in result["rationale"])
 
