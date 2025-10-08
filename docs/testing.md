@@ -45,7 +45,10 @@ de enlaces del footer, por lo que los tests deben asegurar que los snapshots y l
 generados por la app se publiquen como artefactos. La release 0.3.4.4.2 profundiza este trabajo al
 apilar los controles del sidebar en tarjetas verticales con feedback visual específico por sección,
 por lo que las verificaciones manuales deben incluir capturas del nuevo layout y la animación de
-feedback al aplicar filtros.
+feedback al aplicar filtros. La release 0.3.4.4.5 extiende esta validación al heatmap de riesgo,
+exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
+homogéneos, que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) y que existe una pestaña
+específica para las Acciones locales con su propio tablero de correlaciones.
 
 > Las pruebas visuales se deben realizar mediante inspección manual del layout, verificando jerarquía tipográfica, alineación y visibilidad del menú de acciones.
 
@@ -54,6 +57,7 @@ feedback al aplicar filtros.
 1. **Sidebar de controles apilado.** Abrí la aplicación en resoluciones desktop y medianas para validar que las tarjetas de Actualización, Filtros, Moneda, Orden, Gráficos y Acciones se rendericen una debajo de la otra con padding uniforme, chips activos, tooltips cortos y botones de refresco/cierre funcionando.
 2. **Pestaña Monitoreo activa.** Navegá a la pestaña **Monitoreo** y confirmá que el healthcheck conserva las secciones de dependencias, snapshots, oportunidades y diagnósticos, registrando TTLs y latencias con la misma profundidad que el antiguo sidebar.
 3. **Badge global y footer.** Revisá que bajo el encabezado principal aparezca el badge de estado general y que el footer incluya el bloque de enlaces útiles con contraste reducido en los metadatos.
+4. **Heatmap alineado por tipo.** En la pestaña **Riesgo**, filtrá por CEDEARs y confirmá que el heatmap solo muestra tickers del catálogo base, excluyendo LOMA, YPFD y TECO2. Capturá evidencia de la advertencia cuando un tipo no tiene suficientes símbolos para generar la matriz.
 
 ### Generadores aleatorios reproducibles
 

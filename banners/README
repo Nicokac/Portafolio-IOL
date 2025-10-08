@@ -2,7 +2,7 @@
 
 Los assets de login y sidebar deben mostrar la versión activa de la aplicación.
 
-- Versión actual: v0.3.4.4.2
-- Fecha de publicación: 2025-11-27
-- Mensaje destacado: "Vertical Sidebar Layout"
-- Elementos complementarios: destacar que el formulario lateral muestra tarjetas apiladas (Actualización, Filtros, Moneda, Orden, Gráficos y Acciones) con feedback visual consistente al aplicar cambios.
+- Versión actual: v0.3.4.4.5
+- Fecha de publicación: 2025-11-30
+- Mensaje destacado: "Local Equity Tab in Risk Analysis"
+- Elementos complementarios: resaltar que las Acciones locales cuentan con su propio heatmap y que los CEDEARs continúan excluyendo LOMA, YPFD y TECO2 para evitar mezclas entre plazas.
