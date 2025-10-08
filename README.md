@@ -6,6 +6,14 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Quick-start (release 0.4.0 — Factor & Benchmark Analysis)
+
+La versión **0.4.0** incorpora un panel dedicado de *Análisis de Factores y Benchmark* dentro de la pestaña de riesgo. Además de la correlación por tipo de activo, ahora se exponen métricas de Tracking Error, Active Return e Information Ratio respecto al benchmark seleccionado (MERVAL, S&P 500, Nasdaq o Dow Jones). Cuando hay factores macro disponibles (tasas, inflación, commodities) se ejecuta una regresión multi-factorial que muestra las betas estimadas con su R² explicativo y permite descargar el análisis completo en CSV/XLSX.
+
+## Quick-start (release 0.3.4.4.6 — Clasificación y visualización completa por tipo de activo)
+
+La versión **0.3.4.4.6** refuerza la normalización de tipos en el análisis de riesgo. El heatmap crea una pestaña por cada clase detectada en el portafolio (CEDEAR, Acciones locales, Bonos, Letras, FCI, ETFs y Otros) incluso cuando alguna categoría no tiene suficientes símbolos para calcular la matriz, mostrando el aviso "⚠️ No hay suficientes activos..." en lugar de omitirla. El mapa de alias ahora reconoce variantes comunes como "Bonos Dólar", "Letras del Tesoro" o fondos money market y mantiene etiquetas visuales consistentes en todas las pestañas.
+
 ## Quick-start (release 0.3.4.4.5 — Local Equity Tab in Risk Analysis)
 
 La versión **0.3.4.4.5** mantiene la segmentación de correlaciones por tipo y suma una pestaña dedicada para **Acciones locales**. El heatmap ahora separa visualmente la renta variable doméstica de los CEDEARs, asegurando que LOMA, YPFD y TECO2 aparezcan en su propio tablero y que el grupo de CEDEARs conserve únicamente instrumentos del exterior.
@@ -24,6 +32,12 @@ La versión **0.3.4.4.2** refuerza los siguientes ejes:
 > Desde la versión 0.3.4.4 las confirmaciones de acciones (guardar preset, refrescar, reintentar exportes) muestran el mismo mensaje en el panel principal y en **Monitoreo**. Las referencias en secciones previas del README se mantienen para conservar compatibilidad con los pipelines que validan flujos legacy.
 
 ## Historial de versiones
+
+### Versión 0.4.0 — Factor & Benchmark Analysis
+La release 0.4.0 suma un bloque de métricas avanzadas en la pestaña de riesgo con Tracking Error, Active Return, Information Ratio y la descomposición de betas por factor macro cuando se dispone de datos adicionales. El controlador permite exportar el resultado en CSV y Excel, y los tests cubren tanto el servicio de benchmark como la integración completa del panel.
+
+### Versión 0.3.4.4.6 — Clasificación y visualización completa por tipo de activo
+La release 0.3.4.4.6 garantiza que cada clase del portafolio cuente con una pestaña propia en el heatmap de riesgo, aun cuando la categoría tenga un único símbolo o no existan datos suficientes para la correlación. Las etiquetas visuales se estandarizan ("Acciones locales", "Bonos", "Letras", "Fondos comunes (FCI)", "ETFs", "CEDEARs" y "Otros") y se amplía el mapeo de alias para contemplar variaciones como "Bonos Dólar" o "Fondo Money Market", evitando huecos en la navegación. También se documenta la advertencia que aparece cuando una pestaña no puede generar la matriz.
 
 ### Versión 0.3.4.4.5 — Local Equity Tab in Risk Analysis
 La release 0.3.4.4.5 extiende el alineamiento previo incorporando un tablero propio para **Acciones
@@ -82,10 +96,13 @@ Sigue estos pasos para reproducir el flujo completo y validar las novedades clav
    ```bash
    streamlit run app.py
    ```
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.5` junto con
-   el mensaje "Local Equity Tab in Risk Analysis" y el timestamp generado por `TimeProvider`.
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.4` junto con
-   el mensaje "Asset Type Alignment in Risk Analysis" y el timestamp generado por `TimeProvider`.
+    La cabecera del sidebar y el banner del login mostrarán el número de versión `0.4.0` junto con
+    el mensaje "Factor & Benchmark Analysis" y el timestamp generado
+    por `TimeProvider`.
+    Las notas de las releases previas (`0.3.4.4.6` "Clasificación y visualización completa por tipo de activo",
+    `0.3.4.4.5` "Local Equity Tab in Risk Analysis" y `0.3.4.4.4`
+    "Asset Type Alignment in Risk Analysis") permanecen documentadas en el historial para auditorías
+    comparativas.
    Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
    verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
    allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
@@ -200,6 +217,28 @@ validar escenarios sin depender de módulos obsoletos.
 8. **Verifica attachments antes de mergear.** En GitHub/GitLab, inspecciona los artefactos del pipeline
    y asegúrate de que `htmlcov/`, `coverage.xml`, `analysis.zip`, `analysis.xlsx`, `summary.csv` y
    los archivos `analysis.log*` rotados dentro de `~/.portafolio_iol/logs/` estén presentes. Si falta alguno, marca el pipeline como fallido y reprocesa la corrida.
+
+### Correlaciones completas por tipo (0.3.4.4.6)
+
+- El heatmap de riesgo crea una pestaña por cada tipo de activo detectado (CEDEAR, Acciones locales,
+  Bonos, Letras, FCI, ETFs y Otros). Cuando una categoría no cuenta con suficientes símbolos para la
+  correlación, se muestra el aviso "⚠️ No hay suficientes activos del tipo X para calcular
+  correlaciones." en lugar de ocultar la pestaña.
+- Se ampliaron los alias de clasificación para reconocer descripciones como "Bonos Dólar",
+  "Letras del Tesoro" o "Fondo Money Market" y mantener etiquetas visuales consistentes entre tabs.
+- El título del heatmap respeta la etiqueta amigable configurada (por ejemplo, "Matriz de
+  Correlación — Fondos comunes (FCI)") para cada pestaña.
+
+### Análisis de Factores y Benchmark (0.4.0)
+
+- La pestaña **Riesgo** incorpora un subpanel "Análisis de Factores y Benchmark" con métricas de
+  Tracking Error, Active Return e Information Ratio calculadas frente al benchmark elegido
+  (MERVAL, S&P 500, Nasdaq o Dow Jones).
+- Si `tasvc.factor_history` provee factores macro (tasas, inflación, commodities), se ejecuta una
+  regresión multi-factorial que expone betas por factor y el coeficiente de determinación R² junto al
+  gráfico de barras correspondiente.
+- El módulo permite exportar los resultados del análisis en formatos CSV y XLSX desde la propia UI,
+  facilitando revisiones offline y el intercambio con QA o research.
 
 ### Correlaciones segmentadas (0.3.4.4.5)
 ### Correlaciones segmentadas (0.3.4.4.4)
@@ -589,11 +628,11 @@ La función `fetch_with_indicators` descarga OHLCV y calcula indicadores (SMA, E
 
 Tus credenciales nunca se almacenan en servidores externos. El acceso a IOL se realiza de forma segura mediante tokens cifrados, protegidos con clave Fernet y gestionados localmente por la aplicación.
 
-El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.3.4.0" y destaca "UI Experience Refresh — Octubre 2025" mientras conserva la narrativa de observabilidad operativa para documentar cuándo los PNG quedan pendientes en los artefactos y qué TTL quedó activo.
+El bloque de login muestra la versión actual de la aplicación con un mensaje como "Estas medidas de seguridad aplican a la versión 0.4.0" y destaca "UI Experience Refresh — Octubre 2025" mientras conserva la narrativa de observabilidad operativa para documentar cuándo los PNG quedan pendientes en los artefactos y qué TTL quedó activo.
 
 El menú **⚙️ Acciones** refuerza la seguridad operativa al anunciar con toasts cada vez que se refrescan los datos o se completa el cierre de sesión, dejando constancia en la propia UI sin depender de logs externos.
 
-El sidebar finaliza con un bloque de **Healthcheck (versión 0.3.4.0)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega insignias con el TTL restante, estadísticas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank y la bitácora asociada en `~/.portafolio_iol/logs/analysis.log`. El bloque superior agrupa las **Descargas de observabilidad** para bajar el snapshot de entorno y los logs rotados comprimidos que acompañan cada screening.
+El sidebar finaliza con un bloque de **Healthcheck (versión 0.4.0)** que lista el estado de los servicios monitoreados, resalta si la respuesta proviene de la caché o de un fallback y ahora agrega insignias con el TTL restante, estadísticas de latencia, resiliencia y reutilización, incluyendo el resumen macro con World Bank y la bitácora asociada en `~/.portafolio_iol/logs/analysis.log`. El bloque superior agrupa las **Descargas de observabilidad** para bajar el snapshot de entorno y los logs rotados comprimidos que acompañan cada screening.
 
 ### Interpretación del health sidebar (KPIs agregados)
 

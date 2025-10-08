@@ -1,6 +1,7 @@
 import logging
 import re
 import unicodedata
+from io import BytesIO, StringIO
 from typing import Sequence
 
 import numpy as np
@@ -27,7 +28,8 @@ from application.risk_service import (
 )
 from application.portfolio_service import classify_symbol
 from services.notifications import NotificationFlags
-from ui.charts import plot_correlation_heatmap, _apply_layout
+from application.benchmark_service import benchmark_analysis
+from ui.charts import plot_correlation_heatmap, plot_factor_betas, _apply_layout
 from ui.export import PLOTLY_CONFIG
 from ui.notifications import render_risk_badge
 from shared.errors import AppError
@@ -48,25 +50,60 @@ _TYPE_ALIASES = {
     "ACCION_LOCAL": "ACCION_LOCAL",
     "ACCIONES LOCALES": "ACCION_LOCAL",
     "ACCIONES NACIONALES": "ACCION_LOCAL",
+    "ACCIONES ARGENTINAS": "ACCION_LOCAL",
     "BONO": "BONO",
     "BONOS": "BONO",
+    "BONO DOLAR": "BONO",
+    "BONOS DOLAR": "BONO",
+    "BONO DOLAR LINK": "BONO",
+    "BONO USD": "BONO",
+    "BONO PESO": "BONO",
+    "BONOS PESO": "BONO",
+    "BONO CER": "BONO",
+    "BONO UVA": "BONO",
     "BONOS SOBERANOS": "BONO",
     "BONOS CORPORATIVOS": "BONO",
+    "BONOS DEL TESORO": "BONO",
+    "BONOS TESORO": "BONO",
     "LETRA": "LETRA",
     "LETRAS": "LETRA",
+    "LETRAS DEL TESORO": "LETRA",
+    "LETRA DEL TESORO": "LETRA",
+    "LETRA DOLAR LINK": "LETRA",
+    "LETRA CER": "LETRA",
     "CEDEAR": "CEDEAR",
     "CEDEARS": "CEDEAR",
     "ETF": "ETF",
     "ETFS": "ETF",
     "FONDO": "FCI",
     "FONDOS": "FCI",
+    "FONDOS COMUNES": "FCI",
     "FONDO COMUN": "FCI",
+    "FONDOS COMUNES DE INVERSION": "FCI",
     "FONDO COMUN DE INVERSION": "FCI",
+    "FONDO COMUN DE INVERSION T+0": "FCI",
+    "FONDO COMUN DE INVERSION T+1": "FCI",
+    "FONDO COMUN DE INVERSION T+2": "FCI",
     "FONDO DE INVERSION": "FCI",
+    "FONDO DE INVERSION ABIERTA": "FCI",
+    "FONDO MONEY MARKET": "FCI",
+    "FONDOS MONEY MARKET": "FCI",
+    "MONEY MARKET": "FCI",
     "FCI": "FCI",
     "OTRO": "OTRO",
     "OTROS": "OTRO",
+    "OTROS ACTIVOS": "OTRO",
 }
+
+_DEFAULT_TYPE_ORDER = [
+    "CEDEAR",
+    "ACCION_LOCAL",
+    "BONO",
+    "LETRA",
+    "FCI",
+    "ETF",
+    "OTRO",
+]
 
 _TYPE_DISPLAY_OVERRIDES = {
     "ACCION_LOCAL": "Acciones locales",
@@ -79,6 +116,51 @@ _TYPE_DISPLAY_OVERRIDES = {
 }
 
 _SYMBOL_TYPE_OVERRIDES = {sym: "ACCION_LOCAL" for sym in _LOCAL_SYMBOL_BLACKLIST}
+
+
+def _extend_unique_types(target: list[str], values) -> None:
+    """Append canonical types from *values* preserving order."""
+
+    if values is None:
+        return
+
+    if isinstance(values, str):
+        iterator = [values]
+    else:
+        try:
+            iterator = list(values)
+        except TypeError:
+            iterator = [values]
+
+    for value in iterator:
+        canonical = _normalize_type_label(value)
+        if canonical and canonical not in target:
+            target.append(canonical)
+
+
+def _order_types(types: Sequence[str]) -> list[str]:
+    """Return canonical types sorted by preferred order preserving extras."""
+
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    normalized = []
+    for value in types:
+        canonical = _normalize_type_label(value)
+        if canonical:
+            normalized.append(canonical)
+
+    for preferred in _DEFAULT_TYPE_ORDER:
+        if preferred in normalized and preferred not in seen:
+            ordered.append(preferred)
+            seen.add(preferred)
+
+    for canonical in normalized:
+        if canonical not in seen:
+            ordered.append(canonical)
+            seen.add(canonical)
+
+    return ordered
 
 
 def _string_or_empty(value) -> str:
@@ -164,7 +246,7 @@ def _build_type_metadata(df: pd.DataFrame | None) -> tuple[pd.Series, dict[str, 
                     display_labels[canonical] = raw_label
 
     for canonical, label in _TYPE_DISPLAY_OVERRIDES.items():
-        display_labels.setdefault(canonical, label)
+        display_labels[canonical] = label
 
     for canonical in symbol_type_map.values():
         display_labels.setdefault(canonical, canonical.replace("_", " ").title())
@@ -372,30 +454,39 @@ def render_risk_analysis(
 
         available_types_in_view: list[str] = []
         if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
-            available_types_in_view = [
-                str(t)
-                for t in filtered_df["_normalized_type"].dropna().unique()
-                if isinstance(t, str) and str(t)
-            ]
-        for canonical in symbol_groups:
-            if canonical not in available_types_in_view:
-                available_types_in_view.append(canonical)
+            _extend_unique_types(
+                available_types_in_view,
+                filtered_df["_normalized_type"].dropna().unique(),
+            )
+        _extend_unique_types(available_types_in_view, available_types)
+        _extend_unique_types(available_types_in_view, symbol_groups.keys())
 
         if normalized_filters:
-            ordered_types = [t for t in normalized_filters if t in symbol_groups]
+            ordered_types: list[str] = []
+            for raw in normalized_filters:
+                canonical = _normalize_type_label(raw)
+                if canonical and canonical not in ordered_types:
+                    ordered_types.append(canonical)
         else:
-            ordered_types = sorted(symbol_groups) if symbol_groups else sorted(available_types_in_view)
+            base_types = available_types_in_view if available_types_in_view else list(symbol_groups.keys())
+            ordered_types = _order_types(base_types)
 
         type_groups: list[tuple[str, pd.DataFrame, list[str]]] = []
         for type_name in ordered_types:
+            if not isinstance(type_name, str) or not type_name:
+                continue
             subset = (
                 filtered_df[filtered_df["_normalized_type"] == type_name]
                 if isinstance(filtered_df, pd.DataFrame)
                 else pd.DataFrame()
             )
-            symbols_for_type = sorted({sym for sym in symbol_groups.get(type_name, []) if sym in hist_df.columns})
-            if subset.empty and not symbols_for_type:
-                continue
+            symbols_for_type = sorted(
+                {
+                    sym
+                    for sym in symbol_groups.get(type_name, [])
+                    if sym in hist_df.columns
+                }
+            )
             subset_df = subset.copy() if isinstance(subset, pd.DataFrame) else pd.DataFrame()
             type_groups.append((type_name, subset_df, symbols_for_type))
 
@@ -591,6 +682,27 @@ def render_risk_analysis(
                     )
                     return
 
+                factors_df = None
+                factor_fetcher = getattr(tasvc, "factor_history", None)
+                if callable(factor_fetcher):
+                    try:
+                        try:
+                            factors_df = factor_fetcher(benchmark=benchmark_symbol, period="1y")
+                        except TypeError:
+                            try:
+                                factors_df = factor_fetcher(period="1y")
+                            except TypeError:
+                                factors_df = factor_fetcher()
+                    except AppError as err:
+                        st.warning(
+                            f"⚠️ No se pudieron obtener factores para el benchmark seleccionado: {err}"
+                        )
+                    except Exception:
+                        logger.exception("Error al obtener factores para análisis de benchmark")
+                        st.warning(
+                            "⚠️ No se pudieron obtener factores para el análisis de benchmark."
+                        )
+
                 confidence_options = {"90%": 0.90, "95%": 0.95, "99%": 0.99}
                 selected_conf_label = st.selectbox(
                     "Nivel de confianza para VaR/CVaR",
@@ -616,6 +728,8 @@ def render_risk_analysis(
                     weights,
                     var_confidence=var_confidence,
                 )
+
+                factor_results = benchmark_analysis(port_ret, bench_ret, factors_df=factors_df)
 
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric(
@@ -838,5 +952,94 @@ def render_risk_analysis(
                 base_prices = pd.Series(1.0, index=weights.index)
                 stressed_val = apply_stress(base_prices, weights, shocks)
                 st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
+
+                st.subheader("Análisis de Factores y Benchmark")
+
+                tracking_error = factor_results.get("tracking_error") if factor_results else float("nan")
+                active_return = factor_results.get("active_return") if factor_results else float("nan")
+                information_ratio = (
+                    factor_results.get("information_ratio") if factor_results else float("nan")
+                )
+
+                metrics_cols = st.columns(3)
+                metrics_cols[0].metric(
+                    "Tracking Error",
+                    f"{tracking_error:.2%}" if pd.notna(tracking_error) else "N/A",
+                )
+                metrics_cols[1].metric(
+                    "Active Return",
+                    f"{active_return:.2%}" if pd.notna(active_return) else "N/A",
+                )
+                metrics_cols[2].metric(
+                    "Information Ratio",
+                    f"{information_ratio:.2f}" if pd.notna(information_ratio) else "N/A",
+                )
+
+                betas: dict[str, float] = {}
+                r_squared = float("nan")
+                if factor_results:
+                    betas = factor_results.get("factor_betas", {}) or {}
+                    r_squared_raw = factor_results.get("r_squared", float("nan"))
+                    if isinstance(r_squared_raw, (int, float, np.floating)):
+                        r_squared = float(r_squared_raw)
+
+                if betas:
+                    fig_betas = plot_factor_betas(betas, r_squared)
+                    st.plotly_chart(fig_betas, use_container_width=True, config=PLOTLY_CONFIG)
+                    if pd.notna(r_squared):
+                        st.caption(f"R² del modelo: {r_squared:.2%}")
+                else:
+                    if factors_df is None or (isinstance(factors_df, pd.DataFrame) and factors_df.empty):
+                        st.info(
+                            "No hay factores disponibles para estimar betas contra el benchmark seleccionado."
+                        )
+                    else:
+                        st.info(
+                            "No se pudieron estimar betas estadísticamente significativas con los factores provistos."
+                        )
+
+                metrics_export = [
+                    {"metric": "Tracking Error", "value": tracking_error},
+                    {"metric": "Active Return", "value": active_return},
+                    {"metric": "Information Ratio", "value": information_ratio},
+                ]
+                if pd.notna(r_squared):
+                    metrics_export.append({"metric": "R_squared", "value": r_squared})
+
+                metrics_df = pd.DataFrame(metrics_export)
+                betas_df = pd.DataFrame(
+                    [(factor, beta) for factor, beta in betas.items()],
+                    columns=["factor", "beta"],
+                )
+
+                csv_buffer = StringIO()
+                metrics_df.to_csv(csv_buffer, index=False)
+                if not betas_df.empty:
+                    csv_buffer.write("\n")
+                    betas_df.to_csv(csv_buffer, index=False)
+                csv_bytes = csv_buffer.getvalue().encode("utf-8")
+
+                st.download_button(
+                    "⬇️ Descargar análisis (CSV)",
+                    csv_bytes,
+                    file_name="factor_benchmark_analysis.csv",
+                    mime="text/csv",
+                    key="factor_analysis_csv",
+                )
+
+                excel_buffer = BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+                    metrics_df.to_excel(writer, index=False, sheet_name="metricas")
+                    if not betas_df.empty:
+                        betas_df.to_excel(writer, index=False, sheet_name="betas")
+                excel_bytes = excel_buffer.getvalue()
+
+                st.download_button(
+                    "⬇️ Descargar análisis (XLSX)",
+                    excel_bytes,
+                    file_name="factor_benchmark_analysis.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="factor_analysis_xlsx",
+                )
     else:
         st.info("No hay símbolos en el portafolio para analizar.")

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.4.0 — Factor & Benchmark Analysis (Dec 2025)
+
+**Fecha:** 2025-12-05
+
+**Novedades principales:**
+- Incorporado el módulo de *Análisis de Factores y Benchmark* con métricas de Tracking Error,
+  Active Return e Information Ratio directamente en el tablero de riesgo.
+- Nuevo servicio `application.benchmark_service` para centralizar cálculos de seguimiento y
+  regresiones multi-factoriales con soporte para factores macroeconómicos opcionales.
+- Visualización de betas por factor con indicación de R², más exportaciones CSV/XLSX desde el
+  controlador de riesgo.
+- Cobertura de pruebas unitarias e integradas para los cálculos y la nueva UI, junto con
+  documentación actualizada en README y guías de testing.
+
+**QA Check:**
+✅ Verificar que el panel “Análisis de Factores y Benchmark” renderice correctamente.
+✅ Confirmar coherencia entre Tracking Error y Information Ratio.
+⚠️ Cuando no haya datos de benchmark, mostrar aviso de datos insuficientes.
+
+## v0.3.4.4.6 — Clasificación y visualización completa por tipo de activo (Nov 2025)
+
+### Summary
+- El heatmap de riesgo ahora genera pestañas para cada tipo de activo detectado en el portafolio
+  (CEDEAR, Acciones locales, Bonos, Letras, FCI, ETFs y Otros) aun cuando no existan suficientes
+  símbolos para calcular correlaciones, mostrando advertencias contextuales cuando corresponde.
+- Se amplió el mapeo canónico de tipos (`_TYPE_ALIASES`) para contemplar variantes frecuentes como
+  "Bonos Dólar", "Letras del Tesoro" o fondos money market, manteniendo etiquetas visuales
+  estandarizadas.
+- Nuevas pruebas en `tests/controllers/test_risk_filtering.py` cubren la presencia de todas las
+  pestañas y las advertencias asociadas; README y documentación de testing actualizados junto con el
+  incremento de versión a 0.3.4.4.6.
+
 ## v0.3.4.4.5 — Local Equity Tab in Risk Heatmap (Nov 2025)
 
 ### Summary

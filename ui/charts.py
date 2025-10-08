@@ -195,6 +195,41 @@ def plot_portfolio_timeline(history_df: pd.DataFrame | None):
     return _apply_layout(fig, show_legend=True)
 
 
+def plot_factor_betas(betas: dict[str, float], r_squared: float) -> go.Figure:
+    """Render a horizontal bar chart with factor betas and optional R² annotation."""
+
+    factors = list(betas.keys())
+    values = [betas[factor] for factor in factors]
+
+    if not factors:
+        fig = go.Figure()
+        return _apply_layout(fig, title="Betas por factor", show_legend=False)
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=factors,
+            orientation="h",
+            text=[f"{value:.2f}" if value == value else "" for value in values],
+            textposition="auto",
+            marker_color=get_active_palette().accent,
+        )
+    )
+
+    if SHOW_AXIS_TITLES:
+        fig.update_xaxes(title="β")
+        fig.update_yaxes(title="Factor")
+    else:
+        fig.update_xaxes(title=None)
+        fig.update_yaxes(title=None)
+
+    title = "Betas por factor"
+    if not np.isnan(r_squared):
+        title = f"{title} (R²={r_squared:.2%})"
+
+    return _apply_layout(fig, title=title, show_legend=False)
+
+
 def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str = "valor_actual_pct"):
     """Render a heatmap of contributions grouped by type and symbol."""
 

@@ -10,6 +10,8 @@ plotly==6.3.0
 kaleido==0.2.1
 XlsxWriter==3.2.0
 tomli==2.0.1
+scipy==1.16.2
+statsmodels==0.14.3
 cryptography==41.0.3
 yfinance==0.2.65
 ta==0.11.0

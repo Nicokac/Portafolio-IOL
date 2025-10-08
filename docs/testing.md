@@ -48,7 +48,10 @@ por lo que las verificaciones manuales deben incluir capturas del nuevo layout y
 feedback al aplicar filtros. La release 0.3.4.4.5 extiende esta validación al heatmap de riesgo,
 exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
 homogéneos, que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) y que existe una pestaña
-específica para las Acciones locales con su propio tablero de correlaciones.
+específica para las Acciones locales con su propio tablero de correlaciones. La release 0.4.0 suma el
+panel de *Factor & Benchmark Analysis*, por lo que las verificaciones deben incluir las métricas de
+Tracking Error, Active Return, Information Ratio, el gráfico de betas (cuando haya factores
+disponibles) y la descarga de los CSV/XLSX generados por el controlador.
 feedback al aplicar filtros. La release 0.3.4.4.4 extiende esta validación al heatmap de riesgo,
 exigiendo evidencias de que cada tipo de activo se correlaciona únicamente con sus símbolos
 homogéneos y que los CEDEARs omiten acciones locales (LOMA, YPFD, TECO2) incluso cuando las
@@ -62,6 +65,7 @@ cotizaciones llegan etiquetadas de forma inconsistente.
 2. **Pestaña Monitoreo activa.** Navegá a la pestaña **Monitoreo** y confirmá que el healthcheck conserva las secciones de dependencias, snapshots, oportunidades y diagnósticos, registrando TTLs y latencias con la misma profundidad que el antiguo sidebar.
 3. **Badge global y footer.** Revisá que bajo el encabezado principal aparezca el badge de estado general y que el footer incluya el bloque de enlaces útiles con contraste reducido en los metadatos.
 4. **Heatmap alineado por tipo.** En la pestaña **Riesgo**, filtrá por CEDEARs y confirmá que el heatmap solo muestra tickers del catálogo base, excluyendo LOMA, YPFD y TECO2. Capturá evidencia de la advertencia cuando un tipo no tiene suficientes símbolos para generar la matriz.
+5. **Análisis de factores vs benchmark.** Seleccioná al menos dos símbolos y un benchmark (por ejemplo, S&P 500) para validar que se calculen Tracking Error, Active Return e Information Ratio. Si hay factores disponibles, verificá que aparezca el gráfico de betas con su R² y que los botones de exportación CSV/XLSX entreguen archivos consistentes.
 
 ### Generadores aleatorios reproducibles
 
@@ -153,6 +157,14 @@ frecuentes:
   controlador de oportunidades.
 - `pytest tests/ui/test_portfolio_ui.py -k risk`: limita la ejecución a los escenarios que cubren
   las visualizaciones de riesgo renderizadas en la UI.
+- `pytest --override-ini addopts='' tests/controllers/test_risk_filtering.py`: verifica la
+  clasificación canónica por tipo en el heatmap, incluyendo la nueva cobertura de pestañas vacías con
+  advertencias específicas por categoría.
+- `pytest --override-ini addopts='' tests/application/test_benchmark_service.py -q`: valida el servicio
+  de métricas de benchmark, incluyendo cálculos de Tracking Error, Information Ratio y regresión multi-factorial.
+- `pytest --override-ini addopts='' tests/controllers/test_factor_analysis.py -q`: comprueba la
+  renderización del panel de análisis de factores dentro del controlador de riesgo y la disponibilidad
+  de las exportaciones.
 
 ### Validación de snapshots y almacenamiento persistente
 
