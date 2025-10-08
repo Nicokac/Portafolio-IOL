@@ -52,6 +52,7 @@ from controllers.portfolio.portfolio import (
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 from services.health import get_health_metrics, record_dependency_status
+from ui.tabs.recommendations import render_recommendations_tab
 
 
 logger = logging.getLogger(__name__)
@@ -656,8 +657,18 @@ def main(argv: list[str] | None = None):
 
     if can_render_opportunities and hasattr(st, "tabs"):
         with main_col:
-            tab_labels = ["Portafolio", "Empresas con oportunidad", monitoring_label]
-            portfolio_tab, opportunities_tab, monitoring_tab = st.tabs(tab_labels)
+            tab_labels = [
+                "Portafolio",
+                "Recomendaciones",
+                "Empresas con oportunidad",
+                monitoring_label,
+            ]
+            (
+                portfolio_tab,
+                recommendations_tab,
+                opportunities_tab,
+                monitoring_tab,
+            ) = st.tabs(tab_labels)
             _inject_tab_animation_support()
         refresh_secs = render_portfolio_section(
             portfolio_tab,
@@ -665,6 +676,8 @@ def main(argv: list[str] | None = None):
             fx_rates,
             **portfolio_section_kwargs,
         )
+        with recommendations_tab:
+            render_recommendations_tab()
         with opportunities_tab:
             from ui.tabs.opportunities import render_opportunities_tab
 
@@ -674,11 +687,12 @@ def main(argv: list[str] | None = None):
     else:
         if hasattr(st, "tabs"):
             with main_col:
-                tab_labels = ["Portafolio", monitoring_label]
-                portfolio_tab, monitoring_tab = st.tabs(tab_labels)
+                tab_labels = ["Portafolio", "Recomendaciones", monitoring_label]
+                portfolio_tab, recommendations_tab, monitoring_tab = st.tabs(tab_labels)
                 _inject_tab_animation_support()
         else:
             portfolio_tab = main_col
+            recommendations_tab = main_col
             monitoring_tab = main_col
         refresh_secs = render_portfolio_section(
             portfolio_tab,
@@ -689,9 +703,12 @@ def main(argv: list[str] | None = None):
         if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
             logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
         if hasattr(st, "tabs"):
+            with recommendations_tab:
+                render_recommendations_tab()
             with monitoring_tab:
                 render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
         else:
+            render_recommendations_tab()
             render_health_monitor_tab(main_col, metrics=health_metrics)
 
     config_panel = st.sidebar.expander("⚙️ Configuración general", expanded=False)
