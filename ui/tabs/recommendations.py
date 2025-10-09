@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import logging
+from typing import Mapping
 
+import numpy as np
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
+from application.portfolio_service import PortfolioService
 from application.recommendation_service import RecommendationService
 from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
@@ -13,6 +17,309 @@ from services.portfolio_view import compute_symbol_risk_metrics
 
 LOGGER = logging.getLogger(__name__)
 _FORM_KEY = "recommendations_form"
+_SESSION_STATE_KEY = "_recommendations_state"
+_MODE_OPTIONS = [
+    ("diversify", "Diversificar"),
+    ("max_return", "Maximizar retorno"),
+    ("low_risk", "Bajar riesgo"),
+]
+_MODE_LABELS = {key: label for key, label in _MODE_OPTIONS}
+_MODE_ALIASES = {
+    "diversificar": "diversify",
+    "diversify": "diversify",
+    "max_return": "max_return",
+    "maximizar retorno": "max_return",
+    "maximizar": "max_return",
+    "low_risk": "low_risk",
+    "bajar riesgo": "low_risk",
+    "low risk": "low_risk",
+}
+_INSIGHT_MESSAGES = {
+    "diversify": "La selección prioriza un equilibrio sectorial con un riesgo promedio.",
+    "max_return": "La estrategia busca maximizar retorno aceptando una volatilidad más elevada.",
+    "low_risk": "La propuesta favorece estabilidad y preservación del capital frente a grandes oscilaciones.",
+}
+
+
+def _resolve_mode(value: object) -> tuple[str, str]:
+    if isinstance(value, tuple) and value:
+        key = str(value[0])
+        normalized_key = key.lower()
+        resolved_key = _MODE_ALIASES.get(normalized_key, normalized_key)
+        label = _MODE_LABELS.get(resolved_key, _MODE_LABELS["diversify"])
+        return resolved_key, label
+    if isinstance(value, str):
+        normalized_value = value.strip().lower()
+        resolved_key = _MODE_ALIASES.get(normalized_value, normalized_value)
+        if resolved_key in _MODE_LABELS:
+            return resolved_key, _MODE_LABELS[resolved_key]
+    return "diversify", _MODE_LABELS["diversify"]
+
+
+def _get_stored_state() -> dict:
+    state = getattr(st, "session_state", {})
+    stored = state.get(_SESSION_STATE_KEY)
+    return stored if isinstance(stored, dict) else {}
+
+
+def _expected_return_map(opportunities: pd.DataFrame) -> dict[str, float]:
+    if not isinstance(opportunities, pd.DataFrame) or opportunities.empty:
+        return {}
+    frame = opportunities.copy()
+    if "symbol" not in frame.columns and "ticker" in frame.columns:
+        frame = frame.rename(columns={"ticker": "symbol"})
+    frame["symbol"] = frame.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+    try:
+        expected = frame.apply(RecommendationService._expected_return, axis=1)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.debug("Fallo al calcular rentabilidad esperada desde oportunidades", exc_info=True)
+        return {}
+    expected = pd.to_numeric(expected, errors="coerce")
+    return {
+        str(sym): float(value)
+        for sym, value in zip(frame["symbol"], expected)
+        if str(sym) and np.isfinite(value)
+    }
+
+
+def _beta_lookup(
+    risk_metrics: pd.DataFrame,
+    opportunities: pd.DataFrame,
+) -> dict[str, float]:
+    lookup: dict[str, float] = {}
+    if isinstance(risk_metrics, pd.DataFrame) and not risk_metrics.empty:
+        df = risk_metrics.copy()
+        symbol_col = "simbolo" if "simbolo" in df.columns else "symbol"
+        df[symbol_col] = df.get(symbol_col, pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+        betas = pd.to_numeric(df.get("beta"), errors="coerce")
+        for sym, beta_val in zip(df[symbol_col], betas):
+            if not sym or not np.isfinite(beta_val):
+                continue
+            lookup[str(sym)] = float(beta_val)
+
+    if isinstance(opportunities, pd.DataFrame) and not opportunities.empty:
+        frame = opportunities.copy()
+        if "symbol" not in frame.columns and "ticker" in frame.columns:
+            frame = frame.rename(columns={"ticker": "symbol"})
+        frame["symbol"] = frame.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+        sectors = frame.get("sector", pd.Series(dtype=str))
+        for sym, sector in zip(frame["symbol"], sectors):
+            symbol = str(sym)
+            if not symbol or symbol in lookup:
+                continue
+            lookup[symbol] = RecommendationService._estimate_beta_from_sector(str(sector or ""))
+    return lookup
+
+
+def _mean_numeric(series: pd.Series | None) -> float:
+    if series is None:
+        return float("nan")
+    numeric = pd.to_numeric(series, errors="coerce")
+    numeric = numeric[np.isfinite(numeric)]
+    if numeric.empty:
+        return float("nan")
+    return float(numeric.mean())
+
+
+def _render_automatic_insight(
+    recommendations: pd.DataFrame,
+    *,
+    mode_key: str,
+    beta_lookup: dict[str, float] | None = None,
+) -> None:
+    if recommendations.empty:
+        return
+
+    expected_mean = _mean_numeric(recommendations.get("expected_return"))
+
+    beta_series = None
+    if "beta" in recommendations.columns:
+        beta_series = recommendations["beta"]
+    elif beta_lookup:
+        symbols = recommendations.get("symbol", pd.Series(dtype=str)).astype("string")
+        betas = [beta_lookup.get(str(symbol).upper()) for symbol in symbols]
+        beta_series = pd.Series(betas)
+    beta_mean = _mean_numeric(beta_series)
+
+    mode_message = _INSIGHT_MESSAGES.get(mode_key, _INSIGHT_MESSAGES["diversify"])
+
+    lines = ["**Insight automático**", mode_message]
+    metrics_parts: list[str] = []
+    if np.isfinite(expected_mean):
+        metrics_parts.append(f"Rentabilidad esperada promedio: {_format_percent(expected_mean)}")
+    if np.isfinite(beta_mean):
+        metrics_parts.append(f"Beta promedio: {_format_float(beta_mean)}")
+    if metrics_parts:
+        lines.append(" | ".join(metrics_parts))
+
+    st.info("\n\n".join(lines))
+
+
+def _format_currency(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"${value:,.0f}".replace(",", ".")
+
+
+def _format_percent(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"{value:.2f}%"
+
+
+def _format_float(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"{value:.2f}"
+
+
+def _format_currency_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}${abs(value):,.0f}".replace(",", ".")
+
+
+def _format_percent_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}{abs(value):.2f}%"
+
+
+def _format_float_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}{abs(value):.2f}"
+
+
+def _render_simulation_results(result: dict[str, dict[str, float]]) -> None:
+    if not isinstance(result, dict) or not result:
+        return
+
+    before = result.get("before") or {}
+    after = result.get("after") or {}
+
+    def _to_float(value: float | str | None, default: float) -> float:
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return default
+        return parsed
+
+    before_value = _to_float(before.get("total_value"), 0.0)
+    after_value = _to_float(after.get("total_value"), before_value)
+    before_return = _to_float(before.get("projected_return"), 0.0)
+    after_return = _to_float(after.get("projected_return"), before_return)
+    before_beta = _to_float(before.get("beta"), np.nan)
+    after_beta = _to_float(after.get("beta"), before_beta)
+    additional = _to_float(after.get("additional_investment"), after_value - before_value)
+
+    rows = [
+        {
+            "Métrica": "Valorizado total",
+            "Antes": _format_currency(before_value),
+            "Después": _format_currency(after_value),
+            "Variación": _format_currency_delta(after_value - before_value),
+        },
+        {
+            "Métrica": "Rentabilidad proyectada",
+            "Antes": _format_percent(before_return),
+            "Después": _format_percent(after_return),
+            "Variación": _format_percent_delta(after_return - before_return),
+        },
+        {
+            "Métrica": "Beta / Riesgo total",
+            "Antes": _format_float(before_beta),
+            "Después": _format_float(after_beta),
+            "Variación": _format_float_delta(after_beta - before_beta),
+        },
+    ]
+
+    st.markdown("#### Simulación de impacto (Antes vs. Después)")
+    st.table(pd.DataFrame(rows))
+
+    if np.isfinite(additional) and additional > 0:
+        st.caption(
+            "Se asignan "
+            f"{_format_currency(additional)} adicionales siguiendo la distribución sugerida."
+        )
+
+
+def _build_numeric_lookup(df: pd.DataFrame, column: str) -> dict[str, float]:
+    if df.empty or column not in df.columns:
+        return {}
+    symbols = (
+        df.get("symbol", pd.Series(dtype=str))
+        .astype("string")
+        .fillna("")
+        .str.upper()
+    )
+    values = pd.to_numeric(df[column], errors="coerce")
+    return {
+        str(symbol): float(value)
+        for symbol, value in zip(symbols, values)
+        if symbol and np.isfinite(value)
+    }
+
+
+def _enrich_recommendations(
+    recommendations: pd.DataFrame,
+    *,
+    expected_returns: Mapping[str, float] | None,
+    betas: Mapping[str, float] | None,
+) -> pd.DataFrame:
+    if recommendations.empty:
+        return recommendations
+
+    enriched = recommendations.copy()
+    symbols = (
+        enriched.get("symbol", pd.Series(dtype=str))
+        .astype("string")
+        .fillna("")
+        .str.upper()
+    )
+
+    expected_lookup: dict[str, float] = {}
+    for key, value in (expected_returns or {}).items():
+        symbol = str(key).upper()
+        if not symbol:
+            continue
+        try:
+            rate = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(rate):
+            expected_lookup[symbol] = rate
+
+    beta_lookup: dict[str, float] = {}
+    for key, value in (betas or {}).items():
+        symbol = str(key).upper()
+        if not symbol:
+            continue
+        try:
+            beta_val = float(value)
+        except (TypeError, ValueError):
+            continue
+        if np.isfinite(beta_val):
+            beta_lookup[symbol] = beta_val
+
+    expected_series = pd.Series(
+        [expected_lookup.get(symbol, np.nan) for symbol in symbols], index=enriched.index
+    )
+    enriched["expected_return"] = pd.to_numeric(
+        enriched.get("expected_return", expected_series), errors="coerce"
+    )
+    enriched["expected_return"] = enriched["expected_return"].fillna(expected_series)
+
+    beta_series = pd.Series(
+        [beta_lookup.get(symbol, np.nan) for symbol in symbols], index=enriched.index
+    )
+    enriched["beta"] = pd.to_numeric(enriched.get("beta", beta_series), errors="coerce")
+    enriched["beta"] = enriched["beta"].fillna(beta_series)
+
+    return enriched
 
 
 def _get_portfolio_positions() -> pd.DataFrame:
@@ -56,8 +363,13 @@ def _load_risk_metrics(symbols: list[str]) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _render_analysis_summary(service: RecommendationService) -> None:
-    analysis = service.analyze_portfolio()
+def _render_analysis_summary(source: RecommendationService | dict[str, object]) -> None:
+    if isinstance(source, RecommendationService):
+        analysis = source.analyze_portfolio()
+    elif isinstance(source, dict):
+        analysis = source
+    else:
+        return
     cols = st.columns(3)
     with cols[0]:
         types = analysis.get("type_distribution")
@@ -95,6 +407,9 @@ def _render_recommendations_table(result: pd.DataFrame) -> None:
         return
 
     formatted = result.copy()
+    for column in ["expected_return", "beta"]:
+        if column in formatted.columns:
+            formatted = formatted.drop(columns=[column])
     formatted["allocation_%"] = formatted["allocation_%"].map(lambda v: f"{v:.2f}%")
     formatted["allocation_amount"] = formatted["allocation_amount"].map(
         lambda v: f"${v:,.0f}".replace(",", ".")
@@ -104,6 +419,52 @@ def _render_recommendations_table(result: pd.DataFrame) -> None:
         use_container_width=True,
         hide_index=True,
     )
+
+
+def _render_recommendations_visuals(
+    result: pd.DataFrame, *, mode_label: str, amount: float
+) -> None:
+    if result.empty:
+        return
+
+    amount_text = f"${amount:,.0f}".replace(",", ".")
+    st.markdown(
+        f"**Modo seleccionado:** {mode_label} &nbsp;|&nbsp; "
+        f"**Monto a invertir:** {amount_text}"
+    )
+
+    pie_fig = px.pie(
+        result,
+        names="symbol",
+        values="allocation_%",
+        hole=0.35,
+    )
+    pie_fig.update_traces(textposition="inside", texttemplate="%{label}<br>%{value:.2f}%")
+    pie_fig.update_layout(
+        margin=dict(t=40, b=0, l=0, r=0),
+        title="Distribución sugerida por activo",
+    )
+
+    bar_data = result.sort_values("allocation_amount", ascending=False)
+    bar_fig = px.bar(
+        bar_data,
+        x="symbol",
+        y="allocation_amount",
+        text="allocation_amount",
+    )
+    bar_fig.update_traces(texttemplate="$%{y:,.0f}", textposition="outside", cliponaxis=False)
+    bar_fig.update_layout(
+        margin=dict(t=40, b=40, l=0, r=0),
+        title="Montos asignados (ARS)",
+        yaxis_title="Monto",
+        xaxis_title="Símbolo",
+    )
+
+    charts = st.columns(2)
+    with charts[0]:
+        st.plotly_chart(pie_fig, use_container_width=True, config={"displayModeBar": False})
+    with charts[1]:
+        st.plotly_chart(bar_fig, use_container_width=True, config={"displayModeBar": False})
 
 
 def render_recommendations_tab() -> None:
@@ -116,44 +477,95 @@ def render_recommendations_tab() -> None:
     )
 
     if positions.empty:
+        try:
+            st.session_state.pop(_SESSION_STATE_KEY, None)
+        except Exception:  # pragma: no cover - defensive safeguard
+            LOGGER.debug("No se pudo limpiar el estado de recomendaciones", exc_info=True)
         st.info(
             "Necesitamos un portafolio cargado para sugerir ideas. Revisá la pestaña "
             "Portafolio y actualizá tus posiciones."
         )
         return
 
+    stored_state = _get_stored_state()
+    recommendations = pd.DataFrame()
+    opportunities = pd.DataFrame()
+    risk_metrics = pd.DataFrame()
+    stored_amount: float | None = None
+    stored_mode_label: str | None = None
+    stored_mode_key: str | None = None
+    analysis_data: dict[str, object] | None = None
+
+    state_payload: dict[str, object] | None = None
+
+    if stored_state:
+        rec_df = stored_state.get("recommendations")
+        if isinstance(rec_df, pd.DataFrame):
+            recommendations = rec_df.copy()
+        opp_df = stored_state.get("opportunities")
+        if isinstance(opp_df, pd.DataFrame):
+            opportunities = opp_df.copy()
+        risk_df = stored_state.get("risk_metrics")
+        if isinstance(risk_df, pd.DataFrame):
+            risk_metrics = risk_df.copy()
+        try:
+            stored_amount_val = stored_state.get("amount")
+            if stored_amount_val is not None:
+                stored_amount = float(stored_amount_val)
+        except (TypeError, ValueError):
+            stored_amount = None
+        mode_candidate = stored_state.get("mode_label")
+        if isinstance(mode_candidate, str) and mode_candidate:
+            stored_mode_label = mode_candidate
+        mode_key_candidate = stored_state.get("mode_key")
+        if isinstance(mode_key_candidate, str) and mode_key_candidate:
+            stored_mode_key = mode_key_candidate
+        analysis_candidate = stored_state.get("analysis")
+        if isinstance(analysis_candidate, dict):
+            analysis_data = analysis_candidate
+
     symbols = [str(sym) for sym in positions.get("simbolo", []) if sym]
 
     with st.form(_FORM_KEY):
+        amount_default = stored_amount if stored_amount and np.isfinite(stored_amount) else 100_000.0
         amount = st.number_input(
             "Monto disponible a invertir (ARS)",
             min_value=0.0,
-            value=100_000.0,
+            value=float(amount_default),
             step=10_000.0,
             format="%0.0f",
+            key=f"{_FORM_KEY}_amount_input",
+        )
+        default_mode_key = stored_mode_key or _MODE_OPTIONS[0][0]
+        default_index = next(
+            (idx for idx, option in enumerate(_MODE_OPTIONS) if option[0] == default_mode_key),
+            0,
         )
         mode = st.selectbox(
             "Modo de recomendación",
-            options=[
-                ("diversify", "Diversificar"),
-                ("max_return", "Maximizar retorno"),
-                ("low_risk", "Bajar riesgo"),
-            ],
+            options=_MODE_OPTIONS,
             format_func=lambda item: item[1],
-            index=0,
+            index=default_index,
+            key=f"{_FORM_KEY}_mode_select",
         )
-        submitted = st.form_submit_button("Calcular recomendaciones")
+        submitted = st.form_submit_button(
+            "Calcular recomendaciones",
+            key=f"{_FORM_KEY}_submit_button",
+        )
 
-    recommendations = pd.DataFrame()
     if submitted:
         with st.spinner("Analizando portafolio y oportunidades..."):
             fundamentals = _load_portfolio_fundamentals(symbols)
             risk_metrics = _load_risk_metrics(symbols)
+            if not isinstance(risk_metrics, pd.DataFrame):
+                risk_metrics = pd.DataFrame()
             screener_result = run_screener_stub(include_technicals=False)
             if isinstance(screener_result, tuple):
                 opportunities = screener_result[0]
             else:
                 opportunities = screener_result
+            if not isinstance(opportunities, pd.DataFrame):
+                opportunities = pd.DataFrame()
             svc = RecommendationService(
                 portfolio_df=positions,
                 opportunities_df=opportunities,
@@ -161,10 +573,130 @@ def render_recommendations_tab() -> None:
                 fundamentals_df=fundamentals,
             )
             recommendations = svc.recommend(amount, mode=mode[0])
-            _render_analysis_summary(svc)
+            analysis_data = svc.analyze_portfolio()
 
+            if recommendations.empty:
+                st.session_state.pop(_SESSION_STATE_KEY, None)
+            else:
+                state_payload = {
+                    "recommendations": recommendations.copy(),
+                    "opportunities": opportunities.copy(),
+                    "risk_metrics": risk_metrics.copy(),
+                    "amount": amount,
+                    "mode_label": mode[1],
+                    "mode_key": mode[0],
+                    "analysis": analysis_data,
+                }
+            stored_amount = amount
+            stored_mode_label = mode[1]
+            stored_mode_key = mode[0]
+
+    if isinstance(analysis_data, dict):
+        _render_analysis_summary(analysis_data)
+    elif isinstance(stored_state.get("analysis"), dict):
+        _render_analysis_summary(stored_state["analysis"])
+
+    amount_to_display = amount
+    if stored_amount is not None and np.isfinite(stored_amount):
+        amount_to_display = stored_amount
+    mode_key_to_display, derived_label = _resolve_mode(stored_mode_key or mode[0])
+    mode_label_to_display = stored_mode_label or derived_label
+
+    expected_map = _expected_return_map(opportunities)
+    beta_lookup = _beta_lookup(risk_metrics, opportunities)
+
+    recommendations = _enrich_recommendations(
+        recommendations,
+        expected_returns=expected_map,
+        betas=beta_lookup,
+    )
+
+    expected_map = {
+        **expected_map,
+        **_build_numeric_lookup(recommendations, "expected_return"),
+    }
+    beta_lookup = {
+        **beta_lookup,
+        **_build_numeric_lookup(recommendations, "beta"),
+    }
+
+    if state_payload is not None:
+        state_payload["recommendations"] = recommendations.copy()
+        try:
+            st.session_state[_SESSION_STATE_KEY] = state_payload
+        except Exception:  # pragma: no cover - defensive safeguard
+            LOGGER.debug("No se pudo guardar el estado de recomendaciones", exc_info=True)
+
+    if not recommendations.empty:
+        _render_recommendations_visuals(
+            recommendations,
+            mode_label=mode_label_to_display,
+            amount=amount_to_display,
+        )
     _render_recommendations_table(recommendations)
+    _render_automatic_insight(
+        recommendations,
+        mode_key=mode_key_to_display,
+        beta_lookup=beta_lookup,
+    )
+
+    simulate_key = f"simulate_button_{mode_key_to_display}" if mode_key_to_display else "simulate_button"
+    simulate_clicked = st.button(
+        "Simular impacto",
+        disabled=recommendations.empty,
+        key=simulate_key,
+    )
+
+    if simulate_clicked:
+        session = getattr(st, "session_state", {})
+        totals = session.get("portfolio_last_totals")
+        portfolio_service = PortfolioService()
+        try:
+            result = portfolio_service.simulate_allocation(
+                portfolio_positions=positions,
+                totals=totals,
+                recommendations=recommendations,
+                expected_returns=expected_map,
+                betas=beta_lookup,
+            )
+        except Exception:
+            LOGGER.exception("No se pudo simular el impacto de las recomendaciones")
+            st.error("No se pudo simular el impacto. Intentá nuevamente más tarde.")
+        else:
+            _render_simulation_results(result)
 
 
-__all__ = ["render_recommendations_tab"]
+def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
+    try:
+        selected_mode = getattr(state, "selected_mode", "diversify")
+    except Exception:
+        selected_mode = "diversify"
+    mode_key, mode_label = _resolve_mode(selected_mode)
+
+    session = getattr(st, "session_state", {})
+    if "portfolio_last_positions" not in session:
+        st.session_state["portfolio_last_positions"] = pd.DataFrame(
+            [{"simbolo": "TEST", "valor_actual": 100_000.0}]
+        )
+
+    st.session_state[_SESSION_STATE_KEY] = {
+        "recommendations": _enrich_recommendations(
+            recommendations_df,
+            expected_returns=_build_numeric_lookup(recommendations_df, "expected_return"),
+            betas=_build_numeric_lookup(recommendations_df, "beta"),
+        ),
+        "opportunities": pd.DataFrame(),
+        "risk_metrics": pd.DataFrame(),
+        "amount": float(
+            pd.to_numeric(recommendations_df.get("allocation_amount"), errors="coerce").sum()
+        ),
+        "mode_label": mode_label,
+        "mode_key": mode_key,
+        "analysis": {},
+    }
+
+    render_recommendations_tab()
+
+
+__all__ = ["render_recommendations_tab", "_render_for_test"]
 

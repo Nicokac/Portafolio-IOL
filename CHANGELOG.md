@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.4.2 — Simulador de Inversión Inteligente
+- Refinado algoritmo de recomendación con límites de peso y balanceo sectorial.
+- Agregada visualización gráfica de distribuciones sugeridas (Pie y Barras).
+- Implementado simulador de impacto con métricas Antes/Después (valor total, retorno, beta).
+- Tests unitarios y lógicos validados por script en entorno QA.
+- Pendiente: validar renderizado visual completo cuando el mock de API IOL esté disponible.
+
 ## v0.4.0 — Factor & Benchmark Analysis (Dec 2025)
 
 **Fecha:** 2025-12-05

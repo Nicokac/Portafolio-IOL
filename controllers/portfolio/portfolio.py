@@ -595,6 +595,7 @@ def render_portfolio_section(
         try:
             st.session_state["portfolio_last_viewmodel"] = viewmodel
             st.session_state["portfolio_last_positions"] = viewmodel.positions
+            st.session_state["portfolio_last_totals"] = viewmodel.totals
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo almacenar el viewmodel en session_state", exc_info=True)
 
