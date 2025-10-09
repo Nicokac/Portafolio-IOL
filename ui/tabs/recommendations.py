@@ -215,6 +215,154 @@ def _render_simulation_results(result: dict[str, dict[str, float]]) -> None:
 _SESSION_STATE_KEY = "_recommendations_state"
 
 
+def _get_stored_state() -> dict:
+    state = getattr(st, "session_state", {})
+    stored = state.get(_SESSION_STATE_KEY)
+    return stored if isinstance(stored, dict) else {}
+
+
+def _expected_return_map(opportunities: pd.DataFrame) -> dict[str, float]:
+    if not isinstance(opportunities, pd.DataFrame) or opportunities.empty:
+        return {}
+    frame = opportunities.copy()
+    if "symbol" not in frame.columns and "ticker" in frame.columns:
+        frame = frame.rename(columns={"ticker": "symbol"})
+    frame["symbol"] = frame.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+    try:
+        expected = frame.apply(RecommendationService._expected_return, axis=1)
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.debug("Fallo al calcular rentabilidad esperada desde oportunidades", exc_info=True)
+        return {}
+    expected = pd.to_numeric(expected, errors="coerce")
+    return {
+        str(sym): float(value)
+        for sym, value in zip(frame["symbol"], expected)
+        if str(sym) and np.isfinite(value)
+    }
+
+
+def _beta_lookup(
+    risk_metrics: pd.DataFrame,
+    opportunities: pd.DataFrame,
+) -> dict[str, float]:
+    lookup: dict[str, float] = {}
+    if isinstance(risk_metrics, pd.DataFrame) and not risk_metrics.empty:
+        df = risk_metrics.copy()
+        symbol_col = "simbolo" if "simbolo" in df.columns else "symbol"
+        df[symbol_col] = df.get(symbol_col, pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+        betas = pd.to_numeric(df.get("beta"), errors="coerce")
+        for sym, beta_val in zip(df[symbol_col], betas):
+            if not sym or not np.isfinite(beta_val):
+                continue
+            lookup[str(sym)] = float(beta_val)
+
+    if isinstance(opportunities, pd.DataFrame) and not opportunities.empty:
+        frame = opportunities.copy()
+        if "symbol" not in frame.columns and "ticker" in frame.columns:
+            frame = frame.rename(columns={"ticker": "symbol"})
+        frame["symbol"] = frame.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
+        sectors = frame.get("sector", pd.Series(dtype=str))
+        for sym, sector in zip(frame["symbol"], sectors):
+            symbol = str(sym)
+            if not symbol or symbol in lookup:
+                continue
+            lookup[symbol] = RecommendationService._estimate_beta_from_sector(str(sector or ""))
+    return lookup
+
+
+def _format_currency(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"${value:,.0f}".replace(",", ".")
+
+
+def _format_percent(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"{value:.2f}%"
+
+
+def _format_float(value: float) -> str:
+    if not np.isfinite(value):
+        return "-"
+    return f"{value:.2f}"
+
+
+def _format_currency_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}${abs(value):,.0f}".replace(",", ".")
+
+
+def _format_percent_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}{abs(value):.2f}%"
+
+
+def _format_float_delta(value: float) -> str:
+    if not np.isfinite(value) or abs(value) < 1e-6:
+        return "-"
+    sign = "+" if value > 0 else "-"
+    return f"{sign}{abs(value):.2f}"
+
+
+def _render_simulation_results(result: dict[str, dict[str, float]]) -> None:
+    if not isinstance(result, dict) or not result:
+        return
+
+    before = result.get("before") or {}
+    after = result.get("after") or {}
+
+    def _to_float(value: float | str | None, default: float) -> float:
+        try:
+            parsed = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return default
+        return parsed
+
+    before_value = _to_float(before.get("total_value"), 0.0)
+    after_value = _to_float(after.get("total_value"), before_value)
+    before_return = _to_float(before.get("projected_return"), 0.0)
+    after_return = _to_float(after.get("projected_return"), before_return)
+    before_beta = _to_float(before.get("beta"), np.nan)
+    after_beta = _to_float(after.get("beta"), before_beta)
+    additional = _to_float(after.get("additional_investment"), after_value - before_value)
+
+    rows = [
+        {
+            "Métrica": "Valorizado total",
+            "Antes": _format_currency(before_value),
+            "Después": _format_currency(after_value),
+            "Variación": _format_currency_delta(after_value - before_value),
+        },
+        {
+            "Métrica": "Rentabilidad proyectada",
+            "Antes": _format_percent(before_return),
+            "Después": _format_percent(after_return),
+            "Variación": _format_percent_delta(after_return - before_return),
+        },
+        {
+            "Métrica": "Beta / Riesgo total",
+            "Antes": _format_float(before_beta),
+            "Después": _format_float(after_beta),
+            "Variación": _format_float_delta(after_beta - before_beta),
+        },
+    ]
+
+    st.markdown("#### Simulación de impacto (Antes vs. Después)")
+    st.table(pd.DataFrame(rows))
+
+    if np.isfinite(additional) and additional > 0:
+        st.caption(
+            "Se asignan "
+            f"{_format_currency(additional)} adicionales siguiendo la distribución sugerida."
+        )
+_SESSION_STATE_KEY = "_recommendations_state"
+
+
 def _get_portfolio_positions() -> pd.DataFrame:
     session = getattr(st, "session_state", {})
     df = session.get("portfolio_last_positions")
@@ -520,6 +668,31 @@ def render_recommendations_tab() -> None:
                 recommendations=recommendations,
                 expected_returns=expected_map,
                 betas=beta_lookup,
+            )
+        except Exception:
+            LOGGER.exception("No se pudo simular el impacto de las recomendaciones")
+            st.error("No se pudo simular el impacto. Intentá nuevamente más tarde.")
+        else:
+            _render_simulation_results(result)
+
+    simulate_clicked = st.button(
+        "Simular impacto",
+        disabled=recommendations.empty,
+    )
+
+    if simulate_clicked:
+        session = getattr(st, "session_state", {})
+        totals = session.get("portfolio_last_totals")
+        expected_map = _expected_return_map(opportunities)
+        beta_map = _beta_lookup(risk_metrics, opportunities)
+        portfolio_service = PortfolioService()
+        try:
+            result = portfolio_service.simulate_allocation(
+                portfolio_positions=positions,
+                totals=totals,
+                recommendations=recommendations,
+                expected_returns=expected_map,
+                betas=beta_map,
             )
         except Exception:
             LOGGER.exception("No se pudo simular el impacto de las recomendaciones")
