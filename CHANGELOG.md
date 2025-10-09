@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.1 — Forecasting y Retornos Proyectados
+### Added
+- `application.predictive_service.predict_sector_performance` con suavizado EMA,
+  penalización por correlaciones intrasectoriales y métricas de confianza.
+- Columna **Predicted Return (%)** y toggle *Incluir predicciones* en la pestaña
+  de recomendaciones, además del contador de hits/misses del caché predictivo.
+- Tests unitarios para el motor predictivo y la integración de retornos
+  proyectados en `RecommendationService`.
+
+### Changed
+- Insight automático recalculado con promedios ponderados por asignación y
+  racional extendido que destaca la predicción sectorial.
+
 ## v0.5.0-dev — Inicio del ciclo de consolidación predictiva
 - Se incorpora `application.backtesting_service.BacktestingService`, reutilizando indicadores de `ta_service` y datos de fixtures para ejecutar backtests sin depender de la API de IOL.
 - Nueva `CacheService` con TTL configurable en `services/cache.py` para cachear precios históricos, resultados simulados y adaptadores offline durante la transición a la serie 0.5.x.

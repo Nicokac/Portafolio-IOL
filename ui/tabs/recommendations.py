@@ -20,6 +20,7 @@ from application.profile_service import DEFAULT_PROFILE, ProfileService
 from application.recommendation_service import RecommendationService
 from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
+from application.predictive_service import get_cache_stats, predict_sector_performance
 from services.portfolio_view import compute_symbol_risk_metrics
 
 
@@ -193,6 +194,26 @@ def _mean_numeric(series: pd.Series | None) -> float:
     return float(numeric.mean())
 
 
+def _weighted_mean(
+    values: pd.Series | None, weights: pd.Series | None
+) -> float:
+    if values is None:
+        return float("nan")
+    numeric = pd.to_numeric(values, errors="coerce")
+    if weights is None:
+        return _mean_numeric(numeric)
+    weight_series = pd.to_numeric(weights, errors="coerce")
+    mask = np.isfinite(numeric) & np.isfinite(weight_series)
+    numeric = numeric[mask]
+    weight_series = weight_series[mask]
+    if numeric.empty or weight_series.empty:
+        return _mean_numeric(numeric)
+    total_weight = float(weight_series.sum())
+    if total_weight <= 0:
+        return _mean_numeric(numeric)
+    return float(np.average(numeric, weights=weight_series))
+
+
 def _render_automatic_insight(
     recommendations: pd.DataFrame,
     *,
@@ -202,7 +223,18 @@ def _render_automatic_insight(
     if recommendations.empty:
         return
 
-    expected_mean = _mean_numeric(recommendations.get("expected_return"))
+    weight_series = None
+    if "allocation_%" in recommendations.columns:
+        weight_series = pd.to_numeric(
+            recommendations.get("allocation_%"), errors="coerce"
+        )
+
+    expected_mean = _weighted_mean(
+        recommendations.get("expected_return"), weight_series
+    )
+    predicted_mean = _weighted_mean(
+        recommendations.get("predicted_return_pct"), weight_series
+    )
 
     beta_series = None
     if "beta" in recommendations.columns:
@@ -211,7 +243,7 @@ def _render_automatic_insight(
         symbols = recommendations.get("symbol", pd.Series(dtype=str)).astype("string")
         betas = [beta_lookup.get(str(symbol).upper()) for symbol in symbols]
         beta_series = pd.Series(betas)
-    beta_mean = _mean_numeric(beta_series)
+    beta_mean = _weighted_mean(beta_series, weight_series)
 
     mode_message = _INSIGHT_MESSAGES.get(mode_key, _INSIGHT_MESSAGES["diversify"])
 
@@ -219,6 +251,10 @@ def _render_automatic_insight(
     metrics_parts: list[str] = []
     if np.isfinite(expected_mean):
         metrics_parts.append(f"Rentabilidad esperada promedio: {_format_percent(expected_mean)}")
+    if np.isfinite(predicted_mean):
+        metrics_parts.append(
+            f"Predicción sectorial ponderada: {_format_percent(predicted_mean)}"
+        )
     if np.isfinite(beta_mean):
         metrics_parts.append(f"Beta promedio: {_format_float(beta_mean)}")
     sector_series = recommendations.get("sector")
@@ -506,19 +542,38 @@ def _render_benchmark_block(recommendations: pd.DataFrame) -> None:
             )
 
 
-def _render_recommendations_table(result: pd.DataFrame) -> None:
+def _render_recommendations_table(
+    result: pd.DataFrame, *, show_predictions: bool
+) -> None:
     if result.empty:
         st.info("Ingresá un monto para calcular sugerencias personalizadas.")
         return
 
     formatted = result.copy()
-    for column in ["expected_return", "beta"]:
-        if column in formatted.columns:
-            formatted = formatted.drop(columns=[column])
+    if "expected_return" in formatted.columns:
+        formatted = formatted.drop(columns=["expected_return"])
+    predicted_formatted = None
+    if "predicted_return_pct" in formatted.columns:
+        predicted_values = pd.to_numeric(
+            formatted["predicted_return_pct"], errors="coerce"
+        )
+        if show_predictions:
+            predicted_formatted = predicted_values.map(
+                lambda v: f"{v:.2f}%" if np.isfinite(v) else "-"
+            )
+        formatted = formatted.drop(columns=["predicted_return_pct"])
+    if "beta" in formatted.columns:
+        formatted = formatted.drop(columns=["beta"])
     formatted["allocation_%"] = formatted["allocation_%"].map(lambda v: f"{v:.2f}%")
     formatted["allocation_amount"] = formatted["allocation_amount"].map(
         lambda v: f"${v:,.0f}".replace(",", ".")
     )
+    if predicted_formatted is not None:
+        formatted.insert(
+            3,
+            "Predicted Return (%)",
+            predicted_formatted,
+        )
     if "rationale_extended" in formatted.columns:
         formatted = formatted.rename(columns={"rationale_extended": "Racional extendido"})
     formatted = formatted.rename(columns={"rationale": "Racional"})
@@ -533,6 +588,7 @@ def _render_recommendations_table(result: pd.DataFrame) -> None:
         "allocation_%",
         "allocation_amount",
         "expected_return",
+        "predicted_return_pct",
         "beta",
         "rationale",
     ]
@@ -818,7 +874,23 @@ def render_recommendations_tab() -> None:
             amount=amount_to_display,
         )
         _render_benchmark_block(recommendations)
-    _render_recommendations_table(recommendations)
+    show_predictions = st.toggle(
+        "Incluir predicciones",
+        value=True,
+        key=f"{_FORM_KEY}_show_predictions_toggle",
+    )
+    stats = get_cache_stats()
+    if stats.total:
+        st.caption(
+            "Cache de predicciones sectoriales: "
+            f"{stats.hits}/{stats.total} hits ({stats.hit_ratio * 100:.1f}%)"
+        )
+    else:
+        st.caption("Cache de predicciones sectoriales en calentamiento")
+    _render_recommendations_table(
+        recommendations,
+        show_predictions=show_predictions,
+    )
     _render_automatic_insight(
         recommendations,
         mode_key=mode_key_to_display,
@@ -883,16 +955,29 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
                     profile["last_updated"] = payload["last_updated"]
         st.session_state[ProfileService.SESSION_KEY] = profile
 
+    warmup_frame = pd.DataFrame()
+    if {"symbol", "sector"}.issubset(recommendations_df.columns):
+        warmup_frame = recommendations_df[["symbol", "sector"]].dropna().copy()
+    try:
+        predict_sector_performance(warmup_frame)
+        predict_sector_performance(warmup_frame)
+    except Exception:  # pragma: no cover - defensive warmup
+        LOGGER.debug("No se pudo precalentar predicciones sectoriales", exc_info=True)
+
+    payload_df = recommendations_df.copy()
+    if "predicted_return_pct" not in payload_df.columns:
+        payload_df["predicted_return_pct"] = np.nan
+
     st.session_state[_SESSION_STATE_KEY] = {
         "recommendations": _enrich_recommendations(
-            recommendations_df,
-            expected_returns=_build_numeric_lookup(recommendations_df, "expected_return"),
-            betas=_build_numeric_lookup(recommendations_df, "beta"),
+            payload_df,
+            expected_returns=_build_numeric_lookup(payload_df, "expected_return"),
+            betas=_build_numeric_lookup(payload_df, "beta"),
         ),
         "opportunities": pd.DataFrame(),
         "risk_metrics": pd.DataFrame(),
         "amount": float(
-            pd.to_numeric(recommendations_df.get("allocation_amount"), errors="coerce").sum()
+            pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()
         ),
         "mode_label": mode_label,
         "mode_key": mode_key,

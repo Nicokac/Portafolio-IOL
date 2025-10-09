@@ -16,6 +16,8 @@ from typing import Callable, Mapping
 import numpy as np
 import pandas as pd
 
+from application.predictive_service import predict_sector_performance
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +55,7 @@ class Recommendation:
     currency: str
     is_existing: bool = False
     rationale_extended: str = ""
+    predicted_return_pct: float = float("nan")
 
 
 RECOMMENDATION_OUTPUT_COLUMNS: tuple[str, ...] = (
@@ -60,6 +63,7 @@ RECOMMENDATION_OUTPUT_COLUMNS: tuple[str, ...] = (
     "allocation_%",
     "allocation_amount",
     "expected_return",
+    "predicted_return_pct",
     "beta",
     "rationale",
     "rationale_extended",
@@ -443,6 +447,7 @@ class RecommendationService:
         sector: str,
         analysis: dict[str, object],
         portfolio_beta: float,
+        predicted_return: float | None = None,
     ) -> str:
         parts: list[str] = []
 
@@ -452,6 +457,11 @@ class RecommendationService:
         parts.append(
             f"Aporta {contribution:+.2f} % al retorno esperado del portafolio."
         )
+
+        if predicted_return is not None and np.isfinite(predicted_return):
+            parts.append(
+                f"Predicción sectorial EMA: {predicted_return:.2f}%"
+            )
 
         beta_value = float(beta)
         base_beta = float(portfolio_beta)
@@ -485,6 +495,7 @@ class RecommendationService:
         *,
         analysis: dict[str, object],
         mode: str,
+        sector_predictions: Mapping[str, float] | None = None,
     ) -> list[Recommendation]:
         if self._portfolio_df.empty:
             return []
@@ -493,6 +504,8 @@ class RecommendationService:
         over = analysis.get("overexposed", {})
         weights = self._weight_series()
         candidates: list[Recommendation] = []
+
+        predictions: Mapping[str, float] = sector_predictions or {}
 
         for idx, row in self._portfolio_df.iterrows():
             symbol = str(row.get("simbolo") or "").strip().upper()
@@ -557,6 +570,9 @@ class RecommendationService:
                     tipo=tipo,
                     currency=currency,
                     is_existing=True,
+                    predicted_return_pct=float(
+                        predictions.get(sector, float("nan"))
+                    ),
                 )
             )
 
@@ -712,6 +728,32 @@ class RecommendationService:
         if normalized_amount <= 0 or opportunities.empty:
             return pd.DataFrame(columns=RECOMMENDATION_OUTPUT_COLUMNS)
 
+        prediction_map: dict[str, float] = {}
+        predictions_df = predict_sector_performance(opportunities)
+        if isinstance(predictions_df, pd.DataFrame) and not predictions_df.empty:
+            predictions_df = predictions_df.copy()
+            predictions_df["sector"] = (
+                predictions_df.get("sector", pd.Series(dtype=str))
+                .astype("string")
+                .fillna("")
+                .str.strip()
+            )
+            predicted_values = pd.to_numeric(
+                predictions_df.get("predicted_return"), errors="coerce"
+            )
+            for sector_value, predicted in zip(
+                predictions_df["sector"], predicted_values
+            ):
+                sector_label = str(sector_value)
+                if not sector_label:
+                    continue
+                if not np.isfinite(predicted):
+                    continue
+                prediction_map[sector_label] = float(predicted)
+
+        # Segunda lectura para visibilizar hits en métricas de caché.
+        predict_sector_performance(opportunities)
+
         candidates: list[Recommendation] = []
         for _, row in opportunities.iterrows():
             symbol = str(row.get("symbol") or row.get("ticker") or "").strip().upper()
@@ -767,11 +809,18 @@ class RecommendationService:
                     sector=sector,
                     tipo=tipo,
                     currency=currency,
+                    predicted_return_pct=float(
+                        prediction_map.get(sector, float("nan"))
+                    ),
                 )
             )
 
         candidates.extend(
-            self._existing_asset_candidates(analysis=analysis, mode=mode)
+            self._existing_asset_candidates(
+                analysis=analysis,
+                mode=mode,
+                sector_predictions=prediction_map,
+            )
         )
 
         if not candidates:
@@ -801,6 +850,7 @@ class RecommendationService:
         required_cols = [
             "score",
             "expected_return",
+            "predicted_return_pct",
             "rationale",
             "beta",
             "sector",
@@ -875,6 +925,9 @@ class RecommendationService:
         df["expected_return"] = pd.to_numeric(
             df.get("expected_return"), errors="coerce"
         )
+        df["predicted_return_pct"] = pd.to_numeric(
+            df.get("predicted_return_pct"), errors="coerce"
+        )
         df["beta"] = pd.to_numeric(df.get("beta"), errors="coerce")
         df["sector"] = (
             df.get("sector", pd.Series(dtype=str)).astype("string").fillna("Sin sector")
@@ -890,6 +943,10 @@ class RecommendationService:
             expected_val = float(expected_val) if np.isfinite(expected_val) else 0.0
             beta_val = pd.to_numeric(row.get("beta"), errors="coerce")
             beta_val = float(beta_val) if np.isfinite(beta_val) else float("nan")
+            predicted_val = pd.to_numeric(
+                row.get("predicted_return_pct"), errors="coerce"
+            )
+            predicted_float = float(predicted_val) if np.isfinite(predicted_val) else None
             sector_label = str(row.get("sector", ""))
             extended.append(
                 self._build_extended_rationale(
@@ -899,6 +956,7 @@ class RecommendationService:
                     sector=sector_label,
                     analysis=analysis,
                     portfolio_beta=portfolio_beta,
+                    predicted_return=predicted_float,
                 )
             )
         df["rationale_extended"] = extended

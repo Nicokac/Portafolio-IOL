@@ -14,6 +14,52 @@ if str(_PROJECT_ROOT) not in sys.path:
 from application.recommendation_service import RecommendationService
 
 
+@pytest.fixture(autouse=True)
+def patch_predictive(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _fake_predict(opportunities: pd.DataFrame, **_: object) -> pd.DataFrame:
+        if not isinstance(opportunities, pd.DataFrame) or opportunities.empty:
+            return pd.DataFrame(
+                columns=[
+                    "sector",
+                    "predicted_return",
+                    "sample_size",
+                    "avg_correlation",
+                    "confidence",
+                ]
+            )
+
+        frame = opportunities.copy()
+        if "symbol" not in frame.columns and "ticker" in frame.columns:
+            frame = frame.rename(columns={"ticker": "symbol"})
+        sectors = (
+            frame.get("sector", pd.Series(dtype=str))
+            .astype("string")
+            .fillna("Sin sector")
+        )
+        seen: list[str] = []
+        rows: list[dict[str, object]] = []
+        for sector in sectors:
+            sector_label = str(sector)
+            if sector_label in seen:
+                continue
+            seen.append(sector_label)
+            rows.append(
+                {
+                    "sector": sector_label,
+                    "predicted_return": 4.5 + len(seen) * 1.2,
+                    "sample_size": 2,
+                    "avg_correlation": 0.18,
+                    "confidence": 0.82,
+                }
+            )
+        return pd.DataFrame(rows)
+
+    monkeypatch.setattr(
+        "application.recommendation_service.predict_sector_performance",
+        _fake_predict,
+    )
+
+
 @pytest.fixture()
 def portfolio_df() -> pd.DataFrame:
     return pd.DataFrame(
@@ -121,6 +167,7 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
         "allocation_%",
         "allocation_amount",
         "expected_return",
+        "predicted_return_pct",
         "beta",
         "rationale",
         "rationale_extended",
@@ -138,6 +185,10 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
     assert set(result["symbol"]) & set(portfolio_df["simbolo"]) != set()
     assert any("Healthcare" in rationale for rationale in result["rationale"])
     assert all("Aporta" in text for text in result["rationale_extended"])
+    assert result["predicted_return_pct"].notna().any()
+    assert any(
+        "Predicción sectorial" in text for text in result["rationale_extended"]
+    )
 
 
 def test_low_risk_mode_favours_defensive_assets(
