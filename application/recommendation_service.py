@@ -47,6 +47,10 @@ class Recommendation:
     score: float
     expected_return: float
     rationale: str
+    sector: str
+    tipo: str
+    currency: str
+    is_existing: bool = False
 
 
 def _normalise_amount(amount: float) -> float:
@@ -385,6 +389,166 @@ class RecommendationService:
 
         return ", ".join(reasons)
 
+    def _existing_asset_candidates(
+        self,
+        *,
+        analysis: dict[str, object],
+        mode: str,
+    ) -> list[Recommendation]:
+        if self._portfolio_df.empty:
+            return []
+
+        under = analysis.get("underrepresented", {})
+        over = analysis.get("overexposed", {})
+        weights = self._weight_series()
+        candidates: list[Recommendation] = []
+
+        for idx, row in self._portfolio_df.iterrows():
+            symbol = str(row.get("simbolo") or "").strip().upper()
+            if not symbol:
+                continue
+
+            sector = str(row.get("sector") or "Sin sector").strip() or "Sin sector"
+            currency = str(row.get("moneda") or "ARS").upper()
+            tipo = str(row.get("tipo") or ("CEDEAR" if currency == "USD" else "ACCION")).strip() or "ACCION"
+
+            if sector in over.get("sector", set()) and sector not in under.get("sector", set()):
+                continue
+            if tipo in over.get("tipo", set()) and tipo not in under.get("tipo", set()):
+                continue
+
+            qualifies = (
+                sector in under.get("sector", set())
+                or tipo in under.get("tipo", set())
+                or currency in under.get("moneda", set())
+            )
+            if not qualifies:
+                continue
+
+            weight = float(weights.get(idx, 0.0))
+            base_score = 52.0 + weight * 80.0
+            estimated_beta = self._estimate_beta_from_sector(sector)
+
+            score = self._adjust_score_for_mode(
+                base_score,
+                pd.Series(row),
+                mode=mode,
+                expected_return=0.0,
+                estimated_beta=estimated_beta,
+            )
+            score = self._apply_exposure_bias(
+                score,
+                sector=sector,
+                currency=currency,
+                mode=mode,
+                estimated_beta=estimated_beta,
+                analysis=analysis,
+            )
+
+            rationale = self._build_rationale(
+                symbol=symbol,
+                sector=sector,
+                currency=currency,
+                expected_return=0.0,
+                estimated_beta=estimated_beta,
+                mode=mode,
+                analysis=analysis,
+            )
+
+            candidates.append(
+                Recommendation(
+                    symbol=symbol,
+                    score=score,
+                    expected_return=0.0,
+                    rationale=rationale,
+                    sector=sector,
+                    tipo=tipo,
+                    currency=currency,
+                    is_existing=True,
+                )
+            )
+
+        return candidates
+
+    @staticmethod
+    def _allocate_with_bounds(
+        scores: pd.Series | np.ndarray,
+        *,
+        min_weight: float = 0.10,
+        max_weight: float = 0.40,
+    ) -> np.ndarray:
+        values = np.asarray(scores, dtype=float)
+        values = np.where(np.isfinite(values) & (values > 0), values, 0.0)
+        n_assets = len(values)
+        if n_assets == 0:
+            return np.array([], dtype=float)
+
+        if np.allclose(values.sum(), 0.0):
+            values = np.ones(n_assets, dtype=float)
+
+        values = values / float(values.sum())
+
+        min_sum = min_weight * n_assets
+        if min_sum >= 1.0:
+            # Fallback to an even split when lower bound is infeasible.
+            return np.repeat(1.0 / n_assets, n_assets)
+
+        allocation = np.full(n_assets, min_weight, dtype=float)
+        remaining = 1.0 - allocation.sum()
+        if remaining <= 0:
+            return allocation / float(allocation.sum())
+
+        capacities = np.full(n_assets, max_weight - min_weight, dtype=float)
+        weights = values.copy()
+
+        active = allocation < max_weight - 1e-12
+        while remaining > 1e-9 and np.any(active):
+            shares = weights[active]
+            total_shares = float(shares.sum())
+            if total_shares <= 0:
+                shares = np.ones_like(shares)
+                total_shares = float(shares.sum())
+
+            to_assign = remaining * (shares / total_shares)
+            active_indices = np.flatnonzero(active)
+            increments = np.minimum(capacities[active_indices], to_assign)
+            allocation[active_indices] += increments
+            remaining = 1.0 - float(allocation.sum())
+
+            reached_cap = allocation >= max_weight - 1e-12
+            active = ~reached_cap
+
+            if remaining > 1e-9 and not np.any(active):
+                # Distribute any small leftover evenly among those with headroom.
+                headroom = max_weight - allocation
+                mask = headroom > 1e-12
+                if np.any(mask):
+                    extra = remaining * headroom[mask] / float(headroom[mask].sum())
+                    allocation[np.flatnonzero(mask)] += extra
+                    remaining = 1.0 - float(allocation.sum())
+
+        if not np.isclose(allocation.sum(), 1.0):
+            if allocation.sum() > 1.0:
+                reducible = allocation - min_weight
+                mask = reducible > 1e-12
+                if np.any(mask):
+                    reduction = (allocation.sum() - 1.0) * reducible[mask] / float(
+                        reducible[mask].sum()
+                    )
+                    allocation[np.flatnonzero(mask)] -= reduction
+            else:
+                headroom = max_weight - allocation
+                mask = headroom > 1e-12
+                if np.any(mask):
+                    addition = (1.0 - allocation.sum()) * headroom[mask] / float(
+                        headroom[mask].sum()
+                    )
+                    allocation[np.flatnonzero(mask)] += addition
+
+        allocation = np.clip(allocation, min_weight, max_weight)
+        allocation = allocation / float(allocation.sum())
+        return allocation
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -415,6 +579,7 @@ class RecommendationService:
                 continue
             sector = str(row.get("sector") or "Sin sector").strip() or "Sin sector"
             currency = str(row.get("currency") or "USD").upper()
+            tipo = str(row.get("tipo") or ("CEDEAR" if currency == "USD" else "ACCION")).strip() or "ACCION"
             expected_return = self._expected_return(row)
             base_score = self._base_score(row)
             estimated_beta = self._estimate_beta_from_sector(sector)
@@ -443,31 +608,121 @@ class RecommendationService:
                 mode=mode,
                 analysis=analysis,
             )
-            candidates.append(Recommendation(symbol, score, expected_return, rationale))
+            candidates.append(
+                Recommendation(
+                    symbol=symbol,
+                    score=score,
+                    expected_return=expected_return,
+                    rationale=rationale,
+                    sector=sector,
+                    tipo=tipo,
+                    currency=currency,
+                )
+            )
+
+        candidates.extend(
+            self._existing_asset_candidates(analysis=analysis, mode=mode)
+        )
 
         if not candidates:
             return pd.DataFrame(
                 columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
             )
 
-        df = pd.DataFrame([rec.__dict__ for rec in candidates])
-        df = df.sort_values("score", ascending=False).head(int(max(top_n, 1)))
+        base_df = pd.DataFrame([rec.__dict__ for rec in candidates])
+        df = base_df.sort_values("score", ascending=False)
+        df = df.drop_duplicates(subset="symbol", keep="first")
+        df = df.head(int(max(top_n, 1)))
 
         if callable(post_filter):
             try:
-                df = post_filter(df)
+                filtered = post_filter(df.copy())
+                if isinstance(filtered, pd.DataFrame):
+                    df = filtered
             except Exception:  # pragma: no cover - defensive
                 LOGGER.exception("Post filter failed; se preserva la selección original")
 
-        scores = df["score"].clip(lower=0.0)
-        if float(scores.sum()) <= 0:
-            weights = np.repeat(1.0 / len(df), len(df))
-        else:
-            weights = scores / float(scores.sum())
+        if df.empty:
+            return pd.DataFrame(
+                columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
+            )
+
+        if "symbol" not in df.columns:
+            raise ValueError("El filtro debe preservar la columna 'symbol'")
+
+        df["symbol"] = df["symbol"].astype(str)
+        base_lookup = base_df.drop_duplicates(subset="symbol").set_index("symbol")
+        required_cols = [
+            "score",
+            "expected_return",
+            "rationale",
+            "sector",
+            "tipo",
+            "currency",
+            "is_existing",
+        ]
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = base_lookup.reindex(df["symbol"])[col].values
+            else:
+                series = df[col]
+                if series.dtype.kind in "fc":
+                    mask = series.isna()
+                else:
+                    mask = series.isna()
+                    mask |= series.astype("string").eq("")
+                if mask.any():
+                    df.loc[mask, col] = base_lookup.reindex(df.loc[mask, "symbol"])[col].values
+
+        df = df.drop_duplicates(subset="symbol", keep="first")
+        df = df.head(int(max(top_n, 1)))
+
+        if not df.empty and not df["is_existing"].any():
+            existing_pool = base_df.query("is_existing").sort_values(
+                "score", ascending=False
+            )
+            if not existing_pool.empty:
+                replacement = existing_pool.iloc[0]
+                if replacement["symbol"] not in set(df["symbol"]):
+                    df = pd.concat([df.iloc[:-1], replacement.to_frame().T], ignore_index=True)
+                    df = df.sort_values("score", ascending=False)
+                    df = df.head(int(max(top_n, 1)))
+
+        type_over = analysis.get("overexposed", {}).get("tipo", set())
+        type_under = analysis.get("underrepresented", {}).get("tipo", set())
+        sector_over = analysis.get("overexposed", {}).get("sector", set())
+        sector_under = analysis.get("underrepresented", {}).get("sector", set())
+
+        balance_factors: list[float] = []
+        for row in df.itertuples():
+            factor = 1.0
+            tipo = getattr(row, "tipo", "")
+            sector = getattr(row, "sector", "")
+            if tipo in type_under:
+                factor += 0.2
+            elif tipo in type_over:
+                factor -= 0.15
+            if sector in sector_under:
+                factor += 0.2
+            elif sector in sector_over:
+                factor -= 0.15
+            balance_factors.append(max(factor, 0.05))
+
+        scores = df["score"].clip(lower=0.0) * np.array(balance_factors)
+        weights = self._allocate_with_bounds(scores.to_numpy())
 
         df["allocation_%"] = weights * 100
         df["allocation_amount"] = df["allocation_%"] * normalized_amount / 100
         df["symbol"] = df["symbol"].astype(str)
+
+        total_pct = float(df["allocation_%"].sum())
+        if not np.isclose(total_pct, 100.0):
+            adjustment = 100.0 - total_pct
+            last_idx = df.index[-1]
+            df.loc[last_idx, "allocation_%"] += adjustment
+            df.loc[last_idx, "allocation_amount"] = (
+                df.loc[last_idx, "allocation_%"] * normalized_amount / 100
+            )
 
         return df[["symbol", "allocation_%", "allocation_amount", "rationale"]]
 

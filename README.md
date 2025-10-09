@@ -6,6 +6,14 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 
+## Funcionalidades del Dashboard
+
+### Recomendaciones y Simulador de Inversión
+
+El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el sistema propone cinco activos diversificados con límites de peso entre 10 % y 40 %, equilibrando tipo y sector. Desde la misma pestaña puede ejecutar **Simular impacto** para contrastar el portafolio actual con la distribución sugerida y comparar métricas de valor total, retorno proyectado y beta agregada antes y después de aplicar el rebalanceo.
+
+> Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.
+
 ## Quick-start (release 0.4.0 — Factor & Benchmark Analysis)
 
 La versión **0.4.0** incorpora un panel dedicado de *Análisis de Factores y Benchmark* dentro de la pestaña de riesgo. Además de la correlación por tipo de activo, ahora se exponen métricas de Tracking Error, Active Return e Information Ratio respecto al benchmark seleccionado (MERVAL, S&P 500, Nasdaq o Dow Jones). Cuando hay factores macro disponibles (tasas, inflación, commodities) se ejecuta una regresión multi-factorial que muestra las betas estimadas con su R² explicativo y permite descargar el análisis completo en CSV/XLSX.
