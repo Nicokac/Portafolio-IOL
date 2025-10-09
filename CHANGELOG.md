@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.4.3 — Recomendaciones exportables y explicadas al instante
+- Incorporadas descargas "📤 Exportar CSV" y "📥 Exportar XLSX" con promedios finales de retorno y beta.
+- Añadido racional extendido que cuantifica aporte al retorno, impacto en beta y diversificación sectorial.
+- Insight automático enriquecido con la detección del sector dominante dentro de las sugerencias.
+
 ## v0.4.2 — Simulador de Inversión Inteligente
 - Refinado algoritmo de recomendación con límites de peso y balanceo sectorial.
 - Agregada visualización gráfica de distribuciones sugeridas (Pie y Barras).
