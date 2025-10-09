@@ -4,6 +4,7 @@ import logging
 import re
 import time
 import logging, time, hashlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -43,6 +44,85 @@ from shared.settings import (
     settings,
 )
 from services.quote_rate_limit import quote_rate_limiter
+
+
+@dataclass
+class _CacheEntry:
+    value: Any
+    expires_at: float | None
+
+
+class CacheService:
+    """Thread-safe TTL cache used for offline fixtures and adapters."""
+
+    def __init__(
+        self,
+        *,
+        namespace: str | None = None,
+        monotonic: Callable[[], float] | None = None,
+    ) -> None:
+        self._namespace = (namespace or "").strip()
+        self._monotonic = monotonic or time.monotonic
+        self._lock = Lock()
+        self._store: Dict[str, _CacheEntry] = {}
+
+    def _full_key(self, key: str) -> str:
+        base_key = str(key)
+        return f"{self._namespace}:{base_key}" if self._namespace else base_key
+
+    def _is_expired(self, entry: _CacheEntry) -> bool:
+        return entry.expires_at is not None and entry.expires_at <= self._monotonic()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        full_key = self._full_key(key)
+        with self._lock:
+            entry = self._store.get(full_key)
+            if entry is None:
+                return default
+            if self._is_expired(entry):
+                self._store.pop(full_key, None)
+                return default
+            return entry.value
+
+    def set(self, key: str, value: Any, *, ttl: float | None = None) -> Any:
+        full_key = self._full_key(key)
+        if ttl is not None:
+            ttl = float(ttl)
+            if ttl <= 0:
+                with self._lock:
+                    self._store.pop(full_key, None)
+                return value
+            expires_at = self._monotonic() + ttl
+        else:
+            expires_at = None
+        with self._lock:
+            self._store[full_key] = _CacheEntry(value=value, expires_at=expires_at)
+        return value
+
+    def get_or_set(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        *,
+        ttl: float | None = None,
+    ) -> Any:
+        sentinel = object()
+        cached_value = self.get(key, sentinel)
+        if cached_value is not sentinel:
+            return cached_value
+        value = loader()
+        self.set(key, value, ttl=ttl)
+        return value
+
+    def invalidate(self, key: str) -> None:
+        full_key = self._full_key(key)
+        with self._lock:
+            self._store.pop(full_key, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._store.clear()
+
 
 
 logger = logging.getLogger(__name__)

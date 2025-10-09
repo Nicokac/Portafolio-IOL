@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 from io import BytesIO
+from pathlib import Path
 from typing import Mapping
 
 import numpy as np
@@ -862,7 +864,24 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
             [{"simbolo": "TEST", "valor_actual": 100_000.0}]
         )
     if ProfileService.SESSION_KEY not in session:
-        st.session_state[ProfileService.SESSION_KEY] = DEFAULT_PROFILE.copy()
+        profile = DEFAULT_PROFILE.copy()
+        fixture_path = Path("docs/fixtures/default/profile_default.json")
+        if fixture_path.exists():
+            try:
+                raw_text = fixture_path.read_text(encoding="utf-8")
+                payload = json.loads(raw_text) or {}
+            except (OSError, json.JSONDecodeError):
+                payload = {}
+            if isinstance(payload, dict):
+                overrides = {}
+                for key in profile.keys():
+                    value = payload.get(key)
+                    if isinstance(value, str) and value:
+                        overrides[key] = value
+                profile.update(overrides)
+                if "last_updated" in payload:
+                    profile["last_updated"] = payload["last_updated"]
+        st.session_state[ProfileService.SESSION_KEY] = profile
 
     st.session_state[_SESSION_STATE_KEY] = {
         "recommendations": _enrich_recommendations(
