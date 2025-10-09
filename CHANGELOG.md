@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.0-dev — Inicio del ciclo de consolidación predictiva
+- Se incorpora `application.backtesting_service.BacktestingService`, reutilizando indicadores de `ta_service` y datos de fixtures para ejecutar backtests sin depender de la API de IOL.
+- Nueva `CacheService` con TTL configurable en `services/cache.py` para cachear precios históricos, resultados simulados y adaptadores offline durante la transición a la serie 0.5.x.
+- Fixtures offline en `docs/fixtures/default/` (precios con indicadores, perfil base y recomendaciones de ejemplo) que alimentan `_render_for_test()` y las pruebas unitarias.
+- Versión sincronizada a `0.5.0-dev` en `pyproject.toml`, `shared/version.py`, README y CHANGELOG manteniendo la compatibilidad funcional de la release 0.4.4.
+
 ## v0.4.4 — Perfil inversor persistente y comparativas con benchmarks
 - Nuevo `ProfileService` con almacenamiento cifrado que sincroniza tolerancia al riesgo, horizonte e
   inclinación estratégica entre `session_state`, `config.json` y `st.secrets`.
