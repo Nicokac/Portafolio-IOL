@@ -47,10 +47,26 @@ class Recommendation:
     score: float
     expected_return: float
     rationale: str
+    beta: float
     sector: str
     tipo: str
     currency: str
     is_existing: bool = False
+    rationale_extended: str = ""
+
+
+RECOMMENDATION_OUTPUT_COLUMNS: tuple[str, ...] = (
+    "symbol",
+    "allocation_%",
+    "allocation_amount",
+    "expected_return",
+    "beta",
+    "rationale",
+    "rationale_extended",
+    "sector",
+    "tipo",
+    "currency",
+)
 
 
 def _normalise_amount(amount: float) -> float:
@@ -164,6 +180,32 @@ class RecommendationService:
         )
         return distribution
 
+    def _compute_portfolio_beta_average(self) -> float:
+        if self._portfolio_df.empty or self._risk_metrics_df.empty:
+            return float("nan")
+
+        portfolio = self._portfolio_df[["simbolo"]].copy()
+        portfolio["simbolo"] = portfolio["simbolo"].astype("string").str.upper()
+        weights = self._weight_series()
+        if weights.empty:
+            return float("nan")
+
+        portfolio = portfolio.assign(weight=weights)
+        risk = self._risk_metrics_df.copy()
+        symbol_col = "simbolo" if "simbolo" in risk.columns else "symbol"
+        risk = risk[[symbol_col, "beta"]].copy()
+        risk[symbol_col] = risk[symbol_col].astype("string").str.upper()
+        risk["beta"] = pd.to_numeric(risk["beta"], errors="coerce")
+
+        merged = portfolio.merge(risk, left_on="simbolo", right_on=symbol_col, how="left")
+        merged["beta"] = pd.to_numeric(merged["beta"], errors="coerce")
+        merged = merged[np.isfinite(merged["beta"]) & np.isfinite(merged["weight"])]
+        if merged.empty:
+            return float("nan")
+
+        beta_avg = float((merged["weight"] * merged["beta"]).sum())
+        return beta_avg
+
     def analyze_portfolio(self) -> dict[str, object]:
         """Return cached composition analysis for the current portfolio."""
 
@@ -188,12 +230,15 @@ class RecommendationService:
         over_currency, under_currency = _bucket_categories(currency_dist, over=0.70, under=0.20)
         over_beta, under_beta = _bucket_categories(beta_dist, over=0.55, under=0.20)
 
+        beta_average = self._compute_portfolio_beta_average()
+
         analysis = {
             "total_value": float(self._portfolio_df.get("valor_actual", pd.Series(dtype=float)).sum()),
             "type_distribution": type_dist,
             "sector_distribution": sector_dist,
             "currency_distribution": currency_dist,
             "beta_distribution": beta_dist,
+            "beta_average": beta_average,
             "overexposed": {
                 "tipo": over_type,
                 "sector": over_sector,
@@ -389,6 +434,52 @@ class RecommendationService:
 
         return ", ".join(reasons)
 
+    def _build_extended_rationale(
+        self,
+        *,
+        allocation_pct: float,
+        expected_return: float,
+        beta: float,
+        sector: str,
+        analysis: dict[str, object],
+        portfolio_beta: float,
+    ) -> str:
+        parts: list[str] = []
+
+        contribution = float(allocation_pct) * float(expected_return) / 100.0
+        if not np.isfinite(contribution):
+            contribution = 0.0
+        parts.append(
+            f"Aporta {contribution:+.2f} % al retorno esperado del portafolio."
+        )
+
+        beta_value = float(beta)
+        base_beta = float(portfolio_beta)
+        if not np.isfinite(base_beta):
+            base_beta = 1.0
+        beta_delta = (base_beta - beta_value) * float(allocation_pct) / 100.0
+        if np.isfinite(beta_delta) and abs(beta_delta) > 1e-6:
+            if beta_delta > 0:
+                parts.append(f"Reduce el beta total en {abs(beta_delta):.2f} %.")
+            else:
+                parts.append(f"Aumenta el beta total en {abs(beta_delta):.2f} %.")
+        else:
+            parts.append("Mantiene el beta total estable.")
+
+        sector_label = str(sector or "Sin sector").strip() or "Sin sector"
+        sector_dist = analysis.get("sector_distribution")
+        if isinstance(sector_dist, pd.Series) and sector_label in sector_dist.index:
+            share = float(sector_dist.loc[sector_label]) * 100
+            parts.append(
+                f"Contribuye a diversificación sectorial ({sector_label} hoy {share:.1f}%)."
+            )
+        else:
+            parts.append(
+                f"Contribuye a diversificación sectorial incorporando {sector_label}."
+            )
+
+        return " ".join(parts)
+
     def _existing_asset_candidates(
         self,
         *,
@@ -461,6 +552,7 @@ class RecommendationService:
                     score=score,
                     expected_return=0.0,
                     rationale=rationale,
+                    beta=estimated_beta,
                     sector=sector,
                     tipo=tipo,
                     currency=currency,
@@ -568,9 +660,7 @@ class RecommendationService:
         analysis = self.analyze_portfolio()
 
         if normalized_amount <= 0 or opportunities.empty:
-            return pd.DataFrame(
-                columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
-            )
+            return pd.DataFrame(columns=RECOMMENDATION_OUTPUT_COLUMNS)
 
         candidates: list[Recommendation] = []
         for _, row in opportunities.iterrows():
@@ -614,6 +704,7 @@ class RecommendationService:
                     score=score,
                     expected_return=expected_return,
                     rationale=rationale,
+                    beta=estimated_beta,
                     sector=sector,
                     tipo=tipo,
                     currency=currency,
@@ -625,9 +716,7 @@ class RecommendationService:
         )
 
         if not candidates:
-            return pd.DataFrame(
-                columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
-            )
+            return pd.DataFrame(columns=RECOMMENDATION_OUTPUT_COLUMNS)
 
         base_df = pd.DataFrame([rec.__dict__ for rec in candidates])
         df = base_df.sort_values("score", ascending=False)
@@ -643,9 +732,7 @@ class RecommendationService:
                 LOGGER.exception("Post filter failed; se preserva la selección original")
 
         if df.empty:
-            return pd.DataFrame(
-                columns=["symbol", "allocation_%", "allocation_amount", "rationale"]
-            )
+            return pd.DataFrame(columns=RECOMMENDATION_OUTPUT_COLUMNS)
 
         if "symbol" not in df.columns:
             raise ValueError("El filtro debe preservar la columna 'symbol'")
@@ -656,10 +743,12 @@ class RecommendationService:
             "score",
             "expected_return",
             "rationale",
+            "beta",
             "sector",
             "tipo",
             "currency",
             "is_existing",
+            "rationale_extended",
         ]
         for col in required_cols:
             if col not in df.columns:
@@ -724,7 +813,38 @@ class RecommendationService:
                 df.loc[last_idx, "allocation_%"] * normalized_amount / 100
             )
 
-        return df[["symbol", "allocation_%", "allocation_amount", "rationale"]]
+        df["expected_return"] = pd.to_numeric(
+            df.get("expected_return"), errors="coerce"
+        )
+        df["beta"] = pd.to_numeric(df.get("beta"), errors="coerce")
+        df["sector"] = (
+            df.get("sector", pd.Series(dtype=str)).astype("string").fillna("Sin sector")
+        )
+        df["tipo"] = df.get("tipo", pd.Series(dtype=str)).astype("string")
+        df["currency"] = df.get("currency", pd.Series(dtype=str)).astype("string")
+
+        portfolio_beta = float(analysis.get("beta_average", float("nan")))
+        extended: list[str] = []
+        for _, row in df.iterrows():
+            allocation_pct = float(row.get("allocation_%", 0.0))
+            expected_val = pd.to_numeric(row.get("expected_return"), errors="coerce")
+            expected_val = float(expected_val) if np.isfinite(expected_val) else 0.0
+            beta_val = pd.to_numeric(row.get("beta"), errors="coerce")
+            beta_val = float(beta_val) if np.isfinite(beta_val) else float("nan")
+            sector_label = str(row.get("sector", ""))
+            extended.append(
+                self._build_extended_rationale(
+                    allocation_pct=allocation_pct,
+                    expected_return=expected_val,
+                    beta=beta_val,
+                    sector=sector_label,
+                    analysis=analysis,
+                    portfolio_beta=portfolio_beta,
+                )
+            )
+        df["rationale_extended"] = extended
+
+        return df[list(RECOMMENDATION_OUTPUT_COLUMNS)]
 
 
 __all__ = [

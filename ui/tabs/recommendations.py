@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from typing import Mapping
 
 import numpy as np
@@ -149,6 +150,13 @@ def _render_automatic_insight(
         metrics_parts.append(f"Rentabilidad esperada promedio: {_format_percent(expected_mean)}")
     if np.isfinite(beta_mean):
         metrics_parts.append(f"Beta promedio: {_format_float(beta_mean)}")
+    sector_series = recommendations.get("sector")
+    if isinstance(sector_series, pd.Series) and not sector_series.empty:
+        normalized = sector_series.astype("string").str.strip()
+        normalized = normalized[normalized != ""]
+        if not normalized.empty:
+            dominant_sector = normalized.value_counts().idxmax()
+            metrics_parts.append(f"Sector dominante: {dominant_sector}")
     if metrics_parts:
         lines.append(" | ".join(metrics_parts))
 
@@ -414,11 +422,64 @@ def _render_recommendations_table(result: pd.DataFrame) -> None:
     formatted["allocation_amount"] = formatted["allocation_amount"].map(
         lambda v: f"${v:,.0f}".replace(",", ".")
     )
+    if "rationale_extended" in formatted.columns:
+        formatted = formatted.rename(columns={"rationale_extended": "Racional extendido"})
+    formatted = formatted.rename(columns={"rationale": "Racional"})
     st.dataframe(
         formatted,
         use_container_width=True,
         hide_index=True,
     )
+
+    export_columns = [
+        "symbol",
+        "allocation_%",
+        "allocation_amount",
+        "expected_return",
+        "beta",
+        "rationale",
+    ]
+    export_df = result.copy()
+    for column in export_columns:
+        if column not in export_df.columns:
+            export_df[column] = np.nan
+    export_df = export_df[export_columns]
+
+    summary = {col: "" for col in export_columns}
+    summary["symbol"] = "Promedios"
+    numeric_return = pd.to_numeric(export_df["expected_return"], errors="coerce")
+    numeric_beta = pd.to_numeric(export_df["beta"], errors="coerce")
+    expected_mean = numeric_return.dropna().mean()
+    beta_mean = numeric_beta.dropna().mean()
+    summary["expected_return"] = (
+        round(float(expected_mean), 4) if pd.notna(expected_mean) else ""
+    )
+    summary["beta"] = round(float(beta_mean), 4) if pd.notna(beta_mean) else ""
+    export_with_summary = pd.concat(
+        [export_df, pd.DataFrame([summary])], ignore_index=True
+    )
+
+    csv_bytes = export_with_summary.to_csv(index=False).encode("utf-8")
+    excel_buffer = BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+        export_with_summary.to_excel(writer, index=False)
+    excel_buffer.seek(0)
+
+    buttons = st.columns(2)
+    with buttons[0]:
+        st.download_button(
+            "📤 Exportar CSV",
+            data=csv_bytes,
+            file_name="recomendaciones_inteligentes.csv",
+            mime="text/csv",
+        )
+    with buttons[1]:
+        st.download_button(
+            "📥 Exportar XLSX",
+            data=excel_buffer.getvalue(),
+            file_name="recomendaciones_inteligentes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
 
 def _render_recommendations_visuals(
