@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from application.recommendation_service import RecommendationService
@@ -106,6 +107,52 @@ def _render_recommendations_table(result: pd.DataFrame) -> None:
     )
 
 
+def _render_recommendations_visuals(
+    result: pd.DataFrame, *, mode_label: str, amount: float
+) -> None:
+    if result.empty:
+        return
+
+    amount_text = f"${amount:,.0f}".replace(",", ".")
+    st.markdown(
+        f"**Modo seleccionado:** {mode_label} &nbsp;|&nbsp; "
+        f"**Monto a invertir:** {amount_text}"
+    )
+
+    pie_fig = px.pie(
+        result,
+        names="symbol",
+        values="allocation_%",
+        hole=0.35,
+    )
+    pie_fig.update_traces(textposition="inside", texttemplate="%{label}<br>%{value:.2f}%")
+    pie_fig.update_layout(
+        margin=dict(t=40, b=0, l=0, r=0),
+        title="Distribución sugerida por activo",
+    )
+
+    bar_data = result.sort_values("allocation_amount", ascending=False)
+    bar_fig = px.bar(
+        bar_data,
+        x="symbol",
+        y="allocation_amount",
+        text="allocation_amount",
+    )
+    bar_fig.update_traces(texttemplate="$%{y:,.0f}", textposition="outside", cliponaxis=False)
+    bar_fig.update_layout(
+        margin=dict(t=40, b=40, l=0, r=0),
+        title="Montos asignados (ARS)",
+        yaxis_title="Monto",
+        xaxis_title="Símbolo",
+    )
+
+    charts = st.columns(2)
+    with charts[0]:
+        st.plotly_chart(pie_fig, use_container_width=True, config={"displayModeBar": False})
+    with charts[1]:
+        st.plotly_chart(bar_fig, use_container_width=True, config={"displayModeBar": False})
+
+
 def render_recommendations_tab() -> None:
     """Render the recommendations tab inside the main dashboard."""
 
@@ -163,6 +210,12 @@ def render_recommendations_tab() -> None:
             recommendations = svc.recommend(amount, mode=mode[0])
             _render_analysis_summary(svc)
 
+    if not recommendations.empty:
+        _render_recommendations_visuals(
+            recommendations,
+            mode_label=mode[1],
+            amount=amount,
+        )
     _render_recommendations_table(recommendations)
 
 
