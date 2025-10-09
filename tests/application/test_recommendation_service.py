@@ -120,7 +120,11 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
     assert len(result) == 5
     top_symbol = result.iloc[0]["symbol"]
     assert top_symbol in {"JNJ", "XLU"}, "Expected defensive sectors to lead diversification"
+    assert (result["allocation_%"] >= 10.0 - 1e-6).all()
+    assert (result["allocation_%"] <= 40.0 + 1e-6).all()
     assert result["allocation_amount"].sum() == pytest.approx(100_000.0)
+    assert result["allocation_%"].sum() == pytest.approx(100.0)
+    assert set(result["symbol"]) & set(portfolio_df["simbolo"]) != set()
     assert any("Healthcare" in rationale for rationale in result["rationale"])
 
 
