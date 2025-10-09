@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Any, List, Iterable
+from typing import Dict, Any, List, Iterable, Mapping
 from dataclasses import dataclass
 import os
 import re
@@ -433,3 +433,142 @@ class PortfolioService:
     def clean_symbol(self, sym: str) -> str:
         """Normalize a symbol string."""
         return clean_symbol(sym)
+
+    def simulate_allocation(
+        self,
+        *,
+        portfolio_positions: pd.DataFrame | None,
+        totals: PortfolioTotals | None,
+        recommendations: pd.DataFrame | None,
+        expected_returns: Mapping[str, float] | None = None,
+        betas: Mapping[str, float] | None = None,
+    ) -> dict[str, dict[str, float]]:
+        """Combina el portafolio actual con nuevas asignaciones y resume métricas."""
+
+        portfolio_df = (
+            portfolio_positions.copy()
+            if isinstance(portfolio_positions, pd.DataFrame)
+            else pd.DataFrame()
+        )
+        rec_df = (
+            recommendations.copy()
+            if isinstance(recommendations, pd.DataFrame)
+            else pd.DataFrame()
+        )
+
+        base_totals = totals if isinstance(totals, PortfolioTotals) else calculate_totals(portfolio_df)
+        before_value = float(getattr(base_totals, "total_value", 0.0) or 0.0)
+        if not np.isfinite(before_value):
+            before_value = 0.0
+        base_pl_pct = getattr(base_totals, "total_pl_pct", float("nan"))
+        if not np.isfinite(base_pl_pct):
+            base_rate = 0.0
+        else:
+            base_rate = float(base_pl_pct) / 100.0
+        before_expected_value = before_value * base_rate
+
+        allocation = pd.to_numeric(rec_df.get("allocation_amount"), errors="coerce").fillna(0.0)
+        rec_symbols = (
+            rec_df.get("symbol", pd.Series(dtype=str))
+            .astype("string")
+            .fillna("")
+            .str.upper()
+        )
+        new_capital = float(allocation.sum()) if len(allocation) else 0.0
+
+        expected_lookup: dict[str, float] = {}
+        for key, value in (expected_returns or {}).items():
+            symbol = str(key or "").strip().upper()
+            if not symbol:
+                continue
+            try:
+                rate = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(rate):
+                expected_lookup[symbol] = rate
+
+        beta_lookup: dict[str, float] = {}
+        for key, value in (betas or {}).items():
+            symbol = str(key or "").strip().upper()
+            if not symbol:
+                continue
+            try:
+                beta_val = float(value)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(beta_val):
+                beta_lookup[symbol] = beta_val
+
+        existing_values: dict[str, float] = {}
+        if not portfolio_df.empty and "valor_actual" in portfolio_df.columns:
+            values = pd.to_numeric(portfolio_df["valor_actual"], errors="coerce").fillna(0.0)
+            symbols = (
+                portfolio_df.get("simbolo", pd.Series(dtype=str))
+                .astype("string")
+                .fillna("")
+                .str.upper()
+            )
+            for symbol, value in zip(symbols, values):
+                if not symbol:
+                    continue
+                existing_values[symbol] = existing_values.get(symbol, 0.0) + float(value)
+
+        combined_values = dict(existing_values)
+        additional_expected = 0.0
+
+        for symbol, amount in zip(rec_symbols, allocation):
+            amount_value = float(amount)
+            if amount_value <= 0.0 or not symbol:
+                continue
+            combined_values[symbol] = combined_values.get(symbol, 0.0) + amount_value
+            rate = expected_lookup.get(symbol)
+            if rate is None or not np.isfinite(rate):
+                rate = base_rate * 100.0
+            additional_expected += amount_value * (float(rate) / 100.0)
+
+        after_value = before_value + new_capital
+        after_expected_value = before_expected_value + additional_expected
+
+        def _weighted_metric(weights: Mapping[str, float]) -> float:
+            total_weight = 0.0
+            weighted_sum = 0.0
+            for sym, weight in weights.items():
+                if weight <= 0.0:
+                    continue
+                total_weight += float(weight)
+                metric = beta_lookup.get(sym)
+                try:
+                    metric_val = float(metric)
+                except (TypeError, ValueError):  # pragma: no cover - defensive
+                    metric_val = float("nan")
+                if not np.isfinite(metric_val):
+                    metric_val = 1.0
+                weighted_sum += float(weight) * metric_val
+            if total_weight <= 0.0:
+                return float("nan")
+            return weighted_sum / total_weight
+
+        beta_before = _weighted_metric(existing_values)
+        beta_after = _weighted_metric(combined_values)
+
+        projected_before = base_rate * 100.0 if before_value > 0.0 else 0.0
+        projected_after = (
+            after_expected_value / after_value * 100.0
+            if after_value > 0.0
+            else 0.0
+        )
+
+        return {
+            "before": {
+                "total_value": before_value,
+                "projected_return": projected_before,
+                "beta": beta_before,
+            },
+            "after": {
+                "total_value": after_value,
+                "projected_return": projected_after,
+                "beta": beta_after,
+                "additional_investment": new_capital,
+            },
+        }
