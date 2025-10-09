@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Callable
+from typing import Callable, Mapping
 
 import numpy as np
 import pandas as pd
@@ -644,17 +644,67 @@ class RecommendationService:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+    @staticmethod
+    def _normalise_profile(profile: Mapping[str, object] | None) -> dict[str, str]:
+        if not isinstance(profile, Mapping):
+            return {}
+        normalized: dict[str, str] = {}
+        risk = str(profile.get("risk_tolerance", "")).strip().lower()
+        horizon = str(profile.get("investment_horizon", "")).strip().lower()
+        mode = str(profile.get("preferred_mode", "")).strip().lower()
+        if risk in {"bajo", "medio", "alto"}:
+            normalized["risk_tolerance"] = risk
+        if horizon in {"corto", "mediano", "largo"}:
+            normalized["investment_horizon"] = horizon
+        if mode in SUPPORTED_MODES:
+            normalized["preferred_mode"] = mode
+        return normalized
+
+    @staticmethod
+    def _apply_profile_bias(
+        score: float,
+        *,
+        profile: Mapping[str, str],
+        estimated_beta: float,
+        sector: str,
+        expected_return: float,
+    ) -> float:
+        adjusted = float(score)
+        risk = profile.get("risk_tolerance", "")
+        horizon = profile.get("investment_horizon", "")
+
+        if risk == "bajo":
+            if sector in HIGH_RISK_SECTORS or estimated_beta > 1.15:
+                adjusted *= 0.55
+            elif sector in LOW_RISK_SECTORS or estimated_beta < 0.95:
+                adjusted *= 1.15
+        elif risk == "alto":
+            if sector in HIGH_RISK_SECTORS or estimated_beta >= 1.05:
+                adjusted *= 1.15
+
+        if horizon == "corto" and estimated_beta > 1.05:
+            adjusted *= 0.9
+        elif horizon == "largo" and expected_return > 0:
+            adjusted *= 1.0 + min(expected_return / 100, 0.2)
+
+        return max(adjusted, 0.0)
+
     def recommend(
         self,
         amount: float,
         *,
-        mode: str = "diversify",
+        mode: str | None = None,
         top_n: int = 5,
         post_filter: Callable[[pd.DataFrame], pd.DataFrame] | None = None,
+        profile: Mapping[str, object] | None = None,
     ) -> pd.DataFrame:
         """Return the top ``top_n`` recommendations for the provided amount."""
 
         normalized_amount = _normalise_amount(amount)
+        normalized_profile = self._normalise_profile(profile)
+        preferred_mode = normalized_profile.get("preferred_mode")
+        if not mode and preferred_mode:
+            mode = preferred_mode
         mode = mode if mode in SUPPORTED_MODES else "diversify"
         opportunities = self._ensure_opportunities()
         analysis = self.analyze_portfolio()
@@ -688,6 +738,15 @@ class RecommendationService:
                 estimated_beta=estimated_beta,
                 analysis=analysis,
             )
+
+            if normalized_profile:
+                score = self._apply_profile_bias(
+                    score,
+                    profile=normalized_profile,
+                    estimated_beta=estimated_beta,
+                    sector=sector,
+                    expected_return=expected_return,
+                )
 
             rationale = self._build_rationale(
                 symbol=symbol,

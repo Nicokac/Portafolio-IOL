@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.4.4 — Perfil inversor persistente y comparativas con benchmarks
+- Nuevo `ProfileService` con almacenamiento cifrado que sincroniza tolerancia al riesgo, horizonte e
+  inclinación estratégica entre `session_state`, `config.json` y `st.secrets`.
+- La pestaña de recomendaciones permite ajustar el perfil mediante selectores dedicados, mostrando un
+  badge con el perfil activo y aplicando sesgos en `RecommendationService.recommend()`.
+- Bloque comparativo frente a Merval, S&P 500 y Bonos que resume ΔRetorno, ΔBeta y Tracking Error
+  usando el nuevo `compute_benchmark_comparison()`.
+- Documentación y versión actualizadas para la release 0.4.4, junto con pruebas unitarias de perfil y
+  benchmarking.
+
 ## v0.4.3 — Recomendaciones exportables y explicadas al instante
 - Incorporadas descargas "📤 Exportar CSV" y "📥 Exportar XLSX" con promedios finales de retorno y beta.
 - Añadido racional extendido que cuantifica aporte al retorno, impacto en beta y diversificación sectorial.

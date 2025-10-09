@@ -1,63 +1,42 @@
-import numpy as np
+import math
+
 import pandas as pd
 import pytest
 
-from application.benchmark_service import benchmark_analysis
+from application.benchmark_service import (
+    BENCHMARK_BASELINES,
+    compute_benchmark_comparison,
+)
 
 
-def test_tracking_error_and_active_return_alignment():
-    portfolio = pd.Series([0.01, 0.015, 0.02, 0.005])
-    benchmark = pd.Series([0.008, 0.011, 0.019, 0.004])
+def test_compute_benchmark_comparison_returns_relative_metrics() -> None:
+    recommendations = pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC"],
+            "allocation_%": [40.0, 35.0, 25.0],
+            "expected_return": [12.0, 8.0, 6.0],
+            "beta": [1.1, 0.9, 0.8],
+        }
+    )
 
-    result = benchmark_analysis(portfolio, benchmark)
+    metrics = compute_benchmark_comparison(recommendations, "sp500")
 
-    diff = (portfolio - benchmark).dropna()
-    expected_te = np.std(diff) * np.sqrt(252)
-    expected_active = diff.mean()
-
-    assert pytest.approx(result["tracking_error"], rel=1e-6) == expected_te
-    assert pytest.approx(result["active_return"], rel=1e-6) == expected_active
-
-
-def test_information_ratio_matches_manual_calculation():
-    portfolio = pd.Series([0.02, 0.01, 0.03, 0.015])
-    benchmark = pd.Series([0.01, 0.01, 0.015, 0.012])
-
-    result = benchmark_analysis(portfolio, benchmark)
-
-    diff = (portfolio - benchmark).dropna()
-    expected_te = np.std(diff) * np.sqrt(252)
-    expected_ir = (portfolio.mean() - benchmark.mean()) / expected_te
-
-    assert pytest.approx(result["information_ratio"], rel=1e-6) == expected_ir
+    assert metrics["benchmark"] == "sp500"
+    assert metrics["label"] == BENCHMARK_BASELINES["sp500"]["name"]
+    assert metrics["portfolio_return"] == pytest.approx(9.1, rel=1e-3)
+    expected_relative = 9.1 - BENCHMARK_BASELINES["sp500"]["expected_return"]
+    assert metrics["relative_return"] == pytest.approx(expected_relative, rel=1e-3)
+    assert metrics["portfolio_beta"] == pytest.approx(0.955, rel=1e-3)
+    assert metrics["relative_beta"] == pytest.approx(
+        0.955 - BENCHMARK_BASELINES["sp500"]["beta"], rel=1e-3
+    )
+    assert metrics["tracking_error"] > 0
 
 
-def test_factor_regression_recovers_betas_and_r_squared():
-    idx = pd.date_range("2024-01-01", periods=30, freq="B")
-    rate = pd.Series(np.linspace(0.01, 0.03, len(idx)), index=idx, name="tasa")
-    inflation = pd.Series(np.linspace(0.005, 0.02, len(idx)), index=idx, name="inflacion")
-    factors = pd.concat([rate, inflation], axis=1)
+def test_compute_benchmark_comparison_handles_unknown_index() -> None:
+    df = pd.DataFrame()
+    metrics = compute_benchmark_comparison(df, "unknown")
 
-    portfolio = 0.6 * rate + 0.3 * inflation + 0.01
-    benchmark = 0.45 * rate + 0.25 * inflation + 0.008
-
-    result = benchmark_analysis(portfolio, benchmark, factors_df=factors)
-
-    betas = result["factor_betas"]
-    assert betas, "Expected betas to be computed"
-
-    design = np.column_stack([
-        np.ones(len(idx)),
-        rate.to_numpy(),
-        inflation.to_numpy(),
-    ])
-    expected_params = np.linalg.lstsq(design, portfolio.to_numpy(), rcond=None)[0]
-    expected_betas = {
-        "tasa": expected_params[1],
-        "inflacion": expected_params[2],
-    }
-
-    for factor, expected in expected_betas.items():
-        assert pytest.approx(betas[factor], rel=1e-6) == expected
-
-    assert result["r_squared"] > 0.99
+    assert metrics["benchmark"] == "unknown"
+    assert math.isnan(metrics["relative_return"])
+    assert math.isnan(metrics["tracking_error"])

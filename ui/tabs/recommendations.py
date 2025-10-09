@@ -9,7 +9,12 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from application.benchmark_service import (
+    BENCHMARK_BASELINES,
+    compute_benchmark_comparison,
+)
 from application.portfolio_service import PortfolioService
+from application.profile_service import DEFAULT_PROFILE, ProfileService
 from application.recommendation_service import RecommendationService
 from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
@@ -41,6 +46,20 @@ _INSIGHT_MESSAGES = {
     "low_risk": "La propuesta favorece estabilidad y preservación del capital frente a grandes oscilaciones.",
 }
 
+_PROFILE_RISK_OPTIONS = [
+    ("bajo", "Conservador"),
+    ("medio", "Moderado"),
+    ("alto", "Dinámico"),
+]
+_PROFILE_HORIZON_OPTIONS = [
+    ("corto", "3 meses"),
+    ("mediano", "12 meses"),
+    ("largo", "24 meses o más"),
+]
+_BENCHMARK_LABELS = {
+    key: value.get("name", key.upper()) for key, value in BENCHMARK_BASELINES.items()
+}
+
 
 def _resolve_mode(value: object) -> tuple[str, str]:
     if isinstance(value, tuple) and value:
@@ -55,6 +74,13 @@ def _resolve_mode(value: object) -> tuple[str, str]:
         if resolved_key in _MODE_LABELS:
             return resolved_key, _MODE_LABELS[resolved_key]
     return "diversify", _MODE_LABELS["diversify"]
+
+
+def _option_index(options: list[tuple[str, str]], value: str) -> int:
+    for idx, item in enumerate(options):
+        if item[0] == value:
+            return idx
+    return 0
 
 
 def _get_stored_state() -> dict:
@@ -110,6 +136,49 @@ def _beta_lookup(
                 continue
             lookup[symbol] = RecommendationService._estimate_beta_from_sector(str(sector or ""))
     return lookup
+
+
+def _render_profile_panel(service: ProfileService) -> dict[str, str]:
+    profile = service.get_profile()
+    st.markdown(f"**{service.badge_label(profile)}**")
+    with st.expander("Configurar perfil inversor", expanded=False):
+        st.caption(
+            "Guardamos tus preferencias en el dispositivo para ajustar futuras recomendaciones."
+        )
+        risk_choice = st.selectbox(
+            "Tolerancia al riesgo",
+            options=_PROFILE_RISK_OPTIONS,
+            format_func=lambda item: item[1],
+            index=_option_index(_PROFILE_RISK_OPTIONS, profile["risk_tolerance"]),
+            key=f"{_FORM_KEY}_profile_risk",
+        )
+        horizon_choice = st.selectbox(
+            "Horizonte de inversión",
+            options=_PROFILE_HORIZON_OPTIONS,
+            format_func=lambda item: item[1],
+            index=_option_index(_PROFILE_HORIZON_OPTIONS, profile["investment_horizon"]),
+            key=f"{_FORM_KEY}_profile_horizon",
+        )
+        preferred_choice = st.selectbox(
+            "Enfoque preferido",
+            options=_MODE_OPTIONS,
+            format_func=lambda item: item[1],
+            index=_option_index(_MODE_OPTIONS, profile["preferred_mode"]),
+            key=f"{_FORM_KEY}_profile_mode",
+        )
+    risk_value = risk_choice[0] if isinstance(risk_choice, tuple) else str(risk_choice)
+    horizon_value = (
+        horizon_choice[0] if isinstance(horizon_choice, tuple) else str(horizon_choice)
+    )
+    mode_value = (
+        preferred_choice[0] if isinstance(preferred_choice, tuple) else str(preferred_choice)
+    )
+    updated = service.update_profile(
+        risk_tolerance=risk_value,
+        investment_horizon=horizon_value,
+        preferred_mode=mode_value,
+    )
+    return updated
 
 
 def _mean_numeric(series: pd.Series | None) -> float:
@@ -409,6 +478,32 @@ def _render_analysis_summary(source: RecommendationService | dict[str, object]) 
         st.caption(f"Distribución de beta: {beta_summary}")
 
 
+def _render_benchmark_block(recommendations: pd.DataFrame) -> None:
+    if recommendations.empty:
+        return
+    st.markdown("#### Comparativa con benchmarks")
+    keys = list(_BENCHMARK_LABELS.keys()) or ["merval", "sp500", "bonos"]
+    columns = st.columns(len(keys))
+    for col, key in zip(columns, keys):
+        metrics = compute_benchmark_comparison(recommendations, key)
+        if not metrics:
+            continue
+        label = str(metrics.get("label") or _BENCHMARK_LABELS.get(key, key.upper()))
+        delta_return = _format_percent_delta(float(metrics.get("relative_return", float("nan"))))
+        delta_beta = _format_float_delta(float(metrics.get("relative_beta", float("nan"))))
+        tracking = _format_percent(float(metrics.get("tracking_error", float("nan"))))
+        portfolio_ret = _format_percent(float(metrics.get("portfolio_return", float("nan"))))
+        benchmark_ret = _format_percent(float(metrics.get("benchmark_return", float("nan"))))
+        with col:
+            st.markdown(f"**{label}**")
+            st.caption(
+                f"ΔRetorno: {delta_return} | ΔBeta: {delta_beta} | Tracking Error: {tracking}"
+            )
+            st.caption(
+                f"Portafolio: {portfolio_ret} &nbsp;/&nbsp; Índice: {benchmark_ret}"
+            )
+
+
 def _render_recommendations_table(result: pd.DataFrame) -> None:
     if result.empty:
         st.info("Ingresá un monto para calcular sugerencias personalizadas.")
@@ -537,6 +632,9 @@ def render_recommendations_tab() -> None:
         "Proyectá cómo complementar tu cartera con nuevas ideas balanceadas según tu perfil."
     )
 
+    profile_service = ProfileService()
+    active_profile = _render_profile_panel(profile_service)
+
     if positions.empty:
         try:
             st.session_state.pop(_SESSION_STATE_KEY, None)
@@ -556,6 +654,7 @@ def render_recommendations_tab() -> None:
     stored_mode_label: str | None = None
     stored_mode_key: str | None = None
     analysis_data: dict[str, object] | None = None
+    profile_from_state: dict[str, str] | None = None
 
     state_payload: dict[str, object] | None = None
 
@@ -584,6 +683,11 @@ def render_recommendations_tab() -> None:
         analysis_candidate = stored_state.get("analysis")
         if isinstance(analysis_candidate, dict):
             analysis_data = analysis_candidate
+        profile_candidate = stored_state.get("profile")
+        if isinstance(profile_candidate, dict):
+            profile_from_state = profile_candidate
+    if profile_from_state:
+        active_profile = profile_from_state
 
     symbols = [str(sym) for sym in positions.get("simbolo", []) if sym]
 
@@ -597,7 +701,8 @@ def render_recommendations_tab() -> None:
             format="%0.0f",
             key=f"{_FORM_KEY}_amount_input",
         )
-        default_mode_key = stored_mode_key or _MODE_OPTIONS[0][0]
+        profile_default = (profile_from_state or active_profile).get("preferred_mode", "diversify")
+        default_mode_key = stored_mode_key or profile_default or _MODE_OPTIONS[0][0]
         default_index = next(
             (idx for idx, option in enumerate(_MODE_OPTIONS) if option[0] == default_mode_key),
             0,
@@ -633,7 +738,11 @@ def render_recommendations_tab() -> None:
                 risk_metrics_df=risk_metrics,
                 fundamentals_df=fundamentals,
             )
-            recommendations = svc.recommend(amount, mode=mode[0])
+            recommendations = svc.recommend(
+                amount,
+                mode=mode[0],
+                profile=active_profile,
+            )
             analysis_data = svc.analyze_portfolio()
 
             if recommendations.empty:
@@ -647,6 +756,7 @@ def render_recommendations_tab() -> None:
                     "mode_label": mode[1],
                     "mode_key": mode[0],
                     "analysis": analysis_data,
+                    "profile": active_profile.copy(),
                 }
             stored_amount = amount
             stored_mode_label = mode[1]
@@ -687,6 +797,17 @@ def render_recommendations_tab() -> None:
             st.session_state[_SESSION_STATE_KEY] = state_payload
         except Exception:  # pragma: no cover - defensive safeguard
             LOGGER.debug("No se pudo guardar el estado de recomendaciones", exc_info=True)
+    elif stored_state and isinstance(stored_state, dict):
+        if profile_from_state != active_profile:
+            updated_state = stored_state.copy()
+            updated_state["profile"] = active_profile.copy()
+            try:
+                st.session_state[_SESSION_STATE_KEY] = updated_state
+            except Exception:  # pragma: no cover - defensive safeguard
+                LOGGER.debug(
+                    "No se pudo actualizar el perfil en el estado de recomendaciones",
+                    exc_info=True,
+                )
 
     if not recommendations.empty:
         _render_recommendations_visuals(
@@ -694,6 +815,7 @@ def render_recommendations_tab() -> None:
             mode_label=mode_label_to_display,
             amount=amount_to_display,
         )
+        _render_benchmark_block(recommendations)
     _render_recommendations_table(recommendations)
     _render_automatic_insight(
         recommendations,
@@ -739,6 +861,8 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
         st.session_state["portfolio_last_positions"] = pd.DataFrame(
             [{"simbolo": "TEST", "valor_actual": 100_000.0}]
         )
+    if ProfileService.SESSION_KEY not in session:
+        st.session_state[ProfileService.SESSION_KEY] = DEFAULT_PROFILE.copy()
 
     st.session_state[_SESSION_STATE_KEY] = {
         "recommendations": _enrich_recommendations(
@@ -754,6 +878,7 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
         "mode_label": mode_label,
         "mode_key": mode_key,
         "analysis": {},
+        "profile": DEFAULT_PROFILE.copy(),
     }
 
     render_recommendations_tab()
