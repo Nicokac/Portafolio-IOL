@@ -12,6 +12,10 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el sistema propone cinco activos diversificados con límites de peso entre 10 % y 40 %, equilibrando tipo y sector. Desde la misma pestaña puede ejecutar **Simular impacto** para contrastar el portafolio actual con la distribución sugerida y comparar métricas de valor total, retorno proyectado y beta agregada antes y después de aplicar el rebalanceo.
 
+La versión **0.4.4** incorpora un panel de perfil inversor con selectores para tolerancia al riesgo, horizonte e inclinación estratégica. Las preferencias se guardan cifradas en `config.json` (o `st.secrets`) y ajustan el sesgo de `RecommendationService.recommend()`, además de mostrarse como badge activo. También se sumó un bloque de benchmarking que compara el portafolio sugerido contra Merval, S&P 500 y una canasta de bonos destacando ΔRetorno, ΔBeta y Tracking Error estimados.
+
+La versión **0.4.3** añade botones de descarga directos para obtener las sugerencias en CSV/XLSX (incluyendo una fila resumen con promedios de retorno esperado y beta) y expone un *racional extendido* que cuantifica cuánto aporta cada activo al retorno, cómo modifica el beta total y de qué modo refuerza la diversificación sectorial. El insight automático también muestra el sector dominante detectado en la combinación final para acelerar la interpretación.
+
 > Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.
 
 ## Quick-start (release 0.4.0 — Factor & Benchmark Analysis)

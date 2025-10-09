@@ -27,7 +27,28 @@ else:  # pragma: no cover - executed during runtime, hard to unit test determini
 
 import statsmodels.api as sm
 
-__all__ = ["benchmark_analysis"]
+BENCHMARK_BASELINES: dict[str, dict[str, object]] = {
+    "merval": {
+        "name": "Merval",
+        "expected_return": 14.5,
+        "beta": 1.18,
+        "weights": [0.45, 0.35, 0.2],
+    },
+    "sp500": {
+        "name": "S&P 500",
+        "expected_return": 9.5,
+        "beta": 1.0,
+        "weights": [0.34, 0.33, 0.33],
+    },
+    "bonos": {
+        "name": "Bonos soberanos",
+        "expected_return": 6.0,
+        "beta": 0.65,
+        "weights": [0.5, 0.3, 0.2],
+    },
+}
+
+__all__ = ["benchmark_analysis", "compute_benchmark_comparison", "BENCHMARK_BASELINES"]
 
 
 def _to_series(data: pd.Series | Mapping | np.ndarray | list) -> pd.Series:
@@ -103,4 +124,90 @@ def benchmark_analysis(
         "information_ratio": information_ratio if information_ratio == information_ratio else np.nan,
         "factor_betas": betas,
         "r_squared": r_squared if r_squared == r_squared else np.nan,
+    }
+
+
+def compute_benchmark_comparison(
+    recommendations: pd.DataFrame, benchmark: str
+) -> dict[str, float | str]:
+    """Estimate relative metrics against a reference benchmark."""
+
+    benchmark_key = str(benchmark).lower()
+    baseline = BENCHMARK_BASELINES.get(benchmark_key)
+    if baseline is None:
+        return {
+            "benchmark": benchmark,
+            "label": str(benchmark).upper(),
+            "portfolio_return": float("nan"),
+            "benchmark_return": float("nan"),
+            "relative_return": float("nan"),
+            "portfolio_beta": float("nan"),
+            "benchmark_beta": float("nan"),
+            "relative_beta": float("nan"),
+            "tracking_error": float("nan"),
+        }
+
+    frame = recommendations if isinstance(recommendations, pd.DataFrame) else pd.DataFrame()
+    if frame.empty:
+        weights = np.array([], dtype=float)
+        expected = np.array([], dtype=float)
+        betas = np.array([], dtype=float)
+    else:
+        weights = pd.to_numeric(frame.get("allocation_%"), errors="coerce").to_numpy()
+        if not np.isfinite(weights).any() or float(np.nansum(weights)) <= 0:
+            weights = np.repeat(1 / len(frame), len(frame)) if len(frame) else np.array([], dtype=float)
+        else:
+            weights = np.nan_to_num(weights) / float(np.nansum(weights))
+        expected = pd.to_numeric(frame.get("expected_return"), errors="coerce").to_numpy()
+        betas = pd.to_numeric(frame.get("beta"), errors="coerce").to_numpy()
+
+    if weights.size and expected.size:
+        portfolio_return = float(np.nansum(weights * np.nan_to_num(expected)))
+    else:
+        portfolio_return = float("nan")
+
+    if weights.size and betas.size:
+        portfolio_beta = float(np.nansum(weights * np.nan_to_num(betas)))
+    else:
+        portfolio_beta = float("nan")
+
+    benchmark_return = float(baseline.get("expected_return", float("nan")))
+    benchmark_beta = float(baseline.get("beta", float("nan")))
+
+    relative_return = (
+        portfolio_return - benchmark_return
+        if np.isfinite(portfolio_return) and np.isfinite(benchmark_return)
+        else float("nan")
+    )
+    relative_beta = (
+        portfolio_beta - benchmark_beta
+        if np.isfinite(portfolio_beta) and np.isfinite(benchmark_beta)
+        else float("nan")
+    )
+
+    baseline_weights = np.array(baseline.get("weights", []), dtype=float)
+    if baseline_weights.size == 0 and weights.size:
+        baseline_weights = np.repeat(1 / weights.size, weights.size)
+    if baseline_weights.size and weights.size:
+        if baseline_weights.size != weights.size:
+            repeats = int(np.ceil(weights.size / baseline_weights.size))
+            baseline_weights = np.tile(baseline_weights, repeats)[: weights.size]
+        if baseline_weights.sum() <= 0:
+            baseline_weights = np.repeat(1 / weights.size, weights.size)
+        else:
+            baseline_weights = baseline_weights / float(baseline_weights.sum())
+        tracking_error = float(np.sqrt(np.mean((weights - baseline_weights) ** 2)) * 100)
+    else:
+        tracking_error = float("nan")
+
+    return {
+        "benchmark": benchmark_key,
+        "label": str(baseline.get("name", benchmark_key)).strip() or benchmark_key.upper(),
+        "portfolio_return": portfolio_return,
+        "benchmark_return": benchmark_return,
+        "relative_return": relative_return,
+        "portfolio_beta": portfolio_beta,
+        "benchmark_beta": benchmark_beta,
+        "relative_beta": relative_beta,
+        "tracking_error": tracking_error,
     }

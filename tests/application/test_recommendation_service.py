@@ -116,7 +116,18 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
     )
     result = svc.recommend(100_000, mode="diversify")
 
-    assert list(result.columns) == ["symbol", "allocation_%", "allocation_amount", "rationale"]
+    assert list(result.columns) == [
+        "symbol",
+        "allocation_%",
+        "allocation_amount",
+        "expected_return",
+        "beta",
+        "rationale",
+        "rationale_extended",
+        "sector",
+        "tipo",
+        "currency",
+    ]
     assert len(result) == 5
     top_symbol = result.iloc[0]["symbol"]
     assert top_symbol in {"JNJ", "XLU"}, "Expected defensive sectors to lead diversification"
@@ -126,6 +137,7 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
     assert result["allocation_%"].sum() == pytest.approx(100.0)
     assert set(result["symbol"]) & set(portfolio_df["simbolo"]) != set()
     assert any("Healthcare" in rationale for rationale in result["rationale"])
+    assert all("Aporta" in text for text in result["rationale_extended"])
 
 
 def test_low_risk_mode_favours_defensive_assets(
@@ -144,6 +156,8 @@ def test_low_risk_mode_favours_defensive_assets(
     assert result.iloc[0]["symbol"] in {"JNJ", "XLU", "XLRE"}
     rationale = " ".join(result["rationale"].tolist())
     assert "defensivo" in rationale or "defensivo" in rationale.lower()
+    extended = " ".join(result["rationale_extended"].tolist())
+    assert "beta" in extended.lower()
 
 
 def test_max_return_respects_supported_modes(
@@ -162,4 +176,48 @@ def test_max_return_respects_supported_modes(
     assert np.all(result["allocation_%"] > 0)
     assert result["allocation_%"].sum() == pytest.approx(100.0)
     assert any("retorno" in rationale.lower() for rationale in result["rationale"])
+    assert any("Aporta" in rationale for rationale in result["rationale_extended"])
+
+
+def test_profile_bias_downweights_high_risk_when_conservative(
+    portfolio_df: pd.DataFrame,
+    opportunities_df: pd.DataFrame,
+    risk_df: pd.DataFrame,
+) -> None:
+    svc = RecommendationService(
+        portfolio_df=portfolio_df,
+        opportunities_df=opportunities_df,
+        risk_metrics_df=risk_df,
+    )
+    conservative = svc.recommend(
+        120_000,
+        mode="diversify",
+        profile={
+            "risk_tolerance": "bajo",
+            "investment_horizon": "corto",
+            "preferred_mode": "low_risk",
+        },
+    )
+    aggressive = svc.recommend(
+        120_000,
+        mode="max_return",
+        profile={
+            "risk_tolerance": "alto",
+            "investment_horizon": "largo",
+            "preferred_mode": "max_return",
+        },
+    )
+
+    def _allocation(df: pd.DataFrame, symbol: str) -> float:
+        subset = df.loc[df["symbol"] == symbol, "allocation_%"]
+        if subset.empty:
+            return 0.0
+        return float(subset.iloc[0])
+
+    tech_weight_conservative = _allocation(conservative, "SMH")
+    tech_weight_aggressive = _allocation(aggressive, "SMH")
+
+    assert tech_weight_aggressive >= tech_weight_conservative
+    assert any(row["beta"] <= 1.0 for _, row in conservative.iterrows())
+    assert len(conservative) == len(aggressive) == 5
 
