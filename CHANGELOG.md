@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.7 — Verificador de versión manual
+- Nueva función `check_for_update()` con conexión a GitHub.
+- Integración en la pantalla de inicio de sesión con confirmación manual de actualización.
+- Script local para `git pull` + `pip install --upgrade`.
+- Actualizada documentación y metadatos del proyecto.
+
 ## v0.5.6-patch2 — Corrección de Plotly y estados Streamlit
 - Migradas llamadas a st.plotly_chart() para usar config={"responsive": True}.
 - Refactorizado mapeo seguro de estados en _render_cache_status().
