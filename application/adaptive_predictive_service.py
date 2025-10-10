@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -387,23 +388,49 @@ def simulate_adaptive_forecast(
     persist: bool = True,
     rolling_window: int = 20,
 ) -> dict[str, Any]:
-    """Run an adaptive backtest and expose error metrics and correlations."""
+    """Run an adaptive backtest and expose error metrics and correlations.
 
-    if not isinstance(history, pd.DataFrame) or history.empty:
-        return {
+    The simulation aggregates rolling errors to report MAE, RMSE, bias and the
+    improvement versus la predicción original. It also measures the average
+    β-shift variation through the timeline (``beta_shift_avg``) and the
+    projected sector dispersion (``sector_dispersion``). A human readable
+    ``summary`` string is returned alongside the detailed values.
+    """
+
+    def _default_result(summary: dict[str, Any] | None = None) -> dict[str, Any]:
+        summary_payload = summary or {
             "mae": 0.0,
             "rmse": 0.0,
             "bias": 0.0,
             "raw_mae": 0.0,
             "raw_rmse": 0.0,
             "raw_bias": 0.0,
+            "beta_mean": float("nan"),
+            "beta_shift_mean": float("nan"),
+            "beta_shift_avg": 0.0,
+            "correlation_mean": float("nan"),
+            "sector_dispersion": 0.0,
+        }
+        summary_payload.setdefault("text", "Sin datos adaptativos disponibles.")
+        return {
+            "mae": summary_payload.get("mae", 0.0),
+            "rmse": summary_payload.get("rmse", 0.0),
+            "bias": summary_payload.get("bias", 0.0),
+            "raw_mae": summary_payload.get("raw_mae", 0.0),
+            "raw_rmse": summary_payload.get("raw_rmse", 0.0),
+            "raw_bias": summary_payload.get("raw_bias", 0.0),
             "beta_shift": pd.Series(dtype=float),
             "correlation_matrix": pd.DataFrame(),
             "historical_correlation": pd.DataFrame(),
             "rolling_correlation": pd.DataFrame(),
-            "summary": {},
+            "summary": summary_payload,
             "steps": pd.DataFrame(),
+            "cache_metadata": {"hit_ratio": 0.0, "last_updated": "-"},
         }
+
+    if not isinstance(history, pd.DataFrame) or history.empty:
+        LOGGER.debug("Simulación adaptativa abortada: historial vacío o inválido")
+        return _default_result()
 
     df = history.copy()
     if "timestamp" not in df.columns:
@@ -411,20 +438,8 @@ def simulate_adaptive_forecast(
     df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
     df = df.dropna(subset=["timestamp", "sector", "predicted_return", "actual_return"])
     if df.empty:
-        return {
-            "mae": 0.0,
-            "rmse": 0.0,
-            "bias": 0.0,
-            "raw_mae": 0.0,
-            "raw_rmse": 0.0,
-            "raw_bias": 0.0,
-            "beta_shift": pd.Series(dtype=float),
-            "correlation_matrix": pd.DataFrame(),
-            "historical_correlation": pd.DataFrame(),
-            "rolling_correlation": pd.DataFrame(),
-            "summary": {},
-            "steps": pd.DataFrame(),
-        }
+        LOGGER.debug("Simulación adaptativa abortada: historial sin registros válidos")
+        return _default_result()
 
     df = df.sort_values("timestamp")
 
@@ -448,6 +463,7 @@ def simulate_adaptive_forecast(
     raw_errors: list[float] = []
     adjusted_errors: list[float] = []
     step_rows: list[dict[str, Any]] = []
+    beta_snapshots: list[tuple[pd.Timestamp, pd.Series]] = []
     last_result: dict[str, Any] | None = None
 
     for ts, group in grouped:
@@ -463,6 +479,8 @@ def simulate_adaptive_forecast(
         )
         beta_shift = result.get("beta_shift", pd.Series(dtype=float))
         last_result = result
+        if isinstance(beta_shift, pd.Series):
+            beta_snapshots.append((ts, beta_shift.copy()))
         for row in group.itertuples(index=False):
             sector = getattr(row, "sector")
             predicted = float(getattr(row, "predicted_return"))
@@ -513,6 +531,28 @@ def simulate_adaptive_forecast(
     beta_shift = last_result.get("beta_shift", pd.Series(dtype=float)) if last_result else pd.Series(dtype=float)
     adaptive_corr = last_result.get("correlation_matrix", pd.DataFrame()) if last_result else pd.DataFrame()
 
+    beta_variations: list[float] = []
+    previous: pd.Series | None = None
+    for _, snapshot in beta_snapshots:
+        current = snapshot.fillna(0.0)
+        if previous is not None:
+            aligned_current, aligned_previous = current.align(previous.fillna(0.0), join="outer", fill_value=0.0)
+            delta = (aligned_current - aligned_previous).abs()
+            if not delta.empty:
+                beta_variations.append(float(delta.mean()))
+        previous = current
+    beta_shift_avg = float(np.mean(beta_variations)) if beta_variations else 0.0
+
+    sector_dispersion = 0.0
+    if "predicted_return" in df.columns and not df.empty:
+        sector_means = (
+            df.groupby("sector")["predicted_return"].mean().replace([np.inf, -np.inf], np.nan)
+        )
+        if isinstance(sector_means, pd.Series):
+            sector_means = sector_means.dropna()
+            if not sector_means.empty:
+                sector_dispersion = float(sector_means.std(ddof=0))
+
     summary = {
         "mae": mae,
         "rmse": rmse,
@@ -521,9 +561,55 @@ def simulate_adaptive_forecast(
         "raw_rmse": raw_rmse,
         "raw_bias": raw_bias,
         "beta_mean": float(beta_shift.mean()) if isinstance(beta_shift, pd.Series) and not beta_shift.empty else float("nan"),
+        "beta_shift_mean": float(beta_shift.mean()) if isinstance(beta_shift, pd.Series) and not beta_shift.empty else float("nan"),
+        "beta_shift_avg": beta_shift_avg,
         "correlation_mean": _mean_correlation(adaptive_corr),
-        "sector_dispersion": float(beta_shift.std(ddof=0)) if isinstance(beta_shift, pd.Series) and beta_shift.size else float("nan"),
+        "sector_dispersion": sector_dispersion,
     }
+
+    def _fmt_percent(value: float) -> str:
+        if not np.isfinite(value):
+            return "-"
+        return f"{value:.2f}%"
+
+    def _fmt_float(value: float) -> str:
+        if not np.isfinite(value):
+            return "-"
+        return f"{value:.2f}"
+
+    summary_text_parts = [
+        f"MAE adaptativo: {_fmt_percent(mae)}",
+        f"RMSE: {_fmt_percent(rmse)}",
+        f"Bias: {_fmt_percent(bias)}",
+        f"β-shift promedio: {_fmt_float(beta_shift_avg)}",
+        f"σ sectorial: {_fmt_percent(sector_dispersion)}",
+    ]
+    summary["text"] = " | ".join(summary_text_parts)
+
+    last_timestamp = df["timestamp"].max() if not df.empty else None
+    cache_hit_ratio = 0.0
+    cache_last_updated = "-"
+    if hasattr(working_cache, "hit_ratio"):
+        try:
+            cache_hit_ratio = float(working_cache.hit_ratio())
+        except Exception:
+            LOGGER.debug("No se pudo obtener el hit ratio de cache", exc_info=True)
+    if hasattr(working_cache, "last_updated_human"):
+        try:
+            cache_last_updated = str(working_cache.last_updated_human)
+        except Exception:
+            LOGGER.debug("No se pudo obtener la marca temporal de cache", exc_info=True)
+    if cache_last_updated == "-" and isinstance(last_timestamp, pd.Timestamp):
+        cache_last_updated = last_timestamp.strftime("%H:%M:%S")
+
+    cache_metadata = {
+        "hit_ratio": cache_hit_ratio,
+        "last_updated": cache_last_updated,
+    }
+
+    LOGGER.debug(
+        "Resumen adaptativo calculado: %s", {k: v for k, v in summary.items() if k != "text"}
+    )
 
     return {
         "mae": mae,
@@ -538,7 +624,96 @@ def simulate_adaptive_forecast(
         "rolling_correlation": rolling_corr.copy(),
         "summary": summary,
         "steps": pd.DataFrame(step_rows),
+        "cache_metadata": cache_metadata,
     }
+
+
+def export_adaptive_report(results: dict[str, Any]) -> Path:
+    """Create a Markdown report with the adaptive simulation outcome."""
+
+    if not isinstance(results, dict):
+        raise ValueError("Se requieren resultados en formato dict para exportar el reporte adaptativo")
+
+    summary = results.get("summary") if isinstance(results.get("summary"), dict) else {}
+    steps = results.get("steps")
+    steps_df = steps.copy() if isinstance(steps, pd.DataFrame) else pd.DataFrame(steps or [])
+    if not steps_df.empty:
+        steps_df = steps_df.copy()
+        steps_df["timestamp"] = pd.to_datetime(steps_df.get("timestamp"), errors="coerce").dt.strftime("%Y-%m-%d %H:%M")
+        steps_df = steps_df.sort_values("timestamp").tail(30)
+
+    reports_dir = Path("docs/reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = pd.Timestamp.utcnow()
+    filename = f"adaptive_report_{timestamp.strftime('%Y%m%d_%H%M%S')}.md"
+    report_path = reports_dir / filename
+
+    def _fmt_percent(value: Any) -> str:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return "-"
+        if not np.isfinite(numeric):
+            return "-"
+        return f"{numeric:.2f}%"
+
+    def _fmt_float(value: Any) -> str:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return "-"
+        if not np.isfinite(numeric):
+            return "-"
+        return f"{numeric:.2f}"
+
+    beta_avg = _fmt_float(summary.get("beta_shift_avg")) if summary else "-"
+    sigma_sector = _fmt_percent(summary.get("sector_dispersion")) if summary else "-"
+
+    metrics_section = "\n".join(
+        [
+            "## Resumen global de métricas",
+            f"- MAE adaptativo: {_fmt_percent(summary.get('mae')) if summary else '-'}",
+            f"- RMSE adaptativo: {_fmt_percent(summary.get('rmse')) if summary else '-'}",
+            f"- Bias adaptativo: {_fmt_percent(summary.get('bias')) if summary else '-'}",
+            f"- β-shift promedio: {beta_avg}",
+            f"- σ sectorial: {sigma_sector}",
+        ]
+    )
+
+    if steps_df.empty:
+        timeline_section = "## Tabla temporal de evolución\n_Sin registros disponibles._"
+    else:
+        try:
+            table_text = steps_df.to_markdown(index=False)
+        except (ImportError, ValueError):
+            table_text = steps_df.to_csv(index=False, sep="|")
+        timeline_section = "\n".join(
+            [
+                "## Tabla temporal de evolución",
+                table_text,
+            ]
+        )
+
+    interpretation_lines = [
+        "## Interpretación del β-shift y dispersión sectorial",
+        "El β-shift promedio refleja la magnitud media de los ajustes aplicados en cada iteración del modelo.",
+        "Una mayor σ sectorial indica mayor heterogeneidad en los retornos proyectados entre sectores, guiando la diversificación.",
+    ]
+    if summary and isinstance(summary, dict):
+        interpretation_lines.append(f"Resumen generado: {summary.get('text', '')}")
+
+    content = "\n\n".join(
+        [
+            f"# Reporte adaptativo ({timestamp.strftime('%Y-%m-%d %H:%M:%S')} UTC)",
+            metrics_section,
+            timeline_section,
+            "\n".join(interpretation_lines),
+        ]
+    )
+
+    report_path.write_text(content, encoding="utf-8")
+    LOGGER.debug("Reporte adaptativo exportado en %s", report_path)
+    return report_path
 
 
 __all__ = [
@@ -546,5 +721,6 @@ __all__ = [
     "generate_synthetic_history",
     "prepare_adaptive_history",
     "simulate_adaptive_forecast",
+    "export_adaptive_report",
     "update_model",
 ]

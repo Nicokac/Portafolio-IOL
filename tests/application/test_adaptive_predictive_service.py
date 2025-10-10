@@ -13,6 +13,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from application.adaptive_predictive_service import (  # noqa: E402
     AdaptiveModelState,
+    export_adaptive_report,
     _CORR_KEY,
     _STATE_KEY,
     simulate_adaptive_forecast,
@@ -111,6 +112,11 @@ def test_simulate_adaptive_forecast_reduces_error() -> None:
     assert isinstance(result["beta_shift"], pd.Series)
     assert not result["beta_shift"].empty
     assert result["summary"]["beta_mean"] == pytest.approx(result["beta_shift"].mean(), rel=1e-6)
+    assert result["summary"]["beta_shift_avg"] >= 0.0
+    assert result["summary"]["sector_dispersion"] >= 0.0
+    assert "MAE adaptativo" in result["summary"].get("text", "")
+    cache_meta = result.get("cache_metadata", {})
+    assert "hit_ratio" in cache_meta and "last_updated" in cache_meta
 
 
 def test_state_persists_across_simulation_and_updates() -> None:
@@ -139,4 +145,50 @@ def test_state_persists_across_simulation_and_updates() -> None:
     assert isinstance(updated_state, AdaptiveModelState)
     assert len(updated_state.history) > initial_len
     assert cache.ttl_map[cache._full_key(_STATE_KEY)] == pytest.approx(43_200.0)
+
+
+def test_export_adaptive_report_generates_markdown() -> None:
+    summary = {
+        "mae": 1.2,
+        "rmse": 2.3,
+        "bias": 0.5,
+        "beta_shift_avg": 0.8,
+        "sector_dispersion": 1.1,
+        "text": "MAE adaptativo: 1.20% | RMSE: 2.30% | Bias: 0.50% | β-shift promedio: 0.80 | σ sectorial: 1.10%",
+    }
+    steps = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2024-01-01 12:00"),
+                "sector": "Tech",
+                "raw_prediction": 5.0,
+                "adjusted_prediction": 5.5,
+                "actual_return": 4.8,
+                "beta_adjustment": 0.1,
+            }
+        ]
+    )
+
+    report_path = export_adaptive_report({"summary": summary, "steps": steps})
+    try:
+        assert report_path.exists()
+        content = report_path.read_text(encoding="utf-8")
+        assert "MAE adaptativo" in content
+        assert "β-shift promedio" in content
+        assert "Tabla temporal" in content
+    finally:
+        if report_path.exists():
+            try:
+                report_path.unlink()
+            except OSError:
+                pass
+        reports_dir = report_path.parent
+        if reports_dir.exists():
+            try:
+                next(reports_dir.iterdir())
+            except StopIteration:
+                try:
+                    reports_dir.rmdir()
+                except OSError:
+                    pass
 
