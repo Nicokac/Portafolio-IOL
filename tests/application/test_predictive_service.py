@@ -17,6 +17,7 @@ from application.predictive_service import (
     get_cache_stats,
     predict_sector_performance,
 )
+from shared.settings import PREDICTIVE_TTL_HOURS
 
 
 @pytest.fixture()
@@ -121,7 +122,8 @@ def test_predict_sector_performance_uses_cache_and_stats(cache_state: Predictive
     )
     stats_after_first = get_cache_stats()
     assert stats_after_first.misses == 1
-    assert cache.ttl.get("sector_predictions") == pytest.approx(21600.0)
+    expected_ttl = PREDICTIVE_TTL_HOURS * 3600.0
+    assert cache.ttl.get("sector_predictions") == pytest.approx(expected_ttl)
     assert service.calls == ["AAA"]
 
     second = predict_sector_performance(
@@ -138,3 +140,48 @@ def test_predict_sector_performance_uses_cache_and_stats(cache_state: Predictive
     assert stats_after_second.hit_ratio > 0
     assert cache_state.misses == 1
     assert cache_state.hits == 1
+
+
+def test_predict_sector_performance_accepts_custom_ttl(cache_state: PredictiveCacheState) -> None:
+    returns = pd.Series([0.01, 0.012, 0.013])
+    data = {"AAA": _make_backtest(returns)}
+    service = DummyBacktestingService(data)
+    cache = DummyCache()
+    opportunities = pd.DataFrame([
+        {"symbol": "AAA", "sector": "Technology"},
+    ])
+
+    predict_sector_performance(
+        opportunities,
+        backtesting_service=service,
+        cache=cache,
+        span=2,
+        ttl_hours=0.01,
+    )
+
+    assert cache.ttl.get("sector_predictions") == pytest.approx(36.0)
+    assert cache_state.ttl_hours == pytest.approx(0.01)
+
+
+def test_predictive_ttl_respects_monkeypatch(monkeypatch, cache_state: PredictiveCacheState) -> None:
+    monkeypatch.setattr(predictive_service, "PREDICTIVE_TTL_HOURS", 0.02)
+    predictive_service.reset_cache()
+    monkeypatch.setattr(predictive_service, "_CACHE_STATE", cache_state)
+
+    returns = pd.Series([0.02, 0.021, 0.022])
+    data = {"AAA": _make_backtest(returns)}
+    service = DummyBacktestingService(data)
+    cache = DummyCache()
+    opportunities = pd.DataFrame([
+        {"symbol": "AAA", "sector": "Finance"},
+    ])
+
+    predict_sector_performance(
+        opportunities,
+        backtesting_service=service,
+        cache=cache,
+        span=2,
+    )
+
+    assert cache.ttl.get("sector_predictions") == pytest.approx(0.02 * 3600.0)
+    assert cache_state.ttl_hours == pytest.approx(0.02)

@@ -40,6 +40,9 @@ log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
+PREDICTIVE_TTL_HOURS: float = getattr(settings, "PREDICTIVE_TTL_HOURS", 6.0)
+ADAPTIVE_TTL_HOURS: float = getattr(settings, "ADAPTIVE_TTL_HOURS", 12.0)
+
 # Snapshot storage configuration
 snapshot_backend: str = getattr(settings, "snapshot_backend", "json")
 snapshot_storage_path: str | None = getattr(settings, "snapshot_storage_path", None)
@@ -126,6 +129,8 @@ __all__ = [
     "log_retention_days",
     "stub_max_runtime_warn",
     "STUB_MAX_RUNTIME_WARN",
+    "PREDICTIVE_TTL_HOURS",
+    "ADAPTIVE_TTL_HOURS",
     "snapshot_backend",
     "snapshot_storage_path",
     "snapshot_retention",

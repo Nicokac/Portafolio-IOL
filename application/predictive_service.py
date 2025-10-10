@@ -18,15 +18,17 @@ from application.predictive_core import (
     run_backtest,
 )
 from services.cache import CacheService
+from shared.settings import PREDICTIVE_TTL_HOURS
 
 
 LOGGER = logging.getLogger(__name__)
 
 _CACHE_NAMESPACE = "predictive"
 _CACHE_KEY = "sector_predictions"
-_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 horas
-
-_CACHE = CacheService(namespace=_CACHE_NAMESPACE)
+_CACHE = CacheService(
+    namespace=_CACHE_NAMESPACE,
+    ttl_override=PREDICTIVE_TTL_HOURS * 3600.0,
+)
 _CACHE_STATE = PredictiveCacheState()
 
 
@@ -167,13 +169,25 @@ def predict_sector_performance(
     backtesting_service: BacktestingService | None = None,
     cache: CacheService | None = None,
     span: int = 10,
+    ttl_hours: float | None = None,
 ) -> pd.DataFrame:
     """Return expected sector returns using EMA-smoothed backtests."""
 
+    effective_ttl_hours = (
+        float(ttl_hours)
+        if ttl_hours is not None
+        else float(PREDICTIVE_TTL_HOURS)
+    )
+    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     active_cache = cache or _CACHE
+    if isinstance(active_cache, CacheService):
+        active_cache.set_ttl_override(ttl_seconds)
     cached = active_cache.get(_CACHE_KEY)
     if isinstance(cached, pd.DataFrame):
-        _CACHE_STATE.record_hit(last_updated=_cache_last_updated(active_cache))
+        _CACHE_STATE.record_hit(
+            last_updated=_cache_last_updated(active_cache),
+            ttl_hours=effective_ttl_hours,
+        )
         return cached.copy()
 
     frame = _prepare_opportunities(opportunities)
@@ -181,8 +195,11 @@ def predict_sector_performance(
         empty = pd.DataFrame(
             columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
         )
-        active_cache.set(_CACHE_KEY, empty, ttl=_CACHE_TTL_SECONDS)
-        _CACHE_STATE.record_miss(last_updated=_cache_last_updated(active_cache))
+        active_cache.set(_CACHE_KEY, empty, ttl=ttl_seconds)
+        _CACHE_STATE.record_miss(
+            last_updated=_cache_last_updated(active_cache),
+            ttl_hours=effective_ttl_hours,
+        )
         return empty
 
     service = backtesting_service or BacktestingService()
@@ -192,8 +209,11 @@ def predict_sector_performance(
         span=span,
     )
 
-    active_cache.set(_CACHE_KEY, predictions, ttl=_CACHE_TTL_SECONDS)
-    _CACHE_STATE.record_miss(last_updated=_cache_last_updated(active_cache))
+    active_cache.set(_CACHE_KEY, predictions, ttl=ttl_seconds)
+    _CACHE_STATE.record_miss(
+        last_updated=_cache_last_updated(active_cache),
+        ttl_hours=effective_ttl_hours,
+    )
     return predictions.copy()
 
 
@@ -219,6 +239,7 @@ def reset_cache() -> None:
 
     global _CACHE_STATE
     _CACHE.clear()
+    _CACHE.set_ttl_override(PREDICTIVE_TTL_HOURS * 3600.0)
     _CACHE_STATE = PredictiveCacheState()
 
 

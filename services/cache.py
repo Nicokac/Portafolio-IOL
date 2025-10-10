@@ -63,6 +63,7 @@ class CacheService:
         *,
         namespace: str | None = None,
         monotonic: Callable[[], float] | None = None,
+        ttl_override: float | None = None,
     ) -> None:
         self._namespace = (namespace or "").strip()
         self._monotonic = monotonic or time.monotonic
@@ -71,6 +72,8 @@ class CacheService:
         self._hits = 0
         self._misses = 0
         self._last_updated: datetime | None = None
+        self._ttl_override = float(ttl_override) if ttl_override is not None else None
+        self._last_ttl: float | None = None
 
     def _full_key(self, key: str) -> str:
         base_key = str(key)
@@ -95,19 +98,34 @@ class CacheService:
 
     def set(self, key: str, value: Any, *, ttl: float | None = None) -> Any:
         full_key = self._full_key(key)
-        if ttl is not None:
-            ttl = float(ttl)
-            if ttl <= 0:
+        effective_ttl = self.get_effective_ttl(ttl)
+        self._last_ttl = effective_ttl
+        if effective_ttl is not None:
+            effective_ttl = float(effective_ttl)
+            if effective_ttl <= 0:
                 with self._lock:
                     self._store.pop(full_key, None)
                 return value
-            expires_at = self._monotonic() + ttl
+            expires_at = self._monotonic() + effective_ttl
         else:
             expires_at = None
         with self._lock:
             self._store[full_key] = _CacheEntry(value=value, expires_at=expires_at)
             self._last_updated = datetime.now(timezone.utc)
         return value
+
+    def set_ttl_override(self, ttl_override: float | None) -> None:
+        with self._lock:
+            self._ttl_override = float(ttl_override) if ttl_override is not None else None
+
+    def get_effective_ttl(self, ttl: float | None = None) -> float | None:
+        if ttl is not None:
+            ttl = float(ttl)
+        if self._ttl_override is not None:
+            return self._ttl_override
+        if ttl is not None:
+            return ttl
+        return self._last_ttl
 
     @property
     def hits(self) -> int:
@@ -143,6 +161,7 @@ class CacheService:
             self._hits = 0
             self._misses = 0
             self._last_updated = None
+            self._last_ttl = None
 
     def hit_ratio(self) -> float:
         total = self._hits + self._misses

@@ -16,17 +16,20 @@ from application.predictive_core import (
     run_backtest,
 )
 from services.cache import CacheService
+from shared.settings import ADAPTIVE_TTL_HOURS
 
 LOGGER = logging.getLogger(__name__)
 
 _CACHE_NAMESPACE = "adaptive_predictive"
 _STATE_KEY = "adaptive_state"
 _CORR_KEY = "adaptive_correlations"
-_TTL_SECONDS = 12 * 60 * 60  # 12 horas
 _MAX_HISTORY_ROWS = 720
 _DEFAULT_EMA_SPAN = 5
 
-_CACHE = CacheService(namespace=_CACHE_NAMESPACE)
+_CACHE = CacheService(
+    namespace=_CACHE_NAMESPACE,
+    ttl_override=ADAPTIVE_TTL_HOURS * 3600.0,
+)
 _CACHE_STATE = PredictiveCacheState()
 
 
@@ -241,6 +244,7 @@ def update_model(
     ema_span: int = _DEFAULT_EMA_SPAN,
     timestamp: pd.Timestamp | None = None,
     persist: bool = True,
+    ttl_hours: float | None = None,
 ) -> dict[str, Any]:
     """Update the adaptive state using normalized prediction errors."""
 
@@ -249,7 +253,15 @@ def update_model(
     merged = _merge_inputs(normalized_predictions, normalized_actuals, timestamp=timestamp)
     normalized_frame = _prepare_normalized_frame(merged)
 
+    effective_ttl_hours = (
+        float(ttl_hours)
+        if ttl_hours is not None
+        else float(ADAPTIVE_TTL_HOURS)
+    )
+    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     active_cache = cache or _CACHE
+    if isinstance(active_cache, CacheService):
+        active_cache.set_ttl_override(ttl_seconds)
     cached_state = active_cache.get(_STATE_KEY)
     cache_hit = isinstance(cached_state, AdaptiveModelState)
     state = cached_state if cache_hit else _initial_state()
@@ -267,14 +279,20 @@ def update_model(
     }
 
     if persist:
-        active_cache.set(_STATE_KEY, updated_state, ttl=_TTL_SECONDS)
-        active_cache.set(_CORR_KEY, adaptive_corr.copy(), ttl=_TTL_SECONDS)
+        active_cache.set(_STATE_KEY, updated_state, ttl=ttl_seconds)
+        active_cache.set(_CORR_KEY, adaptive_corr.copy(), ttl=ttl_seconds)
 
     cache_timestamp = _cache_last_updated(active_cache)
     if cache_hit:
-        _CACHE_STATE.record_hit(last_updated=cache_timestamp)
+        _CACHE_STATE.record_hit(
+            last_updated=cache_timestamp,
+            ttl_hours=effective_ttl_hours,
+        )
     else:
-        _CACHE_STATE.record_miss(last_updated=cache_timestamp)
+        _CACHE_STATE.record_miss(
+            last_updated=cache_timestamp,
+            ttl_hours=effective_ttl_hours,
+        )
 
     return result
 
@@ -399,6 +417,7 @@ def simulate_adaptive_forecast(
     cache: CacheService | None = None,
     persist: bool = True,
     rolling_window: int = 20,
+    ttl_hours: float | None = None,
 ) -> dict[str, Any]:
     """Run an adaptive backtest and expose error metrics and correlations.
 
@@ -469,7 +488,17 @@ def simulate_adaptive_forecast(
     if not rolling_corr.empty:
         rolling_corr.values[np.diag_indices_from(rolling_corr.values)] = 1.0
 
-    working_cache = cache or (_CACHE if persist else CacheService(namespace=f"{_CACHE_NAMESPACE}_sim"))
+    effective_ttl_hours = (
+        float(ttl_hours)
+        if ttl_hours is not None
+        else float(ADAPTIVE_TTL_HOURS)
+    )
+    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
+    working_cache = cache or (
+        _CACHE if persist else CacheService(namespace=f"{_CACHE_NAMESPACE}_sim")
+    )
+    if isinstance(working_cache, CacheService):
+        working_cache.set_ttl_override(ttl_seconds)
 
     grouped = list(df.groupby("timestamp"))
     raw_errors: list[float] = []
@@ -488,6 +517,7 @@ def simulate_adaptive_forecast(
             ema_span=ema_span,
             timestamp=ts,
             persist=persist,
+            ttl_hours=effective_ttl_hours,
         )
         beta_shift = result.get("beta_shift", pd.Series(dtype=float))
         last_result = result
