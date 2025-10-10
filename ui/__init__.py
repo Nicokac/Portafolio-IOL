@@ -1,8 +1,17 @@
-# ui/__init__.py
-# Podés dejarlo mínimo:
-__all__ = ["header", "tables", "fx_panels", "sidebar_controls", "fundamentals", "ui_settings", "actions", "palette", "footer"]
+"""Módulo de interfaz de usuario para Portafolio-IOL."""
 
-# (Opcional) Re-exportes cómodos:
+__all__ = [
+    "header",
+    "tables",
+    "fx_panels",
+    "sidebar_controls",
+    "fundamentals",
+    "ui_settings",
+    "actions",
+    "palette",
+    "footer",
+]
+
 from .header import render_header
 from .tables import render_totals, render_table
 from .fx_panels import render_spreads, render_fx_history

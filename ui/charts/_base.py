@@ -8,7 +8,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from .palette import get_active_palette
+from ..palette import get_active_palette
 
 logger = logging.getLogger(__name__)
 

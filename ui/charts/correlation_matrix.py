@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ui.charts import FONT_FAMILY, _apply_layout
+from ._base import FONT_FAMILY, _apply_layout
 from ui.palette import get_active_palette
 
 
