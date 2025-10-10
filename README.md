@@ -723,6 +723,23 @@ Este archivo es sensible: **manténlo fuera del control de versiones** (ya está
 streamlit run app.py
 ```
 
+### 🔄 Verificación de versión
+
+La pantalla de inicio de sesión incluye un verificador manual que compara la versión
+local (`shared.version.__version__`) con el archivo remoto `shared/version.json`
+publicado en GitHub. Asegúrate de que el repositorio en GitHub contenga dicho
+archivo con el formato:
+
+```json
+{ "version": "0.5.7" }
+```
+
+El valor se sincroniza automáticamente en futuros releases y habilita un botón
+**Actualizar ahora** cuando detecta una versión más reciente. En entornos con
+acceso a shell se ejecuta `git pull` seguido de `pip install --upgrade -r
+requirements.txt`. En plataformas sin shell, como Streamlit Cloud, se mostrará un
+enlace directo al changelog para realizar la actualización manual.
+
 ## Despliegue
 
 En entornos de producción es obligatorio definir la variable `IOL_TOKENS_KEY` para que el archivo de tokens se almacene cifrado. Si falta y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará el problema y se cerrará.

@@ -2,11 +2,13 @@ import logging
 import streamlit as st
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
+from services.update_checker import check_for_update, _run_update_script
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.security_info import render_security_info
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
+from shared.version import __version__
 
 
 logger = logging.getLogger(__name__)
@@ -15,6 +17,8 @@ logger = logging.getLogger(__name__)
 def render_login_page() -> None:
     """Display the login form with header and footer."""
     render_header()
+
+    latest = check_for_update()
 
     st.markdown(
         """
@@ -37,6 +41,16 @@ def render_login_page() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    if latest:
+        st.warning(f"Nueva versión disponible: v{latest} (actual: v{__version__})")
+        if st.button("Actualizar ahora"):
+            st.info("Iniciando actualización...")
+            if _run_update_script(latest):
+                st.success("Actualización completada. Reinicie la aplicación.")
+                st.stop()
+    else:
+        st.caption(f"Versión actual: v{__version__}")
 
     validation = validate_tokens_key()
     if validation.message:
