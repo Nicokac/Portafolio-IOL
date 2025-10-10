@@ -25,6 +25,23 @@ from services.portfolio_view import compute_symbol_risk_metrics
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _suppress_streamlit_bare_mode_warnings() -> None:
+    """Reduce noisy bare-mode warnings when rendering without Streamlit runner."""
+
+    logger_names = (
+        "streamlit.runtime.scriptrunner_utils.script_run_context",
+        "streamlit.runtime.state.session_state",
+        "streamlit.runtime.scriptrunner_utils",  # fallback for future versions
+        "streamlit",
+    )
+    for name in logger_names:
+        try:
+            logging.getLogger(name).setLevel(logging.ERROR)
+            logging.getLogger(name).propagate = False
+        except Exception:  # pragma: no cover - defensive guard for logging internals
+            LOGGER.debug("No se pudo ajustar el nivel de logging para %s", name, exc_info=True)
 _FORM_KEY = "recommendations_form"
 _SESSION_STATE_KEY = "_recommendations_state"
 _MODE_OPTIONS = [
@@ -579,7 +596,7 @@ def _render_recommendations_table(
     formatted = formatted.rename(columns={"rationale": "Racional"})
     st.dataframe(
         formatted,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -676,9 +693,9 @@ def _render_recommendations_visuals(
 
     charts = st.columns(2)
     with charts[0]:
-        st.plotly_chart(pie_fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(pie_fig, width="stretch", config={"displayModeBar": False})
     with charts[1]:
-        st.plotly_chart(bar_fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(bar_fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_recommendations_tab() -> None:
@@ -924,6 +941,8 @@ def render_recommendations_tab() -> None:
 
 
 def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
+    _suppress_streamlit_bare_mode_warnings()
+
     try:
         selected_mode = getattr(state, "selected_mode", "diversify")
     except Exception:
@@ -985,8 +1004,13 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
         "profile": DEFAULT_PROFILE.copy(),
     }
 
-    render_recommendations_tab()
+    from contextlib import ExitStack, redirect_stderr, redirect_stdout
+    from io import StringIO
+
+    with ExitStack() as stack:
+        stack.enter_context(redirect_stdout(StringIO()))
+        stack.enter_context(redirect_stderr(StringIO()))
+        render_recommendations_tab()
 
 
 __all__ = ["render_recommendations_tab", "_render_for_test"]
-
