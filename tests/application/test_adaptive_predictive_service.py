@@ -22,6 +22,7 @@ from application.adaptive_predictive_service import (  # noqa: E402
 )
 from application.predictive_core.state import PredictiveCacheState  # noqa: E402
 from services.cache import CacheService  # noqa: E402
+from shared.settings import ADAPTIVE_TTL_HOURS  # noqa: E402
 
 
 class TrackingCache(CacheService):
@@ -84,8 +85,9 @@ def test_update_model_applies_ema_and_persists_state(adaptive_cache_state: Predi
 
     full_state_key = cache._full_key(_STATE_KEY)
     full_corr_key = cache._full_key(_CORR_KEY)
-    assert cache.ttl_map[full_state_key] == pytest.approx(43_200.0)
-    assert cache.ttl_map[full_corr_key] == pytest.approx(43_200.0)
+    expected_ttl = ADAPTIVE_TTL_HOURS * 3600.0
+    assert cache.ttl_map[full_state_key] == pytest.approx(expected_ttl)
+    assert cache.ttl_map[full_corr_key] == pytest.approx(expected_ttl)
 
     cached_state = cache.get(_STATE_KEY)
     assert isinstance(cached_state, AdaptiveModelState)
@@ -157,7 +159,28 @@ def test_state_persists_across_simulation_and_updates() -> None:
     updated_state = cache.get(_STATE_KEY)
     assert isinstance(updated_state, AdaptiveModelState)
     assert len(updated_state.history) > initial_len
-    assert cache.ttl_map[cache._full_key(_STATE_KEY)] == pytest.approx(43_200.0)
+    expected_ttl = ADAPTIVE_TTL_HOURS * 3600.0
+    assert cache.ttl_map[cache._full_key(_STATE_KEY)] == pytest.approx(expected_ttl)
+
+
+def test_adaptive_cache_param_ttl(adaptive_cache_state: PredictiveCacheState) -> None:
+    cache = TrackingCache()
+    preds, actuals = _build_frame(6.0, 5.0, 5.5, 4.8, ts="2024-05-01")
+
+    update_model(
+        preds,
+        actuals,
+        cache=cache,
+        ema_span=3,
+        persist=True,
+        ttl_hours=0.02,
+    )
+
+    state_key = cache._full_key(_STATE_KEY)
+    corr_key = cache._full_key(_CORR_KEY)
+    assert cache.ttl_map[state_key] == pytest.approx(0.02 * 3600.0)
+    assert cache.ttl_map[corr_key] == pytest.approx(0.02 * 3600.0)
+    assert adaptive_cache_state.ttl_hours == pytest.approx(0.02)
 
 
 def test_export_adaptive_report_generates_markdown() -> None:
