@@ -74,6 +74,7 @@ class CacheService:
         self._last_updated: datetime | None = None
         self._ttl_override = float(ttl_override) if ttl_override is not None else None
         self._last_ttl: float | None = None
+        self._last_expiration: float | None = None
 
     def _full_key(self, key: str) -> str:
         base_key = str(key)
@@ -92,6 +93,8 @@ class CacheService:
             if self._is_expired(entry):
                 self._store.pop(full_key, None)
                 self._misses += 1
+                if not self._store:
+                    self._last_expiration = None
                 return default
             self._hits += 1
             return entry.value
@@ -105,6 +108,7 @@ class CacheService:
             if effective_ttl <= 0:
                 with self._lock:
                     self._store.pop(full_key, None)
+                    self._last_expiration = None
                 return value
             expires_at = self._monotonic() + effective_ttl
         else:
@@ -112,6 +116,7 @@ class CacheService:
         with self._lock:
             self._store[full_key] = _CacheEntry(value=value, expires_at=expires_at)
             self._last_updated = datetime.now(timezone.utc)
+            self._last_expiration = expires_at
         return value
 
     def set_ttl_override(self, ttl_override: float | None) -> None:
@@ -154,6 +159,8 @@ class CacheService:
         full_key = self._full_key(key)
         with self._lock:
             self._store.pop(full_key, None)
+            if not self._store:
+                self._last_expiration = None
 
     def clear(self) -> None:
         with self._lock:
@@ -162,6 +169,20 @@ class CacheService:
             self._misses = 0
             self._last_updated = None
             self._last_ttl = None
+            self._last_expiration = None
+
+    def remaining_ttl(self) -> float | None:
+        """Return the remaining time-to-live for the most recent cache entry."""
+
+        with self._lock:
+            if not self._store:
+                return None
+            if self._last_expiration is None:
+                return None
+            remaining = self._last_expiration - self._monotonic()
+            if remaining <= 0:
+                return None
+            return remaining
 
     def hit_ratio(self) -> float:
         total = self._hits + self._misses
@@ -189,6 +210,8 @@ class CacheService:
                 "misses": self._misses,
                 "hit_ratio": self.hit_ratio(),
                 "last_updated": self.last_updated_human,
+                "ttl_seconds": self.get_effective_ttl(),
+                "remaining_ttl": self.remaining_ttl(),
             }
 
 

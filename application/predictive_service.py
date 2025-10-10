@@ -49,6 +49,8 @@ class PredictiveSnapshot:
     hits: int
     misses: int
     last_updated: str = "-"
+    ttl_hours: float | None = None
+    remaining_ttl: float | None = None
 
     @property
     def total(self) -> int:
@@ -61,7 +63,7 @@ class PredictiveSnapshot:
         total = self.total
         if total <= 0:
             return 0.0
-        return float(self.hits) / float(total) * 100.0
+        return float(self.hits) / float(total)
 
     def as_dict(self) -> dict[str, float | int | str]:
         """Expose snapshot information as a serialisable mapping."""
@@ -71,6 +73,8 @@ class PredictiveSnapshot:
             "misses": self.misses,
             "hit_ratio": self.hit_ratio,
             "last_updated": self.last_updated,
+            "ttl_hours": self.ttl_hours,
+            "remaining_ttl": self.remaining_ttl,
         }
 
 
@@ -227,10 +231,25 @@ def get_cache_stats() -> PredictiveSnapshot:
             last_updated = cached_value
         else:
             last_updated = "-"
+    ttl_hours = _CACHE_STATE.ttl_hours
+    if ttl_hours is None:
+        try:
+            effective_ttl = _CACHE.get_effective_ttl()
+        except Exception:  # pragma: no cover - defensive
+            effective_ttl = None
+        if effective_ttl is not None:
+            ttl_hours = float(effective_ttl) / 3600.0
+    remaining_ttl: float | None = None
+    try:
+        remaining_ttl = _CACHE.remaining_ttl()
+    except Exception:  # pragma: no cover - defensive safeguard
+        remaining_ttl = None
     return PredictiveSnapshot(
         hits=_CACHE_STATE.hits,
         misses=_CACHE_STATE.misses,
         last_updated=last_updated,
+        ttl_hours=ttl_hours,
+        remaining_ttl=remaining_ttl,
     )
 
 

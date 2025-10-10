@@ -144,7 +144,15 @@ class _DummyColumn:
         self._core._context_stack.pop()
         return False
 
-    def metric(self, label: object, value: object, *, delta: object = None, help: object = None) -> None:
+    def metric(
+        self,
+        label: object,
+        value: object,
+        delta: object | None = None,
+        *,
+        help: object | None = None,
+        **kwargs: Any,
+    ) -> None:
         record = {
             "type": "metric",
             "label": str(label),
@@ -152,6 +160,8 @@ class _DummyColumn:
             "delta": delta,
             "help": help,
         }
+        if kwargs:
+            record.update(kwargs)
         self._entry.setdefault("children", []).append(record)
 
     def caption(self, text: object) -> None:
@@ -313,12 +323,19 @@ class _DummyStreamlitCore:
     def success(self, text: object) -> None:
         self._record("success", text=str(text))
 
+    def toast(self, message: object) -> None:
+        self._record("toast", message=str(message))
+
     def stop(self) -> None:
         self._record("stop")
         raise RuntimeError("streamlit.stop called")
 
     def spinner(self, text: object) -> _DummyContext:
         entry = self._record("spinner", text=str(text))
+        return _DummyContext(self, entry)
+
+    def status(self, label: object, *, state: str | None = None) -> _DummyContext:
+        entry = self._record("status", label=str(label), state=state)
         return _DummyContext(self, entry)
 
     def expander(self, label: object, *, expanded: bool | None = None) -> _DummyContext:
@@ -496,6 +513,10 @@ class _DummyStreamlitCore:
     def empty(self) -> _DummyPlaceholder:
         entry = self._record("empty")
         return _DummyPlaceholder(self, entry)
+
+    def container(self, *, border: bool | None = None) -> _DummyContext:
+        entry = self._record("container", border=border)
+        return _DummyContext(self, entry)
 
     def dataframe(self, data: Any, *, use_container_width: bool | None = None, column_config=None, column_order=None) -> None:
         self._record(

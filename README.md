@@ -17,6 +17,8 @@ El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el 
 
 La versión **0.5.4** consolida la serie 0.5.x con auditorías de caches y backtests, asegurando β-shift estable, dispersión sectorial trazable y reporte adaptativo actualizado. Se suprimieron warnings de Streamlit en modo bare, se formateó `last_updated` en UTC y se añadieron snapshots de caché (% de hits y última actualización) visibles tanto en la UI como en los tests de regresión. La release mantiene la compatibilidad con v0.4.4, preserva el panel de perfil inversor persistido (cifrado en `config.json` o `st.secrets`) y el benchmarking frente a Merval, S&P 500 y canastas de bonos (ΔRetorno, ΔBeta, Tracking Error). Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
 
+La versión **0.5.5** refuerza la experiencia de recomendaciones con un badge de estado del caché predictivo (ratio de aciertos, TTL restante y color contextualizado según los umbrales definidos en `shared.settings.CACHE_HIT_THRESHOLDS`). Además, el botón de exportación del reporte adaptativo emite toasts de progreso/resultado junto al mensaje tradicional y los indicadores de β-shift y σ sectorial incorporan tooltips para clarificar su lectura.
+
 La versión **0.4.3** añade botones de descarga directos para obtener las sugerencias en CSV/XLSX (incluyendo una fila resumen con promedios de retorno esperado y beta) y expone un *racional extendido* que cuantifica cuánto aporta cada activo al retorno, cómo modifica el beta total y de qué modo refuerza la diversificación sectorial. El insight automático también muestra el sector dominante detectado en la combinación final para acelerar la interpretación.
 
 > Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.
@@ -45,7 +47,7 @@ La versión **0.4.3** añade botones de descarga directos para obtener las suger
 
 - Los datasets sintéticos viven en `docs/fixtures/default/` e incluyen precios con indicadores (`prices_TEST.csv`), un perfil base (`profile_default.json`) y un set de recomendaciones (`recommendations_sample.csv`).
 - `application.backtesting_service.BacktestingService` consume estos datos para recalcular curvas de equity, reutilizando el pipeline de indicadores de `ta_service`.
-- El helper `_render_for_test()` en `ui/tabs/recommendations.py` puede alimentarse con los fixtures para validar el flujo completo (badges, métricas y simulaciones) sin depender de autenticación ni endpoints externos.
+- El helper `_render_for_test()` en `ui/tabs/recommendations.py` puede alimentarse con los fixtures para validar el flujo completo (badges, métricas y simulaciones) sin depender de autenticación ni endpoints externos. El badge del caché muestra explícitamente el ratio de aciertos y el TTL restante, útil para QA manual.
 
 ## Quick-start (release 0.4.0 — Factor & Benchmark Analysis)
 
