@@ -12,6 +12,7 @@ import plotly.express as px
 import streamlit as st
 
 from application.adaptive_predictive_service import (
+    export_adaptive_report,
     generate_synthetic_history,
     prepare_adaptive_history,
     simulate_adaptive_forecast,
@@ -465,18 +466,41 @@ def _render_correlation_tab(payload: dict[str, object] | None) -> None:
     historical = payload.get("historical_correlation")
     rolling = payload.get("rolling_correlation")
     adaptive = payload.get("correlation_matrix")
+    metadata = payload.get("cache_metadata") if isinstance(payload.get("cache_metadata"), dict) else {}
+
+    hit_ratio = float(metadata.get("hit_ratio", 0.0)) if metadata else 0.0
+    last_updated_label = str(metadata.get("last_updated", "-")) if metadata else "-"
+    st.caption(
+        "Última actualización del estado adaptativo: "
+        f"{last_updated_label} | Ratio de aciertos: {hit_ratio:.0f} %"
+    )
 
     cols = st.columns(3)
     beta_value = float(summary.get("beta_mean", float("nan")))
     corr_value = float(summary.get("correlation_mean", float("nan")))
     sigma_value = float(summary.get("sector_dispersion", float("nan")))
+    beta_shift_avg = float(summary.get("beta_shift_avg", float("nan")))
 
     cols[0].metric("β promedio", _format_float(beta_value))
     cols[1].metric("Correlación media", _format_float(corr_value))
     cols[2].metric("Dispersión sectorial σ", _format_float(sigma_value))
 
+    st.caption(
+        f"β-shift promedio: {_format_float(beta_shift_avg)} | "
+        f"σ sectorial: {_format_float(sigma_value)}"
+    )
+
     if payload.get("synthetic"):
         st.caption("Usando histórico sintético hasta contar con mediciones reales.")
+
+    if st.button("Exportar reporte adaptativo", key="export_adaptive_report"):
+        try:
+            report_path = export_adaptive_report(payload)
+        except Exception:  # pragma: no cover - UX feedback
+            LOGGER.exception("No se pudo exportar el reporte adaptativo")
+            st.error("No se pudo exportar el reporte adaptativo. Intentá nuevamente.")
+        else:
+            st.success(f"Reporte generado en {report_path}")
 
     figure = build_correlation_figure(
         historical,

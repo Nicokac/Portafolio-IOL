@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.3 — Métricas extendidas del motor adaptativo
+### Added
+- `simulate_adaptive_forecast` ahora calcula `beta_shift_avg`, `sector_dispersion` y genera un resumen legible con metadatos de caché.
+- Nuevo `export_adaptive_report` produce un reporte Markdown con resumen global, tabla temporal e interpretación de métricas.
+- Pestaña **Correlaciones sectoriales** incorpora mini-card de β-shift/σ, botón de exportación y metadata de caché.
+
+### Changed
+- `CacheService` registra `hit_ratio` y `last_updated` en formato HH:MM:SS, reutilizados por la UI adaptativa.
+- Logging del motor adaptativo reducido a nivel DEBUG para evitar ruido en consola.
+
 ## v0.5.2 — Aprendizaje adaptativo y correlaciones dinámicas
 ### Added
 - `application.adaptive_predictive_service` introduce un estado persistente con TTL de 12 horas, cálculo de correlaciones adaptativas vía EMA y simulaciones históricas que reportan MAE, RMSE y bias.

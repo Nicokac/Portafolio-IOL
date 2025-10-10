@@ -65,6 +65,9 @@ class CacheService:
         self._monotonic = monotonic or time.monotonic
         self._lock = Lock()
         self._store: Dict[str, _CacheEntry] = {}
+        self._hits = 0
+        self._misses = 0
+        self._last_updated: datetime | None = None
 
     def _full_key(self, key: str) -> str:
         base_key = str(key)
@@ -78,10 +81,13 @@ class CacheService:
         with self._lock:
             entry = self._store.get(full_key)
             if entry is None:
+                self._misses += 1
                 return default
             if self._is_expired(entry):
                 self._store.pop(full_key, None)
+                self._misses += 1
                 return default
+            self._hits += 1
             return entry.value
 
     def set(self, key: str, value: Any, *, ttl: float | None = None) -> Any:
@@ -97,6 +103,7 @@ class CacheService:
             expires_at = None
         with self._lock:
             self._store[full_key] = _CacheEntry(value=value, expires_at=expires_at)
+            self._last_updated = datetime.now(timezone.utc)
         return value
 
     def get_or_set(
@@ -122,6 +129,25 @@ class CacheService:
     def clear(self) -> None:
         with self._lock:
             self._store.clear()
+            self._hits = 0
+            self._misses = 0
+            self._last_updated = None
+
+    def hit_ratio(self) -> float:
+        total = self._hits + self._misses
+        if total <= 0:
+            return 0.0
+        return float(self._hits) / float(total) * 100.0
+
+    @property
+    def last_updated(self) -> datetime | None:
+        return self._last_updated
+
+    @property
+    def last_updated_human(self) -> str:
+        if self._last_updated is None:
+            return "-"
+        return self._last_updated.astimezone(timezone.utc).strftime("%H:%M:%S")
 
 
 

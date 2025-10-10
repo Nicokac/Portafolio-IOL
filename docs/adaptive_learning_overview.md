@@ -9,7 +9,8 @@ Este documento resume la arquitectura, los datos involucrados y la persistencia 
   - Normaliza predicciones y retornos reales por sector, calculando un error relativo `(predicted - actual) / |actual|`.
   - Aplica un suavizado exponencial (EMA) sobre la matriz de errores para derivar ajustes β (*β-shift*) y recalcular las correlaciones adaptativas.
   - Persiste el estado (`AdaptiveModelState`) y la última matriz de correlaciones en caché con TTL de **12 horas** (`CacheService` namespace `adaptive_predictive`).
-  - Expone `simulate_adaptive_forecast` para iterar históricos y medir **MAE**, **RMSE** y **bias**, comparando la predicción original vs. la ajustada.
+  - Expone `simulate_adaptive_forecast` para iterar históricos y medir **MAE**, **RMSE**, **bias**, el **β-shift promedio** (`beta_shift_avg`) y la **dispersión sectorial** (`sector_dispersion`), comparando la predicción original vs. la ajustada.
+  - Incluye `export_adaptive_report` para generar un reporte Markdown con el resumen global, tabla temporal y la interpretación de las métricas.
   - Ofrece `prepare_adaptive_history` (históricos reales desde backtests) y `generate_synthetic_history` (cuando no hay datos), garantizando una inicialización determinística.
 
 - **`ui/charts/correlation_matrix.py`**
@@ -17,7 +18,8 @@ Este documento resume la arquitectura, los datos involucrados y la persistencia 
   - Utiliza la paleta activa para mantener consistencia cromática y resalta el ajuste adaptativo.
 
 - **`ui/tabs/recommendations.py`**
-  - Integra un tab "Correlaciones sectoriales" con resumen de β promedio, correlación media y dispersión σ.
+  - Integra un tab "Correlaciones sectoriales" con resumen de β promedio, correlación media, dispersión σ y una mini-card destacando `β-shift promedio` y `σ sectorial`.
+  - Muestra metadata del caché adaptativo (`hit_ratio` y `last_updated`) y habilita la descarga del reporte mediante el botón **Exportar reporte adaptativo**.
   - El insight automático incorpora los valores adaptativos (β-shift promedio y correlación dinámica).
   - `_render_for_test()` genera datos sintéticos para validar el flujo completo sin depender de APIs externas.
 
@@ -39,6 +41,8 @@ Este documento resume la arquitectura, los datos involucrados y la persistencia 
 - **MAE adaptativo** y delta vs. MAE original.
 - **RMSE adaptativo** y delta vs. RMSE original.
 - **Bias** (promedio del error ajustado) con delta frente al bias base.
-- **β-shift promedio**, correlación media y dispersión sectorial σ.
+- **β-shift promedio** (`beta_shift_avg`), entendido como la variación media de los ajustes β entre iteraciones.
+- **Dispersión sectorial σ**, desviación estándar de los retornos proyectados por sector.
+- Correlación media dinámica y resumen textual para reportes offline.
 
 Estas métricas se muestran en la pestaña "Correlaciones sectoriales" y alimentan el insight automático para reflejar la dinámica del modelo adaptativo.
