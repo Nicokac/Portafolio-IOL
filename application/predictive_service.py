@@ -9,6 +9,14 @@ import numpy as np
 import pandas as pd
 
 from application.backtesting_service import BacktestingService
+from application.predictive_core import (
+    PredictiveCacheState,
+    average_correlation,
+    compute_ema_prediction,
+    extract_backtest_series,
+    normalise_symbol_sector,
+    run_backtest,
+)
 from services.cache import CacheService
 
 
@@ -19,8 +27,17 @@ _CACHE_KEY = "sector_predictions"
 _CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 horas
 
 _CACHE = CacheService(namespace=_CACHE_NAMESPACE)
-_CACHE_HITS = 0
-_CACHE_MISSES = 0
+_CACHE_STATE = PredictiveCacheState()
+
+
+def _cache_last_updated(cache: CacheService) -> str | None:
+    try:
+        value = getattr(cache, "last_updated_human", "-")
+    except Exception:  # pragma: no cover - defensive
+        return None
+    if not value or value == "-":
+        return None
+    return str(value)
 
 
 @dataclass(frozen=True)
@@ -55,50 +72,14 @@ class PredictiveSnapshot:
         }
 
 
-def _normalise_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
-    if not isinstance(opportunities, pd.DataFrame) or opportunities.empty:
+def _prepare_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
+    frame = normalise_symbol_sector(opportunities)
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
         return pd.DataFrame(columns=["symbol", "sector"])
-    frame = opportunities.copy()
-    if "symbol" not in frame.columns and "ticker" in frame.columns:
-        frame = frame.rename(columns={"ticker": "symbol"})
-    frame["symbol"] = (
-        frame.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .str.upper()
-        .str.strip()
-    )
-    frame["sector"] = (
-        frame.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .fillna("Sin sector")
-        .str.strip()
-    )
-    frame = frame[frame["symbol"] != ""]
-    return frame[["symbol", "sector"]]
-
-
-def _compute_symbol_prediction(
-    backtesting_service: BacktestingService,
-    symbol: str,
-    *,
-    span: int,
-) -> tuple[pd.Series, float] | None:
-    try:
-        backtest = backtesting_service.run(symbol, strategy="sma")
-    except Exception:  # pragma: no cover - defensive logging
-        LOGGER.exception("Falló la ejecución de backtesting para %s", symbol)
-        return None
-
-    if backtest.empty or "strategy_ret" not in backtest.columns:
-        return None
-
-    returns = pd.to_numeric(backtest["strategy_ret"], errors="coerce").dropna()
-    if returns.empty:
-        return None
-
-    ema = returns.ewm(span=max(span, 1), adjust=False).mean()
-    predicted = float(ema.iloc[-1]) * 100.0
-    return returns, predicted
+    required = [column for column in ["symbol", "sector"] if column in frame.columns]
+    if len(required) < 2:
+        return pd.DataFrame(columns=["symbol", "sector"])
+    return frame.loc[:, required].copy()
 
 
 def _aggregate_sector_predictions(
@@ -114,38 +95,38 @@ def _aggregate_sector_predictions(
         symbol_predictions: list[tuple[str, float]] = []
 
         for symbol in group["symbol"]:
-            result = _compute_symbol_prediction(
+            symbol_str = str(symbol)
+            backtest = run_backtest(
                 backtesting_service,
-                str(symbol),
-                span=span,
+                symbol_str,
+                logger=LOGGER,
             )
-            if result is None:
+            if backtest is None:
                 continue
-            returns, predicted = result
-            symbol = str(symbol)
-            symbol_returns[symbol] = returns
-            symbol_predictions.append((symbol, predicted))
+            returns = extract_backtest_series(backtest, "strategy_ret")
+            if returns.empty:
+                continue
+            predicted = compute_ema_prediction(returns, span=span)
+            if predicted is None:
+                continue
+            symbol_returns[symbol_str] = returns
+            symbol_predictions.append((symbol_str, predicted))
 
         if not symbol_predictions:
             continue
 
-        if symbol_returns:
-            aligned = pd.DataFrame(symbol_returns).dropna(how="all")
-        else:
-            aligned = pd.DataFrame()
-
-        if aligned.shape[1] >= 2:
-            corr_matrix = aligned.corr().replace([np.inf, -np.inf], np.nan)
-            np.fill_diagonal(corr_matrix.values, np.nan)
-            avg_corr = corr_matrix.mean(axis=1, skipna=True).fillna(0.0)
-        else:
-            symbols = [symbol for symbol, _ in symbol_predictions]
-            avg_corr = pd.Series(0.0, index=symbols)
+        avg_corr = average_correlation(symbol_returns)
+        if avg_corr.empty:
+            avg_corr = pd.Series(
+                0.0,
+                index=[symbol for symbol, _ in symbol_predictions],
+                dtype=float,
+            )
 
         weights: list[float] = []
         predictions: list[float] = []
         for symbol, predicted in symbol_predictions:
-            correlation = float(avg_corr.get(symbol, 0.0))
+            correlation = float(avg_corr.get(symbol, 0.0)) if isinstance(avg_corr, pd.Series) else 0.0
             penalty = max(correlation, 0.0)
             weight = 1.0 / (1.0 + penalty)
             weights.append(weight)
@@ -189,22 +170,19 @@ def predict_sector_performance(
 ) -> pd.DataFrame:
     """Return expected sector returns using EMA-smoothed backtests."""
 
-    global _CACHE_HITS, _CACHE_MISSES
-
     active_cache = cache or _CACHE
     cached = active_cache.get(_CACHE_KEY)
     if isinstance(cached, pd.DataFrame):
-        _CACHE_HITS += 1
+        _CACHE_STATE.record_hit(last_updated=_cache_last_updated(active_cache))
         return cached.copy()
 
-    _CACHE_MISSES += 1
-
-    frame = _normalise_opportunities(opportunities)
+    frame = _prepare_opportunities(opportunities)
     if frame.empty:
         empty = pd.DataFrame(
             columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
         )
         active_cache.set(_CACHE_KEY, empty, ttl=_CACHE_TTL_SECONDS)
+        _CACHE_STATE.record_miss(last_updated=_cache_last_updated(active_cache))
         return empty
 
     service = backtesting_service or BacktestingService()
@@ -215,26 +193,33 @@ def predict_sector_performance(
     )
 
     active_cache.set(_CACHE_KEY, predictions, ttl=_CACHE_TTL_SECONDS)
+    _CACHE_STATE.record_miss(last_updated=_cache_last_updated(active_cache))
     return predictions.copy()
 
 
 def get_cache_stats() -> PredictiveSnapshot:
     """Expose current cache counters for predictive workloads."""
 
+    last_updated = _CACHE_STATE.last_updated
+    if not last_updated or last_updated == "-":
+        cached_value = _cache_last_updated(_CACHE)
+        if cached_value is not None:
+            last_updated = cached_value
+        else:
+            last_updated = "-"
     return PredictiveSnapshot(
-        hits=_CACHE_HITS,
-        misses=_CACHE_MISSES,
-        last_updated=_CACHE.last_updated_human,
+        hits=_CACHE_STATE.hits,
+        misses=_CACHE_STATE.misses,
+        last_updated=last_updated,
     )
 
 
 def reset_cache() -> None:
     """Utility mainly intended for tests to clear predictive caches."""
 
-    global _CACHE_HITS, _CACHE_MISSES
+    global _CACHE_STATE
     _CACHE.clear()
-    _CACHE_HITS = 0
-    _CACHE_MISSES = 0
+    _CACHE_STATE = PredictiveCacheState()
 
 
 __all__ = [

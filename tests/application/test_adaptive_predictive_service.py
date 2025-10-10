@@ -11,6 +11,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import application.adaptive_predictive_service as adaptive_predictive_service  # noqa: E402
 from application.adaptive_predictive_service import (  # noqa: E402
     AdaptiveModelState,
     export_adaptive_report,
@@ -19,6 +20,7 @@ from application.adaptive_predictive_service import (  # noqa: E402
     simulate_adaptive_forecast,
     update_model,
 )
+from application.predictive_core.state import PredictiveCacheState  # noqa: E402
 from services.cache import CacheService  # noqa: E402
 
 
@@ -39,6 +41,14 @@ class TrackingCache(CacheService):
         return super().set(key, value, ttl=ttl)
 
 
+@pytest.fixture(autouse=True)
+def adaptive_cache_state(monkeypatch) -> PredictiveCacheState:
+    adaptive_predictive_service._CACHE.clear()
+    state = PredictiveCacheState()
+    monkeypatch.setattr(adaptive_predictive_service, "_CACHE_STATE", state)
+    return state
+
+
 def _build_frame(predicted_a: float, predicted_b: float, actual_a: float, actual_b: float, *, ts: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     predictions = pd.DataFrame(
         [
@@ -55,7 +65,7 @@ def _build_frame(predicted_a: float, predicted_b: float, actual_a: float, actual
     return predictions, actuals
 
 
-def test_update_model_applies_ema_and_persists_state() -> None:
+def test_update_model_applies_ema_and_persists_state(adaptive_cache_state: PredictiveCacheState) -> None:
     cache = TrackingCache()
 
     preds1, actuals1 = _build_frame(10.0, 6.0, 5.0, 6.0, ts="2024-01-01")
@@ -80,6 +90,9 @@ def test_update_model_applies_ema_and_persists_state() -> None:
     cached_state = cache.get(_STATE_KEY)
     assert isinstance(cached_state, AdaptiveModelState)
     assert len(cached_state.history) == 4
+    assert adaptive_cache_state.misses == 1
+    assert adaptive_cache_state.hits == 1
+    assert adaptive_cache_state.last_updated != "-"
 
 
 def test_simulate_adaptive_forecast_reduces_error() -> None:

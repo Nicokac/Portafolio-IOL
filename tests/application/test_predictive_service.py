@@ -11,11 +11,20 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import application.predictive_service as predictive_service
+from application.predictive_core.state import PredictiveCacheState
 from application.predictive_service import (
     get_cache_stats,
     predict_sector_performance,
-    reset_cache,
 )
+
+
+@pytest.fixture()
+def cache_state(monkeypatch) -> PredictiveCacheState:
+    predictive_service._CACHE.clear()
+    state = PredictiveCacheState()
+    monkeypatch.setattr(predictive_service, "_CACHE_STATE", state)
+    return state
 
 
 def _make_backtest(returns: pd.Series) -> pd.DataFrame:
@@ -50,8 +59,7 @@ class DummyCache:
         return value
 
 
-def test_predict_sector_performance_aggregates_correlations() -> None:
-    reset_cache()
+def test_predict_sector_performance_aggregates_correlations(cache_state: PredictiveCacheState) -> None:
     returns_a = pd.Series([0.01, 0.012, 0.014, 0.015])
     returns_b = pd.Series([0.009, 0.011, 0.013, 0.014])
     returns_c = pd.Series([0.004, 0.006, 0.007, 0.008])
@@ -90,10 +98,11 @@ def test_predict_sector_performance_aggregates_correlations() -> None:
     assert 0.0 <= tech_row["confidence"] <= 1.0
     assert util_row["sample_size"] == 1
     assert util_row["avg_correlation"] == pytest.approx(0.0, abs=1e-6)
+    assert cache_state.misses == 1
+    assert cache_state.hits == 0
 
 
-def test_predict_sector_performance_uses_cache_and_stats() -> None:
-    reset_cache()
+def test_predict_sector_performance_uses_cache_and_stats(cache_state: PredictiveCacheState) -> None:
     returns = pd.Series([0.01, 0.011, 0.012, 0.014])
     data = {"AAA": _make_backtest(returns)}
     service = DummyBacktestingService(data)
@@ -127,3 +136,5 @@ def test_predict_sector_performance_uses_cache_and_stats() -> None:
     assert len(service.calls) == 1  # cache hit avoids new calls
     assert first.equals(second)
     assert stats_after_second.hit_ratio > 0
+    assert cache_state.misses == 1
+    assert cache_state.hits == 1
