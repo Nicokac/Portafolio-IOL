@@ -163,6 +163,7 @@ def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
             except (TypeError, ValueError):  # pragma: no cover - defensive
                 ttl_seconds = None
     ttl_display = ttl_seconds if ttl_seconds is not None else 0.0
+    ttl_display_str = f"{ttl_display:.0f}s"
 
     last_updated = cache_stats.get("last_updated")
     last_updated_str = ""
@@ -170,10 +171,11 @@ def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
         last_updated_str = f" · Última actualización: {last_updated.strip()}"
 
     with st.container(border=True):
+        state_map = {"green": "complete", "yellow": "running", "red": "error"}
         st.status(
-            f"Cache: {ratio * 100:.1f}% hits · TTL restante: {ttl_display:.0f}s"
+            f"Cache: {ratio * 100:.1f}% hits · TTL restante: {ttl_display_str}"
             f"{last_updated_str}",
-            state=color,
+            state=state_map.get(color, "running"),
         )
     return color
 

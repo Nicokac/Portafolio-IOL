@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.6-patch1 — Corrección de estado inválido en st.status
+- Reemplazado color directo por mapeo seguro a estados válidos ('complete', 'running', 'error') en el indicador de caché.
+- Añadida prueba de validación de mapeo de estados.
+
 ## v0.5.6 — QA y Documentación Consolidada
 - Añadido smoke test de `_render_for_test` para ejecución offline.
 - Nueva guía de desarrollo `docs/dev_guide.md`.
