@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.6-patch2 — Corrección de Plotly y estados Streamlit
+- Migradas llamadas a st.plotly_chart() para usar config={"responsive": True}.
+- Refactorizado mapeo seguro de estados en _render_cache_status().
+- Añadidas pruebas de regresión para cache y Plotly.
+- Actualizada versión visible en UI y metadatos del proyecto.
+
 ## v0.5.6-patch1 — Corrección de estado inválido en st.status
 - Reemplazado color directo por mapeo seguro a estados válidos ('complete', 'running', 'error') en el indicador de caché.
 - Añadida prueba de validación de mapeo de estados.
