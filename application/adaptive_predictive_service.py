@@ -9,6 +9,12 @@ import numpy as np
 import pandas as pd
 
 from application.backtesting_service import BacktestingService
+from application.predictive_core import (
+    PredictiveCacheState,
+    extract_backtest_series,
+    normalise_symbol_sector,
+    run_backtest,
+)
 from services.cache import CacheService
 
 LOGGER = logging.getLogger(__name__)
@@ -21,6 +27,17 @@ _MAX_HISTORY_ROWS = 720
 _DEFAULT_EMA_SPAN = 5
 
 _CACHE = CacheService(namespace=_CACHE_NAMESPACE)
+_CACHE_STATE = PredictiveCacheState()
+
+
+def _cache_last_updated(cache: CacheService) -> str | None:
+    try:
+        value = getattr(cache, "last_updated_human", "-")
+    except Exception:  # pragma: no cover - defensive
+        return None
+    if not value or value == "-":
+        return None
+    return str(value)
 
 
 @dataclass(frozen=True)
@@ -233,9 +250,9 @@ def update_model(
     normalized_frame = _prepare_normalized_frame(merged)
 
     active_cache = cache or _CACHE
-    state = active_cache.get(_STATE_KEY)
-    if not isinstance(state, AdaptiveModelState):
-        state = _initial_state()
+    cached_state = active_cache.get(_STATE_KEY)
+    cache_hit = isinstance(cached_state, AdaptiveModelState)
+    state = cached_state if cache_hit else _initial_state()
 
     updated_state = _append_history(state, normalized_frame)
     pivot = _pivot_history(updated_state.history)
@@ -253,6 +270,12 @@ def update_model(
         active_cache.set(_STATE_KEY, updated_state, ttl=_TTL_SECONDS)
         active_cache.set(_CORR_KEY, adaptive_corr.copy(), ttl=_TTL_SECONDS)
 
+    cache_timestamp = _cache_last_updated(active_cache)
+    if cache_hit:
+        _CACHE_STATE.record_hit(last_updated=cache_timestamp)
+    else:
+        _CACHE_STATE.record_miss(last_updated=cache_timestamp)
+
     return result
 
 
@@ -269,25 +292,12 @@ def prepare_adaptive_history(
 ) -> pd.DataFrame:
     """Build a sector-level historical dataset using cached backtests."""
 
-    if not isinstance(opportunities, pd.DataFrame) or opportunities.empty:
+    normalised = normalise_symbol_sector(opportunities)
+    if not isinstance(normalised, pd.DataFrame) or normalised.empty:
         return _empty_history_frame()
 
     svc = backtesting_service or BacktestingService()
-    frame = opportunities.copy()
-    if "symbol" not in frame.columns and "ticker" in frame.columns:
-        frame = frame.rename(columns={"ticker": "symbol"})
-    frame["symbol"] = (
-        frame.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .str.upper()
-        .str.strip()
-    )
-    frame["sector"] = (
-        frame.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .str.strip()
-        .replace({"": "Sin sector"})
-    )
+    frame = normalised.loc[:, ["symbol", "sector"]].copy()
     frame = frame.dropna(subset=["symbol", "sector"])
     frame = frame.drop_duplicates(subset=["symbol"])
     if frame.empty:
@@ -296,22 +306,24 @@ def prepare_adaptive_history(
     rows: list[dict[str, Any]] = []
     selected = frame.head(max_symbols)
     for symbol, sector in zip(selected["symbol"], selected["sector"]):
-        try:
-            backtest = svc.run(str(symbol))
-        except Exception:
-            LOGGER.debug("Falló la preparación histórica para %s", symbol, exc_info=True)
+        backtest = run_backtest(svc, str(symbol), logger=LOGGER)
+        if backtest is None:
             continue
-        if backtest.empty:
-            continue
-        returns = pd.DataFrame({
-            "predicted": pd.to_numeric(backtest.get("strategy_ret"), errors="coerce"),
-            "actual": pd.to_numeric(backtest.get("ret"), errors="coerce"),
+
+        predicted_returns = extract_backtest_series(backtest, "strategy_ret")
+        actual_returns = extract_backtest_series(backtest, "ret")
+        aligned = pd.DataFrame({
+            "predicted": predicted_returns,
+            "actual": actual_returns,
         }).dropna()
-        if returns.empty:
+        if aligned.empty:
             continue
-        predicted_series = returns["predicted"].ewm(span=max(int(span), 1), adjust=False).mean() * 100.0
-        actual_series = returns["actual"] * 100.0
-        timestamps = pd.to_datetime(returns.index, errors="coerce")
+
+        predicted_series = (
+            aligned["predicted"].ewm(span=max(int(span), 1), adjust=False).mean() * 100.0
+        )
+        actual_series = aligned["actual"] * 100.0
+        timestamps = pd.to_datetime(aligned.index, errors="coerce")
         assembled = pd.DataFrame(
             {
                 "timestamp": timestamps,
