@@ -31,6 +31,7 @@ from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts.correlation_matrix import build_correlation_figure
 from shared.logging_utils import silence_streamlit_warnings
 from shared.settings import CACHE_HIT_THRESHOLDS
+from shared.version import __version__
 
 
 LOGGER = logging.getLogger(__name__)
@@ -146,8 +147,8 @@ def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
         ratio = float(raw_ratio)
     except (TypeError, ValueError):
         ratio = 0.0
-    if ratio > 1.0:
-        ratio /= 100.0
+    if not np.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
+        ratio = 0.0
     color = _resolve_cache_status_color(ratio)
 
     ttl_value = cache_stats.get("remaining_ttl")
@@ -580,7 +581,7 @@ def _render_correlation_tab(payload: dict[str, object] | None) -> None:
         beta_shift=beta_shift if isinstance(beta_shift, pd.Series) else None,
         title="Correlaciones sectoriales β-shift",
     )
-    st.plotly_chart(figure, use_container_width=True)
+    st.plotly_chart(figure, config={"responsive": True})
 
     mae = float(summary.get("mae", 0.0))
     rmse = float(summary.get("rmse", 0.0))
@@ -927,9 +928,17 @@ def _render_recommendations_visuals(
 
     charts = st.columns(2)
     with charts[0]:
-        st.plotly_chart(pie_fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(
+            pie_fig,
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
     with charts[1]:
-        st.plotly_chart(bar_fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(
+            bar_fig,
+            width="stretch",
+            config={"displayModeBar": False, "responsive": True},
+        )
 
 
 def render_recommendations_tab() -> None:
@@ -1187,6 +1196,8 @@ def render_recommendations_tab() -> None:
     correlation_tab = st.tabs(["Correlaciones sectoriales"])[0]
     with correlation_tab:
         _render_correlation_tab(adaptive_payload)
+
+    st.caption(f"Versión: v{__version__}")
 
 
 def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
