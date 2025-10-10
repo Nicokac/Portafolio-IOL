@@ -12,11 +12,17 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el sistema propone cinco activos diversificados con límites de peso entre 10 % y 40 %, equilibrando tipo y sector. Desde la misma pestaña puede ejecutar **Simular impacto** para contrastar el portafolio actual con la distribución sugerida y comparar métricas de valor total, retorno proyectado y beta agregada antes y después de aplicar el rebalanceo.
 
-La versión **0.5.1** estrena el motor de predicción sectorial basado en backtests EMA, sumando la columna **Predicted Return (%)** a las sugerencias y recalculando el insight automático con promedios ponderados por asignación. Mantiene la compatibilidad con la release estable v0.4.4, el panel de perfil inversor (persistido de forma cifrada en `config.json` o `st.secrets`) y el bloque de benchmarking frente a Merval, S&P 500 y canastas de bonos con métricas de ΔRetorno, ΔBeta y Tracking Error. Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
+La versión **0.5.2** suma un motor adaptativo que ajusta las predicciones sectoriales según el error histórico. El insight automático ahora incorpora los desvíos β dinámicos, mientras que la pestaña de recomendaciones añade un tab dedicado de correlaciones con matrices histórica, rolling y adaptativa con etiquetas β-shift. La release mantiene la compatibilidad con v0.4.4, conserva el panel de perfil inversor persistido (cifrado en `config.json` o `st.secrets`) y el benchmarking frente a Merval, S&P 500 y canastas de bonos (ΔRetorno, ΔBeta, Tracking Error). Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
 
 La versión **0.4.3** añade botones de descarga directos para obtener las sugerencias en CSV/XLSX (incluyendo una fila resumen con promedios de retorno esperado y beta) y expone un *racional extendido* que cuantifica cuánto aporta cada activo al retorno, cómo modifica el beta total y de qué modo refuerza la diversificación sectorial. El insight automático también muestra el sector dominante detectado en la combinación final para acelerar la interpretación.
 
 > Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.
+
+#### Forecast adaptativo y visualización de correlaciones (v0.5.2)
+
+- `application.adaptive_predictive_service` calcula errores normalizados por sector, aplica una EMA para generar ajustes β-shift y persiste correlaciones dinámicas durante 12 horas junto con el estado adaptativo.
+- `tests/application/test_adaptive_predictive_service.py` valida la evolución temporal del modelo (EMA y TTL), la reducción de error (MAE/RMSE/Bias) y la persistencia de estado entre simulaciones y actualizaciones.
+- La pestaña de recomendaciones incorpora "Correlaciones sectoriales" con matrices histórica, rolling y adaptativa; muestra resumen de β promedio, correlación media y dispersión σ, además de métricas de simulación adaptativa.
 
 #### Predicciones sectoriales (v0.5.1)
 
