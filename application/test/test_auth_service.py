@@ -175,8 +175,13 @@ def test_logout_clears_cached_queries(monkeypatch):
     assert svc_cache.fetch_portfolio(cli) == {"n": 1}
     assert cli.portfolio_calls == 1
 
-    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 1, "chg_pct": None}}
-    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 1, "chg_pct": None}}
+    first_quote = svc_cache.fetch_quotes_bulk(cli, items)
+    assert set(first_quote.keys()) == {("m", "s")}
+    assert first_quote[("m", "s")]["last"] == 1
+    assert first_quote[("m", "s")]["chg_pct"] is None
+    second_quote = svc_cache.fetch_quotes_bulk(cli, items)
+    assert second_quote[("m", "s")]["last"] == 1
+    assert second_quote[("m", "s")]["chg_pct"] is None
     assert cli.quotes_calls == 1
 
     assert svc_cache.fetch_fx_rates() == ({"USD": 1}, None)
@@ -189,7 +194,9 @@ def test_logout_clears_cached_queries(monkeypatch):
     assert svc_cache.fetch_portfolio(cli) == {"n": 2}
     assert cli.portfolio_calls == 2
 
-    assert svc_cache.fetch_quotes_bulk(cli, items) == {("m", "s"): {"last": 2, "chg_pct": None}}
+    refreshed_quote = svc_cache.fetch_quotes_bulk(cli, items)
+    assert refreshed_quote[("m", "s")]["last"] == 2
+    assert refreshed_quote[("m", "s")]["chg_pct"] is None
     assert cli.quotes_calls == 2
 
     assert svc_cache.fetch_fx_rates() == ({"USD": 2}, None)

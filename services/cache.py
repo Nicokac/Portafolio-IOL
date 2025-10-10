@@ -1,23 +1,26 @@
+"""Caching, rate limiting and quote orchestration helpers."""
+
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
 import re
 import time
-import logging, time, hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Dict, Mapping, Tuple
 from uuid import uuid4
 
-from shared.cache import cache
-from shared.errors import ExternalAPIError, NetworkError, TimeoutError
 import requests
 import streamlit as st
+
+from shared.cache import cache
+from shared.errors import ExternalAPIError, NetworkError, TimeoutError
 
 from services.health import (
     record_fx_api_response,
@@ -106,6 +109,14 @@ class CacheService:
             self._last_updated = datetime.now(timezone.utc)
         return value
 
+    @property
+    def hits(self) -> int:
+        return self._hits
+
+    @property
+    def misses(self) -> int:
+        return self._misses
+
     def get_or_set(
         self,
         key: str,
@@ -147,7 +158,19 @@ class CacheService:
     def last_updated_human(self) -> str:
         if self._last_updated is None:
             return "-"
-        return self._last_updated.astimezone(timezone.utc).strftime("%H:%M:%S")
+        return self._last_updated.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+    def stats(self) -> Dict[str, Any]:
+        """Expose cache statistics for reporting and diagnostics."""
+
+        with self._lock:
+            return {
+                "namespace": self._namespace,
+                "hits": self._hits,
+                "misses": self._misses,
+                "hit_ratio": self.hit_ratio(),
+                "last_updated": self.last_updated_human,
+            }
 
 
 
@@ -372,6 +395,20 @@ def _normalize_bulk_key_components(key: Any) -> tuple[str, str, str | None] | No
     if market is None or symbol is None:
         return None
     return market, symbol, panel_value
+
+
+def _default_provider_for_client(cli: Any) -> str | None:
+    module = getattr(getattr(cli, "__class__", None), "__module__", "")
+    if not isinstance(module, str):
+        return None
+    module_lower = module.lower()
+    if module_lower.startswith("infrastructure.iol.legacy"):
+        return "legacy"
+    if module_lower.startswith("infrastructure.iol"):
+        return "iol"
+    if "alphavantage" in module_lower or module_lower.endswith("av_client"):
+        return "av"
+    return None
 
 
 def _resolve_rate_limit_provider(cli: Any) -> str:
@@ -978,7 +1015,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                         if stale_flag:
                             quote["stale"] = True
                         if quote.get("provider") is None and not stale_flag:
-                            quote["provider"] = "iol"
+                            inferred_provider = _default_provider_for_client(_cli)
+                            if inferred_provider is not None:
+                                quote["provider"] = inferred_provider
 
                         key_components = _normalize_bulk_key_components(k)
                         if key_components is None and len(normalized) == 1:

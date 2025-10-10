@@ -4,19 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portafolio-iol"
-version = "0.5.3"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.5.4"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 dependencies = [
-    "streamlit==1.49.1",
-    "pandas==2.3.2",
-    "numpy==2.3.3",
+    "streamlit>=1.49.1",
+    "pandas>=2.3.2",
+    "numpy>=2.3.3",
     "requests==2.31.0",
     "python-dotenv==1.1.1",
     "iolConn==0.4.2",
-    "plotly==6.3.0",
+    "plotly>=6.3.0",
     "kaleido==0.2.1",
     "XlsxWriter==3.2.0",
     "tomli==2.0.1",
-    "scipy==1.16.2",
+    "scipy>=1.16.2",
     "statsmodels==0.14.3",
     "cryptography==41.0.3",
     "yfinance==0.2.65",
