@@ -30,6 +30,7 @@ from application.predictive_service import get_cache_stats, predict_sector_perfo
 from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts.correlation_matrix import build_correlation_figure
 from shared.logging_utils import silence_streamlit_warnings
+from shared.settings import CACHE_HIT_THRESHOLDS
 
 
 LOGGER = logging.getLogger(__name__)
@@ -100,6 +101,81 @@ def _get_stored_state() -> dict:
     state = getattr(st, "session_state", {})
     stored = state.get(_SESSION_STATE_KEY)
     return stored if isinstance(stored, dict) else {}
+
+
+def _normalise_cache_stats(stats: object) -> dict[str, object]:
+    if isinstance(stats, Mapping):
+        return dict(stats)
+    if hasattr(stats, "as_dict"):
+        try:
+            data = dict(stats.as_dict())
+        except Exception:  # pragma: no cover - defensive
+            data = {}
+    else:
+        data = {}
+    for attribute in ("hits", "misses", "last_updated", "ttl_hours", "remaining_ttl", "hit_ratio"):
+        if attribute in data:
+            continue
+        if hasattr(stats, attribute):
+            try:
+                data[attribute] = getattr(stats, attribute)
+            except Exception:  # pragma: no cover - defensive
+                continue
+    return data
+
+
+def _resolve_cache_status_color(ratio: float) -> str:
+    try:
+        green_threshold = float(CACHE_HIT_THRESHOLDS.get("green", 0.7))
+    except Exception:  # pragma: no cover - defensive
+        green_threshold = 0.7
+    try:
+        yellow_threshold = float(CACHE_HIT_THRESHOLDS.get("yellow", 0.4))
+    except Exception:  # pragma: no cover - defensive
+        yellow_threshold = 0.4
+    if ratio >= green_threshold:
+        return "green"
+    if ratio >= yellow_threshold:
+        return "yellow"
+    return "red"
+
+
+def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
+    raw_ratio = cache_stats.get("hit_ratio", 0.0)
+    try:
+        ratio = float(raw_ratio)
+    except (TypeError, ValueError):
+        ratio = 0.0
+    if ratio > 1.0:
+        ratio /= 100.0
+    color = _resolve_cache_status_color(ratio)
+
+    ttl_value = cache_stats.get("remaining_ttl")
+    ttl_seconds: float | None
+    if isinstance(ttl_value, (int, float)) and np.isfinite(float(ttl_value)):
+        ttl_seconds = float(ttl_value)
+    else:
+        ttl_hours = cache_stats.get("ttl_hours")
+        ttl_seconds = None
+        if isinstance(ttl_hours, (int, float)):
+            try:
+                ttl_seconds = max(float(ttl_hours) * 3600.0, 0.0)
+            except (TypeError, ValueError):  # pragma: no cover - defensive
+                ttl_seconds = None
+    ttl_display = ttl_seconds if ttl_seconds is not None else 0.0
+
+    last_updated = cache_stats.get("last_updated")
+    last_updated_str = ""
+    if isinstance(last_updated, str) and last_updated.strip() and last_updated != "-":
+        last_updated_str = f" · Última actualización: {last_updated.strip()}"
+
+    with st.container(border=True):
+        st.status(
+            f"Cache: {ratio * 100:.1f}% hits · TTL restante: {ttl_display:.0f}s"
+            f"{last_updated_str}",
+            state=color,
+        )
+    return color
 
 
 def _expected_return_map(opportunities: pd.DataFrame) -> dict[str, float]:
@@ -461,7 +537,7 @@ def _render_correlation_tab(payload: dict[str, object] | None) -> None:
         f"{last_updated_label} | Ratio de aciertos: {hit_ratio:.0f} %"
     )
 
-    cols = st.columns(3)
+    cols = st.columns(4)
     beta_value = float(summary.get("beta_mean", float("nan")))
     corr_value = float(summary.get("correlation_mean", float("nan")))
     sigma_value = float(summary.get("sector_dispersion", float("nan")))
@@ -469,23 +545,30 @@ def _render_correlation_tab(payload: dict[str, object] | None) -> None:
 
     cols[0].metric("β promedio", _format_float(beta_value))
     cols[1].metric("Correlación media", _format_float(corr_value))
-    cols[2].metric("Dispersión sectorial σ", _format_float(sigma_value))
-
-    st.caption(
-        f"β-shift promedio: {_format_float(beta_shift_avg)} | "
-        f"σ sectorial: {_format_float(sigma_value)}"
+    cols[2].metric(
+        "Dispersión sectorial σ",
+        _format_float(sigma_value),
+        help="Dispersión sectorial (volatilidad entre sectores pronosticados)",
+    )
+    cols[3].metric(
+        "β-shift promedio",
+        _format_float(beta_shift_avg),
+        help="Cambio promedio en sensibilidad del portafolio respecto al benchmark",
     )
 
     if payload.get("synthetic"):
         st.caption("Usando histórico sintético hasta contar con mediciones reales.")
 
     if st.button("Exportar reporte adaptativo", key="export_adaptive_report"):
+        st.toast("Generando reporte adaptativo...")
         try:
             report_path = export_adaptive_report(payload)
         except Exception:  # pragma: no cover - UX feedback
             LOGGER.exception("No se pudo exportar el reporte adaptativo")
+            st.toast("❌ Error al exportar reporte")
             st.error("No se pudo exportar el reporte adaptativo. Intentá nuevamente.")
         else:
+            st.toast("✅ Reporte generado")
             st.success(f"Reporte generado en {report_path}")
 
     figure = build_correlation_figure(
@@ -1050,16 +1133,15 @@ def render_recommendations_tab() -> None:
         key=f"{_FORM_KEY}_show_predictions_toggle",
     )
     stats = get_cache_stats()
-    if stats.total:
-        last_updated = (
-            f" · Última actualización: {stats.last_updated}"
-            if stats.last_updated and stats.last_updated != "-"
-            else ""
-        )
-        st.caption(
-            "Cache de predicciones sectoriales: "
-            f"{stats.hits}/{stats.total} hits ({stats.hit_ratio:.1f}%)" + last_updated
-        )
+    cache_stats = _normalise_cache_stats(stats)
+    hits = cache_stats.get("hits")
+    misses = cache_stats.get("misses")
+    try:
+        total = int(hits) + int(misses)
+    except (TypeError, ValueError):
+        total = 0
+    if total > 0:
+        _render_cache_status(cache_stats)
     else:
         st.caption("Cache de predicciones sectoriales en calentamiento")
     _render_recommendations_table(

@@ -40,6 +40,8 @@ log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
+CACHE_HIT_THRESHOLDS: dict[str, float] = {"green": 0.7, "yellow": 0.4}
+
 PREDICTIVE_TTL_HOURS: float = getattr(settings, "PREDICTIVE_TTL_HOURS", 6.0)
 ADAPTIVE_TTL_HOURS: float = getattr(settings, "ADAPTIVE_TTL_HOURS", 12.0)
 
@@ -129,6 +131,7 @@ __all__ = [
     "log_retention_days",
     "stub_max_runtime_warn",
     "STUB_MAX_RUNTIME_WARN",
+    "CACHE_HIT_THRESHOLDS",
     "PREDICTIVE_TTL_HOURS",
     "ADAPTIVE_TTL_HOURS",
     "snapshot_backend",
