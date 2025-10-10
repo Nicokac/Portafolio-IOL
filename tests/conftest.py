@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from types import ModuleType, SimpleNamespace
 import sys
+from types import ModuleType, SimpleNamespace
 from typing import Any
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="`infrastructure.iol.legacy` está deprecado",
+    category=DeprecationWarning,
+)
 
 
 class _DummyStreamlitSecretNotFoundError(KeyError):

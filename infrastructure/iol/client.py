@@ -7,6 +7,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
+import warnings
 
 import requests
 import streamlit as st
@@ -21,6 +22,12 @@ from shared.utils import _to_float
 from .auth import IOLAuth
 from .ports import IIOLProvider
 from services.health import record_quote_provider_usage
+warnings.filterwarnings(
+    "ignore",
+    message="`infrastructure.iol.legacy` está deprecado",
+    category=DeprecationWarning,
+)
+
 from infrastructure.iol.legacy.session import LegacySession
 
 logger = logging.getLogger(__name__)
