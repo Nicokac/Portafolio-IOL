@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.4 — Auditoría y QA de la serie 0.5.x
+### Added
+- `tests/application/test_regression_v054.py` ejecuta el flujo adaptativo completo con fixtures,
+  valida MAE adaptativo < MAE estático y asegura ratio de cache ≥ 45 % con reporte Markdown.
+- `shared/logging_utils.silence_streamlit_warnings` centraliza filtros de logging/warnings para
+  ejecuciones offline sin ruido de Streamlit.
+- Reporte de QA en `docs/qa/v0.5.4-validation-report.md` con métricas de cache, tiempos de render
+  y sumario de validaciones.
+
+### Changed
+- `application.predictive_service` ahora expone snapshots de caché con % de hits y marca temporal
+  normalizada, corrigiendo imports faltantes y formalizando el docstring del módulo.
+- `services.cache.CacheService` formatea `last_updated` en `YYYY-MM-DD HH:MM:SS`, agrega método
+  `stats()` e incrementa la trazabilidad de hits/misses.
+- `ui/tabs/recommendations.py` muestra el ratio de hits en porcentaje, última actualización y usa
+  el helper de logging compartido para suprimir warnings en modo bare.
+- Fixtures de recomendaciones incluyen columna `sector` para consolidar la preparación histórica.
+
+### Fixed
+- Se sincronizaron exports de `application.__init__` para evitar importaciones implícitas y ciclos.
+- El flujo adaptativo reutiliza caches dedicados con TTL estable, respetando el formato ISO en los
+  reportes y evitando residuos tras los tests de regresión.
+
 ## v0.5.3 — Métricas extendidas del motor adaptativo
 ### Added
 - `simulate_adaptive_forecast` ahora calcula `beta_shift_avg`, `sector_dispersion` y genera un resumen legible con metadatos de caché.

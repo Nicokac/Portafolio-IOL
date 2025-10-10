@@ -29,26 +29,12 @@ from application.ta_service import TAService
 from application.predictive_service import get_cache_stats, predict_sector_performance
 from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts.correlation_matrix import build_correlation_figure
+from shared.logging_utils import silence_streamlit_warnings
 
 
 LOGGER = logging.getLogger(__name__)
 
-
-def _suppress_streamlit_bare_mode_warnings() -> None:
-    """Reduce noisy bare-mode warnings when rendering without Streamlit runner."""
-
-    logger_names = (
-        "streamlit.runtime.scriptrunner_utils.script_run_context",
-        "streamlit.runtime.state.session_state",
-        "streamlit.runtime.scriptrunner_utils",  # fallback for future versions
-        "streamlit",
-    )
-    for name in logger_names:
-        try:
-            logging.getLogger(name).setLevel(logging.ERROR)
-            logging.getLogger(name).propagate = False
-        except Exception:  # pragma: no cover - defensive guard for logging internals
-            LOGGER.debug("No se pudo ajustar el nivel de logging para %s", name, exc_info=True)
+silence_streamlit_warnings()
 _FORM_KEY = "recommendations_form"
 _SESSION_STATE_KEY = "_recommendations_state"
 _MODE_OPTIONS = [
@@ -1065,9 +1051,14 @@ def render_recommendations_tab() -> None:
     )
     stats = get_cache_stats()
     if stats.total:
+        last_updated = (
+            f" · Última actualización: {stats.last_updated}"
+            if stats.last_updated and stats.last_updated != "-"
+            else ""
+        )
         st.caption(
             "Cache de predicciones sectoriales: "
-            f"{stats.hits}/{stats.total} hits ({stats.hit_ratio * 100:.1f}%)"
+            f"{stats.hits}/{stats.total} hits ({stats.hit_ratio:.1f}%)" + last_updated
         )
     else:
         st.caption("Cache de predicciones sectoriales en calentamiento")
@@ -1115,7 +1106,10 @@ def render_recommendations_tab() -> None:
 
 
 def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
-    _suppress_streamlit_bare_mode_warnings()
+    silence_streamlit_warnings()
+
+    from contextlib import ExitStack, redirect_stderr, redirect_stdout
+    from io import StringIO
 
     try:
         selected_mode = getattr(state, "selected_mode", "diversify")
@@ -1144,69 +1138,67 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
     if "sector" not in recommendations_df.columns:
         recommendations_df["sector"] = ["Tecnología", "Finanzas", "Energía"][: len(recommendations_df)]
 
-    session = getattr(st, "session_state", {})
-    if "portfolio_last_positions" not in session:
-        st.session_state["portfolio_last_positions"] = pd.DataFrame(
-            [{"simbolo": "TEST", "valor_actual": 100_000.0}]
-        )
-    if ProfileService.SESSION_KEY not in session:
-        profile = DEFAULT_PROFILE.copy()
-        fixture_path = Path("docs/fixtures/default/profile_default.json")
-        if fixture_path.exists():
-            try:
-                raw_text = fixture_path.read_text(encoding="utf-8")
-                payload = json.loads(raw_text) or {}
-            except (OSError, json.JSONDecodeError):
-                payload = {}
-            if isinstance(payload, dict):
-                overrides = {}
-                for key in profile.keys():
-                    value = payload.get(key)
-                    if isinstance(value, str) and value:
-                        overrides[key] = value
-                profile.update(overrides)
-                if "last_updated" in payload:
-                    profile["last_updated"] = payload["last_updated"]
-        st.session_state[ProfileService.SESSION_KEY] = profile
-
-    warmup_frame = pd.DataFrame()
-    if {"symbol", "sector"}.issubset(recommendations_df.columns):
-        warmup_frame = recommendations_df[["symbol", "sector"]].dropna().copy()
-    try:
-        predict_sector_performance(warmup_frame)
-        predict_sector_performance(warmup_frame)
-    except Exception:  # pragma: no cover - defensive warmup
-        LOGGER.debug("No se pudo precalentar predicciones sectoriales", exc_info=True)
-
-    payload_df = recommendations_df.copy()
-    if "predicted_return_pct" not in payload_df.columns:
-        payload_df["predicted_return_pct"] = np.nan
-    if pd.to_numeric(payload_df.get("predicted_return_pct"), errors="coerce").isna().all():
-        payload_df["predicted_return_pct"] = np.linspace(3.0, 4.5, len(payload_df))
-
-    st.session_state[_SESSION_STATE_KEY] = {
-        "recommendations": _enrich_recommendations(
-            payload_df,
-            expected_returns=_build_numeric_lookup(payload_df, "expected_return"),
-            betas=_build_numeric_lookup(payload_df, "beta"),
-        ),
-        "opportunities": pd.DataFrame(),
-        "risk_metrics": pd.DataFrame(),
-        "amount": float(
-            pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()
-        ),
-        "mode_label": mode_label,
-        "mode_key": mode_key,
-        "analysis": {},
-        "profile": DEFAULT_PROFILE.copy(),
-    }
-
-    from contextlib import ExitStack, redirect_stderr, redirect_stdout
-    from io import StringIO
-
     with ExitStack() as stack:
         stack.enter_context(redirect_stdout(StringIO()))
         stack.enter_context(redirect_stderr(StringIO()))
+
+        session = getattr(st, "session_state", {})
+        if "portfolio_last_positions" not in session:
+            st.session_state["portfolio_last_positions"] = pd.DataFrame(
+                [{"simbolo": "TEST", "valor_actual": 100_000.0}]
+            )
+        if ProfileService.SESSION_KEY not in session:
+            profile = DEFAULT_PROFILE.copy()
+            fixture_path = Path("docs/fixtures/default/profile_default.json")
+            if fixture_path.exists():
+                try:
+                    raw_text = fixture_path.read_text(encoding="utf-8")
+                    payload = json.loads(raw_text) or {}
+                except (OSError, json.JSONDecodeError):
+                    payload = {}
+                if isinstance(payload, dict):
+                    overrides = {}
+                    for key in profile.keys():
+                        value = payload.get(key)
+                        if isinstance(value, str) and value:
+                            overrides[key] = value
+                    profile.update(overrides)
+                    if "last_updated" in payload:
+                        profile["last_updated"] = payload["last_updated"]
+            st.session_state[ProfileService.SESSION_KEY] = profile
+
+        warmup_frame = pd.DataFrame()
+        if {"symbol", "sector"}.issubset(recommendations_df.columns):
+            warmup_frame = recommendations_df[["symbol", "sector"]].dropna().copy()
+        try:
+            predict_sector_performance(warmup_frame)
+            predict_sector_performance(warmup_frame)
+        except Exception:  # pragma: no cover - defensive warmup
+            LOGGER.debug("No se pudo precalentar predicciones sectoriales", exc_info=True)
+
+        payload_df = recommendations_df.copy()
+        if "predicted_return_pct" not in payload_df.columns:
+            payload_df["predicted_return_pct"] = np.nan
+        if pd.to_numeric(payload_df.get("predicted_return_pct"), errors="coerce").isna().all():
+            payload_df["predicted_return_pct"] = np.linspace(3.0, 4.5, len(payload_df))
+
+        st.session_state[_SESSION_STATE_KEY] = {
+            "recommendations": _enrich_recommendations(
+                payload_df,
+                expected_returns=_build_numeric_lookup(payload_df, "expected_return"),
+                betas=_build_numeric_lookup(payload_df, "beta"),
+            ),
+            "opportunities": pd.DataFrame(),
+            "risk_metrics": pd.DataFrame(),
+            "amount": float(
+                pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()
+            ),
+            "mode_label": mode_label,
+            "mode_key": mode_key,
+            "analysis": {},
+            "profile": DEFAULT_PROFILE.copy(),
+        }
+
         render_recommendations_tab()
 
 

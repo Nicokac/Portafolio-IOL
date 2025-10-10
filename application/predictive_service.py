@@ -1,3 +1,5 @@
+"""Sector-level predictive analytics with adaptive caching."""
+
 from __future__ import annotations
 
 import logging
@@ -8,6 +10,7 @@ import pandas as pd
 
 from application.backtesting_service import BacktestingService
 from services.cache import CacheService
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ class PredictiveSnapshot:
 
     hits: int
     misses: int
+    last_updated: str = "-"
 
     @property
     def total(self) -> int:
@@ -33,10 +37,22 @@ class PredictiveSnapshot:
 
     @property
     def hit_ratio(self) -> float:
+        """Return the percentage of cache hits over total lookups."""
+
         total = self.total
         if total <= 0:
             return 0.0
-        return float(self.hits) / float(total)
+        return float(self.hits) / float(total) * 100.0
+
+    def as_dict(self) -> dict[str, float | int | str]:
+        """Expose snapshot information as a serialisable mapping."""
+
+        return {
+            "hits": self.hits,
+            "misses": self.misses,
+            "hit_ratio": self.hit_ratio,
+            "last_updated": self.last_updated,
+        }
 
 
 def _normalise_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
@@ -205,7 +221,11 @@ def predict_sector_performance(
 def get_cache_stats() -> PredictiveSnapshot:
     """Expose current cache counters for predictive workloads."""
 
-    return PredictiveSnapshot(hits=_CACHE_HITS, misses=_CACHE_MISSES)
+    return PredictiveSnapshot(
+        hits=_CACHE_HITS,
+        misses=_CACHE_MISSES,
+        last_updated=_CACHE.last_updated_human,
+    )
 
 
 def reset_cache() -> None:

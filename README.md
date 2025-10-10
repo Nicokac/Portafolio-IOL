@@ -5,6 +5,9 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > Nota: todos los timestamps visibles provienen de `shared.time_provider.TimeProvider` y se muestran
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
+>
+> Estado de calidad **v0.5.4**: suite `pytest` + `compileall` en verde, caches predictivos con
+> ratio ≥ 45 % y reporte adaptativo exportable sin ruido en consola.
 
 ## Funcionalidades del Dashboard
 
@@ -12,23 +15,24 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el sistema propone cinco activos diversificados con límites de peso entre 10 % y 40 %, equilibrando tipo y sector. Desde la misma pestaña puede ejecutar **Simular impacto** para contrastar el portafolio actual con la distribución sugerida y comparar métricas de valor total, retorno proyectado y beta agregada antes y después de aplicar el rebalanceo.
 
-La versión **0.5.3** extiende el motor adaptativo con métricas agregadas (β-shift promedio, dispersión sectorial), resumen textual exportable y metadata de caché para seguir la evolución del aprendizaje. El insight automático mantiene los desvíos β dinámicos, mientras que la pestaña de recomendaciones conserva el tab dedicado de correlaciones con matrices histórica, rolling y adaptativa con etiquetas β-shift. La release mantiene la compatibilidad con v0.4.4, preserva el panel de perfil inversor persistido (cifrado en `config.json` o `st.secrets`) y el benchmarking frente a Merval, S&P 500 y canastas de bonos (ΔRetorno, ΔBeta, Tracking Error). Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
+La versión **0.5.4** consolida la serie 0.5.x con auditorías de caches y backtests, asegurando β-shift estable, dispersión sectorial trazable y reporte adaptativo actualizado. Se suprimieron warnings de Streamlit en modo bare, se formateó `last_updated` en UTC y se añadieron snapshots de caché (% de hits y última actualización) visibles tanto en la UI como en los tests de regresión. La release mantiene la compatibilidad con v0.4.4, preserva el panel de perfil inversor persistido (cifrado en `config.json` o `st.secrets`) y el benchmarking frente a Merval, S&P 500 y canastas de bonos (ΔRetorno, ΔBeta, Tracking Error). Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
 
 La versión **0.4.3** añade botones de descarga directos para obtener las sugerencias en CSV/XLSX (incluyendo una fila resumen con promedios de retorno esperado y beta) y expone un *racional extendido* que cuantifica cuánto aporta cada activo al retorno, cómo modifica el beta total y de qué modo refuerza la diversificación sectorial. El insight automático también muestra el sector dominante detectado en la combinación final para acelerar la interpretación.
 
 > Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.
 
-#### Forecast adaptativo y visualización de correlaciones (v0.5.3)
+#### Forecast adaptativo y visualización de correlaciones (v0.5.4)
 
 - `application.adaptive_predictive_service` calcula errores normalizados por sector, aplica una EMA para generar ajustes β-shift y persiste correlaciones dinámicas durante 12 horas junto con el estado adaptativo.
 - `tests/application/test_adaptive_predictive_service.py` valida la evolución temporal del modelo (EMA y TTL), la reducción de error (MAE/RMSE/Bias) y ahora cubre el β-shift promedio, dispersión sectorial y la exportación del reporte.
+- `tests/application/test_regression_v054.py` ejecuta el flujo completo con fixtures, chequea MAE adaptativo < MAE estático, ratios de cache ≥ 45 % y confirma la creación del reporte Markdown.
 - La pestaña de recomendaciones incorpora "Correlaciones sectoriales" con matrices histórica, rolling y adaptativa; muestra resumen de β promedio, correlación media y dispersión σ, además de la mini-card de métricas agregadas y el botón de exportación.
 
-#### Reporte y exportación del aprendizaje adaptativo (v0.5.3)
+#### Reporte y exportación del aprendizaje adaptativo (v0.5.4)
 
 - `simulate_adaptive_forecast` expone métricas agregadas (`beta_shift_avg`, `sector_dispersion`) junto con un resumen legible y metadata de caché (`hit_ratio`, `last_updated`).
 - `export_adaptive_report` genera `docs/reports/adaptive_report_<timestamp>.md` con el resumen global, tabla temporal e interpretación del β-shift y la dispersión sectorial.
-- El tab "Correlaciones sectoriales" muestra la leyenda "Última actualización... | Ratio de aciertos" y permite descargar el reporte directamente desde la UI o vía `_render_for_test()` en modo offline.
+- El tab "Correlaciones sectoriales" muestra la leyenda "Última actualización... | Ratio de aciertos" y permite descargar el reporte directamente desde la UI o vía `_render_for_test()` en modo offline, ahora sin warnings de Streamlit en bare mode.
 
 #### Predicciones sectoriales (v0.5.1)
 

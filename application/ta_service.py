@@ -1,6 +1,7 @@
 # application\ta_service.py
 from __future__ import annotations
 import logging
+from pathlib import Path
 from typing import List
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.cache import cache
