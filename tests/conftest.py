@@ -215,6 +215,7 @@ class _DummyStreamlitCore:
         self._context_stack: list[list[dict[str, Any]]] = [self._calls]
         self._button_returns: dict[str, bool] = {}
         self._checkbox_returns: dict[str, bool] = {}
+        self._toggle_returns: dict[str, bool] = {}
         self._form_returns: dict[str, bool] = {}
 
     # Public helpers -----------------------------------------------------
@@ -231,6 +232,7 @@ class _DummyStreamlitCore:
         self._context_stack = [self._calls]
         self._button_returns.clear()
         self._checkbox_returns.clear()
+        self._toggle_returns.clear()
         self._form_returns.clear()
 
     # Internal wiring ----------------------------------------------------
@@ -370,6 +372,7 @@ class _DummyStreamlitCore:
         step: object | None = None,
         key: str | None = None,
         help: str | None = None,
+        format: str | None = None,
     ) -> object:
         result = value
         if key:
@@ -383,6 +386,7 @@ class _DummyStreamlitCore:
             step=step,
             key=key,
             help=help,
+            format=format,
         )
         return result
 
@@ -427,6 +431,22 @@ class _DummyStreamlitCore:
         self._record("checkbox", label=label, value=value, key=key, help=help, result=result)
         return result
 
+    def toggle(
+        self,
+        label: str,
+        *,
+        value: bool | None = None,
+        key: str | None = None,
+        help: str | None = None,
+        on_change=None,
+    ) -> bool:
+        entry_key = key or label
+        result = self._toggle_returns.get(entry_key, bool(value))
+        if key:
+            self.session_state[key] = result
+        self._record("toggle", label=label, value=value, key=key, help=help, result=result, on_change=on_change)
+        return result
+
     def multiselect(
         self,
         label: str,
@@ -458,6 +478,7 @@ class _DummyStreamlitCore:
         key: str | None = None,
         help: str | None = None,
         on_change=None,
+        format_func=None,
     ) -> object:
         options_list = list(options)
         if key and key in self.session_state:
@@ -476,6 +497,7 @@ class _DummyStreamlitCore:
             index=index,
             key=key,
             help=help,
+            format_func=format_func,
         )
         return result
 
@@ -518,13 +540,24 @@ class _DummyStreamlitCore:
         entry = self._record("container", border=border)
         return _DummyContext(self, entry)
 
-    def dataframe(self, data: Any, *, use_container_width: bool | None = None, column_config=None, column_order=None) -> None:
+    def dataframe(
+        self,
+        data: Any,
+        *,
+        use_container_width: bool | None = None,
+        column_config=None,
+        column_order=None,
+        hide_index: bool | None = None,
+        width: object | None = None,
+    ) -> None:
         self._record(
             "dataframe",
             data=data,
             use_container_width=use_container_width,
             column_config=column_config,
             column_order=column_order,
+            hide_index=hide_index,
+            width=width,
         )
 
     def download_button(

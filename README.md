@@ -1,4 +1,4 @@
-# Portafolio IOL
+# Portafolio IOL — v0.5.6
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
@@ -6,8 +6,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 >
-> Estado de calidad **v0.5.4**: suite `pytest` + `compileall` en verde, caches predictivos con
-> ratio ≥ 45 % y reporte adaptativo exportable sin ruido en consola.
+> Estado de calidad **v0.5.6**: smoke test offline de `_render_for_test()` en CI, documentación consolidada (dev guide + QA) y caches predictivos con ratio ≥ 45 %.
+
+## Documentación clave
+
+- [Guía técnica de desarrollo](docs/dev_guide.md)
+- [Guía de pruebas](docs/testing.md)
+- [Reportes de QA](docs/qa/)
 
 ## Funcionalidades del Dashboard
 
@@ -16,6 +21,8 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 El usuario ingresa un monto objetivo y selecciona el modo de recomendación; el sistema propone cinco activos diversificados con límites de peso entre 10 % y 40 %, equilibrando tipo y sector. Desde la misma pestaña puede ejecutar **Simular impacto** para contrastar el portafolio actual con la distribución sugerida y comparar métricas de valor total, retorno proyectado y beta agregada antes y después de aplicar el rebalanceo.
 
 La versión **0.5.4** consolida la serie 0.5.x con auditorías de caches y backtests, asegurando β-shift estable, dispersión sectorial trazable y reporte adaptativo actualizado. Se suprimieron warnings de Streamlit en modo bare, se formateó `last_updated` en UTC y se añadieron snapshots de caché (% de hits y última actualización) visibles tanto en la UI como en los tests de regresión. La release mantiene la compatibilidad con v0.4.4, preserva el panel de perfil inversor persistido (cifrado en `config.json` o `st.secrets`) y el benchmarking frente a Merval, S&P 500 y canastas de bonos (ΔRetorno, ΔBeta, Tracking Error). Los fixtures offline y el servicio de backtesting liviano siguen habilitando `_render_for_test()` como flujo autónomo.
+
+La versión **0.5.6** refuerza la reproducibilidad offline consolidando el smoke test automatizado, la guía de desarrollo y la limpieza de documentación heredada.
 
 La versión **0.5.5** refuerza la experiencia de recomendaciones con un badge de estado del caché predictivo (ratio de aciertos, TTL restante y color contextualizado según los umbrales definidos en `shared.settings.CACHE_HIT_THRESHOLDS`). Además, el botón de exportación del reporte adaptativo emite toasts de progreso/resultado junto al mensaje tradicional y los indicadores de β-shift y σ sectorial incorporan tooltips para clarificar su lectura.
 
@@ -123,70 +130,7 @@ Incluye la relocalización del panel superior como franja horizontal, la adopci�
 La actualización no introduce cambios funcionales en servicios, pero mejora la consistencia visual y la usabilidad general.
 El backend, las métricas y el sistema de caché mantienen compatibilidad plena con versiones anteriores.
 
-Sigue estos pasos para reproducir el flujo completo y validar las novedades clave:
-
-### Ejemplo completo
-
-1. **Instala dependencias.**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-   Para entornos de desarrollo agrega `requirements-dev.txt` si necesitas las herramientas de QA.
-   > Las dependencias declaradas viven en `[project.dependencies]` de `pyproject.toml`. Ejecuta `python scripts/sync_requirements.py` cada vez que modifiques esa sección para regenerar `requirements.txt` con las versiones fijadas que usa CI y producción.
-2. **Levanta la aplicación y valida los banners persistentes.** Con el entorno activado ejecuta:
-   ```bash
-   streamlit run app.py
-   ```
-    La cabecera del sidebar y el banner del login mostrarán el número de versión `0.4.0` junto con
-    el mensaje "Factor & Benchmark Analysis" y el timestamp generado
-    por `TimeProvider`.
-    Las notas de las releases previas (`0.3.4.4.6` "Clasificación y visualización completa por tipo de activo",
-    `0.3.4.4.5` "Local Equity Tab in Risk Analysis" y `0.3.4.4.4`
-    "Asset Type Alignment in Risk Analysis") permanecen documentadas en el historial para auditorías
-    comparativas.
-   La cabecera del sidebar y el banner del login mostrarán el número de versión `0.3.4.4.6` junto con
-   el mensaje "Clasificación y visualización completa por tipo de activo" y el timestamp generado
-   por `TimeProvider`.
-   Las notas de las releases previas (`0.3.4.4.5` "Local Equity Tab in Risk Analysis" y `0.3.4.4.4`
-   "Asset Type Alignment in Risk Analysis") permanecen documentadas en el historial para auditorías
-   comparativas.
-   Observá el badge global bajo el encabezado principal para identificar rápidamente el estado de salud,
-   verificá que cambie en sincronía con los badges del footer y accedé a la pestaña **Monitoreo**:
-   allí encontrarás los mismos bloques de telemetría acompañados de los toasts y contadores
-   sincronizados que describen cada acción reciente.
-3. **Lanza un screening con presets personalizados y comprueba la persistencia.**
-   - Abre la pestaña **Empresas con oportunidad** y selecciona `Perfil recomendado → Crear preset`.
-   - Guarda el preset y ejecútalo al menos dos veces. Tras la primera corrida, el panel de Monitoreo
-     reflejará "Snapshot creado" y `st.session_state["controls_snapshot"]` conservará la combinación de
-     filtros. Al relanzar, valida que la tarjeta de KPIs muestre "⚡ Resultado servido desde snapshot"
-     y que la telemetría reduzca el runtime frente a la corrida inicial.
-   - Desde el menú **⚙️ Acciones** usa **⟳ Refrescar** para forzar un fallback controlado: los contadores
-     de resiliencia distinguirán el origen (`primario`, `secundario`, `snapshot`) y registrarán el uso
-     del almacenamiento persistente como parte de la secuencia.
-4. **Exporta el análisis enriquecido.** Con la app cerrada o en paralelo, ejecuta el script:
-   ```bash
-   python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/screener
-   ```
-   El comando crea una carpeta por snapshot dentro de `exports/screener/` (por ejemplo,
-   `exports/screener/sample/`) con todos los CSV (`kpis.csv`, `positions.csv`, `history.csv`,
-   `contribution_by_symbol.csv`, etc.), empaqueta esos archivos en `analysis.zip` y genera un
-   `analysis.xlsx` con todas las tablas en hojas dedicadas más los gráficos solicitados. En la raíz del
- directorio también encontrarás `summary.csv` con los KPIs (`raw_value`) de cada snapshot para
-  facilitar comparaciones rápidas. Si las exportaciones PNG están deshabilitadas, el Excel se genera
-  sin gráficos adjuntos y conserva únicamente las tablas de datos.
-
-   > **Dependencia de Kaleido.** Plotly utiliza `kaleido` para renderizar los gráficos como PNG.
-   > Instálalo con `pip install -r requirements.txt` (incluye la dependencia) o añádelo a tu entorno
-   > manualmente si usas una instalación mínima. Cuando `kaleido` no está disponible, la release
-   > 0.3.4.4.5 muestra el banner "Local Equity Tab in Risk Analysis", mantiene el ZIP de CSV y
-   > 0.3.4.4.4 muestra el banner "Asset Type Alignment in Risk Analysis", mantiene el ZIP de CSV y
-   > documenta en los artefactos que los PNG quedaron pendientes para reintento posterior. Además, el
-   > bloque de **Descargas de observabilidad** ofrece un acceso directo para bajar el snapshot de
-   > entorno y el paquete de logs rotados que acompañan el aviso, facilitando la apertura de tickets.
-   > Las exportaciones a Excel se completan igualmente con todas las tablas y logs, y omiten
-   > únicamente las imágenes PNG.
+Consulta `docs/dev_guide.md` para el procedimiento actualizado de ejecución y QA offline.
 
 ### Migración fuera de módulos legacy
 

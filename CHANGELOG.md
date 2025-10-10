@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.6 — QA y Documentación Consolidada
+- Añadido smoke test de `_render_for_test` para ejecución offline.
+- Nueva guía de desarrollo `docs/dev_guide.md`.
+- Limpieza de documentación legacy (<v0.4.x).
+- Validación de versión y flujo offline completo.
+
 ## v0.5.4 — Auditoría y QA de la serie 0.5.x
 ### Added
 - `tests/application/test_regression_v054.py` ejecuta el flujo adaptativo completo con fixtures,
