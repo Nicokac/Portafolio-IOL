@@ -11,6 +11,11 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from application.adaptive_predictive_service import (
+    generate_synthetic_history,
+    prepare_adaptive_history,
+    simulate_adaptive_forecast,
+)
 from application.benchmark_service import (
     BENCHMARK_BASELINES,
     compute_benchmark_comparison,
@@ -22,6 +27,7 @@ from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
 from application.predictive_service import get_cache_stats, predict_sector_performance
 from services.portfolio_view import compute_symbol_risk_metrics
+from ui.charts.correlation_matrix import build_correlation_figure
 
 
 LOGGER = logging.getLogger(__name__)
@@ -158,6 +164,67 @@ def _beta_lookup(
     return lookup
 
 
+def _merge_symbol_sector_frames(*frames: pd.DataFrame) -> pd.DataFrame:
+    rows: list[pd.DataFrame] = []
+    for frame in frames:
+        if not isinstance(frame, pd.DataFrame) or frame.empty:
+            continue
+        df = frame.copy()
+        if "symbol" not in df.columns and "ticker" in df.columns:
+            df = df.rename(columns={"ticker": "symbol"})
+        if {"symbol", "sector"}.issubset(df.columns):
+            df["symbol"] = (
+                df.get("symbol", pd.Series(dtype=str))
+                .astype("string")
+                .str.upper()
+                .str.strip()
+            )
+            df["sector"] = (
+                df.get("sector", pd.Series(dtype=str))
+                .astype("string")
+                .str.strip()
+                .replace({"": "Sin sector"})
+            )
+            rows.append(df[["symbol", "sector"]])
+    if not rows:
+        return pd.DataFrame(columns=["symbol", "sector"])
+    merged = pd.concat(rows, ignore_index=True)
+    merged = merged.dropna(subset=["symbol", "sector"])
+    merged = merged.drop_duplicates(subset=["symbol"])
+    return merged
+
+
+def _compute_adaptive_payload(
+    recommendations: pd.DataFrame,
+    opportunities: pd.DataFrame,
+) -> dict[str, object] | None:
+    if not isinstance(recommendations, pd.DataFrame) or recommendations.empty:
+        return None
+
+    opportunity_frame = _merge_symbol_sector_frames(recommendations, opportunities)
+    history = prepare_adaptive_history(opportunity_frame)
+    synthetic = False
+    if history.empty:
+        history = generate_synthetic_history(recommendations)
+        synthetic = True
+    if history.empty:
+        return None
+
+    try:
+        payload = simulate_adaptive_forecast(
+            history,
+            ema_span=4,
+            persist=not synthetic,
+        )
+    except Exception:  # pragma: no cover - defensive logging
+        LOGGER.exception("No se pudo calcular el modelo adaptativo", exc_info=True)
+        return None
+
+    payload["history_frame"] = history
+    payload["synthetic"] = synthetic
+    return payload
+
+
 def _render_profile_panel(service: ProfileService) -> dict[str, str]:
     profile = service.get_profile()
     st.markdown(f"**{service.badge_label(profile)}**")
@@ -236,6 +303,7 @@ def _render_automatic_insight(
     *,
     mode_key: str,
     beta_lookup: dict[str, float] | None = None,
+    adaptive_summary: dict[str, float] | None = None,
 ) -> None:
     if recommendations.empty:
         return
@@ -283,6 +351,14 @@ def _render_automatic_insight(
             metrics_parts.append(f"Sector dominante: {dominant_sector}")
     if metrics_parts:
         lines.append(" | ".join(metrics_parts))
+
+    if isinstance(adaptive_summary, dict) and adaptive_summary:
+        beta_mean = adaptive_summary.get("beta_mean")
+        corr_mean = adaptive_summary.get("correlation_mean")
+        if beta_mean is not None and np.isfinite(beta_mean):
+            lines.append(f"β-shift adaptativo: {_format_float(beta_mean)}")
+        if corr_mean is not None and np.isfinite(corr_mean):
+            lines.append(f"Correlación media dinámica: {_format_float(corr_mean)}")
 
     st.info("\n\n".join(lines))
 
@@ -377,6 +453,69 @@ def _render_simulation_results(result: dict[str, dict[str, float]]) -> None:
             "Se asignan "
             f"{_format_currency(additional)} adicionales siguiendo la distribución sugerida."
         )
+
+
+def _render_correlation_tab(payload: dict[str, object] | None) -> None:
+    if not isinstance(payload, dict) or not payload:
+        st.info("No hay correlaciones adaptativas disponibles todavía.")
+        return
+
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    beta_shift = payload.get("beta_shift")
+    historical = payload.get("historical_correlation")
+    rolling = payload.get("rolling_correlation")
+    adaptive = payload.get("correlation_matrix")
+
+    cols = st.columns(3)
+    beta_value = float(summary.get("beta_mean", float("nan")))
+    corr_value = float(summary.get("correlation_mean", float("nan")))
+    sigma_value = float(summary.get("sector_dispersion", float("nan")))
+
+    cols[0].metric("β promedio", _format_float(beta_value))
+    cols[1].metric("Correlación media", _format_float(corr_value))
+    cols[2].metric("Dispersión sectorial σ", _format_float(sigma_value))
+
+    if payload.get("synthetic"):
+        st.caption("Usando histórico sintético hasta contar con mediciones reales.")
+
+    figure = build_correlation_figure(
+        historical,
+        rolling,
+        adaptive,
+        beta_shift=beta_shift if isinstance(beta_shift, pd.Series) else None,
+        title="Correlaciones sectoriales β-shift",
+    )
+    st.plotly_chart(figure, use_container_width=True)
+
+    mae = float(summary.get("mae", 0.0))
+    rmse = float(summary.get("rmse", 0.0))
+    bias = float(summary.get("bias", 0.0))
+    raw_mae = float(summary.get("raw_mae", 0.0))
+    raw_rmse = float(summary.get("raw_rmse", 0.0))
+    raw_bias = float(summary.get("raw_bias", 0.0))
+
+    metrics_cols = st.columns(3)
+    metrics_cols[0].metric(
+        "MAE adaptativo",
+        _format_percent(mae),
+        _format_percent_delta(raw_mae - mae),
+    )
+    metrics_cols[1].metric(
+        "RMSE adaptativo",
+        _format_percent(rmse),
+        _format_percent_delta(raw_rmse - rmse),
+    )
+    metrics_cols[2].metric(
+        "Bias",
+        _format_percent(bias),
+        _format_percent_delta(raw_bias - bias),
+    )
+
+    steps = payload.get("steps")
+    if isinstance(steps, pd.DataFrame) and not steps.empty:
+        preview = steps.copy().sort_values("timestamp", ascending=False).head(6)
+        preview["timestamp"] = pd.to_datetime(preview["timestamp"], errors="coerce").dt.strftime("%Y-%m-%d")
+        st.dataframe(preview, use_container_width=True, hide_index=True)
 
 
 def _build_numeric_lookup(df: pd.DataFrame, column: str) -> dict[str, float]:
@@ -884,6 +1023,10 @@ def render_recommendations_tab() -> None:
                     exc_info=True,
                 )
 
+    adaptive_payload: dict[str, object] | None = None
+    if not recommendations.empty:
+        adaptive_payload = _compute_adaptive_payload(recommendations, opportunities)
+
     if not recommendations.empty:
         _render_recommendations_visuals(
             recommendations,
@@ -912,6 +1055,9 @@ def render_recommendations_tab() -> None:
         recommendations,
         mode_key=mode_key_to_display,
         beta_lookup=beta_lookup,
+        adaptive_summary=(
+            adaptive_payload.get("summary") if isinstance(adaptive_payload, dict) else None
+        ),
     )
 
     simulate_key = f"simulate_button_{mode_key_to_display}" if mode_key_to_display else "simulate_button"
@@ -939,6 +1085,10 @@ def render_recommendations_tab() -> None:
         else:
             _render_simulation_results(result)
 
+    correlation_tab = st.tabs(["Correlaciones sectoriales"])[0]
+    with correlation_tab:
+        _render_correlation_tab(adaptive_payload)
+
 
 def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
     _suppress_streamlit_bare_mode_warnings()
@@ -948,6 +1098,27 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
     except Exception:
         selected_mode = "diversify"
     mode_key, mode_label = _resolve_mode(selected_mode)
+
+    if not isinstance(recommendations_df, pd.DataFrame) or recommendations_df.empty:
+        recommendations_df = pd.DataFrame(
+            [
+                {
+                    "symbol": "TEST",
+                    "sector": "Tecnología",
+                    "predicted_return_pct": 4.2,
+                    "expected_return": 3.8,
+                },
+                {
+                    "symbol": "ALT",
+                    "sector": "Finanzas",
+                    "predicted_return_pct": 3.4,
+                    "expected_return": 2.9,
+                },
+            ]
+        )
+
+    if "sector" not in recommendations_df.columns:
+        recommendations_df["sector"] = ["Tecnología", "Finanzas", "Energía"][: len(recommendations_df)]
 
     session = getattr(st, "session_state", {})
     if "portfolio_last_positions" not in session:
@@ -986,6 +1157,8 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
     payload_df = recommendations_df.copy()
     if "predicted_return_pct" not in payload_df.columns:
         payload_df["predicted_return_pct"] = np.nan
+    if pd.to_numeric(payload_df.get("predicted_return_pct"), errors="coerce").isna().all():
+        payload_df["predicted_return_pct"] = np.linspace(3.0, 4.5, len(payload_df))
 
     st.session_state[_SESSION_STATE_KEY] = {
         "recommendations": _enrich_recommendations(

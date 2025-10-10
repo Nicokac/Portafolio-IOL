@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.2 — Aprendizaje adaptativo y correlaciones dinámicas
+### Added
+- `application.adaptive_predictive_service` introduce un estado persistente con TTL de 12 horas, cálculo de correlaciones adaptativas vía EMA y simulaciones históricas que reportan MAE, RMSE y bias.
+- `tests/application/test_adaptive_predictive_service.py` cubre la evolución temporal del modelo, la persistencia de estado y la reducción de error frente a las predicciones originales.
+- Nuevo tab **Correlaciones sectoriales** en `ui/tabs/recommendations.py` con matrices histórica/rolling/adaptativa, resumen de β promedio y dispersión sectorial más las métricas del motor adaptativo.
+- `ui/charts/correlation_matrix.py` genera la visualización β-shift y se documenta el flujo en `docs/adaptive_learning_overview.md`.
+
+### Changed
+- Insight automático y `_render_for_test()` incorporan los datos adaptativos para exponer β-shift promedio y la correlación dinámica junto al resto de métricas.
+
 ## v0.5.1 — Forecasting y Retornos Proyectados
 ### Added
 - `application.predictive_service.predict_sector_performance` con suavizado EMA,
