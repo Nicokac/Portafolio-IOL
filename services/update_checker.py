@@ -195,6 +195,15 @@ def _run_update_script(latest_version: str) -> bool:
     return True
 
 
+def record_update_log(event: str, status: str, *, version: str | None = None) -> None:
+    """Persist a structured update event for observability consumers."""
+
+    resolved_version = (version or __version__).strip()
+    if not resolved_version:
+        resolved_version = __version__
+    _log_event(event, resolved_version, status)
+
+
 __all__ = [
     "check_for_update",
     "_run_update_script",
@@ -203,4 +212,5 @@ __all__ = [
     "format_last_check",
     "get_update_history",
     "safe_restart_app",
+    "record_update_log",
 ]

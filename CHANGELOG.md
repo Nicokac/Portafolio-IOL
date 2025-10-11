@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.1c-part2 — Performance observability instrumentation.
+- Added `services/performance_metrics` to capture execution timings and memory deltas for predictive workloads and log them with versioned timestamps.
+- Instrumented `predict_sector_performance` and `simulate_adaptive_forecast` with the new tracker and surfaced aggregated metrics via the 🩺 Diagnóstico panel.
+- Introduced a diagnostics UI panel with CSV export and cache hit visibility, plus unified logging through the update checker.
+- Bumped documentation and version metadata to v0.6.1c-part2.
+
 ## v0.6.1c-part1 — Added automated QA/CD tools and coverage pipeline.
 - Added local QA orchestration via `nox` with lint, type-check, tests and security sessions.
 - Documented QA checklist, coverage template and pipeline summary under `docs/qa/`.

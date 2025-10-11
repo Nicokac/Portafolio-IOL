@@ -16,6 +16,7 @@ from ui.header import render_header
 from ui.helpers.navigation import safe_page_link
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
+from ui.panels.diagnostics import render_diagnostics_panel
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
@@ -77,6 +78,11 @@ def render_login_page() -> None:
             "ui.panels.about",
             label="ℹ️ Acerca de",
             render_fallback=render_about_panel,
+        )
+        safe_page_link(
+            "ui.panels.diagnostics",
+            label="🩺 Diagnóstico",
+            render_fallback=render_diagnostics_panel,
         )
 
     latest = check_for_update()

@@ -16,6 +16,7 @@ from application.predictive_core import (
     run_backtest,
 )
 from services.cache import CacheService
+from services.performance_metrics import track_function
 from shared.settings import ADAPTIVE_TTL_HOURS
 
 LOGGER = logging.getLogger(__name__)
@@ -410,6 +411,7 @@ def generate_synthetic_history(recommendations: pd.DataFrame, periods: int = 6) 
     return history
 
 
+@track_function("simulate_adaptive_forecast")
 def simulate_adaptive_forecast(
     history: pd.DataFrame | None,
     *,
