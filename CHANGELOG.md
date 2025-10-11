@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-part3a — Added FastAPI engine router with /engine/info endpoint and base structure.
+- Added FastAPI engine router with `/engine/info` endpoint and base structure.
+
 ## v0.6.3-part2 — Integrated adaptive forecast persistence and vectorized predictive engine.
 - Added `predictive_engine.storage` with Parquet/SQLite helpers and warm-start support for the adaptive history.
 - Vectorised beta-shift and error computations in the predictive core and exposed `run_adaptive_forecast` with performance metrics instrumentation.
