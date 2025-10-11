@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import shutil
 import sys
 from importlib import import_module
 from typing import Any, Dict, Mapping, Optional
@@ -23,12 +24,18 @@ except ImportError:  # pragma: no cover - fallback for very old runtimes
 analysis_logger = logging.getLogger("analysis")
 logger = logging.getLogger(__name__)
 
+_KALEIDO_AVAILABLE = False
+
 try:  # pragma: no cover - optional dependency
     import kaleido  # type: ignore  # noqa: F401
 except ImportError:  # pragma: no cover - dependency is optional
     logger.warning("⚠️ Dependencia Kaleido no instalada — export a imagen deshabilitado")
 else:  # pragma: no cover - import side effect only
+    _KALEIDO_AVAILABLE = True
     logger.info("✅ Dependencia Kaleido disponible")
+
+if shutil.which("chromium") is None and _KALEIDO_AVAILABLE:
+    logger.warning("⚠️ Kaleido detectado pero sin Chromium disponible — export limitada")
 
 
 def _safe_int(value: Any) -> Optional[int]:

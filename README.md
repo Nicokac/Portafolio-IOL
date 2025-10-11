@@ -5,6 +5,8 @@
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 > v0.6.3-patch2 — Added synthetic fixture fallback, updated deprecated Plotly and Pandas calls, and added Kaleido dependency check for graphics export.
+>
+> Kaleido ahora se carga en modo seguro: si el entorno carece de Chromium, las exportaciones de imagen se omiten sin error.
 
 > Nota: todos los timestamps visibles provienen de `shared.time_provider.TimeProvider` y se muestran
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada

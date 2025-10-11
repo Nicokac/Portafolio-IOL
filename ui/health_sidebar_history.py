@@ -152,7 +152,11 @@ def render_history_sidebar(metrics: Mapping[str, Any]) -> None:
     history_entries = _normalise_history(metrics.get("history"))
     if history_entries:
         st.sidebar.subheader("Historial de screenings")
-        st.sidebar.plotly_chart(_build_history_chart(history_entries), use_container_width=True)
+        st.sidebar.plotly_chart(
+            _build_history_chart(history_entries),
+            width="stretch",
+            config={"responsive": True},
+        )
         for entry in history_entries[-5:]:
             snapshot = TimeProvider.from_timestamp(entry.ts)
             ts_label = snapshot.text if snapshot is not None else "s/d"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from functools import wraps
 from time import monotonic
 from typing import Any, Callable, Dict, Optional, TypeVar
@@ -9,12 +10,34 @@ import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
+logger = logging.getLogger(__name__)
+
+try:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+            module=r"plotly\.io",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=DeprecationWarning,
+            module=r"kaleido\.scopes",
+        )
+        import kaleido  # noqa: F401  # pragma: no cover - solo verificamos disponibilidad
+        from plotly.io import write_image  # noqa: F401  # pragma: no cover - compatibilidad
+
+    _KALEIDO_AVAILABLE = True
+except Exception as e:  # pragma: no cover - depende del entorno
+    _KALEIDO_AVAILABLE = False
+    logger.warning(
+        f"⚠️ Kaleido deshabilitado ({e}) — exportación a imagen omitida"
+    )
+
 try:  # pragma: no cover - streamlit puede no estar disponible en CLI
     import streamlit as st  # type: ignore
 except Exception:  # pragma: no cover - degradación a caché local
     st = None  # type: ignore
-
-logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 _GLOBAL_CACHE: Dict[str, Any] = {}
@@ -78,7 +101,18 @@ def _mark_runtime_unavailable(exc: Exception | None = None) -> None:
 def _get_kaleido_scope():
     """Obtiene un alcance de kaleido cacheado para reutilizar el proceso de Chromium."""
     try:
-        return pio.kaleido.scope
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"plotly\.io",
+            )
+            warnings.filterwarnings(
+                "ignore",
+                category=DeprecationWarning,
+                module=r"kaleido\.scopes",
+            )
+            return pio.kaleido.scope
     except Exception as exc:  # pragma: no cover - depende de la instalación local
         _log_noncritical_export_failure(exc)
         raise
@@ -88,6 +122,10 @@ def ensure_kaleido_runtime() -> bool:
     """Garantiza que el runtime de Kaleido y Chromium esté disponible."""
 
     global _KALEIDO_RUNTIME_AVAILABLE
+
+    if not _KALEIDO_AVAILABLE:
+        _mark_runtime_unavailable()
+        return False
 
     if _KALEIDO_RUNTIME_AVAILABLE is not None:
         return _KALEIDO_RUNTIME_AVAILABLE
@@ -119,6 +157,10 @@ def ensure_kaleido_runtime() -> bool:
 
 def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
     """Devuelve la figura renderizada como bytes PNG usando kaleido si está disponible."""
+
+    if not _KALEIDO_AVAILABLE:
+        logger.warning("⚠️ Exportación no crítica omitida (Kaleido no disponible)")
+        return None
 
     if ensure_kaleido_runtime():
         try:
