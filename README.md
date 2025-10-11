@@ -1,4 +1,4 @@
-# Portafolio IOL — v0.5.9
+# Portafolio IOL — v0.6.0
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
@@ -6,7 +6,7 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 >
-> Estado de calidad **v0.5.9**: sistema de actualización manual con logging estructurado, badge azul en la UI y panel de historial persistente.
+> Estado de calidad **v0.6.0**: sistema de actualización con reinicio automático opcional, panel “ℹ️ Acerca de” con metadatos del entorno y trazabilidad ampliada de eventos recientes.
 
 ## Documentación clave
 
@@ -17,6 +17,21 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 ### 📜 Historial de actualizaciones
 
 Las verificaciones y ejecuciones del sistema de actualización manual se persisten en un archivo JSON ubicado en el directorio temporal del sistema (`$TMPDIR/portafolio_iol_update_log.json`). El registro conserva los últimos 20 eventos con su `event`, `version`, `status` y `timestamp`, permitiendo auditar cuándo se verificó o instaló una nueva release incluso después de reiniciar la app.
+
+### ℹ️ Panel Acerca de
+
+La versión 0.6.0 introduce un panel lateral “ℹ️ Acerca de Portafolio-IOL” accesible desde la pantalla de login. Desde allí podés revisar:
+
+- La versión instalada de la aplicación y los datos del sistema operativo.
+- La versión de Python en ejecución y el directorio temporal utilizado para los artefactos.
+- Los últimos 10 eventos del registro de actualizaciones, ordenados del más reciente al más antiguo.
+- El estado actual del entorno (`cwd` y variables de entorno exportadas) en formato JSON para diagnóstico rápido.
+
+### 🔁 Reinicio automático tras actualización
+
+Después de confirmar una actualización manual o forzada, la aplicación muestra un aviso de éxito y ejecuta un reinicio seguro por defecto. Este reinicio vuelve a lanzar el script principal y registra los eventos `restart initiated` y `restart done` en el historial.
+
+Si necesitás posponer el reinicio podés desactivar la casilla “Reiniciar automáticamente tras la actualización” antes de confirmar el proceso. Cuando el reinicio queda pendiente, la UI muestra el badge “🕓 Reinicio programado” para recordarlo. También podés deshabilitar globalmente el reinicio automático estableciendo `DISABLE_AUTO_RESTART=1` en el entorno; en ese caso el sistema registrará el evento como `skipped: disabled` y te indicará que el reinicio deberá hacerse manualmente.
 
 ## Funcionalidades del Dashboard
 

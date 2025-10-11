@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.0 — Auto-Restart y Panel Acerca de
+- Implementado reinicio automático tras actualización.
+- Nuevo panel “ℹ️ Acerca de” con información de sistema y logs recientes.
+- Mejoras en la trazabilidad del flujo de actualización.
+
 ## v0.5.9 — Mejora del sistema de actualización
 - Registro estructurado de verificaciones y actualizaciones.
 - Badge azul “Actualizando…” durante el proceso.
