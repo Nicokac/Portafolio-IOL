@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.2-part1c — Integrated FastAPI backend with UI indicator and test coverage.
+- Added root-level aliases for predictive FastAPI endpoints and documented API mode usage.
+- Surfaced an "API mode available" badge on the login screen when the backend is reachable.
+- Created automated tests for predictive, adaptive forecast and cache status endpoints.
+
 ## v0.6.2-part1b — Implemented FastAPI endpoints for predictive, adaptive, and cache services.
 - Added predictive `/predict` endpoint and adaptive forecast simulation API with Pydantic schemas.
 - Exposed cache statistics endpoint backed by the core cache helpers.

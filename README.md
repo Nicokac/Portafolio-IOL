@@ -31,6 +31,22 @@ Sesiones disponibles:
 - `nox -s tests`: pytest con cobertura y reporte `term-missing`.
 - `nox -s security`: auditorías de `bandit` y `pip-audit`.
 
+## API mode
+
+Para exponer el backend FastAPI en modo local podés utilizar el script dedicado:
+
+```bash
+./run_api.sh
+```
+
+Esto levanta `uvicorn` en `http://localhost:8000` con recarga automática, permitiendo consumir los endpoints REST del motor predictivo.
+
+Ejemplo de llamada:
+
+```bash
+curl http://localhost:8000/predict
+```
+
 ### 📜 Historial de actualizaciones
 
 Las verificaciones y ejecuciones del sistema de actualización manual se persisten en un archivo JSON ubicado en el directorio temporal del sistema (`$TMPDIR/portafolio_iol_update_log.json`). El registro conserva los últimos 20 eventos con su `event`, `version`, `status` y `timestamp`, permitiendo auditar cuándo se verificó o instaló una nueva release incluso después de reiniciar la app.

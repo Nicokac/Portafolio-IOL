@@ -19,9 +19,9 @@ except ImportError:  # pragma: no cover
 class _BaseModel(BaseModel):
     if ConfigDict is not None:  # pragma: no branch
         model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-
-    class Config:  # type: ignore[override]
-        extra = "ignore"
+    else:  # pragma: no cover - fallback for Pydantic v1
+        class Config:  # type: ignore[override]
+            extra = "ignore"
 
 
 class ProfileSummaryResponse(_BaseModel):
