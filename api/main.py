@@ -2,10 +2,9 @@
 
 import logging
 
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import Depends, FastAPI
 
-from services.auth import AuthTokenError, verify_token
+from services.auth import get_current_user
 from shared.version import __version__
 
 from .routers import cache, engine, predictive, profile
@@ -14,27 +13,6 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI backend - version %s", __version__)
 
 app = FastAPI(title="Portafolio IOL API", version=__version__)
-
-security = HTTPBearer(auto_error=False)
-
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> dict:
-    """Validate bearer tokens and expose the associated claims."""
-
-    if credentials is None or credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid bearer token.",
-        )
-    try:
-        return verify_token(credentials.credentials)
-    except AuthTokenError as exc:  # pragma: no cover - exercised via tests
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(exc),
-        ) from exc
 
 
 app.include_router(predictive.router, dependencies=[Depends(get_current_user)])

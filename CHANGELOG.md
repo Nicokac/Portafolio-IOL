@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-part3c — Secured predictive_engine FastAPI microservice and integrated Engine API badge into Streamlit UI.
+- Protected `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` con autenticación compartida usando `get_current_user`.
+- Añadió badge “Engine API active 🔮” en el login al verificar `/engine/info` correctamente.
+- Documentó los endpoints del microservicio en el README con ejemplos `curl` autenticados.
+- Extendió las pruebas de integración para cubrir los nuevos requisitos de autenticación del engine.
+
 ## v0.6.3-part3b — Implemented /engine/predict, /engine/forecast/adaptive, and /engine/history endpoints using predictive_engine integration.
 - Added FastAPI endpoints for `/engine/predict`, `/engine/forecast/adaptive`, and `/engine/history` wired to the standalone `predictive_engine` package.
 - Serialised pandas outputs via the engine helpers with performance instrumentation for observability.
