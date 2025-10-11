@@ -3,13 +3,60 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Dict
 
 from cryptography.fernet import Fernet, InvalidToken
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - exercised indirectly via integration tests
+    from fastapi import Depends, HTTPException, status
+    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+    FASTAPI_AVAILABLE = True
+    logger.info("FastAPI active ✅")
+except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
+    FASTAPI_AVAILABLE = False
+
+    class _StatusStub:
+        HTTP_401_UNAUTHORIZED = 401
+
+    status = _StatusStub()
+
+    class HTTPException(Exception):
+        """Fallback HTTPException compatible with FastAPI signature."""
+
+        def __init__(self, status_code: int, detail: str | None = None):
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    def Depends(dependency: Any = None) -> Any:  # type: ignore[override]
+        """Return the provided dependency unchanged for Streamlit usage."""
+
+        return dependency
+
+    class HTTPAuthorizationCredentials:  # pragma: no cover - compatibility shim
+        """Minimal stub emulating FastAPI's credentials container."""
+
+        def __init__(self, scheme: str | None = None, credentials: str | None = None):
+            self.scheme = scheme or ""
+            self.credentials = credentials or ""
+
+    class HTTPBearer:  # pragma: no cover - compatibility shim
+        """Stub security dependency raising when used without FastAPI."""
+
+        def __init__(self, auto_error: bool = False):
+            self.auto_error = auto_error
+
+        async def __call__(self, *args: Any, **kwargs: Any) -> HTTPAuthorizationCredentials:
+            raise RuntimeError("HTTPBearer unavailable without FastAPI installed.")
+
+    logger.warning("FastAPI not installed — running in Streamlit-only mode.")
+    logger.warning("Streamlit-only mode ⚠️")
 
 
 class AuthTokenError(ValueError):
