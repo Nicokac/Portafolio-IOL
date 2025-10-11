@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import Any, Tuple
 
 import numpy as np
 import pandas as pd
@@ -189,3 +191,47 @@ def compute_sector_dispersion(frame: pd.DataFrame) -> float:
     if sector_means.empty:
         return 0.0
     return float(sector_means.std(ddof=0))
+
+
+def to_native(value: Any) -> Any:
+    """Convert pandas/numpy objects into JSON-serialisable primitives."""
+
+    if isinstance(value, pd.DataFrame):
+        return to_records(value)
+    if isinstance(value, pd.Series):
+        return series_to_dict(value)
+    if isinstance(value, (pd.Timestamp, datetime)):
+        return value.isoformat()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return [to_native(item) for item in value.tolist()]
+    if isinstance(value, Mapping):
+        return {str(key): to_native(val) for key, val in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [to_native(item) for item in value]
+    return value
+
+
+def series_to_dict(series: pd.Series | None) -> dict[str, Any]:
+    """Serialise a pandas Series into a mapping of native Python objects."""
+
+    if not isinstance(series, pd.Series) or series.empty:
+        return {}
+    return {
+        str(index): to_native(value)
+        for index, value in series.items()
+        if pd.notna(value)
+    }
+
+
+def to_records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
+    """Serialise a pandas DataFrame into a list of dictionaries."""
+
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return []
+    records = frame.reset_index(drop=False).to_dict(orient="records")
+    return [
+        {str(key): to_native(value) for key, value in record.items()}
+        for record in records
+    ]
