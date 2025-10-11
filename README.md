@@ -16,6 +16,38 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 - [Guía de pruebas](docs/testing.md)
 - [Reportes de QA](docs/qa/)
 
+## 🔮 Núcleo Predictivo Independiente
+
+- El motor se divide en módulos autocontenidos:
+  - `predictive_engine.base` concentra las rutinas estadísticas y ahora vectoriza los cálculos de errores, EMA y β-shift.
+  - `predictive_engine.adapters` expone `run_adaptive_forecast`, que instrumenta la ejecución con `services.performance_metrics`, administra la caché y habilita **warm-start**.
+  - `predictive_engine.storage` persiste el historial adaptativo en Parquet (con fallback a SQLite) para poder reanudar el estado sin depender de memoria.
+- Desde una consola interactiva podés ejecutar una predicción adaptativa independiente del resto de la app:
+
+```python
+import pandas as pd
+from services.cache import CacheService
+from predictive_engine.adapters import run_adaptive_forecast
+
+history = pd.read_csv("./data/backtests.csv")
+cache = CacheService(namespace="standalone_adaptive")
+
+result = run_adaptive_forecast(
+    history=history,
+    cache=cache,
+    ema_span=5,
+    rolling_window=20,
+    ttl_hours=12,
+    persist_state=True,
+    persist_history=True,
+)
+
+summary = result["forecast"].summary
+print(summary["text"])
+```
+
+- El mismo adaptador se reutiliza en FastAPI: basta con importar `run_adaptive_forecast` en el endpoint y proveer el `CacheService` configurado. El historial se almacena en `./data/forecast_history.parquet`, permitiendo rehidratar el estado tras reinicios.
+
 ## QA & Seguridad
 
 Ejecutá la batería local completa con:

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-part2 — Integrated adaptive forecast persistence and vectorized predictive engine.
+- Added `predictive_engine.storage` with Parquet/SQLite helpers and warm-start support for the adaptive history.
+- Vectorised beta-shift and error computations in the predictive core and exposed `run_adaptive_forecast` with performance metrics instrumentation.
+- Updated the adaptive application service to consume the new adapter API and added regression tests for persistence and warm-start flows.
+
 ## v0.6.2-part2 — Implemented shared authentication between Streamlit and FastAPI.
 - Added a Fernet-based token service reused by Streamlit and FastAPI to issue and validate auth tokens.
 - Secured predictive and cache endpoints behind a common `get_current_user` dependency expecting `Authorization: Bearer` headers.

@@ -8,7 +8,7 @@ Este documento resume la arquitectura, los datos involucrados y la persistencia 
 - **`application.adaptive_predictive_service`**
   - Normaliza predicciones y retornos reales por sector, calculando un error relativo `(predicted - actual) / |actual|`.
   - Aplica un suavizado exponencial (EMA) sobre la matriz de errores para derivar ajustes β (*β-shift*) y recalcular las correlaciones adaptativas.
-  - Persiste el estado (`AdaptiveModelState`) y la última matriz de correlaciones en caché con TTL de **12 horas** (`CacheService` namespace `adaptive_predictive`).
+  - Persiste el estado (`AdaptiveState`) y la última matriz de correlaciones en caché con TTL de **12 horas** (`CacheService` namespace `adaptive_predictive`).
   - Expone `simulate_adaptive_forecast` para iterar históricos y medir **MAE**, **RMSE**, **bias**, el **β-shift promedio** (`beta_shift_avg`) y la **dispersión sectorial** (`sector_dispersion`), comparando la predicción original vs. la ajustada.
   - Incluye `export_adaptive_report` para generar un reporte Markdown con el resumen global, tabla temporal y la interpretación de las métricas.
   - Ofrece `prepare_adaptive_history` (históricos reales desde backtests) y `generate_synthetic_history` (cuando no hay datos), garantizando una inicialización determinística.
@@ -32,7 +32,7 @@ Este documento resume la arquitectura, los datos involucrados y la persistencia 
 
 1. El servicio recibe predicciones (`predicted_return`) y retornos observados (`actual_return`) por sector.
 2. Se normaliza el error relativo para evitar magnitudes extremas (limitado a ±5).
-3. El historial se guarda en `AdaptiveModelState.history` (máx. 720 registros), permitiendo derivar correlaciones con EMA.
+3. El historial normalizado se guarda en `AdaptiveState.history` (máx. 720 registros) y se replica en `./data/forecast_history.parquet` para habilitar warm-start sin depender del caché en memoria.
 4. Las matrices y el estado se almacenan en caché con TTL de 12h, reutilizadas por la pestaña de recomendaciones y las simulaciones offline.
 5. En ausencia de históricos reales, `generate_synthetic_history` produce una serie determinística por sector para mantener consistencia visual.
 
