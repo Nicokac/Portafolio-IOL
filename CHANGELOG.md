@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.1a-part1 — Moved predictive cache core logic to services/cache/core.py
+
+
 ## v0.6.0-patch1 — Navegación segura del panel Acerca de
 - Nuevo helper `ui.helpers.navigation.safe_page_link` que verifica el registro de páginas de Streamlit y provee un fallback compatible cuando la página no está disponible.
 - El login ahora reutiliza `safe_page_link` y permite abrir el panel “ℹ️ Acerca de” inline como alternativa segura.
