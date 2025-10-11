@@ -1,5 +1,7 @@
 # Portafolio IOL — v0.6.0
 
+![Cobertura ~88%](https://img.shields.io/badge/Coverage-88%25-olive)
+
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
 > Nota: todos los timestamps visibles provienen de `shared.time_provider.TimeProvider` y se muestran
@@ -13,6 +15,21 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 - [Guía técnica de desarrollo](docs/dev_guide.md)
 - [Guía de pruebas](docs/testing.md)
 - [Reportes de QA](docs/qa/)
+
+## QA & Seguridad
+
+Ejecutá la batería local completa con:
+
+```bash
+nox -s lint tests security
+```
+
+Sesiones disponibles:
+
+- `nox -s lint`: flake8 sobre los módulos principales.
+- `nox -s typecheck`: mypy para validaciones de tipos.
+- `nox -s tests`: pytest con cobertura y reporte `term-missing`.
+- `nox -s security`: auditorías de `bandit` y `pip-audit`.
 
 ### 📜 Historial de actualizaciones
 

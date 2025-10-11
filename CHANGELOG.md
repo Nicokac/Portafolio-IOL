@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.1c-part1 — Added automated QA/CD tools and coverage pipeline.
+- Added local QA orchestration via `nox` with lint, type-check, tests and security sessions.
+- Documented QA checklist, coverage template and pipeline summary under `docs/qa/`.
+- Updated documentation with coverage badge, QA instructions and coverage/security tooling metadata.
+
 ## v0.6.1b-part2 — Added recommendations controller and completed UI modularization.
 - Added recommendations controller and completed UI modularization.
 

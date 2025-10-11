@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portafolio-iol"
-version = "0.6.1b-part2"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.6.1c-part1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 dependencies = [
     "streamlit>=1.49.1",
     "pandas>=2.3.2",
@@ -34,3 +34,21 @@ addopts = "--cov=application --cov=controllers --cov=services"
 norecursedirs = [
     "tests/legacy",
 ]
+
+[tool.coverage.run]
+branch = true
+source = [
+    "application",
+    "controllers",
+    "services",
+    "shared",
+    "tests",
+    "noxfile",
+]
+omit = [
+    "tests/legacy/*",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "docs", "infrastructure"]
+targets = ["application", "controllers", "services", "shared", "noxfile.py"]
