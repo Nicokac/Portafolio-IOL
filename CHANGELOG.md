@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-part3b — Implemented /engine/predict, /engine/forecast/adaptive, and /engine/history endpoints using predictive_engine integration.
+- Added FastAPI endpoints for `/engine/predict`, `/engine/forecast/adaptive`, and `/engine/history` wired to the standalone `predictive_engine` package.
+- Serialised pandas outputs via the engine helpers with performance instrumentation for observability.
+
 ## v0.6.3-part3a — Added FastAPI engine router with /engine/info endpoint and base structure.
 - Added FastAPI engine router with `/engine/info` endpoint and base structure.
 
