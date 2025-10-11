@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from typing import Any
 
 import requests
@@ -16,6 +19,37 @@ REMOTE_VERSION_URL = (
 )
 
 logger = logging.getLogger(__name__)
+
+_CHECK_FILE = os.path.join(
+    tempfile.gettempdir(), "portafolio_iol_version_check.json"
+)
+
+
+def save_last_check_time() -> None:
+    try:
+        with open(_CHECK_FILE, "w", encoding="utf-8") as f:
+            json.dump({"last_check": time.time()}, f)
+    except Exception:  # pragma: no cover - best effort persistence
+        pass
+
+
+def get_last_check_time() -> float | None:
+    try:
+        with open(_CHECK_FILE, "r", encoding="utf-8") as f:
+            return json.load(f).get("last_check")
+    except Exception:
+        return None
+
+
+def format_last_check(ts: float | None) -> str:
+    if not ts:
+        return "Nunca"
+    delta = time.time() - ts
+    mins = int(delta // 60)
+    if mins < 60:
+        return f"hace {mins} min"
+    hrs = mins // 60
+    return f"hace {hrs} h {mins % 60} min"
 
 
 def _get_local_version() -> str:
@@ -27,6 +61,7 @@ def _get_local_version() -> str:
 def check_for_update() -> str | None:
     """Return the remote version if a newer release is available."""
 
+    latest: str | None = None
     try:
         local_version = _get_local_version()
         response = requests.get(REMOTE_VERSION_URL, timeout=3)
@@ -36,10 +71,12 @@ def check_for_update() -> str | None:
         if isinstance(remote_version, str):
             remote_version = remote_version.strip()
             if remote_version and remote_version != local_version:
-                return remote_version
+                latest = remote_version
     except Exception:  # pragma: no cover - best-effort network call
         logger.debug("No se pudo obtener la versión remota", exc_info=True)
-    return None
+    finally:
+        save_last_check_time()
+    return latest
 
 
 def _is_streamlit_cloud() -> bool:
@@ -100,4 +137,10 @@ def _run_update_script(latest_version: str) -> bool:
     return True
 
 
-__all__ = ["check_for_update", "_run_update_script"]
+__all__ = [
+    "check_for_update",
+    "_run_update_script",
+    "save_last_check_time",
+    "get_last_check_time",
+    "format_last_check",
+]

@@ -731,14 +731,20 @@ publicado en GitHub. Asegúrate de que el repositorio en GitHub contenga dicho
 archivo con el formato:
 
 ```json
-{ "version": "0.5.7" }
+{ "version": "0.5.8" }
 ```
 
-El valor se sincroniza automáticamente en futuros releases y habilita un botón
-**Actualizar ahora** cuando detecta una versión más reciente. En entornos con
-acceso a shell se ejecuta `git pull` seguido de `pip install --upgrade -r
-requirements.txt`. En plataformas sin shell, como Streamlit Cloud, se mostrará un
-enlace directo al changelog para realizar la actualización manual.
+El verificador muestra una insignia verde cuando la versión local coincide con la
+remota, junto a la marca de tiempo de la última comprobación. Además del botón
+**Actualizar ahora** (visible al detectar un release más reciente), el panel
+incluye un enlace persistente al changelog de GitHub y un acordeón **⚙️ Opciones
+avanzadas** con el botón **Forzar actualización**. Este último permite reinstalar
+el proyecto aun cuando no haya una versión nueva, tras una confirmación manual.
+
+En entornos con acceso a shell, las acciones de actualización ejecutan `git pull`
+seguido de `pip install --upgrade -r requirements.txt`. Recordá que Streamlit
+debe contar con permisos para invocar estos comandos; de lo contrario sólo se
+mostrará el enlace al changelog para realizar la actualización de forma manual.
 
 ## Despliegue
 

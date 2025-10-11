@@ -2,7 +2,12 @@ import logging
 import streamlit as st
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
-from services.update_checker import check_for_update, _run_update_script
+from services.update_checker import (
+    check_for_update,
+    format_last_check,
+    get_last_check_time,
+    _run_update_script,
+)
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.security_info import render_security_info
@@ -19,6 +24,8 @@ def render_login_page() -> None:
     render_header()
 
     latest = check_for_update()
+    last_check = get_last_check_time()
+    last_str = format_last_check(last_check)
 
     st.markdown(
         """
@@ -43,14 +50,39 @@ def render_login_page() -> None:
     )
 
     if latest:
-        st.warning(f"Nueva versión disponible: v{latest} (actual: v{__version__})")
+        st.warning(
+            f"💡 Nueva versión disponible: v{latest} (actual: v{__version__})"
+        )
+        st.link_button(
+            "📄 Ver cambios en GitHub",
+            "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
+        )
         if st.button("Actualizar ahora"):
-            st.info("Iniciando actualización...")
-            if _run_update_script(latest):
-                st.success("Actualización completada. Reinicie la aplicación.")
-                st.stop()
+            st.info("🔄 Iniciando actualización...")
+            _run_update_script(latest)
+            st.success("✅ Actualización completada. Reinicie la aplicación.")
+            st.stop()
+        st.caption(f"Última verificación: {last_str}")
     else:
-        st.caption(f"Versión actual: v{__version__}")
+        try:
+            st.status(f"Versión actualizada · v{__version__}", state="complete")
+        except Exception:
+            st.caption(f"Versión actualizada · v{__version__} ✓")
+
+        st.caption(f"Última verificación: {last_str}")
+        st.link_button(
+            "📄 Ver cambios en GitHub",
+            "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
+        )
+
+    with st.expander("⚙️ Opciones avanzadas"):
+        if st.button("Forzar actualización"):
+            st.warning("Esta acción reinstalará la app desde el repositorio remoto.")
+            if st.button("Confirmar actualización"):
+                st.info("🔄 Ejecutando actualización forzada...")
+                _run_update_script(__version__)
+                st.success("✅ Actualización completada. Reinicie la aplicación.")
+                st.stop()
 
     validation = validate_tokens_key()
     if validation.message:
