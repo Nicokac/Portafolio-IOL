@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.9 — Mejora del sistema de actualización
+- Registro estructurado de verificaciones y actualizaciones.
+- Badge azul “Actualizando…” durante el proceso.
+- Panel con historial de las últimas actualizaciones.
+
 ## v0.5.8 — Mejoras en el sistema de actualización
 - Registro de la última verificación de versión (timestamp persistente).
 - Enlace directo al changelog de GitHub.

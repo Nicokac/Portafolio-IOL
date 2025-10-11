@@ -7,6 +7,7 @@ from services.update_checker import (
     format_last_check,
     get_last_check_time,
     _run_update_script,
+    get_update_history,
 )
 from ui.footer import render_footer
 from ui.header import render_header
@@ -26,6 +27,7 @@ def render_login_page() -> None:
     latest = check_for_update()
     last_check = get_last_check_time()
     last_str = format_last_check(last_check)
+    history = get_update_history()
 
     st.markdown(
         """
@@ -58,9 +60,10 @@ def render_login_page() -> None:
             "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
         )
         if st.button("Actualizar ahora"):
-            st.info("🔄 Iniciando actualización...")
+            st.status("Actualizando aplicación...", state="running")
             _run_update_script(latest)
-            st.success("✅ Actualización completada. Reinicie la aplicación.")
+            st.status("Actualización completada", state="complete")
+            st.success("✅ Reinicie la aplicación para aplicar los cambios.")
             st.stop()
         st.caption(f"Última verificación: {last_str}")
     else:
@@ -75,13 +78,23 @@ def render_login_page() -> None:
             "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
         )
 
+        with st.expander("📜 Historial de actualizaciones recientes"):
+            if history:
+                for entry in reversed(history):
+                    st.caption(
+                        f"🕒 {entry['timestamp']} — {entry['event']} v{entry['version']} ({entry['status']})"
+                    )
+            else:
+                st.caption("No hay registros previos de actualización.")
+
     with st.expander("⚙️ Opciones avanzadas"):
         if st.button("Forzar actualización"):
             st.warning("Esta acción reinstalará la app desde el repositorio remoto.")
             if st.button("Confirmar actualización"):
-                st.info("🔄 Ejecutando actualización forzada...")
+                st.status("Actualizando aplicación...", state="running")
                 _run_update_script(__version__)
-                st.success("✅ Actualización completada. Reinicie la aplicación.")
+                st.status("Actualización completada", state="complete")
+                st.success("✅ Reinicie la aplicación para aplicar los cambios.")
                 st.stop()
 
     validation = validate_tokens_key()
