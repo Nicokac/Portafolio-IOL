@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portafolio-iol"
-version = "0.6.0-patch1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.6.1b-part1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 dependencies = [
     "streamlit>=1.49.1",
     "pandas>=2.3.2",
