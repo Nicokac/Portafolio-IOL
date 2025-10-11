@@ -18,6 +18,7 @@ class _FakeStreamlit:
         self.link_buttons: list[tuple[str, str]] = []
         self.statuses: list[tuple[str, str]] = []
         self.stopped = False
+        self.sidebar = self._Sidebar()
 
     def markdown(self, *_args, **_kwargs) -> None:
         return None
@@ -44,6 +45,13 @@ class _FakeStreamlit:
     def status(self, label: str, *, state: str) -> None:
         self.statuses.append((label, state))
 
+    class _Sidebar:
+        def __enter__(self) -> "_FakeStreamlit._Sidebar":
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
     class _Expander:
         def __enter__(self) -> "_FakeStreamlit._Expander":
             return self
@@ -68,6 +76,11 @@ def test_login_page_shows_version_badge(monkeypatch: pytest.MonkeyPatch) -> None
         login,
         "validate_tokens_key",
         lambda: SimpleNamespace(message=None, level="info", can_proceed=False),
+    )
+    monkeypatch.setattr(
+        login,
+        "safe_page_link",
+        lambda page, label, render_fallback: None,
     )
     monkeypatch.setattr(login, "check_for_update", lambda: None)
     monkeypatch.setattr(login, "get_last_check_time", lambda: None)

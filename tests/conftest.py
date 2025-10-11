@@ -47,6 +47,12 @@ class _DummySidebar:
         self.download_buttons: list[dict[str, Any]] = []
         self.elements: list[dict[str, Any]] = []
 
+    def __enter__(self) -> "_DummySidebar":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return False
+
     def header(self, text: object) -> None:
         value = str(text)
         self.headers.append(value)
@@ -217,6 +223,7 @@ class _DummyStreamlitCore:
         self._checkbox_returns: dict[str, bool] = {}
         self._toggle_returns: dict[str, bool] = {}
         self._form_returns: dict[str, bool] = {}
+        self.page_links: list[dict[str, Any]] = []
 
     # Public helpers -----------------------------------------------------
     def reset(self) -> None:
@@ -234,6 +241,10 @@ class _DummyStreamlitCore:
         self._checkbox_returns.clear()
         self._toggle_returns.clear()
         self._form_returns.clear()
+        self.page_links.clear()
+        runtime = getattr(self, "runtime", None)
+        if runtime is not None and hasattr(runtime, "_page_registry"):
+            runtime._page_registry = {}
 
     # Internal wiring ----------------------------------------------------
     def _register_secrets(self, secrets: _DummySecrets) -> None:
@@ -327,6 +338,17 @@ class _DummyStreamlitCore:
 
     def toast(self, message: object) -> None:
         self._record("toast", message=str(message))
+
+    def link_button(self, label: str, url: str) -> None:
+        self._record("link_button", label=label, url=url)
+
+    def page_link(self, page: str, *, label: str, icon: str | None = None) -> None:
+        runtime = getattr(self, "runtime", None)
+        registry = getattr(runtime, "_page_registry", None)
+        if registry and page not in registry:
+            raise KeyError("url_pathname")
+        entry = self._record("page_link", page=page, label=label, icon=icon)
+        self.page_links.append(entry)
 
     def stop(self) -> None:
         self._record("stop")
@@ -423,12 +445,24 @@ class _DummyStreamlitCore:
         value: bool | None = None,
         key: str | None = None,
         help: str | None = None,
+        disabled: bool | None = None,
     ) -> bool:
         entry_key = key or label
-        result = self._checkbox_returns.get(entry_key, bool(value))
+        if disabled:
+            result = bool(value)
+        else:
+            result = self._checkbox_returns.get(entry_key, bool(value))
         if key:
             self.session_state[key] = result
-        self._record("checkbox", label=label, value=value, key=key, help=help, result=result)
+        self._record(
+            "checkbox",
+            label=label,
+            value=value,
+            key=key,
+            help=help,
+            disabled=disabled,
+            result=result,
+        )
         return result
 
     def toggle(
@@ -622,6 +656,8 @@ for _name in (
     "multiselect",
     "selectbox",
     "button",
+    "link_button",
+    "page_link",
     "tabs",
     "columns",
     "empty",
@@ -664,7 +700,12 @@ _streamlit_runtime_secrets_module.StreamlitSecretNotFoundError = (
 )
 _streamlit_runtime_module.secrets = _streamlit_runtime_secrets_module  # type: ignore[attr-defined]
 
-_streamlit_module.runtime = SimpleNamespace(secrets=_streamlit_runtime_secrets_module)
+_runtime_namespace = SimpleNamespace(
+    secrets=_streamlit_runtime_secrets_module,
+    _page_registry={},
+)
+_streamlit_module.runtime = _runtime_namespace
+_streamlit_core.runtime = _runtime_namespace
 
 sys.modules.setdefault("streamlit.runtime", _streamlit_runtime_module)
 sys.modules.setdefault("streamlit.runtime.secrets", _streamlit_runtime_secrets_module)
