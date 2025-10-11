@@ -13,7 +13,9 @@ from services.update_checker import (
 )
 from ui.footer import render_footer
 from ui.header import render_header
+from ui.helpers.navigation import safe_page_link
 from ui.security_info import render_security_info
+from ui.panels.about import render_about_panel
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
@@ -71,7 +73,11 @@ def render_login_page() -> None:
     render_header()
 
     with st.sidebar:
-        st.page_link("ui.panels.about", label="ℹ️ Acerca de")
+        safe_page_link(
+            "ui.panels.about",
+            label="ℹ️ Acerca de",
+            render_fallback=render_about_panel,
+        )
 
     latest = check_for_update()
     last_check = get_last_check_time()

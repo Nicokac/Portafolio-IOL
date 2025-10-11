@@ -104,6 +104,11 @@ def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> No
         "validate_tokens_key",
         lambda: SimpleNamespace(message=None, level="info", can_proceed=False),
     )
+    monkeypatch.setattr(
+        login,
+        "safe_page_link",
+        lambda page, label, render_fallback: fake_st.page_link(page, label=label),
+    )
     monkeypatch.setattr(login, "check_for_update", lambda: None)
     monkeypatch.setattr(login, "get_last_check_time", lambda: None)
     monkeypatch.setattr(login, "format_last_check", lambda _ts: "Nunca")
