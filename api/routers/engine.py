@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
@@ -22,6 +22,7 @@ from predictive_engine.base import compute_sector_predictions
 from predictive_engine.models import AdaptiveForecastResult, AdaptiveUpdateResult, SectorPredictionSet
 from predictive_engine.storage import load_forecast_history
 from predictive_engine.utils import series_to_dict, to_native, to_records
+from services.auth import get_current_user
 from services.performance_metrics import measure_execution
 
 try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
@@ -219,7 +220,10 @@ async def engine_info() -> dict[str, str]:
 
 
 @router.post("/predict", response_model=PredictResponse, summary="Compute sector predictions")
-async def engine_predict(payload: PredictRequest) -> PredictResponse:
+async def engine_predict(
+    payload: PredictRequest,
+    _claims: dict = Depends(get_current_user),
+) -> PredictResponse:
     """Execute the sector prediction engine using EMA-smoothed backtests."""
 
     logger.info(
@@ -265,7 +269,10 @@ async def engine_predict(payload: PredictRequest) -> PredictResponse:
     response_model=AdaptiveForecastResponse,
     summary="Run adaptive forecast workflow",
 )
-async def engine_forecast_adaptive(payload: AdaptiveForecastRequest) -> AdaptiveForecastResponse:
+async def engine_forecast_adaptive(
+    payload: AdaptiveForecastRequest,
+    _claims: dict = Depends(get_current_user),
+) -> AdaptiveForecastResponse:
     """Execute the adaptive forecasting routine and expose serialised outputs."""
 
     logger.info(
@@ -369,7 +376,9 @@ async def engine_forecast_adaptive(payload: AdaptiveForecastRequest) -> Adaptive
 
 
 @router.get("/history", response_model=HistoryResponse, summary="Retrieve adaptive forecast history")
-async def engine_history() -> HistoryResponse:
+async def engine_history(
+    _claims: dict = Depends(get_current_user),
+) -> HistoryResponse:
     """Return the persisted adaptive forecast history if available."""
 
     logger.info("Fetching adaptive forecast history")

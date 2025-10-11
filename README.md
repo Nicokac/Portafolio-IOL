@@ -79,6 +79,42 @@ Ejemplo de llamada:
 curl -H "Authorization: Bearer <token>" http://localhost:8000/predict
 ```
 
+### 🔮 Engine API
+
+- `GET /engine/info`
+- `POST /engine/predict`
+- `POST /engine/forecast/adaptive`
+- `GET /engine/history`
+
+Los endpoints `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` requieren cabecera `Authorization: Bearer <token>` emitida desde la pantalla de login. `/engine/info` permanece público y devuelve el estado del microservicio.
+
+#### Ejemplos autenticados
+
+```bash
+# Predicciones sectoriales
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"opportunities":[{"symbol":"GGAL","sector":"Finanzas"}],"span":10}' \
+  http://localhost:8000/engine/predict
+
+# Forecast adaptativo (historial incremental)
+curl -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"history":[],"predictions":[{"timestamp":"2024-01-01T00:00:00Z","sector":"Tech","predicted_return":0.12}],"actuals":[]}' \
+  http://localhost:8000/engine/forecast/adaptive
+
+# Historial adaptativo persistido
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/engine/history
+```
+
+#### Parámetros relevantes
+
+- **/engine/predict**: `opportunities` es una lista de `{symbol, sector}` a procesar y `span` define la ventana EMA.
+- **/engine/forecast/adaptive**: acepta `history`, `predictions` y `actuals` como listas de observaciones con `timestamp`, `sector` y retornos. Opcionalmente permite ajustar `ema_span`, `rolling_window`, `ttl_hours`, `max_history_rows` y banderas de persistencia.
+- **/engine/history**: retorna el historial persistido sin requerir parámetros adicionales.
+
 ### 🔐 Autenticación unificada
 
 1. Iniciá sesión desde la UI de Streamlit como lo hacés habitualmente.

@@ -28,6 +28,9 @@ from shared.version import __version__
 
 
 FASTAPI_HEALTH_URL = os.environ.get("FASTAPI_HEALTH_URL", "http://localhost:8000/health")
+FASTAPI_ENGINE_INFO_URL = os.environ.get(
+    "FASTAPI_ENGINE_INFO_URL", "http://localhost:8000/engine/info"
+)
 
 
 logger = logging.getLogger(__name__)
@@ -37,8 +40,10 @@ UPDATE_CONFIRM_KEY = "confirm_update_request"
 FORCE_CONFIRM_KEY = "confirm_force_update_request"
 
 
-def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
-    """Check if the FastAPI backend is reachable."""
+def _perform_backend_get(
+    url: str,
+) -> tuple[int | None, dict[str, object] | None]:
+    """Execute a GET request against the backend including the auth token if present."""
 
     try:
         headers = {}
@@ -47,15 +52,34 @@ def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
             headers["Authorization"] = f"Bearer {token}"
         response = requests.get(url, headers=headers, timeout=0.75)
     except RequestException:
-        return False
-    if response.status_code != 200:
-        return False
+        return None, None
     try:
         payload = response.json()
     except ValueError:
+        payload = None
+    return response.status_code, payload
+
+
+def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
+    """Check if the FastAPI backend is reachable."""
+
+    status_code, payload = _perform_backend_get(url)
+    if status_code != 200:
+        return False
+    if not payload:
         return True
     status = str(payload.get("status", "")).strip().lower()
     return status == "ok" or bool(payload)
+
+
+def _is_engine_api_active(url: str = FASTAPI_ENGINE_INFO_URL) -> bool:
+    """Return ``True`` when the predictive engine endpoint responds successfully."""
+
+    status_code, payload = _perform_backend_get(url)
+    if status_code != 200 or not isinstance(payload, dict):
+        return False
+    status = str(payload.get("status", "")).strip().lower()
+    return status == "ok"
 
 
 def _get_auth_token_ttl() -> int:
@@ -124,6 +148,17 @@ def render_login_page() -> None:
             """,
             unsafe_allow_html=True,
         )
+        if _is_engine_api_active():
+            st.markdown(
+                """
+                <div style="margin:-0.5rem 0 1.25rem;">
+                    <span style="display:inline-flex;align-items:center;gap:0.45rem;padding:0.45rem 1rem;border-radius:999px;background:rgba(123, 31, 162, 0.16);color:#4a148c;font-weight:600;letter-spacing:0.02em;">
+                        Engine API active 🔮
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
     with st.sidebar:
         safe_page_link(

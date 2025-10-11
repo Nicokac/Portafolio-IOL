@@ -8,6 +8,8 @@ import time
 from typing import Any, Dict
 
 from cryptography.fernet import Fernet, InvalidToken
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 
 class AuthTokenError(ValueError):
@@ -77,4 +79,31 @@ def verify_token(token: str) -> Dict[str, Any]:
     return payload
 
 
-__all__ = ["generate_token", "verify_token", "AuthTokenError"]
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> Dict[str, Any]:
+    """Validate bearer tokens and expose the associated claims."""
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid bearer token.",
+        )
+    try:
+        return verify_token(credentials.credentials)
+    except AuthTokenError as exc:  # pragma: no cover - exercised via tests
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+
+__all__ = [
+    "generate_token",
+    "verify_token",
+    "AuthTokenError",
+    "get_current_user",
+]
