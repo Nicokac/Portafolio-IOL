@@ -2,8 +2,10 @@
 
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from services.auth import AuthTokenError, verify_token
 from shared.version import __version__
 
 from .routers import cache, predictive, profile
@@ -13,9 +15,31 @@ logger.info("Starting FastAPI backend - version %s", __version__)
 
 app = FastAPI(title="Portafolio IOL API", version=__version__)
 
-app.include_router(predictive.router)
+security = HTTPBearer(auto_error=False)
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict:
+    """Validate bearer tokens and expose the associated claims."""
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid bearer token.",
+        )
+    try:
+        return verify_token(credentials.credentials)
+    except AuthTokenError as exc:  # pragma: no cover - exercised via tests
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+
+app.include_router(predictive.router, dependencies=[Depends(get_current_user)])
 app.include_router(profile.router)
-app.include_router(cache.router)
+app.include_router(cache.router, dependencies=[Depends(get_current_user)])
 
 
 @app.post(
@@ -26,6 +50,7 @@ app.include_router(cache.router)
 )
 async def predict_alias(
     payload: predictive.PredictRequest,
+    _claims: dict = Depends(get_current_user),
 ) -> predictive.PredictResponse:
     """Expose the predictive endpoint at the root level for convenience."""
 
@@ -40,6 +65,7 @@ async def predict_alias(
 )
 async def forecast_adaptive_alias(
     payload: predictive.AdaptiveForecastRequest,
+    _claims: dict = Depends(get_current_user),
 ) -> predictive.AdaptiveForecastResponse:
     """Expose the adaptive forecast endpoint without the router prefix."""
 

@@ -44,8 +44,16 @@ Esto levanta `uvicorn` en `http://localhost:8000` con recarga automática, permi
 Ejemplo de llamada:
 
 ```bash
-curl http://localhost:8000/predict
+curl -H "Authorization: Bearer <token>" http://localhost:8000/predict
 ```
+
+### 🔐 Autenticación unificada
+
+1. Iniciá sesión desde la UI de Streamlit como lo hacés habitualmente.
+2. La pantalla de login emite un token Fernet válido por una hora (configurable mediante `FASTAPI_AUTH_TTL`) y lo guarda en `st.session_state["auth_token"]`.
+3. Reutilizá ese token para invocar los endpoints protegidos del backend, por ejemplo enviándolo en la cabecera `Authorization: Bearer <token>`.
+
+La UI reenvía automáticamente el token en cada request HTTP que realiza hacia el backend, manteniendo alineado el estado entre Streamlit y FastAPI.
 
 ### 📜 Historial de actualizaciones
 

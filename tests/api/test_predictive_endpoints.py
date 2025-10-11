@@ -6,20 +6,34 @@ from typing import Generator
 
 import pandas as pd
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from api.main import app
+from services.auth import generate_token
 
 
 @pytest.fixture()
-def client() -> Generator[TestClient, None, None]:
+def auth_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    key = Fernet.generate_key().decode()
+    monkeypatch.setenv("IOL_TOKENS_KEY", key)
+    token = generate_token("tester", expiry=600)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def client(auth_headers: dict[str, str]) -> Generator[TestClient, None, None]:
     """Provide a TestClient instance for each test."""
 
     with TestClient(app) as test_client:
         yield test_client
 
 
-def test_predict_endpoint_returns_payload(monkeypatch: pytest.MonkeyPatch, client: TestClient) -> None:
+def test_predict_endpoint_returns_payload(
+    monkeypatch: pytest.MonkeyPatch,
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
     """The /predict endpoint should expose predictions from the service."""
 
     def fake_predict(*_args, **_kwargs):
@@ -45,6 +59,7 @@ def test_predict_endpoint_returns_payload(monkeypatch: pytest.MonkeyPatch, clien
                 {"symbol": "GGAL", "sector": "Finanzas"},
             ]
         },
+        headers=auth_headers,
     )
 
     assert response.status_code == 200
@@ -57,6 +72,7 @@ def test_predict_endpoint_returns_payload(monkeypatch: pytest.MonkeyPatch, clien
 def test_adaptive_forecast_endpoint_returns_metrics(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
+    auth_headers: dict[str, str],
 ) -> None:
     """The /forecast/adaptive endpoint should include key forecast metrics."""
 
@@ -82,7 +98,11 @@ def test_adaptive_forecast_endpoint_returns_metrics(
         fake_forecast,
     )
 
-    response = client.post("/forecast/adaptive", json={"history": []})
+    response = client.post(
+        "/forecast/adaptive",
+        json={"history": []},
+        headers=auth_headers,
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -94,6 +114,7 @@ def test_adaptive_forecast_endpoint_returns_metrics(
 def test_cache_status_endpoint_reports_counters(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
+    auth_headers: dict[str, str],
 ) -> None:
     """The /cache/status endpoint should expose cache counters."""
 
@@ -110,7 +131,7 @@ def test_cache_status_endpoint_reports_counters(
 
     monkeypatch.setattr("api.routers.cache.get_cache_stats", fake_cache_stats)
 
-    response = client.get("/cache/status")
+    response = client.get("/cache/status", headers=auth_headers)
 
     assert response.status_code == 200
     payload = response.json()
