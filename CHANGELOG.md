@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-patch2 — Added synthetic fixture fallback, updated deprecated Plotly and Pandas calls, and added Kaleido dependency check for graphics export.
+- Added automatic synthetic fixture generation for missing backtesting datasets with safe persistence.
+- Updated Streamlit Plotly rendering calls to the modern `width="stretch"` signature.
+- Filtered empty frames before concatenation in predictive utilities to avoid pandas warnings.
+- Logged Kaleido availability during environment inspection to disable exports gracefully when missing.
+
 ## v0.6.3-patch1 — Implemented lazy FastAPI import in services/auth to ensure compatibility with Streamlit-only environments.
 - Deferred FastAPI imports in `services/auth` with safe fallbacks for Streamlit-only deployments.
 - Logged the active mode to differentiate between FastAPI and Streamlit executions.
