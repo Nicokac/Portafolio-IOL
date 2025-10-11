@@ -13,7 +13,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import application.adaptive_predictive_service as adaptive_predictive_service  # noqa: E402
 from application.adaptive_predictive_service import (  # noqa: E402
-    AdaptiveModelState,
     export_adaptive_report,
     _CORR_KEY,
     _STATE_KEY,
@@ -23,6 +22,7 @@ from application.adaptive_predictive_service import (  # noqa: E402
 from application.predictive_core.state import PredictiveCacheState  # noqa: E402
 from services.cache import CacheService  # noqa: E402
 from shared.settings import ADAPTIVE_TTL_HOURS  # noqa: E402
+from predictive_engine.models import AdaptiveState  # noqa: E402
 
 
 class TrackingCache(CacheService):
@@ -90,7 +90,7 @@ def test_update_model_applies_ema_and_persists_state(adaptive_cache_state: Predi
     assert cache.ttl_map[full_corr_key] == pytest.approx(expected_ttl)
 
     cached_state = cache.get(_STATE_KEY)
-    assert isinstance(cached_state, AdaptiveModelState)
+    assert isinstance(cached_state, AdaptiveState)
     assert len(cached_state.history) == 4
     assert adaptive_cache_state.misses == 1
     assert adaptive_cache_state.hits == 1
@@ -149,7 +149,7 @@ def test_state_persists_across_simulation_and_updates() -> None:
     simulate_adaptive_forecast(history, ema_span=2, cache=cache, persist=True)
 
     state_after_sim = cache.get(_STATE_KEY)
-    assert isinstance(state_after_sim, AdaptiveModelState)
+    assert isinstance(state_after_sim, AdaptiveState)
     initial_len = len(state_after_sim.history)
     assert initial_len > 0
 
@@ -157,7 +157,7 @@ def test_state_persists_across_simulation_and_updates() -> None:
     update_model(preds, actuals, cache=cache, ema_span=2, persist=True)
 
     updated_state = cache.get(_STATE_KEY)
-    assert isinstance(updated_state, AdaptiveModelState)
+    assert isinstance(updated_state, AdaptiveState)
     assert len(updated_state.history) > initial_len
     expected_ttl = ADAPTIVE_TTL_HOURS * 3600.0
     assert cache.ttl_map[cache._full_key(_STATE_KEY)] == pytest.approx(expected_ttl)

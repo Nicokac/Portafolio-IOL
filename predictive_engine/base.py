@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable, Dict, Iterable, Tuple
 
 import numpy as np
@@ -17,6 +18,7 @@ from predictive_engine.models import (
     SectorPredictionSet,
 )
 from predictive_engine import utils
+from predictive_engine.storage import save_forecast_history
 
 
 def compute_sector_predictions(
@@ -204,6 +206,9 @@ def calculate_adaptive_forecast(
     rolling_window: int,
     model_updater: Callable[[pd.DataFrame, pd.DataFrame, pd.Timestamp], AdaptiveUpdateResult],
     cache_metadata: Dict[str, float | str] | None = None,
+    persist_history: bool = False,
+    history_path: str | Path | None = "./data/forecast_history.parquet",
+    history_saver: Callable[[pd.DataFrame, str | Path], object] | None = None,
 ) -> AdaptiveForecastResult:
     if not isinstance(history, pd.DataFrame) or history.empty:
         metrics = ModelMetrics(
@@ -259,10 +264,10 @@ def calculate_adaptive_forecast(
         rolling_corr.values[np.diag_indices_from(rolling_corr.values)] = 1.0
 
     grouped = list(df.groupby("timestamp"))
-    raw_errors: list[float] = []
-    adjusted_errors: list[float] = []
-    step_rows: list[dict[str, object]] = []
-    beta_snapshots: list[tuple[pd.Timestamp, pd.Series]] = []
+    raw_error_blocks: list[np.ndarray] = []
+    adjusted_error_blocks: list[np.ndarray] = []
+    step_frames: list[pd.DataFrame] = []
+    beta_snapshots: list[pd.Series] = []
     last_update: AdaptiveUpdateResult | None = None
 
     for ts, group in grouped:
@@ -270,45 +275,52 @@ def calculate_adaptive_forecast(
         actuals = group[["sector", "actual_return"]]
         update = model_updater(predictions, actuals, ts)
         last_update = update
-        beta_shift = update.beta_shift
-        beta_snapshots.append((ts, beta_shift.copy()))
-        for row in group.itertuples(index=False):
-            sector = getattr(row, "sector")
-            predicted = float(getattr(row, "predicted_return"))
-            actual = float(getattr(row, "actual_return"))
-            raw_error = predicted - actual
-            adjustment = float(beta_shift.get(sector, 0.0)) if isinstance(beta_shift, pd.Series) else 0.0
-            factor = float(np.clip(1.0 + adjustment, 0.0, 2.0))
-            adjusted_prediction = predicted * factor
-            adj_error = adjusted_prediction - actual
-            raw_errors.append(raw_error)
-            adjusted_errors.append(adj_error)
-            step_rows.append(
+        beta_shift = update.beta_shift.copy()
+        beta_shift.name = ts
+        beta_snapshots.append(beta_shift)
+
+        sector_series = group["sector"].astype("string")
+        predicted_values = pd.to_numeric(group["predicted_return"], errors="coerce").to_numpy(dtype=float)
+        actual_values = pd.to_numeric(group["actual_return"], errors="coerce").to_numpy(dtype=float)
+        adjustments = sector_series.map(update.beta_shift).fillna(0.0).to_numpy(dtype=float)
+        factors = np.clip(1.0 + adjustments, 0.0, 2.0)
+        adjusted_predictions = predicted_values * factors
+
+        raw_error_blocks.append(predicted_values - actual_values)
+        adjusted_error_blocks.append(adjusted_predictions - actual_values)
+
+        step_frames.append(
+            pd.DataFrame(
                 {
                     "timestamp": ts,
-                    "sector": sector,
-                    "raw_prediction": predicted,
-                    "adjusted_prediction": adjusted_prediction,
-                    "actual_return": actual,
-                    "beta_adjustment": adjustment,
+                    "sector": sector_series.to_numpy(),
+                    "raw_prediction": predicted_values,
+                    "adjusted_prediction": adjusted_predictions,
+                    "actual_return": actual_values,
+                    "beta_adjustment": adjustments,
                 }
             )
+        )
 
-    beta_variations: list[float] = []
-    previous: pd.Series | None = None
-    for _, snapshot in beta_snapshots:
-        current = snapshot.fillna(0.0)
-        if previous is not None:
-            aligned_current, aligned_previous = current.align(previous.fillna(0.0), join="outer", fill_value=0.0)
-            delta = (aligned_current - aligned_previous).abs()
-            if not delta.empty:
-                beta_variations.append(float(delta.mean()))
-        previous = current
-    beta_shift_avg = float(np.mean(beta_variations)) if beta_variations else 0.0
+    if beta_snapshots:
+        beta_frame = pd.DataFrame(beta_snapshots).sort_index()
+        beta_diffs = beta_frame.fillna(0.0).diff().abs().dropna(how="all")
+        if beta_diffs.empty:
+            beta_shift_avg = 0.0
+        else:
+            beta_magnitudes = beta_diffs.mean(axis=1, skipna=True).dropna()
+            beta_shift_avg = float(beta_magnitudes.mean()) if not beta_magnitudes.empty else 0.0
+    else:
+        beta_shift_avg = 0.0
 
     last_beta = last_update.beta_shift if last_update else pd.Series(dtype=float)
     correlation_matrix = last_update.correlation_matrix if last_update else pd.DataFrame()
     sector_dispersion = utils.compute_sector_dispersion(df)
+    raw_errors = np.concatenate(raw_error_blocks) if raw_error_blocks else np.empty(0, dtype=float)
+    adjusted_errors = (
+        np.concatenate(adjusted_error_blocks) if adjusted_error_blocks else np.empty(0, dtype=float)
+    )
+
     metrics = evaluate_model_metrics(
         adjusted_errors,
         raw_errors,
@@ -326,11 +338,35 @@ def calculate_adaptive_forecast(
 
     cache_payload = cache_metadata or {"hit_ratio": 0.0, "last_updated": "-"}
 
-    return AdaptiveForecastResult(
+    steps_frame = (
+        pd.concat(step_frames, ignore_index=True)
+        if step_frames
+        else pd.DataFrame(
+            columns=[
+                "timestamp",
+                "sector",
+                "raw_prediction",
+                "adjusted_prediction",
+                "actual_return",
+                "beta_adjustment",
+            ]
+        )
+    )
+
+    result = AdaptiveForecastResult(
         metrics=metrics,
         beta_shift=last_beta.copy(),
         correlations=correlations,
-        steps=pd.DataFrame(step_rows),
+        steps=steps_frame,
         cache_metadata=cache_payload,
         summary=summary,
     )
+
+    if persist_history and history_path and last_update is not None:
+        saver = history_saver or save_forecast_history
+        try:
+            saver(last_update.state.history.copy(), history_path)
+        except Exception:
+            pass
+
+    return result

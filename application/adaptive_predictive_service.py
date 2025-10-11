@@ -20,14 +20,8 @@ from services.performance_metrics import track_function
 from shared.settings import ADAPTIVE_TTL_HOURS
 
 from predictive_engine import __version__ as ENGINE_VERSION
-from predictive_engine.adapters import (
-    EngineUpdateContext,
-    build_adaptive_updater,
-    update_model_with_cache,
-)
-from predictive_engine.base import calculate_adaptive_forecast
-from predictive_engine.models import AdaptiveState, AdaptiveUpdateResult, empty_history_frame
-from predictive_engine import utils as engine_utils
+from predictive_engine.adapters import run_adaptive_forecast
+from predictive_engine.models import AdaptiveUpdateResult, empty_history_frame
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +30,7 @@ _STATE_KEY = "adaptive_state"
 _CORR_KEY = "adaptive_correlations"
 _MAX_HISTORY_ROWS = 720
 _DEFAULT_EMA_SPAN = 5
+_HISTORY_PATH = Path("./data/forecast_history.parquet")
 
 _CACHE = CacheService(
     namespace=_CACHE_NAMESPACE,
@@ -54,84 +49,6 @@ def _cache_last_updated(cache: CacheService) -> str | None:
     return str(value)
 
 
-@dataclass(frozen=True)
-class AdaptiveModelState:
-    """Container for adaptive learning cached state."""
-
-    history: pd.DataFrame
-    last_updated: pd.Timestamp | None
-
-    def copy(self) -> "AdaptiveModelState":
-        return AdaptiveModelState(history=self.history.copy(), last_updated=self.last_updated)
-
-
-def _to_engine_state(value: object) -> AdaptiveState:
-    if isinstance(value, AdaptiveState):
-        return AdaptiveState(history=value.history.copy(), last_updated=value.last_updated)
-    if isinstance(value, AdaptiveModelState):
-        return AdaptiveState(history=value.history.copy(), last_updated=value.last_updated)
-    history = empty_history_frame()
-    last_updated = getattr(value, "last_updated", None)
-    if isinstance(getattr(value, "history", None), pd.DataFrame):
-        history = getattr(value, "history").copy()
-    return AdaptiveState(history=history, last_updated=last_updated)
-
-
-def _to_cache_state(state: AdaptiveState) -> AdaptiveModelState:
-    return AdaptiveModelState(history=state.history.copy(), last_updated=state.last_updated)
-
-
-def _ensure_timestamp(value: object) -> pd.Timestamp:
-    return engine_utils.ensure_timestamp(value)
-
-
-def _initial_state() -> AdaptiveModelState:
-    return AdaptiveModelState(history=empty_history_frame(), last_updated=None)
-
-
-def _normalise_predictions(frame: pd.DataFrame | None) -> pd.DataFrame:
-    return engine_utils.normalise_predictions(frame)
-
-
-def _normalise_actuals(frame: pd.DataFrame | None) -> pd.DataFrame:
-    return engine_utils.normalise_actuals(frame)
-
-
-def _merge_inputs(
-    predictions: pd.DataFrame,
-    actuals: pd.DataFrame,
-    *,
-    timestamp: pd.Timestamp | None,
-) -> pd.DataFrame:
-    return engine_utils.merge_inputs(predictions, actuals, timestamp=timestamp)
-
-
-def _append_history(
-    state: AdaptiveModelState,
-    normalized_rows: pd.DataFrame,
-) -> AdaptiveModelState:
-    history, last_timestamp = engine_utils.append_history(
-        state.history, normalized_rows, max_rows=_MAX_HISTORY_ROWS
-    )
-    return AdaptiveModelState(history=history, last_updated=last_timestamp)
-
-
-def _compute_beta_shift(pivot: pd.DataFrame, *, ema_span: int) -> tuple[pd.DataFrame, pd.Series]:
-    return engine_utils.compute_beta_shift(pivot, ema_span=ema_span)
-
-
-def _prepare_normalized_frame(merged: pd.DataFrame) -> pd.DataFrame:
-    return engine_utils.prepare_normalized_frame(merged)
-
-
-def _pivot_history(history: pd.DataFrame) -> pd.DataFrame:
-    return engine_utils.pivot_history(history)
-
-
-def _mean_correlation(matrix: pd.DataFrame) -> float:
-    return engine_utils.mean_correlation(matrix)
-
-
 def update_model(
     predictions: pd.DataFrame | None,
     actuals: pd.DataFrame | None,
@@ -143,6 +60,7 @@ def update_model(
     ttl_hours: float | None = None,
 ) -> dict[str, Any]:
     """Update the adaptive state using normalized prediction errors."""
+
     LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
 
     effective_ttl_hours = (
@@ -150,39 +68,34 @@ def update_model(
         if ttl_hours is not None
         else float(ADAPTIVE_TTL_HOURS)
     )
-    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
+
     active_cache = cache or _CACHE
+    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     if isinstance(active_cache, CacheService):
         active_cache.set_ttl_override(ttl_seconds)
 
-    cached_state = active_cache.get(_STATE_KEY)
-    cache_hit = isinstance(cached_state, (AdaptiveModelState, AdaptiveState))
-    engine_state = _to_engine_state(cached_state)
-
-    context = EngineUpdateContext(
-        cache=None,
+    engine_result = run_adaptive_forecast(
+        predictions=predictions,
+        actuals=actuals,
+        cache=active_cache,
+        ema_span=ema_span,
+        ttl_hours=effective_ttl_hours,
+        max_history_rows=_MAX_HISTORY_ROWS,
+        persist_state=persist,
+        persist_history=persist,
+        history_path=_HISTORY_PATH,
+        warm_start=True,
         state_key=_STATE_KEY,
         correlation_key=_CORR_KEY,
-        ttl_seconds=ttl_seconds,
-        max_history_rows=_MAX_HISTORY_ROWS,
-        persist=False,
-    )
-    context.state = engine_state
-
-    update_result, _ = update_model_with_cache(
-        predictions,
-        actuals,
-        context=context,
-        ema_span=ema_span,
         timestamp=timestamp,
+        performance_prefix="adaptive",
     )
 
-    if persist:
-        cache_state = _to_cache_state(update_result.state)
-        active_cache.set(_STATE_KEY, cache_state, ttl=ttl_seconds)
-        active_cache.set(_CORR_KEY, update_result.correlation_matrix.copy(), ttl=ttl_seconds)
+    update_result = engine_result.get("update")
+    cache_hit = bool(engine_result.get("cache_hit"))
+    cache_metadata = engine_result.get("cache_metadata") or {}
+    cache_timestamp = _cache_last_updated(active_cache) or cache_metadata.get("last_updated")
 
-    cache_timestamp = _cache_last_updated(active_cache)
     if cache_hit:
         _CACHE_STATE.record_hit(
             last_updated=cache_timestamp,
@@ -194,7 +107,11 @@ def update_model(
             ttl_hours=effective_ttl_hours,
         )
 
-    payload = update_result.to_dict()
+    payload: dict[str, Any] = {}
+    if isinstance(update_result, AdaptiveUpdateResult):
+        payload = update_result.to_dict()
+    if cache_metadata:
+        payload["cache_metadata"] = cache_metadata
     return payload
 
 
@@ -346,73 +263,45 @@ def simulate_adaptive_forecast(
         frame = frame.dropna(subset=["timestamp", "sector", "predicted_return", "actual_return"])
         frame = frame.sort_values("timestamp")
 
-    cached_state = working_cache.get(_STATE_KEY)
-    cache_hit = isinstance(cached_state, (AdaptiveModelState, AdaptiveState))
-    engine_state = _to_engine_state(cached_state)
-
-    context = EngineUpdateContext(
-        cache=None,
-        state_key=_STATE_KEY,
-        correlation_key=_CORR_KEY,
-        ttl_seconds=ttl_seconds,
-        max_history_rows=_MAX_HISTORY_ROWS,
-        persist=False,
-    )
-    context.state = engine_state
-    hit_flag = cache_hit
-
-    def _model_updater(preds: pd.DataFrame, acts: pd.DataFrame, ts: pd.Timestamp) -> AdaptiveUpdateResult:
-        nonlocal hit_flag
-        result, _ = update_model_with_cache(
-            preds,
-            acts,
-            context=context,
-            ema_span=ema_span,
-            timestamp=ts,
-        )
-        if persist:
-            cache_state = _to_cache_state(result.state)
-            working_cache.set(_STATE_KEY, cache_state, ttl=ttl_seconds)
-            working_cache.set(_CORR_KEY, result.correlation_matrix.copy(), ttl=ttl_seconds)
-        cache_timestamp = _cache_last_updated(working_cache)
-        if hit_flag:
-            _CACHE_STATE.record_hit(last_updated=cache_timestamp, ttl_hours=effective_ttl_hours)
-        else:
-            _CACHE_STATE.record_miss(last_updated=cache_timestamp, ttl_hours=effective_ttl_hours)
-            hit_flag = True
-        return result
-
-    cache_hit_ratio = 0.0
-    cache_last_updated = "-"
-    if hasattr(working_cache, "hit_ratio"):
-        try:
-            cache_hit_ratio = float(working_cache.hit_ratio())
-        except Exception:
-            LOGGER.debug("No se pudo obtener el hit ratio de cache", exc_info=True)
-    if hasattr(working_cache, "last_updated_human"):
-        try:
-            cache_last_updated = str(working_cache.last_updated_human)
-        except Exception:
-            LOGGER.debug("No se pudo obtener la marca temporal de cache", exc_info=True)
-
-    engine_result = calculate_adaptive_forecast(
-        frame,
+    engine_result = run_adaptive_forecast(
+        history=frame,
+        cache=working_cache,
         ema_span=ema_span,
         rolling_window=rolling_window,
-        model_updater=_model_updater,
-        cache_metadata={"hit_ratio": cache_hit_ratio, "last_updated": cache_last_updated},
+        ttl_hours=effective_ttl_hours,
+        max_history_rows=_MAX_HISTORY_ROWS,
+        persist_state=persist,
+        persist_history=persist,
+        history_path=_HISTORY_PATH,
+        warm_start=True,
+        state_key=_STATE_KEY,
+        correlation_key=_CORR_KEY,
+        performance_prefix="adaptive",
     )
 
-    if cache_last_updated == "-" and not frame.empty:
+    forecast_result = engine_result.get("forecast")
+    cache_metadata = engine_result.get("cache_metadata") or {}
+    cache_last_updated = cache_metadata.get("last_updated")
+    if (not cache_last_updated or cache_last_updated == "-") and not frame.empty:
         last_timestamp = frame["timestamp"].max()
         if isinstance(last_timestamp, pd.Timestamp):
             cache_last_updated = last_timestamp.strftime("%H:%M:%S")
+            cache_metadata["last_updated"] = cache_last_updated
 
-    payload = engine_result.as_dict()
-    cache_meta = payload.get("cache_metadata") if isinstance(payload.get("cache_metadata"), dict) else {}
-    if isinstance(cache_meta, dict):
-        cache_meta["last_updated"] = cache_last_updated
-        payload["cache_metadata"] = cache_meta
+    cache_hit = bool(engine_result.get("cache_hit"))
+    cache_timestamp = _cache_last_updated(working_cache) or cache_last_updated
+    if cache_hit:
+        _CACHE_STATE.record_hit(last_updated=cache_timestamp, ttl_hours=effective_ttl_hours)
+    else:
+        _CACHE_STATE.record_miss(last_updated=cache_timestamp, ttl_hours=effective_ttl_hours)
+
+    payload: dict[str, Any] = {}
+    if hasattr(forecast_result, "as_dict"):
+        payload = forecast_result.as_dict()  # type: ignore[call-arg]
+    elif isinstance(forecast_result, dict):
+        payload = dict(forecast_result)
+    if cache_metadata:
+        payload.setdefault("cache_metadata", {}).update(cache_metadata)
     beta_shift = payload.get("beta_shift", pd.Series(dtype=float))
     summary = payload.get("summary", {})
     if isinstance(beta_shift, pd.Series) and not beta_shift.empty:
@@ -515,7 +404,6 @@ def export_adaptive_report(results: dict[str, Any]) -> Path:
 
 
 __all__ = [
-    "AdaptiveModelState",
     "generate_synthetic_history",
     "prepare_adaptive_history",
     "simulate_adaptive_forecast",

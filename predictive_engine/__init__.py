@@ -29,4 +29,4 @@ __all__ = [
     "SectorPredictionSet",
 ]
 
-__version__ = "0.6.3-part1"
+__version__ = "0.6.3-part2"
