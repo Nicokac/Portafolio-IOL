@@ -10,6 +10,8 @@ from types import ModuleType
 from typing import Iterable
 
 from .core import CacheService, PredictiveCacheState
+from . import quotes as _quotes
+from . import ui_adapter as _ui_adapter
 
 
 def _load_legacy_module() -> ModuleType:
@@ -32,6 +34,12 @@ _legacy_module.CacheService = CacheService
 _legacy_module.PredictiveCacheState = PredictiveCacheState
 _legacy_module.logger = logging.getLogger(__name__)
 
+for _module in (_quotes, _ui_adapter):
+    for _name in getattr(_module, "__all__", None) or [
+        name for name in vars(_module) if not name.startswith("__")
+    ]:
+        setattr(_legacy_module, _name, getattr(_module, _name))
+
 sys.modules[__name__] = _legacy_module
 
 
@@ -42,4 +50,8 @@ def _exported_names(module: ModuleType) -> Iterable[str]:
     return [name for name in module.__dict__ if not name.startswith("__")]
 
 
-__all__ = sorted(set(_exported_names(_legacy_module)) | {"CacheService", "PredictiveCacheState"})
+_additional_exports = {"CacheService", "PredictiveCacheState"}
+_additional_exports |= set(_exported_names(_quotes))
+_additional_exports |= set(_exported_names(_ui_adapter))
+
+__all__ = sorted(set(_exported_names(_legacy_module)) | _additional_exports)
