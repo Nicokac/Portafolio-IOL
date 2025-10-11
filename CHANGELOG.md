@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-patch1 — Implemented lazy FastAPI import in services/auth to ensure compatibility with Streamlit-only environments.
+- Deferred FastAPI imports in `services/auth` with safe fallbacks for Streamlit-only deployments.
+- Logged the active mode to differentiate between FastAPI and Streamlit executions.
+- Declared FastAPI, Uvicorn, python-multipart, and updated cryptography requirements for consistent deployments.
+
 ## v0.6.3-part3c — Secured predictive_engine FastAPI microservice and integrated Engine API badge into Streamlit UI.
 - Protected `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` con autenticación compartida usando `get_current_user`.
 - Añadió badge “Engine API active 🔮” en el login al verificar `/engine/info` correctamente.

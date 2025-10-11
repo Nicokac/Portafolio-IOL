@@ -780,6 +780,8 @@ pip install -r requirements.txt
 
 > El archivo `requirements.txt` se genera con `python scripts/sync_requirements.py` a partir de `[project.dependencies]` en `pyproject.toml`. Cualquier ajuste debe aplicarse en ese archivo y luego sincronizarse para mantener la lista plana que consumen los despliegues.
 
+> If you only run the Streamlit UI, FastAPI dependencies are optional and safely bypassed.
+
 Para un entorno de desarrollo con herramientas de linting y pruebas:
 
 ```bash
