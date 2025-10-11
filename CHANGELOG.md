@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.5.8 — Mejoras en el sistema de actualización
+- Registro de la última verificación de versión (timestamp persistente).
+- Enlace directo al changelog de GitHub.
+- Badge verde en el login cuando la app está actualizada.
+- Botón “Forzar actualización” disponible en el panel avanzado.
+
 ## v0.5.7 — Verificador de versión manual
 - Nueva función `check_for_update()` con conexión a GitHub.
 - Integración en la pantalla de inicio de sesión con confirmación manual de actualización.

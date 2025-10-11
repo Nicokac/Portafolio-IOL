@@ -58,7 +58,7 @@ class _FakeStreamlit:
         self.stopped = True
 
 
-def test_login_page_renders_update_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_login_page_shows_version_badge(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = _FakeStreamlit()
     monkeypatch.setattr(login, "st", fake_st)
     monkeypatch.setattr(login, "render_header", lambda: None)
@@ -69,16 +69,20 @@ def test_login_page_renders_update_prompt(monkeypatch: pytest.MonkeyPatch) -> No
         "validate_tokens_key",
         lambda: SimpleNamespace(message=None, level="info", can_proceed=False),
     )
-    monkeypatch.setattr(login, "check_for_update", lambda: "0.5.8")
-    monkeypatch.setattr(login, "__version__", "0.5.7", raising=False)
-    monkeypatch.setattr(login, "_run_update_script", lambda latest: True)
+    monkeypatch.setattr(login, "check_for_update", lambda: None)
+    monkeypatch.setattr(login, "get_last_check_time", lambda: None)
+    monkeypatch.setattr(login, "format_last_check", lambda _ts: "Nunca")
 
     login.render_login_page()
 
-    assert fake_st.warnings, "Se espera que aparezca la advertencia de actualización"
-    assert "Nueva versión disponible" in fake_st.warnings[-1]
+    assert (
+        f"Versión actualizada · v{login.__version__}",
+        "complete",
+    ) in fake_st.statuses
     assert any(
         label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons
-    ), "Se espera un enlace al changelog"
-    assert "0.5.8" in fake_st.warnings[-1]
-    assert "Actualizar ahora" in fake_st.buttons
+    ), "El enlace al changelog debe estar siempre presente"
+    assert any(
+        msg.startswith("Última verificación:") for msg in fake_st.captions
+    ), "Debe mostrar la última verificación"
+    assert "Forzar actualización" in fake_st.buttons

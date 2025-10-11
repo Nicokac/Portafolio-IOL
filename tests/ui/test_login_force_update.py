@@ -17,6 +17,7 @@ class _FakeStreamlit:
         self.successes: list[str] = []
         self.link_buttons: list[tuple[str, str]] = []
         self.statuses: list[tuple[str, str]] = []
+        self._button_responses: dict[str, list[bool]] = {}
         self.stopped = False
 
     def markdown(self, *_args, **_kwargs) -> None:
@@ -27,7 +28,11 @@ class _FakeStreamlit:
 
     def button(self, label: str) -> bool:
         self.buttons.append(label)
-        return False
+        responses = self._button_responses.get(label, [])
+        return responses.pop(0) if responses else False
+
+    def queue_button_response(self, label: str, value: bool) -> None:
+        self._button_responses.setdefault(label, []).append(value)
 
     def caption(self, message: str) -> None:
         self.captions.append(message)
@@ -58,8 +63,11 @@ class _FakeStreamlit:
         self.stopped = True
 
 
-def test_login_page_renders_update_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = _FakeStreamlit()
+    fake_st.queue_button_response("Forzar actualización", True)
+    fake_st.queue_button_response("Confirmar actualización", True)
+
     monkeypatch.setattr(login, "st", fake_st)
     monkeypatch.setattr(login, "render_header", lambda: None)
     monkeypatch.setattr(login, "render_footer", lambda: None)
@@ -69,16 +77,17 @@ def test_login_page_renders_update_prompt(monkeypatch: pytest.MonkeyPatch) -> No
         "validate_tokens_key",
         lambda: SimpleNamespace(message=None, level="info", can_proceed=False),
     )
-    monkeypatch.setattr(login, "check_for_update", lambda: "0.5.8")
-    monkeypatch.setattr(login, "__version__", "0.5.7", raising=False)
-    monkeypatch.setattr(login, "_run_update_script", lambda latest: True)
+    monkeypatch.setattr(login, "check_for_update", lambda: None)
+    monkeypatch.setattr(login, "get_last_check_time", lambda: None)
+    monkeypatch.setattr(login, "format_last_check", lambda _ts: "Nunca")
+    monkeypatch.setattr(login, "__version__", "0.5.8", raising=False)
+
+    calls: list[str] = []
+    monkeypatch.setattr(login, "_run_update_script", lambda version: calls.append(version))
 
     login.render_login_page()
 
-    assert fake_st.warnings, "Se espera que aparezca la advertencia de actualización"
-    assert "Nueva versión disponible" in fake_st.warnings[-1]
-    assert any(
-        label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons
-    ), "Se espera un enlace al changelog"
-    assert "0.5.8" in fake_st.warnings[-1]
-    assert "Actualizar ahora" in fake_st.buttons
+    assert "Forzar actualización" in fake_st.buttons
+    assert "Confirmar actualización" in fake_st.buttons
+    assert calls == ["0.5.8"]
+    assert fake_st.stopped is True
