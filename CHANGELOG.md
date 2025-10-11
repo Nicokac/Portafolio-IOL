@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.2-part1b — Implemented FastAPI endpoints for predictive, adaptive, and cache services.
+- Added predictive `/predict` endpoint and adaptive forecast simulation API with Pydantic schemas.
+- Exposed cache statistics endpoint backed by the core cache helpers.
+- Delivered placeholder profile summary endpoint returning structured JSON payloads.
+
 ## v0.6.2-part1a — Created base FastAPI structure and routers skeleton.
 - Introduced the foundational FastAPI app with health endpoint and logging.
 - Registered placeholder routers for predictive, profile, and cache services.
