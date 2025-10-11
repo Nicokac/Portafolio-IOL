@@ -21,6 +21,14 @@ except ImportError:  # pragma: no cover - fallback for very old runtimes
 
 
 analysis_logger = logging.getLogger("analysis")
+logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - optional dependency
+    import kaleido  # type: ignore  # noqa: F401
+except ImportError:  # pragma: no cover - dependency is optional
+    logger.warning("⚠️ Dependencia Kaleido no instalada — export a imagen deshabilitado")
+else:  # pragma: no cover - import side effect only
+    logger.info("✅ Dependencia Kaleido disponible")
 
 
 def _safe_int(value: Any) -> Optional[int]:
