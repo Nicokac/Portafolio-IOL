@@ -12,6 +12,11 @@ import warnings
 import pandas as pd
 import pytest
 
+from controllers.recommendations_controller import (
+    AdaptiveForecastViewModel,
+    PredictiveCacheViewModel,
+    SectorPerformanceViewModel,
+)
 from ui.tabs import recommendations
 
 
@@ -89,28 +94,43 @@ def test_render_for_test_smoke() -> None:
     original_px = recommendations.px
     original_prepare = recommendations.prepare_adaptive_history
     original_generate = recommendations.generate_synthetic_history
-    original_simulate = recommendations.simulate_adaptive_forecast
+    original_sector_view = recommendations.recommendations_controller.load_sector_performance_view
+    original_simulate = recommendations.recommendations_controller.run_adaptive_forecast_view
     original_export = recommendations.export_adaptive_report
     original_build = recommendations.build_correlation_figure
-    original_stats = recommendations.get_cache_stats
+    original_stats = recommendations.recommendations_controller.get_predictive_cache_view
 
     start = perf_counter()
     try:
         recommendations.px = chart_stub
         recommendations.prepare_adaptive_history = lambda frame: stub_history
         recommendations.generate_synthetic_history = lambda frame: stub_history
-        recommendations.simulate_adaptive_forecast = lambda history, **kwargs: {
-            "summary": stub_summary,
-            "historical_correlation": pd.DataFrame(),
-            "rolling_correlation": pd.DataFrame(),
-            "correlation_matrix": pd.DataFrame([[1.0]]),
-            "beta_shift": pd.Series([0.1]),
-            "cache_metadata": stub_cache,
-            "steps": stub_steps,
-        }
+        recommendations.recommendations_controller.load_sector_performance_view = (
+            lambda frame, **_: SectorPerformanceViewModel(
+                predictions=frame.copy() if isinstance(frame, pd.DataFrame) else pd.DataFrame(),
+                cache=PredictiveCacheViewModel(hits=1, misses=0, last_updated="offline"),
+            )
+        )
+        recommendations.recommendations_controller.run_adaptive_forecast_view = (
+            lambda history, **kwargs: AdaptiveForecastViewModel(
+                payload={
+                    "summary": dict(stub_summary),
+                    "historical_correlation": pd.DataFrame(),
+                    "rolling_correlation": pd.DataFrame(),
+                    "correlation_matrix": pd.DataFrame([[1.0]]),
+                    "beta_shift": pd.Series([0.1]),
+                    "cache_metadata": dict(stub_cache),
+                    "steps": stub_steps.copy(),
+                },
+                summary=dict(stub_summary),
+                cache_metadata=dict(stub_cache),
+            )
+        )
         recommendations.export_adaptive_report = lambda payload: Path("docs/qa/v0.5.6-smoke-report.md")
         recommendations.build_correlation_figure = lambda *args, **kwargs: _ChartStub("correlation")
-        recommendations.get_cache_stats = lambda: {"hits": 3, "misses": 0, "ttl_seconds": 3600}
+        recommendations.recommendations_controller.get_predictive_cache_view = (
+            lambda: PredictiveCacheViewModel(hits=3, misses=0, last_updated="offline")
+        )
 
         with _no_warnings():
             recommendations._render_for_test(df, state)
@@ -118,10 +138,11 @@ def test_render_for_test_smoke() -> None:
         recommendations.px = original_px
         recommendations.prepare_adaptive_history = original_prepare
         recommendations.generate_synthetic_history = original_generate
-        recommendations.simulate_adaptive_forecast = original_simulate
+        recommendations.recommendations_controller.load_sector_performance_view = original_sector_view
+        recommendations.recommendations_controller.run_adaptive_forecast_view = original_simulate
         recommendations.export_adaptive_report = original_export
         recommendations.build_correlation_figure = original_build
-        recommendations.get_cache_stats = original_stats
+        recommendations.recommendations_controller.get_predictive_cache_view = original_stats
     duration = perf_counter() - start
 
     logging.getLogger("qa.smoke").info("render_for_test duration=%.3fs", duration)

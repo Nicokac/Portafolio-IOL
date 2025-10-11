@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.1b-part2 — Added recommendations controller and completed UI modularization.
+- Added recommendations controller and completed UI modularization.
+
 ## v0.6.1b-part1 — Split major UI sections of the recommendations tab into modular subcomponents.
 - Modularized the recommendations UI into `cache_badge`, `simulation_panel` and `correlation_tab` packages.
 - Preserved the testing helper `_render_for_test` while delegating rendering to the new package entry point.

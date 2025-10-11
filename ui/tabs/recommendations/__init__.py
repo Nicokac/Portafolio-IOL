@@ -16,7 +16,6 @@ from application.adaptive_predictive_service import (
     export_adaptive_report,
     generate_synthetic_history,
     prepare_adaptive_history,
-    simulate_adaptive_forecast,
 )
 from application.benchmark_service import (
     BENCHMARK_BASELINES,
@@ -26,7 +25,7 @@ from application.profile_service import DEFAULT_PROFILE, ProfileService
 from application.recommendation_service import RecommendationService
 from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
-from application.predictive_service import get_cache_stats, predict_sector_performance
+from controllers import recommendations_controller
 from services.portfolio_view import compute_symbol_risk_metrics
 from shared.logging_utils import silence_streamlit_warnings
 from shared.version import __version__
@@ -93,10 +92,9 @@ __all__ = [
     "_build_numeric_lookup",
     "prepare_adaptive_history",
     "generate_synthetic_history",
-    "simulate_adaptive_forecast",
     "export_adaptive_report",
     "build_correlation_figure",
-    "get_cache_stats",
+    "recommendations_controller",
     "px",
     "_render_for_test",
 ]
@@ -846,8 +844,12 @@ def render_recommendations_tab() -> None:
         value=True,
         key=f"{_FORM_KEY}_show_predictions_toggle",
     )
-    stats = get_cache_stats()
-    cache_stats = _normalise_cache_stats(stats)
+    try:
+        stats_view = recommendations_controller.get_predictive_cache_view()
+    except Exception:  # pragma: no cover - defensive logging
+        LOGGER.exception("Fallo al obtener métricas de cache predictivo", exc_info=True)
+        stats_view = recommendations_controller.PredictiveCacheViewModel()
+    cache_stats = _normalise_cache_stats(stats_view.to_dict())
     hits = cache_stats.get("hits")
     misses = cache_stats.get("misses")
     try:
@@ -949,8 +951,8 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
         if {"symbol", "sector"}.issubset(recommendations_df.columns):
             warmup_frame = recommendations_df[["symbol", "sector"]].dropna().copy()
         try:
-            predict_sector_performance(warmup_frame)
-            predict_sector_performance(warmup_frame)
+            recommendations_controller.load_sector_performance_view(warmup_frame)
+            recommendations_controller.load_sector_performance_view(warmup_frame)
         except Exception:  # pragma: no cover - defensive warmup
             LOGGER.debug("No se pudo precalentar predicciones sectoriales", exc_info=True)
 

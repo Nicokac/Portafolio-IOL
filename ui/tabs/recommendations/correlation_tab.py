@@ -11,8 +11,8 @@ from application.adaptive_predictive_service import (
     export_adaptive_report,
     generate_synthetic_history,
     prepare_adaptive_history,
-    simulate_adaptive_forecast,
 )
+from controllers import recommendations_controller
 from ui.charts.correlation_matrix import build_correlation_figure
 
 from .formatting import (
@@ -77,7 +77,7 @@ def _compute_adaptive_payload(
         return None
 
     try:
-        payload = simulate_adaptive_forecast(
+        forecast_view = recommendations_controller.run_adaptive_forecast_view(
             history,
             ema_span=4,
             persist=not synthetic,
@@ -86,6 +86,7 @@ def _compute_adaptive_payload(
         LOGGER.exception("No se pudo calcular el modelo adaptativo", exc_info=True)
         return None
 
+    payload = forecast_view.payload
     payload["history_frame"] = history
     payload["synthetic"] = synthetic
     return payload
