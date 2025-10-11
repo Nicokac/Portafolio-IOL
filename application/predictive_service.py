@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 
 from application.backtesting_service import BacktestingService
@@ -20,6 +19,9 @@ from application.predictive_core import (
 from services.cache import CacheService
 from services.performance_metrics import track_function
 from shared.settings import PREDICTIVE_TTL_HOURS
+
+from predictive_engine import __version__ as ENGINE_VERSION
+from predictive_engine.adapters import build_sector_prediction_frame
 
 
 LOGGER = logging.getLogger(__name__)
@@ -89,85 +91,6 @@ def _prepare_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
     return frame.loc[:, required].copy()
 
 
-def _aggregate_sector_predictions(
-    frame: pd.DataFrame,
-    *,
-    backtesting_service: BacktestingService,
-    span: int,
-) -> pd.DataFrame:
-    rows: list[dict[str, object]] = []
-
-    for sector, group in frame.groupby("sector"):
-        symbol_returns: dict[str, pd.Series] = {}
-        symbol_predictions: list[tuple[str, float]] = []
-
-        for symbol in group["symbol"]:
-            symbol_str = str(symbol)
-            backtest = run_backtest(
-                backtesting_service,
-                symbol_str,
-                logger=LOGGER,
-            )
-            if backtest is None:
-                continue
-            returns = extract_backtest_series(backtest, "strategy_ret")
-            if returns.empty:
-                continue
-            predicted = compute_ema_prediction(returns, span=span)
-            if predicted is None:
-                continue
-            symbol_returns[symbol_str] = returns
-            symbol_predictions.append((symbol_str, predicted))
-
-        if not symbol_predictions:
-            continue
-
-        avg_corr = average_correlation(symbol_returns)
-        if avg_corr.empty:
-            avg_corr = pd.Series(
-                0.0,
-                index=[symbol for symbol, _ in symbol_predictions],
-                dtype=float,
-            )
-
-        weights: list[float] = []
-        predictions: list[float] = []
-        for symbol, predicted in symbol_predictions:
-            correlation = float(avg_corr.get(symbol, 0.0)) if isinstance(avg_corr, pd.Series) else 0.0
-            penalty = max(correlation, 0.0)
-            weight = 1.0 / (1.0 + penalty)
-            weights.append(weight)
-            predictions.append(predicted)
-
-        weights_array = np.array(weights, dtype=float)
-        if not np.isfinite(weights_array).all() or weights_array.sum() <= 0:
-            weights_array = np.ones_like(weights_array)
-        weights_array = weights_array / weights_array.sum()
-
-        predicted_sector = float(np.dot(weights_array, predictions))
-        avg_corr_value = float(np.nanmean(avg_corr.to_numpy())) if not avg_corr.empty else 0.0
-        confidence = float(max(0.0, min(1.0, 1.0 - max(avg_corr_value, 0.0))))
-
-        rows.append(
-            {
-                "sector": str(sector),
-                "predicted_return": predicted_sector,
-                "sample_size": len(symbol_predictions),
-                "avg_correlation": avg_corr_value,
-                "confidence": confidence,
-            }
-        )
-
-    if not rows:
-        return pd.DataFrame(
-            columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
-        )
-
-    result = pd.DataFrame(rows)
-    result = result.sort_values("predicted_return", ascending=False).reset_index(drop=True)
-    return result
-
-
 @track_function("predict_sector_performance")
 def predict_sector_performance(
     opportunities: pd.DataFrame | None,
@@ -208,10 +131,15 @@ def predict_sector_performance(
         )
         return empty
 
+    LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
     service = backtesting_service or BacktestingService()
-    predictions = _aggregate_sector_predictions(
+    predictions = build_sector_prediction_frame(
         frame,
         backtesting_service=service,
+        run_backtest=lambda svc, symbol: run_backtest(svc, symbol, logger=LOGGER),
+        extract_series=lambda backtest, column: extract_backtest_series(backtest, column),
+        ema_predictor=lambda series, ema_span: compute_ema_prediction(series, span=ema_span),
+        average_correlation=average_correlation,
         span=span,
     )
 

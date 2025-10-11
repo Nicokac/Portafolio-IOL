@@ -985,3 +985,5 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
 ### Tests
 - Se agregaron pruebas de cobertura para UI, controllers, servicios, application, infrastructure y shared.
 
+## v0.6.3-part1 — Created predictive_engine package and migrated predictive/adaptive core logic.
+
