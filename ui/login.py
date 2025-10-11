@@ -1,6 +1,8 @@
 import logging
 import os
+import requests
 import streamlit as st
+from requests.exceptions import RequestException
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
 from services.update_checker import (
@@ -22,11 +24,31 @@ from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
 
 
+FASTAPI_HEALTH_URL = os.environ.get("FASTAPI_HEALTH_URL", "http://localhost:8000/health")
+
+
 logger = logging.getLogger(__name__)
 
 AUTO_RESTART_KEY = "auto_restart_after_update"
 UPDATE_CONFIRM_KEY = "confirm_update_request"
 FORCE_CONFIRM_KEY = "confirm_force_update_request"
+
+
+def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
+    """Check if the FastAPI backend is reachable."""
+
+    try:
+        response = requests.get(url, timeout=0.75)
+    except RequestException:
+        return False
+    if response.status_code != 200:
+        return False
+    try:
+        payload = response.json()
+    except ValueError:
+        return True
+    status = str(payload.get("status", "")).strip().lower()
+    return status == "ok" or bool(payload)
 
 
 def _ensure_auto_restart_default() -> bool:
@@ -72,6 +94,18 @@ def _handle_restart(auto_restart_enabled: bool) -> None:
 def render_login_page() -> None:
     """Display the login form with header and footer."""
     render_header()
+
+    if _is_fastapi_available():
+        st.markdown(
+            """
+            <div style="margin:0.5rem 0 1rem;">
+                <span style="display:inline-flex;align-items:center;gap:0.45rem;padding:0.45rem 0.95rem;border-radius:999px;background:rgba(46, 125, 50, 0.16);color:#1b5e20;font-weight:600;letter-spacing:0.02em;">
+                    🟢 API mode available
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     with st.sidebar:
         safe_page_link(
