@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Mapping
 
 
 @dataclass
@@ -227,4 +227,88 @@ class PredictiveCacheState:
         return elapsed > ttl * 3600.0
 
 
-__all__ = ["CacheService", "PredictiveCacheState"]
+def _default_stats_payload() -> Dict[str, Any]:
+    return {
+        "namespace": "",
+        "hits": 0,
+        "misses": 0,
+        "hit_ratio": 0.0,
+        "last_updated": "-",
+        "ttl_seconds": None,
+        "remaining_ttl": None,
+    }
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalise_core_stats(stats: Mapping[str, Any] | None) -> Dict[str, Any]:
+    payload = _default_stats_payload()
+    if not isinstance(stats, Mapping):
+        return payload
+    payload.update(
+        {
+            "namespace": str(stats.get("namespace", "") or ""),
+            "hits": int(stats.get("hits", 0) or 0),
+            "misses": int(stats.get("misses", 0) or 0),
+            "hit_ratio": float(stats.get("hit_ratio", 0.0) or 0.0),
+            "last_updated": str(stats.get("last_updated", "-") or "-"),
+        }
+    )
+    ttl_seconds = _safe_float(stats.get("ttl_seconds"))
+    remaining_ttl = _safe_float(stats.get("remaining_ttl"))
+    payload["ttl_seconds"] = ttl_seconds
+    payload["remaining_ttl"] = remaining_ttl
+    return payload
+
+
+def _normalise_snapshot(stats: Mapping[str, Any] | None) -> Dict[str, Any]:
+    payload = _default_stats_payload()
+    if not isinstance(stats, Mapping):
+        return payload
+    payload.update(
+        {
+            "namespace": str(stats.get("namespace", "predictive") or "predictive"),
+            "hits": int(stats.get("hits", 0) or 0),
+            "misses": int(stats.get("misses", 0) or 0),
+            "hit_ratio": float(stats.get("hit_ratio", 0.0) or 0.0),
+            "last_updated": str(stats.get("last_updated", "-") or "-"),
+        }
+    )
+    ttl_hours = _safe_float(stats.get("ttl_hours"))
+    payload["ttl_seconds"] = ttl_hours * 3600.0 if ttl_hours is not None else None
+    payload["remaining_ttl"] = _safe_float(stats.get("remaining_ttl"))
+    return payload
+
+
+def get_cache_stats(cache: CacheService | None = None) -> Dict[str, Any]:
+    """Expose cache statistics for a given cache or the predictive engine."""
+
+    if isinstance(cache, CacheService):
+        return _normalise_core_stats(cache.stats())
+    try:
+        from application.predictive_service import (  # pylint: disable=import-outside-toplevel
+            get_cache_stats as _predictive_cache_stats,
+        )
+    except Exception:  # pragma: no cover - defensive guard
+        return _default_stats_payload()
+    snapshot = _predictive_cache_stats()
+    if snapshot is None:
+        return _default_stats_payload()
+    if isinstance(snapshot, Mapping):
+        return _normalise_snapshot(snapshot)
+    if is_dataclass(snapshot):
+        return _normalise_snapshot(asdict(snapshot))
+    stats_dict = getattr(snapshot, "__dict__", None)
+    if isinstance(stats_dict, Mapping):
+        return _normalise_snapshot(stats_dict)
+    return _default_stats_payload()
+
+
+__all__ = ["CacheService", "PredictiveCacheState", "get_cache_stats"]
