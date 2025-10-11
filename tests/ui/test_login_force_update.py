@@ -17,11 +17,25 @@ class _FakeStreamlit:
         self.successes: list[str] = []
         self.link_buttons: list[tuple[str, str]] = []
         self.statuses: list[tuple[str, str]] = []
+        self.page_links: list[tuple[str, str]] = []
+        self.checkboxes: list[tuple[str, bool, str, bool]] = []
+        self.markdowns: list[tuple[tuple, dict]] = []
         self._button_responses: dict[str, list[bool]] = {}
         self.stopped = False
+        self.sidebar = self._Sidebar(self)
 
-    def markdown(self, *_args, **_kwargs) -> None:
-        return None
+    class _Sidebar:
+        def __init__(self, parent: "_FakeStreamlit") -> None:
+            self.parent = parent
+
+        def __enter__(self) -> "_FakeStreamlit._Sidebar":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def markdown(self, *args, **kwargs) -> None:
+        self.markdowns.append((args, kwargs))
 
     def warning(self, message: str) -> None:
         self.warnings.append(message)
@@ -48,6 +62,19 @@ class _FakeStreamlit:
 
     def status(self, label: str, *, state: str) -> None:
         self.statuses.append((label, state))
+
+    def checkbox(self, label: str, *, value: bool, key: str, disabled: bool = False) -> bool:
+        self.checkboxes.append((label, value, key, disabled))
+        if disabled:
+            self.session_state[key] = value
+            return value
+        if key in self.session_state:
+            return bool(self.session_state[key])
+        self.session_state[key] = value
+        return value
+
+    def page_link(self, page: str, *, label: str) -> None:
+        self.page_links.append((page, label))
 
     class _Expander:
         def __enter__(self) -> "_FakeStreamlit._Expander":
@@ -84,7 +111,14 @@ def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(login, "__version__", "0.5.8", raising=False)
 
     calls: list[str] = []
-    monkeypatch.setattr(login, "_run_update_script", lambda version: calls.append(version))
+
+    def fake_run(version: str) -> bool:
+        calls.append(version)
+        return True
+
+    monkeypatch.setattr(login, "_run_update_script", fake_run)
+    restart_calls: list[None] = []
+    monkeypatch.setattr(login, "safe_restart_app", lambda: restart_calls.append(None))
 
     login.render_login_page()
 
@@ -93,4 +127,8 @@ def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> No
     assert calls == ["0.5.8"]
     assert ("Actualizando aplicación...", "running") in fake_st.statuses
     assert ("Actualización completada", "complete") in fake_st.statuses
+    assert fake_st.successes[-1] == "✅ Actualización completada. Reiniciando..."
+    assert "🔁 Reiniciando aplicación..." in fake_st.infos
+    assert restart_calls == [None]
+    assert ("ui.panels.about", "ℹ️ Acerca de") in fake_st.page_links
     assert fake_st.stopped is True

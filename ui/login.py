@@ -1,4 +1,5 @@
 import logging
+import os
 import streamlit as st
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
@@ -8,6 +9,7 @@ from services.update_checker import (
     get_last_check_time,
     _run_update_script,
     get_update_history,
+    safe_restart_app,
 )
 from ui.footer import render_footer
 from ui.header import render_header
@@ -19,10 +21,57 @@ from shared.version import __version__
 
 logger = logging.getLogger(__name__)
 
+AUTO_RESTART_KEY = "auto_restart_after_update"
+UPDATE_CONFIRM_KEY = "confirm_update_request"
+FORCE_CONFIRM_KEY = "confirm_force_update_request"
+
+
+def _ensure_auto_restart_default() -> bool:
+    auto_restart_disabled = os.environ.get("DISABLE_AUTO_RESTART") == "1"
+    default_choice = not auto_restart_disabled
+    if AUTO_RESTART_KEY not in st.session_state:
+        st.session_state[AUTO_RESTART_KEY] = default_choice
+    if auto_restart_disabled:
+        st.session_state[AUTO_RESTART_KEY] = False
+    return bool(st.session_state.get(AUTO_RESTART_KEY, default_choice))
+
+
+def _render_auto_restart_control() -> bool:
+    auto_restart_disabled = os.environ.get("DISABLE_AUTO_RESTART") == "1"
+    choice = _ensure_auto_restart_default()
+    auto_restart = st.checkbox(
+        "Reiniciar automáticamente tras la actualización",
+        value=choice,
+        key=AUTO_RESTART_KEY,
+        disabled=auto_restart_disabled,
+    )
+    if auto_restart_disabled:
+        st.info(
+            "El reinicio automático está deshabilitado mediante la variable de entorno ``DISABLE_AUTO_RESTART``."
+        )
+    return auto_restart and not auto_restart_disabled
+
+
+def _handle_restart(auto_restart_enabled: bool) -> None:
+    if auto_restart_enabled:
+        st.info("🔁 Reiniciando aplicación...")
+        safe_restart_app()
+    else:
+        st.markdown(
+            "<span style='display:inline-flex;align-items:center;gap:0.4rem;padding:0.35rem 0.8rem;border-radius:999px;background:rgba(30, 136, 229, 0.15);color:#1e88e5;font-weight:600;'>🕓 Reinicio programado</span>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "Podés reiniciar manualmente la aplicación más adelante desde tu entorno de despliegue."
+        )
+
 
 def render_login_page() -> None:
     """Display the login form with header and footer."""
     render_header()
+
+    with st.sidebar:
+        st.page_link("ui.panels.about", label="ℹ️ Acerca de")
 
     latest = check_for_update()
     last_check = get_last_check_time()
@@ -51,6 +100,8 @@ def render_login_page() -> None:
         unsafe_allow_html=True,
     )
 
+    auto_restart_enabled = _render_auto_restart_control()
+
     if latest:
         st.warning(
             f"💡 Nueva versión disponible: v{latest} (actual: v{__version__})"
@@ -60,11 +111,24 @@ def render_login_page() -> None:
             "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
         )
         if st.button("Actualizar ahora"):
-            st.status("Actualizando aplicación...", state="running")
-            _run_update_script(latest)
-            st.status("Actualización completada", state="complete")
-            st.success("✅ Reinicie la aplicación para aplicar los cambios.")
-            st.stop()
+            st.session_state[UPDATE_CONFIRM_KEY] = True
+
+        if st.session_state.get(UPDATE_CONFIRM_KEY):
+            st.warning("Confirmá la actualización para aplicar los cambios.")
+            if st.button("Confirmar actualización"):
+                st.status("Actualizando aplicación...", state="running")
+                success = _run_update_script(latest)
+                st.status("Actualización completada", state="complete")
+                if success:
+                    st.success("✅ Actualización completada. Reiniciando...")
+                    _handle_restart(auto_restart_enabled)
+                else:
+                    st.error("❌ Ocurrió un error durante la actualización.")
+                st.session_state.pop(UPDATE_CONFIRM_KEY, None)
+                st.stop()
+            if st.button("Cancelar actualización"):
+                st.session_state.pop(UPDATE_CONFIRM_KEY, None)
+
         st.caption(f"Última verificación: {last_str}")
     else:
         try:
@@ -89,13 +153,22 @@ def render_login_page() -> None:
 
     with st.expander("⚙️ Opciones avanzadas"):
         if st.button("Forzar actualización"):
+            st.session_state[FORCE_CONFIRM_KEY] = True
+        if st.session_state.get(FORCE_CONFIRM_KEY):
             st.warning("Esta acción reinstalará la app desde el repositorio remoto.")
             if st.button("Confirmar actualización"):
                 st.status("Actualizando aplicación...", state="running")
-                _run_update_script(__version__)
+                success = _run_update_script(__version__)
                 st.status("Actualización completada", state="complete")
-                st.success("✅ Reinicie la aplicación para aplicar los cambios.")
+                if success:
+                    st.success("✅ Actualización completada. Reiniciando...")
+                    _handle_restart(auto_restart_enabled)
+                else:
+                    st.error("❌ Ocurrió un error durante la actualización.")
+                st.session_state.pop(FORCE_CONFIRM_KEY, None)
                 st.stop()
+            if st.button("Cancelar actualización"):
+                st.session_state.pop(FORCE_CONFIRM_KEY, None)
 
     validation = validate_tokens_key()
     if validation.message:

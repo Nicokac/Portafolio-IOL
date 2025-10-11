@@ -13,6 +13,7 @@ import time
 from typing import Any
 
 import requests
+from shared.version import __version__
 
 REMOTE_VERSION_URL = (
     "https://raw.githubusercontent.com/Nicokac/portafolio-iol/main/shared/version.json"
@@ -53,6 +54,30 @@ def get_update_history() -> list[dict[str, Any]]:
         return data if isinstance(data, list) else []
     except Exception:
         return []
+
+
+def safe_restart_app() -> bool:
+    """Reinicia la aplicación tras una actualización exitosa.
+
+    Returns ``True`` si se inició el proceso de reinicio, ``False`` en caso
+    contrario (por ejemplo, cuando está deshabilitado por configuración).
+    """
+
+    if os.environ.get("DISABLE_AUTO_RESTART") == "1":
+        _log_event("restart", __version__, "skipped: disabled")
+        return False
+
+    try:
+        python = sys.executable
+        script = os.path.abspath(sys.argv[0])
+        _log_event("restart", __version__, "initiated")
+        time.sleep(1)
+        subprocess.Popen([python, script], close_fds=True)
+        _log_event("restart", __version__, "done")
+        sys.exit(0)
+    except Exception as exc:  # pragma: no cover - defensive logging
+        _log_event("restart", __version__, f"failed: {exc}")
+    return False
 
 
 def save_last_check_time() -> None:
@@ -177,4 +202,5 @@ __all__ = [
     "get_last_check_time",
     "format_last_check",
     "get_update_history",
+    "safe_restart_app",
 ]
