@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.3-patch3 — Hardened Kaleido export, updated Plotly calls to modern API, and silenced deprecated kwargs warnings.
+- Wrapped Kaleido initialisation and runtime checks to gracefully disable image export when Chromium is missing.
+- Added Chromium availability warning during environment inspection to highlight limited export support.
+- Updated Streamlit Plotly invocations to use the modern `width="stretch"` signature with responsive config.
+
 ## v0.6.3-patch2 — Added synthetic fixture fallback, updated deprecated Plotly and Pandas calls, and added Kaleido dependency check for graphics export.
 - Added automatic synthetic fixture generation for missing backtesting datasets with safe persistence.
 - Updated Streamlit Plotly rendering calls to the modern `width="stretch"` signature.

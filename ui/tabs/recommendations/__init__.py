@@ -632,13 +632,13 @@ def _render_recommendations_visuals(
         st.plotly_chart(
             pie_fig,
             width="stretch",
-            config={"displayModeBar": False, "responsive": True},
+            config={"responsive": True},
         )
     with charts[1]:
         st.plotly_chart(
             bar_fig,
             width="stretch",
-            config={"displayModeBar": False, "responsive": True},
+            config={"responsive": True},
         )
 
 
