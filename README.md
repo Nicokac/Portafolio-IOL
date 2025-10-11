@@ -1,4 +1,4 @@
-# Portafolio IOL — v0.6.0
+# Portafolio IOL — v0.6.1c-part2
 
 ![Cobertura ~88%](https://img.shields.io/badge/Coverage-88%25-olive)
 
@@ -8,7 +8,7 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 >
-> Estado de calidad **v0.6.0**: sistema de actualización con reinicio automático opcional, panel “ℹ️ Acerca de” con metadatos del entorno y trazabilidad ampliada de eventos recientes.
+> Estado de calidad **v0.6.1c-part2**: incorpora métricas de performance en servicios críticos, panel “🩺 Diagnóstico” con exportación a CSV para QA y bitácora unificada de eventos con sello temporal por versión.
 
 ## Documentación clave
 

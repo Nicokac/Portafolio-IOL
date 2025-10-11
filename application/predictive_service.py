@@ -18,6 +18,7 @@ from application.predictive_core import (
     run_backtest,
 )
 from services.cache import CacheService
+from services.performance_metrics import track_function
 from shared.settings import PREDICTIVE_TTL_HOURS
 
 
@@ -167,6 +168,7 @@ def _aggregate_sector_predictions(
     return result
 
 
+@track_function("predict_sector_performance")
 def predict_sector_performance(
     opportunities: pd.DataFrame | None,
     *,
