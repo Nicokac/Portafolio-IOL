@@ -24,6 +24,36 @@ _CHECK_FILE = os.path.join(
     tempfile.gettempdir(), "portafolio_iol_version_check.json"
 )
 
+LOG_FILE = os.path.join(tempfile.gettempdir(), "portafolio_iol_update_log.json")
+
+
+def _log_event(event: str, version: str, status: str) -> None:
+    entry = {
+        "event": event,
+        "version": version,
+        "status": status,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    try:
+        logs: list[dict[str, Any]] = []
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                logs = json.load(f)
+        logs.append(entry)
+        with open(LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(logs[-20:], f, indent=2)
+    except Exception as exc:  # pragma: no cover - best effort persistence
+        logging.warning("No se pudo registrar evento de actualización: %s", exc)
+
+
+def get_update_history() -> list[dict[str, Any]]:
+    try:
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
 
 def save_last_check_time() -> None:
     try:
@@ -72,6 +102,7 @@ def check_for_update() -> str | None:
             remote_version = remote_version.strip()
             if remote_version and remote_version != local_version:
                 latest = remote_version
+        _log_event("check", local_version, "ok")
     except Exception:  # pragma: no cover - best-effort network call
         logger.debug("No se pudo obtener la versión remota", exc_info=True)
     finally:
@@ -114,6 +145,7 @@ def _run_update_script(latest_version: str) -> bool:
         )
         return False
 
+    _log_event("update", latest_version, "started")
     try:
         subprocess.run(["git", "pull"], check=True)
         subprocess.run(
@@ -134,6 +166,7 @@ def _run_update_script(latest_version: str) -> bool:
         )
         return False
 
+    _log_event("update", latest_version, "done")
     return True
 
 
@@ -143,4 +176,5 @@ __all__ = [
     "save_last_check_time",
     "get_last_check_time",
     "format_last_check",
+    "get_update_history",
 ]

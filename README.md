@@ -1,4 +1,4 @@
-# Portafolio IOL — v0.5.6
+# Portafolio IOL — v0.5.9
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
@@ -6,13 +6,17 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 >
-> Estado de calidad **v0.5.6**: smoke test offline de `_render_for_test()` en CI, documentación consolidada (dev guide + QA) y caches predictivos con ratio ≥ 45 %.
+> Estado de calidad **v0.5.9**: sistema de actualización manual con logging estructurado, badge azul en la UI y panel de historial persistente.
 
 ## Documentación clave
 
 - [Guía técnica de desarrollo](docs/dev_guide.md)
 - [Guía de pruebas](docs/testing.md)
 - [Reportes de QA](docs/qa/)
+
+### 📜 Historial de actualizaciones
+
+Las verificaciones y ejecuciones del sistema de actualización manual se persisten en un archivo JSON ubicado en el directorio temporal del sistema (`$TMPDIR/portafolio_iol_update_log.json`). El registro conserva los últimos 20 eventos con su `event`, `version`, `status` y `timestamp`, permitiendo auditar cuándo se verificó o instaló una nueva release incluso después de reiniciar la app.
 
 ## Funcionalidades del Dashboard
 

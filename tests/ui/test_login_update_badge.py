@@ -10,15 +10,14 @@ import ui.login as login
 class _FakeStreamlit:
     def __init__(self) -> None:
         self.session_state: dict[str, object] = {}
-        self.warnings: list[str] = []
         self.buttons: list[str] = []
+        self.statuses: list[tuple[str, str]] = []
         self.captions: list[str] = []
-        self.infos: list[str] = []
+        self.warnings: list[str] = []
         self.successes: list[str] = []
         self.link_buttons: list[tuple[str, str]] = []
-        self.statuses: list[tuple[str, str]] = []
-        self._button_responses: dict[str, list[bool]] = {}
         self.stopped = False
+        self._button_responses: dict[str, list[bool]] = {}
 
     def markdown(self, *_args, **_kwargs) -> None:
         return None
@@ -36,9 +35,6 @@ class _FakeStreamlit:
 
     def caption(self, message: str) -> None:
         self.captions.append(message)
-
-    def info(self, message: str) -> None:
-        self.infos.append(message)
 
     def success(self, message: str) -> None:
         self.successes.append(message)
@@ -63,11 +59,7 @@ class _FakeStreamlit:
         self.stopped = True
 
 
-def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_st = _FakeStreamlit()
-    fake_st.queue_button_response("Forzar actualización", True)
-    fake_st.queue_button_response("Confirmar actualización", True)
-
+def _setup_common(monkeypatch: pytest.MonkeyPatch, fake_st: _FakeStreamlit) -> None:
     monkeypatch.setattr(login, "st", fake_st)
     monkeypatch.setattr(login, "render_header", lambda: None)
     monkeypatch.setattr(login, "render_footer", lambda: None)
@@ -77,20 +69,55 @@ def test_force_update_triggers_run_update(monkeypatch: pytest.MonkeyPatch) -> No
         "validate_tokens_key",
         lambda: SimpleNamespace(message=None, level="info", can_proceed=False),
     )
-    monkeypatch.setattr(login, "check_for_update", lambda: None)
     monkeypatch.setattr(login, "get_last_check_time", lambda: None)
     monkeypatch.setattr(login, "format_last_check", lambda _ts: "Nunca")
+    monkeypatch.setattr(login, "__version__", "0.5.9", raising=False)
+
+
+def test_update_button_displays_running_badge(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _FakeStreamlit()
+    fake_st.queue_button_response("Actualizar ahora", True)
+
+    _setup_common(monkeypatch, fake_st)
+    monkeypatch.setattr(login, "check_for_update", lambda: "0.6.0")
     monkeypatch.setattr(login, "get_update_history", lambda: [])
-    monkeypatch.setattr(login, "__version__", "0.5.8", raising=False)
 
     calls: list[str] = []
     monkeypatch.setattr(login, "_run_update_script", lambda version: calls.append(version))
 
     login.render_login_page()
 
-    assert "Forzar actualización" in fake_st.buttons
-    assert "Confirmar actualización" in fake_st.buttons
-    assert calls == ["0.5.8"]
+    assert calls == ["0.6.0"]
     assert ("Actualizando aplicación...", "running") in fake_st.statuses
     assert ("Actualización completada", "complete") in fake_st.statuses
     assert fake_st.stopped is True
+
+
+def test_history_panel_renders_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_st = _FakeStreamlit()
+
+    _setup_common(monkeypatch, fake_st)
+    monkeypatch.setattr(login, "check_for_update", lambda: None)
+    monkeypatch.setattr(
+        login,
+        "get_update_history",
+        lambda: [
+            {
+                "timestamp": "2024-05-01 10:00:00",
+                "event": "check",
+                "version": "0.5.9",
+                "status": "ok",
+            },
+            {
+                "timestamp": "2024-05-02 12:30:00",
+                "event": "update",
+                "version": "0.5.9",
+                "status": "done",
+            },
+        ],
+    )
+
+    login.render_login_page()
+
+    assert any("check v0.5.9" in caption for caption in fake_st.captions)
+    assert any("update v0.5.9" in caption for caption in fake_st.captions)
