@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.2-part1a — Created base FastAPI structure and routers skeleton.
+- Introduced the foundational FastAPI app with health endpoint and logging.
+- Registered placeholder routers for predictive, profile, and cache services.
+
 ## v0.6.1c-part2 — Performance observability instrumentation.
 - Added `services/performance_metrics` to capture execution timings and memory deltas for predictive workloads and log them with versioned timestamps.
 - Instrumented `predict_sector_performance` and `simulate_adaptive_forecast` with the new tracker and surfaced aggregated metrics via the 🩺 Diagnóstico panel.
