@@ -100,6 +100,7 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 "portfolio_tab",
                 "controls_snapshot",
                 "quotes_hist",
+                "auth_token",
             ):
                 st.session_state.pop(key, None)
             cache.pop("tokens_file", None)

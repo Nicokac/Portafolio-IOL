@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.2-part2 — Implemented shared authentication between Streamlit and FastAPI.
+- Added a Fernet-based token service reused by Streamlit and FastAPI to issue and validate auth tokens.
+- Secured predictive and cache endpoints behind a common `get_current_user` dependency expecting `Authorization: Bearer` headers.
+- Streamlit login now issues API tokens, reuses them for backend requests, and documentation explains the unified flow.
+
 ## v0.6.2-part1c — Integrated FastAPI backend with UI indicator and test coverage.
 - Added root-level aliases for predictive FastAPI endpoints and documented API mode usage.
 - Surfaced an "API mode available" badge on the login screen when the backend is reachable.

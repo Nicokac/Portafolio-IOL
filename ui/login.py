@@ -1,8 +1,10 @@
 import logging
 import os
+
 import requests
 import streamlit as st
 from requests.exceptions import RequestException
+
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
 from services.update_checker import (
@@ -16,6 +18,7 @@ from services.update_checker import (
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.helpers.navigation import safe_page_link
+from services.auth import generate_token
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
 from ui.panels.diagnostics import render_diagnostics_panel
@@ -38,7 +41,11 @@ def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
     """Check if the FastAPI backend is reachable."""
 
     try:
-        response = requests.get(url, timeout=0.75)
+        headers = {}
+        token = st.session_state.get("auth_token")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        response = requests.get(url, headers=headers, timeout=0.75)
     except RequestException:
         return False
     if response.status_code != 200:
@@ -49,6 +56,17 @@ def _is_fastapi_available(url: str = FASTAPI_HEALTH_URL) -> bool:
         return True
     status = str(payload.get("status", "")).strip().lower()
     return status == "ok" or bool(payload)
+
+
+def _get_auth_token_ttl() -> int:
+    """Return the configured TTL for API tokens, falling back to one hour."""
+
+    raw_value = os.environ.get("FASTAPI_AUTH_TTL", "3600")
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return 3600
+    return max(1, value)
 
 
 def _ensure_auto_restart_default() -> bool:
@@ -247,6 +265,10 @@ def render_login_page() -> None:
 
         try:
             provider.login(user, password)
+            st.session_state["auth_token"] = generate_token(
+                user,
+                _get_auth_token_ttl(),
+            )
             st.session_state["authenticated"] = True
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)
