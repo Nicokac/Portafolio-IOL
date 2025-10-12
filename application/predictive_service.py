@@ -18,6 +18,7 @@ from application.predictive_core import (
 )
 from services.cache import CacheService
 from services.performance_metrics import track_function
+from services.performance_timer import performance_timer
 from shared.settings import PREDICTIVE_TTL_HOURS
 
 from predictive_engine import __version__ as ENGINE_VERSION
@@ -111,44 +112,55 @@ def predict_sector_performance(
     active_cache = cache or _CACHE
     if isinstance(active_cache, CacheService):
         active_cache.set_ttl_override(ttl_seconds)
-    cached = active_cache.get(_CACHE_KEY)
-    if isinstance(cached, pd.DataFrame):
-        _CACHE_STATE.record_hit(
-            last_updated=_cache_last_updated(active_cache),
-            ttl_hours=effective_ttl_hours,
-        )
-        return cached.copy()
+    telemetry: dict[str, object] = {
+        "status": "success",
+        "span": int(span),
+        "ttl_hours": float(effective_ttl_hours),
+    }
+    with performance_timer("predictive_compute", extra=telemetry):
+        cached = active_cache.get(_CACHE_KEY)
+        if isinstance(cached, pd.DataFrame):
+            telemetry["cache"] = "hit"
+            _CACHE_STATE.record_hit(
+                last_updated=_cache_last_updated(active_cache),
+                ttl_hours=effective_ttl_hours,
+            )
+            return cached.copy()
 
-    frame = _prepare_opportunities(opportunities)
-    if frame.empty:
-        empty = pd.DataFrame(
-            columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
+        telemetry["cache"] = "miss"
+        frame = _prepare_opportunities(opportunities)
+        telemetry["opportunities"] = int(len(frame))
+        if frame.empty:
+            empty = pd.DataFrame(
+                columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
+            )
+            active_cache.set(_CACHE_KEY, empty, ttl=ttl_seconds)
+            _CACHE_STATE.record_miss(
+                last_updated=_cache_last_updated(active_cache),
+                ttl_hours=effective_ttl_hours,
+            )
+            telemetry["result_rows"] = 0
+            return empty
+
+        LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
+        service = backtesting_service or BacktestingService()
+        predictions = build_sector_prediction_frame(
+            frame,
+            backtesting_service=service,
+            run_backtest=lambda svc, symbol: run_backtest(svc, symbol, logger=LOGGER),
+            extract_series=lambda backtest, column: extract_backtest_series(backtest, column),
+            ema_predictor=lambda series, ema_span: compute_ema_prediction(series, span=ema_span),
+            average_correlation=average_correlation,
+            span=span,
         )
-        active_cache.set(_CACHE_KEY, empty, ttl=ttl_seconds)
+
+        telemetry["result_rows"] = int(len(predictions))
+        active_cache.set(_CACHE_KEY, predictions, ttl=ttl_seconds)
         _CACHE_STATE.record_miss(
             last_updated=_cache_last_updated(active_cache),
             ttl_hours=effective_ttl_hours,
         )
-        return empty
-
-    LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
-    service = backtesting_service or BacktestingService()
-    predictions = build_sector_prediction_frame(
-        frame,
-        backtesting_service=service,
-        run_backtest=lambda svc, symbol: run_backtest(svc, symbol, logger=LOGGER),
-        extract_series=lambda backtest, column: extract_backtest_series(backtest, column),
-        ema_predictor=lambda series, ema_span: compute_ema_prediction(series, span=ema_span),
-        average_correlation=average_correlation,
-        span=span,
-    )
-
-    active_cache.set(_CACHE_KEY, predictions, ttl=ttl_seconds)
-    _CACHE_STATE.record_miss(
-        last_updated=_cache_last_updated(active_cache),
-        ttl_hours=effective_ttl_hours,
-    )
-    return predictions.copy()
+        return predictions.copy()
 
 
 def get_cache_stats() -> PredictiveSnapshot:

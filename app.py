@@ -47,12 +47,12 @@ from ui.footer import render_footer
 from controllers.portfolio.portfolio import (
     default_notifications_service_factory,
     default_view_model_service_factory,
-    render_portfolio_section,
 )
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 from services.health import get_health_metrics, record_dependency_status
 from ui.tabs.recommendations import render_recommendations_tab
+from ui.controllers.portfolio_ui import render_portfolio_ui
 
 
 logger = logging.getLogger(__name__)
@@ -670,7 +670,7 @@ def main(argv: list[str] | None = None):
                 monitoring_tab,
             ) = st.tabs(tab_labels)
             _inject_tab_animation_support()
-        refresh_secs = render_portfolio_section(
+        refresh_secs = render_portfolio_ui(
             portfolio_tab,
             cli,
             fx_rates,
@@ -694,7 +694,7 @@ def main(argv: list[str] | None = None):
             portfolio_tab = main_col
             recommendations_tab = main_col
             monitoring_tab = main_col
-        refresh_secs = render_portfolio_section(
+        refresh_secs = render_portfolio_ui(
             portfolio_tab,
             cli,
             fx_rates,

@@ -18,6 +18,7 @@ import requests
 from infrastructure.iol.auth import InvalidCredentialsError
 from infrastructure.iol.client import IIOLProvider, IOLClient
 from services.health import record_quote_load, record_quote_provider_usage
+from services.performance_timer import performance_timer
 from services.quote_rate_limit import quote_rate_limiter
 from shared.cache import cache
 from shared.errors import NetworkError
@@ -673,75 +674,116 @@ def _get_quote_cached(
 @cache.cache_data(ttl=cache_ttl_quotes)
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     items = list(items or [])
+    telemetry: dict[str, object] = {
+        "status": "success",
+        "items": int(len(items)),
+    }
     start = time.time()
     get_bulk = getattr(_cli, "get_quotes_bulk", None)
     fallback_mode = not callable(get_bulk)
+    telemetry["fallback_mode"] = fallback_mode
 
     normalized: list[tuple[str, str, str | None]] = []
 
-    for raw in items:
-        market: str | None = None
-        symbol: str | None = None
-        panel: str | None = None
-        if isinstance(raw, dict):
-            market = raw.get("market", raw.get("mercado"))
-            symbol = raw.get("symbol", raw.get("simbolo"))
-            panel = raw.get("panel")
-        elif isinstance(raw, (list, tuple)):
-            if len(raw) >= 2:
-                market = raw[0]
-                symbol = raw[1]
-            if len(raw) >= 3:
-                panel = raw[2]
-        else:
-            market = getattr(raw, "market", getattr(raw, "mercado", None))
-            symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
-            panel = getattr(raw, "panel", None)
+    with performance_timer("quotes_refresh", extra=telemetry):
+        for raw in items:
+            market: str | None = None
+            symbol: str | None = None
+            panel: str | None = None
+            if isinstance(raw, dict):
+                market = raw.get("market", raw.get("mercado"))
+                symbol = raw.get("symbol", raw.get("simbolo"))
+                panel = raw.get("panel")
+            elif isinstance(raw, (list, tuple)):
+                if len(raw) >= 2:
+                    market = raw[0]
+                    symbol = raw[1]
+                if len(raw) >= 3:
+                    panel = raw[2]
+            else:
+                market = getattr(raw, "market", getattr(raw, "mercado", None))
+                symbol = getattr(raw, "symbol", getattr(raw, "simbolo", None))
+                panel = getattr(raw, "panel", None)
 
-        panel_value = None if panel is None else str(panel)
-        norm_market = str(market or "bcba").lower()
-        norm_symbol = str(symbol or "").upper()
-        normalized.append((norm_market, norm_symbol, panel_value))
+            panel_value = None if panel is None else str(panel)
+            norm_market = str(market or "bcba").lower()
+            norm_symbol = str(symbol or "").upper()
+            normalized.append((norm_market, norm_symbol, panel_value))
 
-    batch_stats = QuoteBatchStats(total_expected=len(normalized))
+        batch_stats = QuoteBatchStats(total_expected=len(normalized))
 
-    try:
-        if callable(get_bulk):
-            data = get_bulk(items)
-            if isinstance(data, dict):
-                normalized_bulk = {}
-                store_time = time.time()
-                try:
-                    ttl_seconds = float(cache_ttl_quotes or 0)
-                except (TypeError, ValueError):
-                    ttl_seconds = 0.0
-                if ttl_seconds < 0:
-                    ttl_seconds = 0.0
-                if ttl_seconds > 0:
-                    with _QUOTE_LOCK:
-                        _purge_expired_quotes(store_time, ttl_seconds)
-                elapsed_ms = (store_time - start) * 1000.0
-                for k, v in data.items():
-                    if v is None:
-                        logger.warning(
-                            "get_quotes_bulk returned empty entry for %s:%s", k[0], k[1]
-                        )
-                        continue
-                    quote = _normalize_quote(v)
-                    if isinstance(quote, dict):
-                        stale_flag = bool(v.get("stale")) if isinstance(v, dict) else False
-                        if stale_flag:
-                            quote["stale"] = True
-                        if quote.get("provider") is None and not stale_flag:
-                            inferred_provider = _default_provider_for_client(_cli)
-                            if inferred_provider is not None:
-                                quote["provider"] = inferred_provider
+        try:
+            if callable(get_bulk):
+                data = get_bulk(items)
+                telemetry["mode"] = "bulk"
+                if isinstance(data, dict):
+                    normalized_bulk = {}
+                    store_time = time.time()
+                    try:
+                        ttl_seconds = float(cache_ttl_quotes or 0)
+                    except (TypeError, ValueError):
+                        ttl_seconds = 0.0
+                    if ttl_seconds < 0:
+                        ttl_seconds = 0.0
+                    if ttl_seconds > 0:
+                        with _QUOTE_LOCK:
+                            _purge_expired_quotes(store_time, ttl_seconds)
+                    elapsed_ms = (store_time - start) * 1000.0
+                    for k, v in data.items():
+                        if v is None:
+                            logger.warning(
+                                "get_quotes_bulk returned empty entry for %s:%s", k[0], k[1]
+                            )
+                            continue
+                        quote = _normalize_quote(v)
+                        if isinstance(quote, dict):
+                            stale_flag = bool(v.get("stale")) if isinstance(v, dict) else False
+                            if stale_flag:
+                                quote["stale"] = True
+                            if quote.get("provider") is None and not stale_flag:
+                                inferred_provider = _default_provider_for_client(_cli)
+                                if inferred_provider is not None:
+                                    quote["provider"] = inferred_provider
 
-                        key_components = _normalize_bulk_key_components(k)
-                        if key_components is None and len(normalized) == 1:
-                            key_components = normalized[0]
-                        if key_components is None:
+                            key_components = _normalize_bulk_key_components(k)
+                            if key_components is None and len(normalized) == 1:
+                                key_components = normalized[0]
+                            if key_components is None:
+                                normalized_bulk[k] = quote
+                                provider_name = quote.get("provider") or "unknown"
+                                record_quote_provider_usage(
+                                    provider_name,
+                                    elapsed_ms=elapsed_ms
+                                    if quote.get("last") is not None
+                                    else None,
+                                    stale=stale_flag or quote.get("last") is None,
+                                    source="bulk" if ttl_seconds > 0 else "live",
+                                )
+                                logger.debug("quote %s -> %s", k, quote)
+                                continue
+
+                            norm_market, norm_symbol, panel_value = key_components
+                            persist_key = _quote_cache_key(norm_market, norm_symbol, panel_value)
+
+                            if quote.get("last") is None:
+                                fallback_quote = _recover_persisted_quote(
+                                    persist_key, store_time
+                                )
+                                if fallback_quote is not None:
+                                    normalized_bulk[k] = fallback_quote
+                                    continue
+
                             normalized_bulk[k] = quote
+                            cache_key = (norm_market, norm_symbol, panel_value)
+                            if ttl_seconds > 0:
+                                with _QUOTE_LOCK:
+                                    _QUOTE_CACHE[cache_key] = {
+                                        "ts": store_time,
+                                        "ttl": ttl_seconds,
+                                        "data": quote,
+                                    }
+                                if quote.get("last") is not None and not stale_flag:
+                                    _persist_quote(persist_key, quote, store_time)
                             provider_name = quote.get("provider") or "unknown"
                             record_quote_provider_usage(
                                 provider_name,
@@ -751,118 +793,93 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                                 stale=stale_flag or quote.get("last") is None,
                                 source="bulk" if ttl_seconds > 0 else "live",
                             )
-                            logger.debug("quote %s -> %s", k, quote)
-                            continue
-
-                        norm_market, norm_symbol, panel_value = key_components
-                        persist_key = _quote_cache_key(norm_market, norm_symbol, panel_value)
-
-                        if quote.get("last") is None:
-                            fallback_quote = _recover_persisted_quote(
-                                persist_key, store_time
+                            logger.debug(
+                                "quote %s:%s -> %s", norm_market, norm_symbol, quote
                             )
-                            if fallback_quote is not None:
-                                normalized_bulk[k] = fallback_quote
-                                continue
-
-                        normalized_bulk[k] = quote
-                        cache_key = (norm_market, norm_symbol, panel_value)
-                        if ttl_seconds > 0:
-                            with _QUOTE_LOCK:
-                                _QUOTE_CACHE[cache_key] = {
-                                    "ts": store_time,
-                                    "ttl": ttl_seconds,
-                                    "data": quote,
-                                }
-                            if quote.get("last") is not None and not stale_flag:
-                                _persist_quote(persist_key, quote, store_time)
-                        provider_name = quote.get("provider") or "unknown"
-                        record_quote_provider_usage(
-                            provider_name,
-                            elapsed_ms=elapsed_ms
-                            if quote.get("last") is not None
-                            else None,
-                            stale=stale_flag or quote.get("last") is None,
-                            source="bulk" if ttl_seconds > 0 else "live",
-                        )
-                        logger.debug(
-                            "quote %s:%s -> %s", norm_market, norm_symbol, quote
-                        )
-                data = normalized_bulk
-            if isinstance(data, Mapping):
-                for payload in data.values():
-                    batch_stats.record_payload(payload)
-            provider_stats = _extract_provider_batch_stats(_cli)
-            if isinstance(provider_stats, Mapping):
-                batch_stats.apply_provider_stats(provider_stats)
-            elapsed_seconds = time.time() - start
-            elapsed_ms = elapsed_seconds * 1000.0
-            summary = batch_stats.summary(elapsed_seconds)
-            message = (
-                "✅ {count} quotes processed "
-                "(fresh={fresh}, stale={stale}, errors={errors}, "
-                "fallbacks={fallbacks}, rate_limited={rate_limited}) "
-                "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
-            ).format(**summary)
-            logger.info(message)
-            record_quote_load(
-                elapsed_ms,
-                source="bulk" if not fallback_mode else "per-symbol",
-                count=len(items),
-            )
-            return data
-    except InvalidCredentialsError:
-        try:
-            _cli._cli.auth.clear_tokens()
-        except Exception:
-            pass
-        _trigger_logout()
-        record_quote_load(None, source="auth-error", count=len(items))
-        return {}
-    except requests.RequestException as e:
-        logger.exception("get_quotes_bulk falló: %s", e)
-        record_quote_load(None, source="error", count=len(items))
-        raise NetworkError("Error de red al obtener cotizaciones") from e
-
-    out = {}
-    ttl = cache_ttl_quotes
-    max_workers = max_quote_workers
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
-        futs = {
-            ex.submit(
-                _get_quote_cached, _cli, market, symbol, panel, ttl, batch_stats
-            ): (market, symbol)
-            for market, symbol, panel in normalized
-        }
-        for fut in as_completed(futs):
-            key = futs[fut]
-            try:
-                quote = fut.result()
-            except Exception as e:
-                logger.exception(
-                    "get_quote failed for %s:%s -> %s", key[0], key[1], e
+                    data = normalized_bulk
+                if isinstance(data, Mapping):
+                    for payload in data.values():
+                        batch_stats.record_payload(payload)
+                provider_stats = _extract_provider_batch_stats(_cli)
+                if isinstance(provider_stats, Mapping):
+                    batch_stats.apply_provider_stats(provider_stats)
+                elapsed_seconds = time.time() - start
+                elapsed_ms = elapsed_seconds * 1000.0
+                summary = batch_stats.summary(elapsed_seconds)
+                telemetry["processed"] = int(summary.get("count", 0))
+                message = (
+                    "✅ {count} quotes processed "
+                    "(fresh={fresh}, stale={stale}, errors={errors}, "
+                    "fallbacks={fallbacks}, rate_limited={rate_limited}) "
+                    "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
+                ).format(**summary)
+                logger.info(message)
+                record_quote_load(
+                    elapsed_ms,
+                    source="bulk" if not fallback_mode else "per-symbol",
+                    count=len(items),
                 )
-                quote = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
-                batch_stats.record_payload(quote)
-            if isinstance(quote, dict):
-                logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
-            out[key] = quote
-    elapsed_seconds = time.time() - start
-    elapsed_ms = elapsed_seconds * 1000.0
-    summary = batch_stats.summary(elapsed_seconds)
-    message = (
-        "✅ {count} quotes processed "
-        "(fresh={fresh}, stale={stale}, errors={errors}, "
-        "fallbacks={fallbacks}, rate_limited={rate_limited}) "
-        "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
-    ).format(**summary)
-    logger.info(message)
-    record_quote_load(
-        elapsed_ms,
-        source="fallback" if fallback_mode else "per-symbol",
-        count=len(items),
-    )
-    return out
+                return data
+        except InvalidCredentialsError:
+            telemetry["status"] = "error"
+            telemetry["detail"] = "auth"
+            try:
+                _cli._cli.auth.clear_tokens()
+            except Exception:
+                pass
+            _trigger_logout()
+            record_quote_load(None, source="auth-error", count=len(items))
+            return {}
+        except requests.RequestException as e:
+            telemetry["status"] = "error"
+            telemetry["detail"] = "network"
+            logger.exception("get_quotes_bulk falló: %s", e)
+            record_quote_load(None, source="error", count=len(items))
+            raise NetworkError("Error de red al obtener cotizaciones") from e
+
+        telemetry["mode"] = "threadpool"
+        out: dict[tuple[str, str], dict] = {}
+        ttl = cache_ttl_quotes
+        max_workers = max_quote_workers
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
+            futs = {
+                ex.submit(
+                    _get_quote_cached, _cli, market, symbol, panel, ttl, batch_stats
+                ): (market, symbol)
+                for market, symbol, panel in normalized
+            }
+            for fut in as_completed(futs):
+                key = futs[fut]
+                try:
+                    quote = fut.result()
+                except Exception as e:
+                    telemetry.setdefault("errors", 0)
+                    telemetry["errors"] = int(telemetry["errors"]) + 1
+                    logger.exception(
+                        "get_quote failed for %s:%s -> %s", key[0], key[1], e
+                    )
+                    quote = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
+                    batch_stats.record_payload(quote)
+                if isinstance(quote, dict):
+                    logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
+                out[key] = quote
+        elapsed_seconds = time.time() - start
+        elapsed_ms = elapsed_seconds * 1000.0
+        summary = batch_stats.summary(elapsed_seconds)
+        telemetry["processed"] = int(summary.get("count", 0))
+        message = (
+            "✅ {count} quotes processed "
+            "(fresh={fresh}, stale={stale}, errors={errors}, "
+            "fallbacks={fallbacks}, rate_limited={rate_limited}) "
+            "in {elapsed:.3f}s (avg {avg:.3f}s, {qps:.2f} qps)"
+        ).format(**summary)
+        logger.info(message)
+        record_quote_load(
+            elapsed_ms,
+            source="fallback" if fallback_mode else "per-symbol",
+            count=len(items),
+        )
+        return out
 
 
 __all__ = [

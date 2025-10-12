@@ -22,6 +22,7 @@ from services.auth import generate_token
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
 from ui.panels.diagnostics import render_diagnostics_panel
+from ui.tabs.performance_dashboard import render_performance_dashboard_tab
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
@@ -170,6 +171,11 @@ def render_login_page() -> None:
             "ui.panels.diagnostics",
             label="🩺 Diagnóstico",
             render_fallback=render_diagnostics_panel,
+        )
+        safe_page_link(
+            "ui.tabs.performance_dashboard",
+            label="⏱️ Performance",
+            render_fallback=render_performance_dashboard_tab,
         )
 
     latest = check_for_update()
