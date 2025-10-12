@@ -22,6 +22,7 @@ from shared.settings import ADAPTIVE_TTL_HOURS
 from predictive_engine import __version__ as ENGINE_VERSION
 from predictive_engine.adapters import run_adaptive_forecast
 from predictive_engine.models import AdaptiveUpdateResult, empty_history_frame
+from domain.adaptive_cache_lock import adaptive_cache_lock
 
 LOGGER = logging.getLogger(__name__)
 
@@ -74,21 +75,36 @@ def update_model(
     if isinstance(active_cache, CacheService):
         active_cache.set_ttl_override(ttl_seconds)
 
-    engine_result = run_adaptive_forecast(
-        predictions=predictions,
-        actuals=actuals,
-        cache=active_cache,
-        ema_span=ema_span,
-        ttl_hours=effective_ttl_hours,
-        max_history_rows=_MAX_HISTORY_ROWS,
-        persist_state=persist,
-        persist_history=persist,
-        history_path=_HISTORY_PATH,
-        warm_start=True,
-        state_key=_STATE_KEY,
-        correlation_key=_CORR_KEY,
-        timestamp=timestamp,
-        performance_prefix="adaptive",
+    LOGGER.debug(
+        "Solicitando lock adaptativo para update_model (ema_span=%s, persist=%s)",
+        ema_span,
+        persist,
+    )
+    with adaptive_cache_lock:
+        LOGGER.debug(
+            "Lock adaptativo adquirido para update_model (ema_span=%s)",
+            ema_span,
+        )
+        engine_result = run_adaptive_forecast(
+            predictions=predictions,
+            actuals=actuals,
+            cache=active_cache,
+            ema_span=ema_span,
+            ttl_hours=effective_ttl_hours,
+            max_history_rows=_MAX_HISTORY_ROWS,
+            persist_state=persist,
+            persist_history=persist,
+            history_path=_HISTORY_PATH,
+            warm_start=True,
+            state_key=_STATE_KEY,
+            correlation_key=_CORR_KEY,
+            timestamp=timestamp,
+            performance_prefix="adaptive",
+        )
+    LOGGER.debug(
+        "Lock adaptativo liberado tras update_model (ema_span=%s, persist=%s)",
+        ema_span,
+        persist,
     )
 
     update_result = engine_result.get("update")
@@ -263,20 +279,35 @@ def simulate_adaptive_forecast(
         frame = frame.dropna(subset=["timestamp", "sector", "predicted_return", "actual_return"])
         frame = frame.sort_values("timestamp")
 
-    engine_result = run_adaptive_forecast(
-        history=frame,
-        cache=working_cache,
-        ema_span=ema_span,
-        rolling_window=rolling_window,
-        ttl_hours=effective_ttl_hours,
-        max_history_rows=_MAX_HISTORY_ROWS,
-        persist_state=persist,
-        persist_history=persist,
-        history_path=_HISTORY_PATH,
-        warm_start=True,
-        state_key=_STATE_KEY,
-        correlation_key=_CORR_KEY,
-        performance_prefix="adaptive",
+    LOGGER.debug(
+        "Solicitando lock adaptativo para simulate_adaptive_forecast (ema_span=%s, persist=%s)",
+        ema_span,
+        persist,
+    )
+    with adaptive_cache_lock:
+        LOGGER.debug(
+            "Lock adaptativo adquirido para simulate_adaptive_forecast (ema_span=%s)",
+            ema_span,
+        )
+        engine_result = run_adaptive_forecast(
+            history=frame,
+            cache=working_cache,
+            ema_span=ema_span,
+            rolling_window=rolling_window,
+            ttl_hours=effective_ttl_hours,
+            max_history_rows=_MAX_HISTORY_ROWS,
+            persist_state=persist,
+            persist_history=persist,
+            history_path=_HISTORY_PATH,
+            warm_start=True,
+            state_key=_STATE_KEY,
+            correlation_key=_CORR_KEY,
+            performance_prefix="adaptive",
+        )
+    LOGGER.debug(
+        "Lock adaptativo liberado tras simulate_adaptive_forecast (ema_span=%s, persist=%s)",
+        ema_span,
+        persist,
     )
 
     forecast_result = engine_result.get("forecast")

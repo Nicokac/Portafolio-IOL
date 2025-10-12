@@ -186,6 +186,7 @@ La versión **0.4.3** añade botones de descarga directos para obtener las suger
 - La tabla de recomendaciones añade la columna **Predicted Return (%)** (activable mediante el toggle *Incluir predicciones*) para mostrar el aporte sectorial estimado por activo.
 - El insight automático pondera la rentabilidad esperada y la predicción sectorial según el porcentaje asignado a cada símbolo, destacando la beta promedio junto al sector dominante.
 - El ratio de *cache hits* del motor predictivo se expone junto a la tabla, evidenciando cuándo las recomputaciones provienen de memoria.
+- A partir de **v0.6.4-patch2a** las predicciones se cachean por símbolo y período reutilizando `MarketDataCache` (TTL configurable de 4 h), `update_cache_metrics()` refresca las métricas sin recalcular y el lock global `adaptive_cache_lock` evita ejecuciones concurrentes que corrompan el estado adaptativo.
 
 ### Fixtures offline y `_render_for_test()`
 

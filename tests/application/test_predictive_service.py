@@ -60,6 +60,12 @@ class DummyCache:
         return value
 
 
+def _last_cache_entry(cache: DummyCache) -> tuple[str, float | None]:
+    assert cache.ttl, "Expected cache to contain entries"
+    last_key = list(cache.ttl.keys())[-1]
+    return last_key, cache.ttl[last_key]
+
+
 def test_predict_sector_performance_aggregates_correlations(cache_state: PredictiveCacheState) -> None:
     returns_a = pd.Series([0.01, 0.012, 0.014, 0.015])
     returns_b = pd.Series([0.009, 0.011, 0.013, 0.014])
@@ -79,10 +85,11 @@ def test_predict_sector_performance_aggregates_correlations(cache_state: Predict
         ]
     )
 
+    dummy_cache = DummyCache()
     result = predict_sector_performance(
         opportunities,
         backtesting_service=service,
-        cache=DummyCache(),
+        cache=dummy_cache,
         span=2,
     )
 
@@ -101,6 +108,8 @@ def test_predict_sector_performance_aggregates_correlations(cache_state: Predict
     assert util_row["avg_correlation"] == pytest.approx(0.0, abs=1e-6)
     assert cache_state.misses == 1
     assert cache_state.hits == 0
+    cache_key, _ = _last_cache_entry(dummy_cache)
+    assert "AAA" in cache_key and "CCC" in cache_key
 
 
 def test_predict_sector_performance_uses_cache_and_stats(cache_state: PredictiveCacheState) -> None:
@@ -123,7 +132,8 @@ def test_predict_sector_performance_uses_cache_and_stats(cache_state: Predictive
     stats_after_first = get_cache_stats()
     assert stats_after_first.misses == 1
     expected_ttl = PREDICTIVE_TTL_HOURS * 3600.0
-    assert cache.ttl.get("sector_predictions") == pytest.approx(expected_ttl)
+    _, stored_ttl = _last_cache_entry(cache)
+    assert stored_ttl == pytest.approx(expected_ttl)
     assert service.calls == ["AAA"]
 
     second = predict_sector_performance(
@@ -159,7 +169,8 @@ def test_predict_sector_performance_accepts_custom_ttl(cache_state: PredictiveCa
         ttl_hours=0.01,
     )
 
-    assert cache.ttl.get("sector_predictions") == pytest.approx(36.0)
+    _, stored_ttl = _last_cache_entry(cache)
+    assert stored_ttl == pytest.approx(36.0)
     assert cache_state.ttl_hours == pytest.approx(0.01)
 
 
@@ -183,5 +194,6 @@ def test_predictive_ttl_respects_monkeypatch(monkeypatch, cache_state: Predictiv
         span=2,
     )
 
-    assert cache.ttl.get("sector_predictions") == pytest.approx(0.02 * 3600.0)
+    _, stored_ttl = _last_cache_entry(cache)
+    assert stored_ttl == pytest.approx(0.02 * 3600.0)
     assert cache_state.ttl_hours == pytest.approx(0.02)

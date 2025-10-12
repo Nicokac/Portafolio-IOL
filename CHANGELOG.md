@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch2a — Predictive caching per símbolo/período y lock adaptativo global.
+### Added
+- Creado `domain/adaptive_cache_lock.py` con lock global reentrante y diagnósticos de retención/espera para proteger operaciones concurrentes del motor adaptativo.
+- Nuevas pruebas `tests/domain/test_adaptive_cache_lock.py` que validan exclusión mutua, reentrancia y warnings por bloqueos prolongados.
+
+### Changed
+- `predict_sector_performance` ahora reutiliza `MarketDataCache` para cachear predicciones por símbolo/período, registra métricas vía `update_cache_metrics` y emite trazas con contexto de símbolos/sectores.
+- `RecommendationService` comparte el lock adaptativo al consultar predicciones y eliminó ejecuciones redundantes del motor predictivo.
+- `simulate_adaptive_forecast` y `update_model` protegen las llamadas a `run_adaptive_forecast` con el nuevo lock, evitando corrupción en archivos Parquet bajo cargas simultáneas.
+
+### Fixed
+- Se normalizó la actualización de métricas de caché para evitar lecturas desfasadas y se añadieron advertencias cuando el lock permanece retenido por más de cinco segundos.
+
 ## v0.6.4-patch1 — Shared market-data cache, lazy analytics and resilient risk metrics.
 ### Added
 - Introduced `services/cache/market_data_cache.py` to persist historical prices and fundamentals with a shared TTL of 6 horas.

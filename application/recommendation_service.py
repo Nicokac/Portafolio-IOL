@@ -16,7 +16,11 @@ from typing import Callable, Mapping
 import numpy as np
 import pandas as pd
 
-from application.predictive_service import predict_sector_performance
+from application.predictive_service import (
+    predict_sector_performance,
+    update_cache_metrics,
+)
+from domain.adaptive_cache_lock import adaptive_cache_lock
 
 
 LOGGER = logging.getLogger(__name__)
@@ -729,7 +733,45 @@ class RecommendationService:
             return pd.DataFrame(columns=RECOMMENDATION_OUTPUT_COLUMNS)
 
         prediction_map: dict[str, float] = {}
-        predictions_df = predict_sector_performance(opportunities)
+
+        symbol_series = (
+            opportunities.get("symbol")
+            if "symbol" in opportunities.columns
+            else opportunities.get("ticker", pd.Series(dtype=str))
+        )
+        symbol_list = (
+            symbol_series.astype("string").str.upper().str.strip().tolist()
+            if isinstance(symbol_series, pd.Series)
+            else []
+        )
+        sector_list = (
+            opportunities.get("sector", pd.Series(dtype=str))
+            .astype("string")
+            .str.strip()
+            .tolist()
+        )
+
+        LOGGER.debug(
+            "RecommendationService solicitando lock adaptativo para predicciones (modo=%s, símbolos=%s, sectores=%s)",
+            mode,
+            symbol_list,
+            sector_list,
+        )
+
+        with adaptive_cache_lock:
+            LOGGER.debug(
+                "RecommendationService lock adaptativo adquirido (modo=%s, símbolos=%s)",
+                mode,
+                symbol_list,
+            )
+            predictions_df = predict_sector_performance(opportunities)
+            update_cache_metrics()
+
+        LOGGER.debug(
+            "RecommendationService liberó el lock adaptativo tras obtener predicciones (modo=%s)",
+            mode,
+        )
+
         if isinstance(predictions_df, pd.DataFrame) and not predictions_df.empty:
             predictions_df = predictions_df.copy()
             predictions_df["sector"] = (
@@ -750,9 +792,6 @@ class RecommendationService:
                 if not np.isfinite(predicted):
                     continue
                 prediction_map[sector_label] = float(predicted)
-
-        # Segunda lectura para visibilizar hits en métricas de caché.
-        predict_sector_performance(opportunities)
 
         candidates: list[Recommendation] = []
         for _, row in opportunities.iterrows():
