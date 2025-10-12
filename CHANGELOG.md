@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch3a — Opportunities screener performance and caching overhaul.
+### Added
+- Ejecución concurrente del screener de oportunidades mediante `ThreadPoolExecutor` (8 workers) con métricas por símbolo y respetando `YAHOO_REQUEST_DELAY`.
+- Prevalidación `_precheck_symbols` que descarta símbolos con `market_cap`, `pe_ratio` o `revenue_growth` fuera de umbrales antes de solicitar históricos.
+- Cache persistente configurable (SQLite/Redis) para resultados de Yahoo (`fundamentals`, `dividends`, `shares`, `prices`) y reportes generados en `controllers.opportunities` con TTL predeterminado de 6 horas.
+- Nuevos tests para validar paralelismo, prevalidación y persistencia (`tests/application/test_opportunities_screener.py`, `tests/services/test_market_data_cache.py`, `tests/infrastructure/test_yahoo_client.py`).
+
+### Changed
+- El resumen del screener incluye tiempos promedio por símbolo, ratio de descarte de precheck y detalle de errores por ticker para telemetría.
+- `record_opportunities_report` recibe métricas extendidas provenientes del resumen y las expone en el panel de diagnóstico.
+
+### Fixed
+- Se rehízo la capa de caché de `YahooFinanceClient` para evitar dependencias en decoradores in-memory y compartir resultados entre instancias.
+
 ## v0.6.4-patch2b — Validation hardening and adaptive UI consolidation.
 ### Added
 - Validación de payload para `/forecast/adaptive` limitando a 10 000 filas o 30 símbolos mediante `AdaptiveForecastRequest`.

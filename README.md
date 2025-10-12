@@ -626,9 +626,9 @@ El panel muestra una nota de telemetría por cada barrido, tanto si la corrida p
 
 #### Caché del screening de oportunidades
 
-- `controllers.opportunities.generate_opportunities_report` guarda en memoria el último resultado para cada combinación de filtros, tickers manuales y toggles críticos. Cuando el usuario repite una búsqueda con la misma configuración, la respuesta se obtiene desde caché y evita recalcular el screener completo.
-- Un *cache hit* queda registrado en el nuevo bloque "🔎 Screening de oportunidades" del healthcheck lateral, que muestra tanto la duración de la lectura cacheada como la corrida completa previa para comparar la reducción de tiempos. En escenarios típicos de QA, la ejecución inicial ronda las decenas de milisegundos mientras que la respuesta cacheada se resuelve en el orden de 1 ms, dejando visible la mejora.
-- Cualquier cambio en los filtros —por ejemplo, alternar el toggle de indicadores técnicos, ajustar umbrales numéricos o modificar el universo manual— invalida automáticamente la entrada, garantizando que las corridas posteriores utilicen los parámetros más recientes.
+- `controllers.opportunities.generate_opportunities_report` cachea cada combinación de filtros tanto en memoria como en un backend persistente (SQLite por defecto, Redis opcional) con un TTL de 6 horas. Las respuestas se rehidratan tras reinicios y evitan recalcular el screener completo en búsquedas repetidas.
+- Un *cache hit* queda registrado en el bloque "🔎 Screening de oportunidades" del healthcheck lateral, que ahora expone la duración de la corrida base, la lectura cacheada, el tiempo promedio por ticker, el ratio de descarte del precheck y los tickers con advertencias para comparar la reducción de latencia y diagnosticar anomalías.
+- Cualquier cambio en los filtros —por ejemplo, alternar el toggle de indicadores técnicos, ajustar umbrales numéricos o modificar el universo manual— invalida automáticamente la entrada tanto en memoria como en el backend persistente, garantizando que las corridas posteriores utilicen los parámetros más recientes. El precheck previo a la descarga descarta símbolos con `market_cap` bajo, `pe_ratio` alto o `revenue_growth` negativo, y su ratio queda reflejado en la telemetría.
 
 **Campos reportados**
 

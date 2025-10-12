@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Iterable, Sequence, TypeVar
 
 import pandas as pd
 import requests
 import yfinance as yf
 
-from shared.cache import cached
+from services.cache.market_data_cache import create_persistent_cache
 from shared.errors import AppError
-from shared.settings import YAHOO_FUNDAMENTALS_TTL, YAHOO_QUOTES_TTL
 
 T = TypeVar("T")
+
+LOGGER = logging.getLogger(__name__)
 
 
 def _normalise_symbol(symbol: str) -> str:
@@ -37,6 +39,11 @@ class YahooFinanceClient:
     """Wrapper around :mod:`yfinance` with consistent outputs."""
 
     _SCREENER_URL = "https://query2.finance.yahoo.com/v1/finance/screener"
+    _CACHE_TTL = 6 * 60 * 60
+    _FUNDAMENTALS_CACHE = create_persistent_cache("yahoo_fundamentals")
+    _DIVIDENDS_CACHE = create_persistent_cache("yahoo_dividends")
+    _SHARES_CACHE = create_persistent_cache("yahoo_shares")
+    _PRICES_CACHE = create_persistent_cache("yahoo_prices")
 
     def _with_ticker(self, ticker: str, loader: Callable[[yf.Ticker], T]) -> T:
         session = requests.Session()
@@ -51,7 +58,6 @@ class YahooFinanceClient:
         finally:
             session.close()
 
-    @cached(ttl=YAHOO_QUOTES_TTL)
     def list_symbols_by_markets(
         self, markets: Sequence[str], *, size: int | None = None
     ) -> list[dict[str, Any]]:
@@ -151,9 +157,10 @@ class YahooFinanceClient:
         finally:
             session.close()
 
-    @cached(ttl=YAHOO_FUNDAMENTALS_TTL)
     def get_fundamentals(self, ticker: str) -> Dict[str, Any]:
         """Return normalised fundamentals for a symbol."""
+
+        cache_key = _normalise_symbol(ticker)
 
         def _load(yft: yf.Ticker) -> Dict[str, Any]:
             info: Dict[str, Any] = yft.get_info()
@@ -184,11 +191,19 @@ class YahooFinanceClient:
                 result["forward_eps"] = float(forward_eps)
             return result
 
-        return self._with_ticker(ticker, _load)
+        sentinel = object()
+        cached = self._FUNDAMENTALS_CACHE.get(cache_key, sentinel)
+        if cached is not sentinel:
+            return dict(cached)
 
-    @cached(ttl=YAHOO_QUOTES_TTL)
+        data = self._with_ticker(ticker, _load)
+        self._FUNDAMENTALS_CACHE.set(cache_key, dict(data), ttl=self._CACHE_TTL)
+        return data
+
     def get_dividends(self, ticker: str) -> pd.DataFrame:
         """Return historical dividends as a DataFrame."""
+
+        cache_key = _normalise_symbol(ticker)
 
         def _load(yft: yf.Ticker) -> pd.DataFrame:
             div_series: pd.Series = yft.dividends
@@ -200,11 +215,19 @@ class YahooFinanceClient:
             df["amount"] = df["amount"].astype(float)
             return df.sort_values("date").reset_index(drop=True)
 
-        return self._with_ticker(ticker, _load)
+        sentinel = object()
+        cached = self._DIVIDENDS_CACHE.get(cache_key, sentinel)
+        if isinstance(cached, pd.DataFrame):
+            return cached.copy(deep=True)
 
-    @cached(ttl=YAHOO_FUNDAMENTALS_TTL)
+        df = self._with_ticker(ticker, _load)
+        self._DIVIDENDS_CACHE.set(cache_key, df.copy(deep=True), ttl=self._CACHE_TTL)
+        return df
+
     def get_shares_outstanding(self, ticker: str) -> pd.DataFrame:
         """Return shares outstanding history."""
+
+        cache_key = _normalise_symbol(ticker)
 
         def _load(yft: yf.Ticker) -> pd.DataFrame:
             shares = yft.get_shares_full(start="1900-01-01")
@@ -224,11 +247,19 @@ class YahooFinanceClient:
             df["shares"] = df["shares"].astype(float)
             return df.sort_values("date").reset_index(drop=True)
 
-        return self._with_ticker(ticker, _load)
+        sentinel = object()
+        cached = self._SHARES_CACHE.get(cache_key, sentinel)
+        if isinstance(cached, pd.DataFrame):
+            return cached.copy(deep=True)
 
-    @cached(ttl=YAHOO_QUOTES_TTL)
+        df = self._with_ticker(ticker, _load)
+        self._SHARES_CACHE.set(cache_key, df.copy(deep=True), ttl=self._CACHE_TTL)
+        return df
+
     def get_price_history(self, ticker: str) -> pd.DataFrame:
         """Return OHLC history with adjusted close values."""
+
+        cache_key = _normalise_symbol(ticker)
 
         def _load(yft: yf.Ticker) -> pd.DataFrame:
             history = yft.history(period="max", auto_adjust=False)
@@ -251,7 +282,29 @@ class YahooFinanceClient:
             df["volume"] = df["volume"].astype(float)
             return df.sort_values("date").reset_index(drop=True)
 
-        return self._with_ticker(ticker, _load)
+        sentinel = object()
+        cached = self._PRICES_CACHE.get(cache_key, sentinel)
+        if isinstance(cached, pd.DataFrame):
+            return cached.copy(deep=True)
+
+        df = self._with_ticker(ticker, _load)
+        self._PRICES_CACHE.set(cache_key, df.copy(deep=True), ttl=self._CACHE_TTL)
+        return df
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear all persistent Yahoo caches (used in tests)."""
+
+        for cache in (
+            cls._FUNDAMENTALS_CACHE,
+            cls._DIVIDENDS_CACHE,
+            cls._SHARES_CACHE,
+            cls._PRICES_CACHE,
+        ):
+            try:
+                cache.clear()
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.exception("No se pudo limpiar la caché de Yahoo")
 
 
 __all__ = ["YahooFinanceClient"]

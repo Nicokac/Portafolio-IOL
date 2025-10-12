@@ -27,6 +27,11 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
+market_data_cache_backend: str = getattr(settings, "MARKET_DATA_CACHE_BACKEND", "sqlite")
+market_data_cache_path: str | None = getattr(settings, "MARKET_DATA_CACHE_PATH", None)
+market_data_cache_redis_url: str | None = getattr(settings, "MARKET_DATA_CACHE_REDIS_URL", None)
+market_data_cache_ttl: float = getattr(settings, "MARKET_DATA_CACHE_TTL", 6 * 60 * 60)
+yahoo_request_delay: float = getattr(settings, "YAHOO_REQUEST_DELAY", 0.0)
 quotes_ttl_seconds: int = getattr(settings, "QUOTES_TTL_SECONDS", 300)
 quotes_rps_iol: float = getattr(settings, "QUOTES_RPS_IOL", 3.0)
 quotes_rps_legacy: float = getattr(settings, "QUOTES_RPS_LEGACY", 1.0)
@@ -119,6 +124,11 @@ __all__ = [
     "max_quote_workers",
     "yahoo_fundamentals_ttl",
     "yahoo_quotes_ttl",
+    "market_data_cache_backend",
+    "market_data_cache_path",
+    "market_data_cache_redis_url",
+    "market_data_cache_ttl",
+    "yahoo_request_delay",
     "quotes_ttl_seconds",
     "quotes_rps_iol",
     "quotes_rps_legacy",

@@ -89,3 +89,18 @@ def test_fundamentals_cache_uses_symbol_and_sector_keys(market_cache: MarketData
 
     market_cache.get_fundamentals(["AAPL"], loader=loader, sectors=["Finance"])
     assert loader.calls["count"] == 2
+
+
+def test_persistent_cache_survives_reinitialisation(tmp_path, monkeypatch):
+    from services.cache import market_data_cache as module
+
+    backend = module._SQLiteBackend(tmp_path / "market_cache.db")
+    monkeypatch.setattr(module, "_BACKEND", backend)
+    monkeypatch.setattr(module, "_initialise_backend", lambda: backend)
+
+    cache_one = module.create_persistent_cache("test_persistent")
+    cache_one.set("alpha", {"value": 1}, ttl=10.0)
+
+    cache_two = module.create_persistent_cache("test_persistent")
+    stored = cache_two.get("alpha")
+    assert stored == {"value": 1}

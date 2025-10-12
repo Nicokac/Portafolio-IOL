@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Iterable, List, Optional
 
 import numpy as np
@@ -21,6 +22,9 @@ from shared.errors import AppError
 from shared.settings import settings as shared_settings
 
 LOGGER = logging.getLogger(__name__)
+
+_MAX_TICKER_WORKERS = 8
+_REQUEST_DELAY = float(getattr(shared_settings, "yahoo_request_delay", 0.0))
 
 _FILTER_LABELS: dict[str, str] = {
     "max_payout": "max_payout",
@@ -1623,6 +1627,78 @@ def _normalize_sector_filters(values: Optional[Iterable[str]]) -> list[str]:
     return normalized
 
 
+def _precheck_symbols(
+    tickers: Sequence[str],
+    *,
+    listings_meta: Mapping[str, Mapping[str, object]] | None,
+    min_market_cap: float | None,
+    max_pe: float | None,
+    min_revenue_growth: float | None,
+) -> tuple[list[str], dict[str, list[str]], float]:
+    """Apply cheap heuristics before downloading historical data."""
+
+    listings_meta = listings_meta or {}
+    minimum_market_cap = float(min_market_cap if min_market_cap is not None else 500_000_000.0)
+    maximum_pe = float(max_pe if max_pe is not None else 50.0)
+    minimum_revenue_growth = float(min_revenue_growth if min_revenue_growth is not None else 0.0)
+
+    kept: list[str] = []
+    discarded: dict[str, list[str]] = {}
+
+    for ticker in tickers:
+        entry = listings_meta.get(ticker, {})
+        if not isinstance(entry, Mapping):
+            entry = {}
+
+        reasons: list[str] = []
+
+        market_cap = _pick_first_numeric(
+            (
+                entry.get("market_cap"),
+                entry.get("marketCap"),
+            )
+        )
+        if market_cap is not pd.NA and _is_valid_number(market_cap):
+            if float(market_cap) < minimum_market_cap:
+                reasons.append(f"market_cap<{minimum_market_cap:,.0f}")
+
+        pe_ratio = _pick_first_numeric(
+            (
+                entry.get("pe_ratio"),
+                entry.get("trailingPE"),
+                entry.get("pe"),
+            )
+        )
+        if pe_ratio is not pd.NA and _is_valid_number(pe_ratio):
+            if float(pe_ratio) > maximum_pe:
+                reasons.append(f"pe_ratio>{maximum_pe:,.0f}")
+
+        revenue_growth = _pick_first_numeric((entry.get("revenue_growth"),))
+        if revenue_growth is not pd.NA and _is_valid_number(revenue_growth):
+            if float(revenue_growth) < minimum_revenue_growth:
+                reasons.append(f"revenue_growth<{minimum_revenue_growth:,.2f}")
+
+        if reasons:
+            discarded[ticker] = reasons
+        else:
+            kept.append(ticker)
+
+    total = len(tickers)
+    ratio = (len(discarded) / total) if total else 0.0
+
+    if discarded:
+        LOGGER.info(
+            "Precheck descartó %s de %s tickers antes del fetch detallado: %s",
+            len(discarded),
+            total,
+            ", ".join(sorted(discarded)),
+        )
+    else:
+        LOGGER.info("Precheck validó %s tickers sin descartes previos", total)
+
+    return kept, discarded, ratio
+
+
 def _as_optional_float(value: object) -> float | pd.NA:
     if value is None or pd.isna(value):
         return pd.NA
@@ -1647,6 +1723,119 @@ def _is_latam_country(country: object | None) -> bool:
     if not normalized:
         return False
     return normalized in _LATAM_COUNTRIES
+
+
+def _build_ticker_row(
+    ticker: str,
+    *,
+    fundamentals: Mapping[str, object] | None,
+    dividends: pd.DataFrame | None,
+    shares: pd.DataFrame | None,
+    prices: pd.DataFrame | None,
+    listings_meta: Mapping[str, Mapping[str, object]],
+) -> dict[str, object]:
+    payout_raw = fundamentals.get("payout_ratio") if fundamentals else pd.NA
+    payout = _safe_round(payout_raw)
+    dividend_yield = _safe_round(fundamentals["dividend_yield"] if fundamentals else pd.NA)
+    dividend_streak = _compute_dividend_streak(dividends)
+
+    cagr_values: list[float] = []
+    for years in (3, 5):
+        value = _compute_cagr(prices, years)
+        if _is_valid_number(value):
+            cagr_values.append(float(value))
+    cagr = _safe_round(sum(cagr_values) / len(cagr_values) if cagr_values else pd.NA)
+
+    price = pd.NA
+    if prices is not None and not prices.empty:
+        price = _safe_round(prices.sort_values("date")["close"].iloc[-1])
+
+    rsi = _safe_round(_compute_rsi(prices))
+    sma_50 = _safe_round(_compute_sma(prices, 50))
+    sma_200 = _safe_round(_compute_sma(prices, 200))
+    _, macd_hist = _compute_macd(prices)
+    macd_hist = _safe_round(macd_hist, digits=4) if _is_valid_number(macd_hist) else pd.NA
+    buyback = _safe_round(_compute_buyback_ratio(shares))
+
+    metrics = {
+        "payout_ratio": payout,
+        "dividend_streak": dividend_streak,
+        "cagr": cagr,
+        "buyback": buyback,
+        "rsi": rsi,
+        "macd_hist": macd_hist,
+    }
+    score = _compute_score(metrics)
+
+    listing_meta = listings_meta.get(ticker, {})
+    if not isinstance(listing_meta, Mapping):
+        listing_meta = {}
+
+    market_cap = _pick_first_numeric(
+        (
+            fundamentals.get("market_cap") if fundamentals else None,
+            fundamentals.get("marketCap") if fundamentals else None,
+            listing_meta.get("market_cap"),
+            listing_meta.get("marketCap"),
+        )
+    )
+    pe_ratio = _pick_first_numeric(
+        (
+            fundamentals.get("pe_ratio") if fundamentals else None,
+            fundamentals.get("trailingPE") if fundamentals else None,
+            fundamentals.get("pe") if fundamentals else None,
+            listing_meta.get("pe_ratio"),
+            listing_meta.get("trailingPE"),
+            listing_meta.get("pe"),
+        )
+    )
+    revenue_growth = _pick_first_numeric(
+        (
+            fundamentals.get("revenue_growth") if fundamentals else None,
+            listing_meta.get("revenue_growth"),
+        )
+    )
+    trailing_eps = _as_optional_float(
+        fundamentals.get("trailing_eps") if fundamentals else pd.NA
+    )
+    if trailing_eps is pd.NA and fundamentals and "trailingEps" in fundamentals:
+        trailing_eps = _as_optional_float(fundamentals.get("trailingEps"))
+    forward_eps = _as_optional_float(
+        fundamentals.get("forward_eps") if fundamentals else pd.NA
+    )
+    if forward_eps is pd.NA and fundamentals and "forwardEps" in fundamentals:
+        forward_eps = _as_optional_float(fundamentals.get("forwardEps"))
+    is_latam = False
+    country: object | None = None
+    sector = pd.NA
+    if fundamentals:
+        country = fundamentals.get("country") or fundamentals.get("region")
+        sector = _normalize_sector_name(fundamentals.get("sector"))
+    if not country and listing_meta:
+        country = listing_meta.get("country") or listing_meta.get("region")
+    is_latam = _is_latam_country(country)
+
+    return {
+        "ticker": ticker,
+        "sector": sector,
+        "payout_ratio": payout,
+        "dividend_streak": dividend_streak,
+        "cagr": cagr,
+        "dividend_yield": dividend_yield,
+        "price": price,
+        "Yahoo Finance Link": _format_yahoo_link(ticker),
+        "rsi": rsi,
+        "sma_50": sma_50,
+        "sma_200": sma_200,
+        "score_compuesto": score,
+        "_meta_market_cap": market_cap,
+        "_meta_pe_ratio": pe_ratio,
+        "_meta_revenue_growth": revenue_growth,
+        "_meta_is_latam": is_latam,
+        "_meta_trailing_eps": trailing_eps,
+        "_meta_forward_eps": forward_eps,
+        "_meta_buyback": _as_optional_float(buyback),
+    }
 
 
 def run_screener_yahoo(
@@ -1719,6 +1908,18 @@ def run_screener_yahoo(
 
         using_default_universe = True
 
+    precheck_initial_count = len(tickers)
+    precheck_dropped: dict[str, list[str]] = {}
+    precheck_ratio = 0.0
+    if tickers:
+        tickers, precheck_dropped, precheck_ratio = _precheck_symbols(
+            tickers,
+            listings_meta=listings_meta,
+            min_market_cap=min_market_cap,
+            max_pe=max_pe,
+            min_revenue_growth=min_revenue_growth,
+        )
+
     if not tickers:
         columns = _output_columns(include_technicals)
         df = pd.DataFrame(columns=columns)
@@ -1727,133 +1928,107 @@ def run_screener_yahoo(
             if target_markets:
                 message += " Mercados consultados: " + ", ".join(target_markets)
             notes.append(message)
+        if precheck_dropped:
+            notes.append(
+                f"Precheck descartó {len(precheck_dropped)} símbolos antes del análisis detallado."
+            )
         return (df, notes) if notes else df
     rows: list[dict[str, object]] = []
     sector_filters = _normalize_sector_filters(sectors)
 
     loop_start = time.perf_counter()
-    for ticker in tickers:
-        fundamentals = _fetch_with_warning(client.get_fundamentals, ticker, "fundamentals")
-        dividends = _fetch_with_warning(client.get_dividends, ticker, "dividendos")
-        shares = _fetch_with_warning(client.get_shares_outstanding, ticker, "acciones")
-        prices = _fetch_with_warning(client.get_price_history, ticker, "precios")
+    results: dict[str, dict[str, object]] = {}
+    elapsed_per_ticker: dict[str, float] = {}
+    errors_by_ticker: dict[str, list[str]] = {}
 
-        payout_raw = fundamentals.get("payout_ratio") if fundamentals else pd.NA
-        payout = _safe_round(payout_raw)
-        dividend_yield = _safe_round(
-            fundamentals["dividend_yield"] if fundamentals else pd.NA
-        )
-        dividend_streak = _compute_dividend_streak(dividends)
+    def _process_ticker(symbol: str) -> tuple[dict[str, object] | None, float, list[str]]:
+        start = time.perf_counter()
+        issues: list[str] = []
 
-        cagr_values = []
-        for years in (3, 5):
-            value = _compute_cagr(prices, years)
-            if _is_valid_number(value):
-                cagr_values.append(float(value))
-        cagr = _safe_round(sum(cagr_values) / len(cagr_values) if cagr_values else pd.NA)
+        def _fetch(
+            fetcher: Callable[[str], object],
+            label: str,
+        ) -> object | None:
+            result = _fetch_with_warning(fetcher, symbol, label)
+            if result is None:
+                issues.append(label)
+            if _REQUEST_DELAY > 0:
+                time.sleep(_REQUEST_DELAY)
+            return result
 
-        price = pd.NA
-        if prices is not None and not prices.empty:
-            price = _safe_round(prices.sort_values("date")["close"].iloc[-1])
-
-        rsi = _safe_round(_compute_rsi(prices))
-        sma_50 = _safe_round(_compute_sma(prices, 50))
-        sma_200 = _safe_round(_compute_sma(prices, 200))
-        _, macd_hist = _compute_macd(prices)
-        macd_hist = _safe_round(macd_hist, digits=4) if _is_valid_number(macd_hist) else pd.NA
-        buyback = _safe_round(_compute_buyback_ratio(shares))
-
-        metrics = {
-            "payout_ratio": payout,
-            "dividend_streak": dividend_streak,
-            "cagr": cagr,
-            "buyback": buyback,
-            "rsi": rsi,
-            "macd_hist": macd_hist,
-        }
-        score = _compute_score(metrics)
-
-        listing_meta = listings_meta.get(ticker, {})
-        if not isinstance(listing_meta, Mapping):
-            listing_meta = {}
-
-        market_cap = _pick_first_numeric(
-            (
-                fundamentals.get("market_cap") if fundamentals else None,
-                fundamentals.get("marketCap") if fundamentals else None,
-                listing_meta.get("market_cap"),
-                listing_meta.get("marketCap"),
+        try:
+            fundamentals_obj = _fetch(client.get_fundamentals, "fundamentals")
+            dividends_obj = _fetch(client.get_dividends, "dividendos")
+            shares_obj = _fetch(client.get_shares_outstanding, "acciones")
+            prices_obj = _fetch(client.get_price_history, "precios")
+            row = _build_ticker_row(
+                symbol,
+                fundamentals=fundamentals_obj if isinstance(fundamentals_obj, Mapping) else fundamentals_obj,
+                dividends=dividends_obj if isinstance(dividends_obj, pd.DataFrame) else None,
+                shares=shares_obj if isinstance(shares_obj, pd.DataFrame) else None,
+                prices=prices_obj if isinstance(prices_obj, pd.DataFrame) else None,
+                listings_meta=listings_meta,
             )
-        )
-        pe_ratio = _pick_first_numeric(
-            (
-                fundamentals.get("pe_ratio") if fundamentals else None,
-                fundamentals.get("trailingPE") if fundamentals else None,
-                fundamentals.get("pe") if fundamentals else None,
-                listing_meta.get("pe_ratio"),
-                listing_meta.get("trailingPE"),
-                listing_meta.get("pe"),
-            )
-        )
-        revenue_growth = _pick_first_numeric(
-            (
-                fundamentals.get("revenue_growth") if fundamentals else None,
-                listing_meta.get("revenue_growth"),
-            )
-        )
-        trailing_eps = _as_optional_float(
-            fundamentals.get("trailing_eps") if fundamentals else pd.NA
-        )
-        if trailing_eps is pd.NA and fundamentals and "trailingEps" in fundamentals:
-            trailing_eps = _as_optional_float(fundamentals.get("trailingEps"))
-        forward_eps = _as_optional_float(
-            fundamentals.get("forward_eps") if fundamentals else pd.NA
-        )
-        if forward_eps is pd.NA and fundamentals and "forwardEps" in fundamentals:
-            forward_eps = _as_optional_float(fundamentals.get("forwardEps"))
-        is_latam = False
-        country: object | None = None
-        sector = pd.NA
-        if fundamentals:
-            country = fundamentals.get("country") or fundamentals.get("region")
-            sector = _normalize_sector_name(fundamentals.get("sector"))
-        if not country and listing_meta:
-            country = listing_meta.get("country") or listing_meta.get("region")
-        is_latam = _is_latam_country(country)
+        except Exception as exc:  # pragma: no cover - defensive branch
+            LOGGER.exception("Error inesperado al procesar %s", symbol)
+            issues.append(f"exception:{exc}")
+            row = None
+        elapsed_local = time.perf_counter() - start
+        return row, elapsed_local, issues
 
-        row = {
-            "ticker": ticker,
-            "sector": sector,
-            "payout_ratio": payout,
-            "dividend_streak": dividend_streak,
-            "cagr": cagr,
-            "dividend_yield": dividend_yield,
-            "price": price,
-            "Yahoo Finance Link": _format_yahoo_link(ticker),
-            "rsi": rsi,
-            "sma_50": sma_50,
-            "sma_200": sma_200,
-            "score_compuesto": score,
-            "_meta_market_cap": market_cap,
-            "_meta_pe_ratio": pe_ratio,
-            "_meta_revenue_growth": revenue_growth,
-            "_meta_is_latam": is_latam,
-            "_meta_trailing_eps": trailing_eps,
-            "_meta_forward_eps": forward_eps,
-            "_meta_buyback": _as_optional_float(buyback),
-        }
+    with ThreadPoolExecutor(max_workers=_MAX_TICKER_WORKERS) as executor:
+        future_map = {executor.submit(_process_ticker, ticker): ticker for ticker in tickers}
+        for future in as_completed(future_map):
+            ticker = future_map[future]
+            try:
+                row, elapsed_seconds, issues = future.result()
+            except Exception as exc:  # pragma: no cover - defensive branch
+                LOGGER.exception("Error crítico al procesar %s", ticker)
+                errors_by_ticker[ticker] = [f"exception:{exc}"]
+                continue
+            elapsed_per_ticker[ticker] = elapsed_seconds
+            if issues:
+                errors_by_ticker[ticker] = issues
+            if row is not None:
+                results[ticker] = row
 
-        rows.append(row)
-
+    rows = [results[ticker] for ticker in tickers if ticker in results]
     elapsed = time.perf_counter() - loop_start
     universe_size = len(tickers)
+    elapsed_map = {
+        ticker: round(seconds, 3)
+        for ticker, seconds in sorted(elapsed_per_ticker.items())
+    }
+    average_elapsed = (
+        sum(elapsed_per_ticker.values()) / len(elapsed_per_ticker)
+        if elapsed_per_ticker
+        else 0.0
+    )
+    if elapsed_map:
+        LOGGER.info(
+            "Tiempo promedio por ticker: %.3fs (%s)",
+            average_elapsed,
+            elapsed_map,
+        )
+    if errors_by_ticker:
+        LOGGER.warning(
+            "Yahoo screener detectó datos faltantes en: %s",
+            {
+                ticker: issues
+                for ticker, issues in sorted(errors_by_ticker.items())
+            },
+        )
     LOGGER.info(
         "Yahoo screener processed %s tickers in %.3f seconds",
         universe_size,
         elapsed,
     )
 
-    telemetry_note = f"ℹ️ Yahoo procesó {universe_size} tickers en {elapsed:.2f} segundos"
+    telemetry_note = (
+        "ℹ️ Yahoo procesó "
+        + f"{universe_size} tickers en {elapsed:.2f} segundos"
+        + (f" (promedio {average_elapsed:.2f}s)" if elapsed_map else "")
+    )
 
     df = pd.DataFrame(rows).convert_dtypes()
 
@@ -1916,6 +2091,11 @@ def run_screener_yahoo(
     if filter_notes:
         notes.extend(filter_notes)
 
+    if precheck_dropped:
+        notes.append(
+            f"Precheck descartó {len(precheck_dropped)} símbolos antes del análisis detallado."
+        )
+
     notes.append(telemetry_note)
 
     filter_metrics, drop_summary_entries = _summarize_filter_telemetry(
@@ -1943,12 +2123,29 @@ def run_screener_yahoo(
             else 0.0
         ),
         "elapsed_seconds": float(elapsed),
+        "elapsed_seconds_per_ticker": elapsed_map,
+        "average_elapsed_seconds_per_ticker": round(average_elapsed, 3),
+        "ticker_error_count": len(errors_by_ticker),
+        "precheck_initial_count": precheck_initial_count,
+        "precheck_discarded_count": len(precheck_dropped),
+        "precheck_discard_ratio": precheck_ratio,
         "selected_sectors": list(sector_filters),
         "sector_distribution": _compute_sector_distribution(df),
         "filter_descriptions": list(filter_metrics),
         "drop_summary": drop_summary,
         "source": "yahoo",
     }
+
+    if errors_by_ticker:
+        summary_payload["ticker_errors"] = {
+            ticker: list(issues)
+            for ticker, issues in sorted(errors_by_ticker.items())
+        }
+    if precheck_dropped:
+        summary_payload["precheck_discards"] = {
+            ticker: list(reasons)
+            for ticker, reasons in sorted(precheck_dropped.items())
+        }
 
     df.attrs["summary"] = summary_payload
 
