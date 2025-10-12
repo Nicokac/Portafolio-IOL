@@ -21,6 +21,22 @@ def _normalise_symbol(symbol: str) -> str:
     return str(symbol).strip().upper()
 
 
+def make_symbol_url(symbol: object, base_url: str = "https://finance.yahoo.com/quote") -> str | None:
+    """Return the Yahoo Finance quote URL for ``symbol`` when possible."""
+
+    if symbol is None:
+        return None
+    try:
+        if pd.isna(symbol):  # type: ignore[arg-type]
+            return None
+    except Exception:  # pragma: no cover - defensive branch
+        pass
+    normalized = _normalise_symbol(str(symbol))
+    if not normalized:
+        return None
+    return f"{base_url}/{normalized}"
+
+
 def _normalise_percentage(value: Any) -> float | pd.NA:
     if value is None:
         return pd.NA

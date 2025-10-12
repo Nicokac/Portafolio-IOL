@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch3b — Opportunities UI & maintainability refresh.
+### Added
+- Fixture `docs/fixtures/base_opportunities.csv` para el universo determinista del screener, cargado on-demand con `pandas.read_csv` y con logs que detallan cantidad de filas y timestamp de carga.
+- Visualizaciones Altair en la pestaña de oportunidades: barra de score promedio por sector y línea temporal de indicadores macro reutilizando el caché del backend.
+- Indicador de “preset activo” con recuento de filtros aplicados y selector interactivo de vista (`Sector` ↔ `Tiempo`) en el resumen del screening.
+
+### Changed
+- El helper `make_symbol_url` centraliza la construcción de enlaces de Yahoo Finance y se reutiliza en el screener, controlador y UI para evitar duplicación de formato.
+- La gestión de presets se simplificó eliminando estados intermedios y aplicando los guardados directamente desde la UI, manteniendo coherencia entre sesión y caché.
+
+### Fixed
+- El fallback de enlaces en tablas ahora valida `NaN`/`NA` antes de generar la URL, previniendo vínculos inválidos cuando faltan símbolos.
+
 ## v0.6.4-patch3a — Opportunities screener performance and caching overhaul.
 ### Added
 - Ejecución concurrente del screener de oportunidades mediante `ThreadPoolExecutor` (8 workers) con métricas por símbolo y respetando `YAHOO_REQUEST_DELAY`.

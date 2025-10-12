@@ -536,6 +536,8 @@ La pestaña ya se encuentra disponible de forma estable y en cada sesión combin
 
 El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible, incluso en esta fase estable.
 
+El universo determinista vive ahora en el fixture `docs/fixtures/base_opportunities.csv`. El screener lo carga bajo demanda mediante `pandas.read_csv`, registrando en los logs la cantidad de filas y la marca temporal de la carga para auditar cambios. Para actualizarlo solo es necesario editar el CSV y enviar el ajuste en un PR: no hay que tocar constantes Python ni recompilar la aplicación.
+
 La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL `https://finance.yahoo.com/quote/<ticker>`. En universos dinámicos descargados de Yahoo la columna reutiliza directamente el *slug* oficial (por ejemplo, `AAPL`), mientras que el stub determinista sintetiza enlaces equivalentes para sus 37 emisores (`UTLX`, `FNCL1`, etc.) manteniendo el mismo formato. Esto permite a QA y a los integradores validar rápidamente la procedencia sin importar si el listado proviene de datos live o del fallback. A partir de la release actual, el listado añade la columna `Score` para dejar a la vista el puntaje compuesto que define el orden del ranking y, cuando corresponde, explicita el preset o filtro destacado que disparó la selección.
 
 | Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % | Score | Filtro destacado | Yahoo Finance Link |
@@ -550,6 +552,8 @@ La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL 
 El muestreo superior refleja la combinación live + fallback que hoy ve la UI: los símbolos clásicos (`AAPL`, `MSFT`, `KO`, `NEE`) provienen de Yahoo, mientras que `UTLX` y `ENRGX` pertenecen al stub determinista y conservan las mismas métricas que en la versión estable anterior para garantizar reproducibilidad en QA.
 
 El botón **"Descargar resultados (.csv)"** replica esta grilla y genera un archivo con las mismas columnas visibles en la UI (incluidos `score_compuesto`, el filtro aplicado y el enlace a Yahoo). Así se asegura paridad total entre lo que se analiza en pantalla y lo que se comparte para backtesting o QA, sin importar si la sesión proviene del origen `yahoo` o `stub`.
+
+El resumen del screening incorpora visualizaciones avanzadas con Altair: un gráfico de barras que resume el score promedio por sector y una línea temporal que reutiliza las series macro cacheadas por el backend. Un selector (`Sector` ↔ `Tiempo`) permite alternar rápidamente entre ambas perspectivas sin salir de la pestaña.
 
 ## Exportación de análisis enriquecido
 

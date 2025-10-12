@@ -19,6 +19,7 @@ try:  # The Yahoo implementation may not be available in all environments.
 except ImportError:  # pragma: no cover - fallback handled at runtime
     run_screener_yahoo = None  # type: ignore[assignment]
 
+from infrastructure.market.yahoo_client import make_symbol_url
 from shared.errors import AppError
 from services.cache.market_data_cache import (
     DEFAULT_TTL_SECONDS,
@@ -163,6 +164,7 @@ def _apply_macro_entries(
     df = _ensure_macro_column(df)
     coverage = 0
     reference_dates: set[str] = set()
+    normalized_entries: list[dict[str, Any]] = []
     for sector, entry in entries.items():
         if not isinstance(entry, Mapping):
             continue
@@ -174,18 +176,26 @@ def _apply_macro_entries(
         formatted = _format_macro_value(numeric_value)
         as_of = entry.get("as_of")
         cell_value = formatted
+        normalized_entry = {
+            "sector": str(sector),
+            "value": float(numeric_value),
+        }
         if as_of:
             as_of_text = str(as_of).strip()
             if as_of_text:
                 reference_dates.add(as_of_text)
                 cell_value = f"{formatted} ({as_of_text})"
+                normalized_entry["as_of"] = as_of_text
         if _assign_macro_value(df, sector, cell_value):
             coverage += 1
+            normalized_entries.append(normalized_entry)
     metrics: Dict[str, Any] = {}
     if coverage:
         metrics["macro_sector_coverage"] = coverage
     if reference_dates:
         metrics["macro_reference_dates"] = sorted(reference_dates)
+    if normalized_entries:
+        metrics["macro_entries"] = normalized_entries
     return metrics
 
 
@@ -216,6 +226,12 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
 
     provider_attempts = [dict(attempt) for attempt in result.attempts]
     metrics["macro_provider_attempts"] = provider_attempts
+    attempt_timestamps = [
+        attempt.get("ts")
+        for attempt in provider_attempts
+        if isinstance(attempt.get("ts"), (int, float))
+    ]
+    fetch_ts = float(attempt_timestamps[-1]) if attempt_timestamps else None
 
     latest_entry = result.latest or {"provider": result.provider or "unknown"}
     latest_entry.setdefault("label", latest_entry.get("provider_label") or result.provider_label)
@@ -259,6 +275,16 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
             else:
                 notes.append("Datos macro no disponibles")
 
+    entries = metrics.get("macro_entries")
+    if entries:
+        enriched_entries: list[dict[str, Any]] = []
+        for entry in entries:
+            payload = dict(entry)
+            if fetch_ts is not None:
+                payload.setdefault("run_ts", fetch_ts)
+            enriched_entries.append(payload)
+        metrics["macro_entries"] = enriched_entries
+
     record_macro_api_usage(
         attempts=provider_attempts,
         notes=notes,
@@ -268,12 +294,8 @@ def _enrich_with_macro_context(df: pd.DataFrame) -> Tuple[List[str], Dict[str, A
 
     return notes, metrics
 def _build_yahoo_link(ticker: object) -> str | pd.NA:
-    if ticker is None:
-        return pd.NA
-    normalized = str(ticker).strip().upper()
-    if not normalized:
-        return pd.NA
-    return f"https://finance.yahoo.com/quote/{normalized}"
+    url = make_symbol_url(ticker)
+    return url if url is not None else pd.NA
 
 
 def _summarize_active_filters(filters: Mapping[str, Any]) -> Mapping[str, Any]:

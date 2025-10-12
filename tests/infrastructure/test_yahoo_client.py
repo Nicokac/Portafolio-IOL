@@ -8,7 +8,7 @@ import pytest
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from infrastructure.market.yahoo_client import YahooFinanceClient
+from infrastructure.market.yahoo_client import YahooFinanceClient, make_symbol_url
 from shared.errors import AppError
 
 
@@ -91,6 +91,20 @@ def test_get_fundamentals_normalises_output(setup_fake_environment):
     assert fundamentals["payout_ratio"] == pytest.approx(42.0)
     assert fundamentals["market_cap"] == 123456
     assert all(session.closed for session in session_factory.sessions)
+
+
+@pytest.mark.parametrize(
+    "symbol,expected",
+    [
+        ("aapl", "https://finance.yahoo.com/quote/AAPL"),
+        ("  nee  ", "https://finance.yahoo.com/quote/NEE"),
+        ("", None),
+        (None, None),
+        (pd.NA, None),
+    ],
+)
+def test_make_symbol_url_normalises_input(symbol, expected):
+    assert make_symbol_url(symbol) == expected
 
 
 def test_get_dividends_returns_dataframe(setup_fake_environment):
