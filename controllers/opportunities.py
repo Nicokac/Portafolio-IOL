@@ -20,6 +20,10 @@ except ImportError:  # pragma: no cover - fallback handled at runtime
     run_screener_yahoo = None  # type: ignore[assignment]
 
 from shared.errors import AppError
+from services.cache.market_data_cache import (
+    DEFAULT_TTL_SECONDS,
+    create_persistent_cache,
+)
 from services.health import record_macro_api_usage, record_opportunities_report
 from services.macro_adapter import MacroAdapter
 
@@ -45,6 +49,8 @@ _CACHE_MAX_ENTRIES = 64
 _CacheEntry = Tuple[Mapping[str, object], float]
 _OPPORTUNITIES_CACHE: "OrderedDict[tuple, _CacheEntry]" = OrderedDict()
 _OPPORTUNITIES_CACHE_LOCK = Lock()
+_PERSISTENT_OPPORTUNITIES_CACHE = create_persistent_cache("opportunities_reports")
+_PERSISTENT_CACHE_TTL = DEFAULT_TTL_SECONDS
 
 
 def _normalize_for_key(value: Any) -> Any:
@@ -62,26 +68,63 @@ def _build_cache_key(controller_args: Mapping[str, Any]) -> tuple:
     )
 
 
+def _persistent_cache_key(key: tuple) -> str:
+    return repr(key)
+
+
 def _get_cached_result(key: tuple) -> Optional[_CacheEntry]:
     with _OPPORTUNITIES_CACHE_LOCK:
         entry = _OPPORTUNITIES_CACHE.get(key)
-        if entry is None:
-            return None
-        _OPPORTUNITIES_CACHE.move_to_end(key)
-        return entry
+        if entry is not None:
+            _OPPORTUNITIES_CACHE.move_to_end(key)
+            return entry
+
+    persistent_key = _persistent_cache_key(key)
+    sentinel = object()
+    cached = _PERSISTENT_OPPORTUNITIES_CACHE.get(persistent_key, sentinel)
+    if cached is sentinel:
+        return None
+    if isinstance(cached, tuple) and len(cached) == 2:
+        result, elapsed_ms = cached
+        if isinstance(result, Mapping):
+            LOGGER.info("Opportunities cache hit (persistent) para %s", persistent_key)
+            _store_cached_result(key, result, float(elapsed_ms), persist=False)
+            return result, float(elapsed_ms)
+    return None
 
 
-def _store_cached_result(key: tuple, result: Mapping[str, object], elapsed_ms: float) -> None:
+def _store_cached_result(
+    key: tuple,
+    result: Mapping[str, object],
+    elapsed_ms: float,
+    *,
+    persist: bool = True,
+) -> None:
     with _OPPORTUNITIES_CACHE_LOCK:
         _OPPORTUNITIES_CACHE[key] = (result, elapsed_ms)
         _OPPORTUNITIES_CACHE.move_to_end(key)
         while len(_OPPORTUNITIES_CACHE) > _CACHE_MAX_ENTRIES:
             _OPPORTUNITIES_CACHE.popitem(last=False)
+    if persist:
+        persistent_key = _persistent_cache_key(key)
+        try:
+            _PERSISTENT_OPPORTUNITIES_CACHE.set(
+                persistent_key,
+                (result, float(elapsed_ms)),
+                ttl=_PERSISTENT_CACHE_TTL,
+            )
+            LOGGER.info("Opportunities cache store (persistent) para %s", persistent_key)
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.exception("No se pudo persistir el resultado del screener")
 
 
 def _clear_opportunities_cache() -> None:
     with _OPPORTUNITIES_CACHE_LOCK:
         _OPPORTUNITIES_CACHE.clear()
+    try:
+        _PERSISTENT_OPPORTUNITIES_CACHE.clear()
+    except Exception:  # pragma: no cover - defensive
+        LOGGER.exception("No se pudo limpiar la caché persistente de oportunidades")
 
 
 def _format_macro_value(value: float) -> str:
@@ -817,6 +860,11 @@ def _extract_opportunities_metrics(payload: Mapping[str, Any]) -> Dict[str, Any]
     raw_metrics = payload.get("metrics")
     if isinstance(raw_metrics, Mapping):
         metrics.update(raw_metrics)
+
+    summary = payload.get("summary")
+    if isinstance(summary, Mapping):
+        for key, value in summary.items():
+            metrics.setdefault(str(key), _convert_summary_value(value))
 
     for key in (
         "universe_initial",

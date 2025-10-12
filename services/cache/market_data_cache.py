@@ -1,15 +1,29 @@
 """Shared cache helpers for market history and fundamentals."""
 from __future__ import annotations
 
+import logging
+import os
+import pickle
+import sqlite3
+import time
 from dataclasses import dataclass
-from typing import Callable, Iterable, Sequence
+from pathlib import Path
+from threading import Lock
+from typing import Any, Callable, Iterable, Sequence
 
 import pandas as pd
 
 from services.cache.core import CacheService
-from shared.settings import settings
+from shared.settings import (
+    market_data_cache_backend,
+    market_data_cache_path,
+    market_data_cache_redis_url,
+    market_data_cache_ttl,
+)
 
-DEFAULT_TTL_SECONDS = float(getattr(settings, "MARKET_DATA_CACHE_TTL", 6 * 60 * 60))
+LOGGER = logging.getLogger(__name__)
+
+DEFAULT_TTL_SECONDS = float(market_data_cache_ttl)
 PREDICTION_TTL_SECONDS = 4 * 60 * 60
 
 
@@ -35,6 +49,299 @@ def _clone_dataframe(df: pd.DataFrame | None) -> pd.DataFrame | None:
     return df.copy(deep=True)
 
 
+class _BasePersistentBackend:
+    """Interface for persistent cache backends."""
+
+    def get(self, key: str) -> tuple[float | None, Any] | None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def set(self, key: str, value: Any, expires_at: float | None) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def invalidate(self, key: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+    def clear_namespace(self, namespace: str) -> None:  # pragma: no cover - interface
+        raise NotImplementedError
+
+
+class _SQLiteBackend(_BasePersistentBackend):
+    """Persist cached payloads to a SQLite database."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._lock = Lock()
+        self._initialised = False
+
+    def _ensure(self) -> None:
+        if self._initialised:
+            return
+        with self._lock:
+            if self._initialised:
+                return
+            if not self._path.parent.exists():
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(self._path) as conn:
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, expires_at REAL, payload BLOB)"
+                )
+                conn.commit()
+            self._initialised = True
+
+    def _connection(self) -> sqlite3.Connection:
+        self._ensure()
+        conn = sqlite3.connect(self._path)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    def get(self, key: str) -> tuple[float | None, Any] | None:
+        self._ensure()
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT expires_at, payload FROM cache WHERE key = ?", (key,)
+            ).fetchone()
+        if row is None:
+            return None
+        expires_at, payload = row
+        try:
+            value = pickle.loads(payload)
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.exception("No se pudo deserializar la clave %s desde SQLite", key)
+            return None
+        return expires_at, value
+
+    def set(self, key: str, value: Any, expires_at: float | None) -> None:
+        self._ensure()
+        payload = pickle.dumps(value)
+        with self._connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO cache(key, expires_at, payload) VALUES(?, ?, ?)",
+                (key, expires_at, payload),
+            )
+            conn.commit()
+
+    def invalidate(self, key: str) -> None:
+        if not self._initialised:
+            return
+        with self._connection() as conn:
+            conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+            conn.commit()
+
+    def clear_namespace(self, namespace: str) -> None:
+        if not self._initialised:
+            return
+        pattern = f"{namespace}:%%" if namespace else "%"
+        with self._connection() as conn:
+            conn.execute("DELETE FROM cache WHERE key LIKE ?", (pattern,))
+            conn.commit()
+
+
+class _RedisBackend(_BasePersistentBackend):
+    """Persist cache payloads to Redis when available."""
+
+    def __init__(self, url: str) -> None:
+        try:
+            import redis  # type: ignore import
+        except Exception as exc:  # pragma: no cover - optional dependency
+            raise RuntimeError("Redis backend solicitado pero el paquete no está instalado") from exc
+
+        self._client = redis.Redis.from_url(url)
+
+    def get(self, key: str) -> tuple[float | None, Any] | None:
+        payload = self._client.get(key)
+        if payload is None:
+            return None
+        expires_at = self._client.ttl(key)
+        absolute_expiration: float | None
+        if expires_at is None or expires_at < 0:
+            absolute_expiration = None
+        else:
+            absolute_expiration = time.time() + float(expires_at)
+        return absolute_expiration, pickle.loads(payload)
+
+    def set(self, key: str, value: Any, expires_at: float | None) -> None:
+        payload = pickle.dumps(value)
+        if expires_at is None:
+            self._client.set(key, payload)
+        else:
+            ttl_seconds = max(int(expires_at - time.time()), 1)
+            self._client.setex(key, ttl_seconds, payload)
+
+    def invalidate(self, key: str) -> None:
+        self._client.delete(key)
+
+    def clear_namespace(self, namespace: str) -> None:
+        pattern = f"{namespace}:*" if namespace else "*"
+        keys = list(self._client.scan_iter(pattern))
+        if keys:
+            self._client.delete(*keys)
+
+
+_BACKEND: _BasePersistentBackend | None = None
+_BACKEND_LOCK = Lock()
+
+
+def _initialise_backend() -> _BasePersistentBackend | None:
+    backend_name = (market_data_cache_backend or "").strip().lower() or "memory"
+    if backend_name == "memory":
+        LOGGER.info("Market data cache configurado en modo memoria (sin persistencia)")
+        return None
+    if backend_name == "sqlite":
+        path_value = market_data_cache_path or "data/market_cache.db"
+        path = Path(os.fspath(path_value))
+        LOGGER.info("Market data cache persistente inicializado en SQLite: %s", path)
+        return _SQLiteBackend(path)
+    if backend_name == "redis":
+        url = market_data_cache_redis_url
+        if not url:
+            LOGGER.warning(
+                "MARKET_DATA_CACHE_REDIS_URL no definido; usando caché en memoria"
+            )
+            return None
+        LOGGER.info("Market data cache persistente configurado con Redis (%s)", url)
+        try:
+            return _RedisBackend(url)
+        except RuntimeError:
+            LOGGER.exception("Fallo al inicializar Redis; se usará caché en memoria")
+            return None
+    LOGGER.warning(
+        "Backend de caché desconocido '%s'; se usará caché en memoria", backend_name
+    )
+    return None
+
+
+def _get_backend() -> _BasePersistentBackend | None:
+    global _BACKEND
+    if _BACKEND is not None:
+        return _BACKEND
+    with _BACKEND_LOCK:
+        if _BACKEND is None:
+            _BACKEND = _initialise_backend()
+    return _BACKEND
+
+
+def _extract_symbols_from_key(key: str) -> str | None:
+    parts = key.split("|")
+    if not parts:
+        return None
+    label = parts[0]
+    if label == "history" and len(parts) >= 4:
+        return parts[3] or None
+    if label == "fundamentals" and len(parts) >= 2:
+        return parts[1] or None
+    if label == "predictions" and len(parts) >= 4:
+        return parts[3] or None
+    return None
+
+
+class PersistentCacheService(CacheService):
+    """CacheService que replica entradas en un backend persistente."""
+
+    def __init__(
+        self,
+        *,
+        namespace: str | None = None,
+        monotonic: Callable[[], float] | None = None,
+        ttl_override: float | None = None,
+        backend: _BasePersistentBackend | None = None,
+    ) -> None:
+        super().__init__(namespace=namespace, monotonic=monotonic, ttl_override=ttl_override)
+        self._persistent_backend = backend
+
+    def _log_event(self, action: str, key: str) -> None:
+        symbols = _extract_symbols_from_key(key)
+        context = f"symbols={symbols}" if symbols else f"key={key}"
+        LOGGER.info(
+            "market-data-cache %s %s (%s)",
+            self._namespace or "default",
+            action,
+            context,
+        )
+
+    def get(self, key: str, default: Any = None) -> Any:  # type: ignore[override]
+        sentinel = object()
+        value = CacheService.get(self, key, sentinel)
+        if value is not sentinel:
+            self._log_event("hit:memory", key)
+            return value
+        backend = self._persistent_backend
+        if backend is None:
+            self._log_event("miss:memory", key)
+            return default
+        record = backend.get(self._full_key(key))
+        if record is None:
+            self._log_event("miss:persistent", key)
+            return default
+        expires_at, payload = record
+        now = time.time()
+        if expires_at is not None and expires_at <= now:
+            backend.invalidate(self._full_key(key))
+            self._log_event("miss:expired", key)
+            return default
+        remaining = None
+        if expires_at is not None:
+            remaining = max(0.0, expires_at - now)
+        CacheService.set(self, key, payload, ttl=remaining)
+        self._log_event("hit:persistent", key)
+        return payload
+
+    def set(self, key: str, value: Any, *, ttl: float | None = None) -> Any:  # type: ignore[override]
+        backend = self._persistent_backend
+        effective_ttl = self.get_effective_ttl(ttl)
+        result = CacheService.set(self, key, value, ttl=ttl)
+        if backend is not None:
+            expires_at = None
+            if effective_ttl is not None:
+                expires_at = time.time() + float(effective_ttl)
+            backend.set(self._full_key(key), value, expires_at)
+            self._log_event("store", key)
+        return result
+
+    def invalidate(self, key: str) -> None:  # type: ignore[override]
+        CacheService.invalidate(self, key)
+        backend = self._persistent_backend
+        if backend is not None:
+            backend.invalidate(self._full_key(key))
+            self._log_event("invalidate", key)
+
+    def clear(self) -> None:  # type: ignore[override]
+        CacheService.clear(self)
+        backend = self._persistent_backend
+        if backend is not None:
+            try:
+                backend.clear_namespace(self._namespace or "")
+                self._log_event("clear", "*")
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.exception("No se pudo limpiar la caché persistente %s", self._namespace)
+
+
+def _create_cache(namespace: str) -> PersistentCacheService:
+    backend = _get_backend()
+    return PersistentCacheService(namespace=namespace, backend=backend)
+
+
+_GLOBAL_CACHE: MarketDataCache | None = None
+_GLOBAL_CACHE_LOCK = Lock()
+
+
+def get_market_data_cache() -> MarketDataCache:
+    """Return a lazily initialised market data cache with persistent backend."""
+
+    global _GLOBAL_CACHE
+    if _GLOBAL_CACHE is not None:
+        return _GLOBAL_CACHE
+    with _GLOBAL_CACHE_LOCK:
+        if _GLOBAL_CACHE is None:
+            _GLOBAL_CACHE = MarketDataCache()
+    return _GLOBAL_CACHE
+
+
+def create_persistent_cache(namespace: str) -> PersistentCacheService:
+    """Expose a helper for services requiring a persistent cache."""
+
+    return _create_cache(namespace)
+
+
 @dataclass
 class MarketDataCache:
     """Manage cached market datasets with TTL invalidation."""
@@ -54,12 +361,12 @@ class MarketDataCache:
         default_ttl: float | None = None,
         prediction_ttl: float | None = None,
     ) -> None:
-        self.history_cache = history_cache or CacheService(namespace="market_history")
-        self.fundamentals_cache = fundamentals_cache or CacheService(
-            namespace="market_fundamentals"
+        self.history_cache = history_cache or _create_cache("market_history")
+        self.fundamentals_cache = fundamentals_cache or _create_cache(
+            "market_fundamentals"
         )
-        self.prediction_cache = prediction_cache or CacheService(
-            namespace="market_predictions"
+        self.prediction_cache = prediction_cache or _create_cache(
+            "market_predictions"
         )
         if default_ttl is not None:
             self.default_ttl = float(default_ttl)
@@ -240,17 +547,9 @@ class MarketDataCache:
         self.prediction_cache.invalidate(key)
 
 
-_default_cache = MarketDataCache()
-
-
-def get_market_data_cache() -> MarketDataCache:
-    """Return the shared market data cache instance."""
-
-    return _default_cache
-
-
 __all__ = [
     "MarketDataCache",
     "get_market_data_cache",
+    "create_persistent_cache",
     "DEFAULT_TTL_SECONDS",
 ]

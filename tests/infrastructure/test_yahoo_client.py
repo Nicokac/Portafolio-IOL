@@ -10,7 +10,6 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from infrastructure.market.yahoo_client import YahooFinanceClient
 from shared.errors import AppError
-from shared.settings import YAHOO_FUNDAMENTALS_TTL, YAHOO_QUOTES_TTL
 
 
 class SessionFactory:
@@ -50,17 +49,16 @@ class FakeTicker:
 
 @pytest.fixture(autouse=True)
 def clear_client_cache():
+    YahooFinanceClient.clear_cache()
     yield
-    YahooFinanceClient.get_fundamentals.clear()
-    YahooFinanceClient.get_dividends.clear()
-    YahooFinanceClient.get_shares_outstanding.clear()
-    YahooFinanceClient.get_price_history.clear()
+    YahooFinanceClient.clear_cache()
 
 
 @pytest.fixture
 def setup_fake_environment(monkeypatch):
     from infrastructure.market import yahoo_client as module
 
+    YahooFinanceClient.clear_cache()
     session_factory = SessionFactory()
     monkeypatch.setattr(module.requests, "Session", session_factory)
 
@@ -93,7 +91,6 @@ def test_get_fundamentals_normalises_output(setup_fake_environment):
     assert fundamentals["payout_ratio"] == pytest.approx(42.0)
     assert fundamentals["market_cap"] == 123456
     assert all(session.closed for session in session_factory.sessions)
-    assert YahooFinanceClient.get_fundamentals.cache_ttl == YAHOO_FUNDAMENTALS_TTL
 
 
 def test_get_dividends_returns_dataframe(setup_fake_environment):
@@ -108,7 +105,6 @@ def test_get_dividends_returns_dataframe(setup_fake_environment):
     assert df["amount"].tolist() == [0.5, 0.55]
     assert df["date"].dt.tz is not None
     assert all(session.closed for session in session_factory.sessions)
-    assert YahooFinanceClient.get_dividends.cache_ttl == YAHOO_QUOTES_TTL
 
 
 def test_get_shares_outstanding_parses_series(setup_fake_environment):
@@ -152,3 +148,23 @@ def test_missing_dividends_raise_app_error(setup_fake_environment):
 
     with pytest.raises(AppError):
         client.get_dividends("xyz")
+
+
+def test_get_fundamentals_uses_persistent_cache(setup_fake_environment):
+    info = {
+        "dividendYield": 0.02,
+        "payoutRatio": 0.3,
+        "marketCap": 10_000,
+    }
+    _, session_factory = setup_fake_environment(info=info)
+
+    client = YahooFinanceClient()
+    client.get_fundamentals("cache")
+    initial_sessions = len(session_factory.sessions)
+
+    client.get_fundamentals("cache")
+    assert len(session_factory.sessions) == initial_sessions
+
+    another_client = YahooFinanceClient()
+    another_client.get_fundamentals("cache")
+    assert len(session_factory.sessions) == initial_sessions

@@ -177,6 +177,24 @@ class Settings:
                 cfg.get("CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS", 14400),
             )
         )
+        self.MARKET_DATA_CACHE_BACKEND: str = str(
+            os.getenv(
+                "MARKET_DATA_CACHE_BACKEND",
+                cfg.get("MARKET_DATA_CACHE_BACKEND", "sqlite"),
+            )
+            or "sqlite"
+        ).strip().lower()
+        self.MARKET_DATA_CACHE_PATH: str | None = os.getenv(
+            "MARKET_DATA_CACHE_PATH",
+            cfg.get("MARKET_DATA_CACHE_PATH", "data/market_cache.db"),
+        )
+        self.MARKET_DATA_CACHE_REDIS_URL: str | None = os.getenv(
+            "MARKET_DATA_CACHE_REDIS_URL",
+            cfg.get("MARKET_DATA_CACHE_REDIS_URL"),
+        )
+        self.MARKET_DATA_CACHE_TTL: float = float(
+            os.getenv("MARKET_DATA_CACHE_TTL", cfg.get("MARKET_DATA_CACHE_TTL", 6 * 60 * 60))
+        )
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
         self.YAHOO_FUNDAMENTALS_TTL: int = int(
@@ -184,6 +202,9 @@ class Settings:
         )
         self.YAHOO_QUOTES_TTL: int = int(
             os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300))
+        )
+        self.YAHOO_REQUEST_DELAY: float = float(
+            os.getenv("YAHOO_REQUEST_DELAY", cfg.get("YAHOO_REQUEST_DELAY", 0.0))
         )
         self.QUOTES_TTL_SECONDS: int = int(
             os.getenv("QUOTES_TTL_SECONDS", cfg.get("QUOTES_TTL_SECONDS", 300))
