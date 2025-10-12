@@ -1,6 +1,7 @@
 import logging
 import re
 import unicodedata
+from collections import OrderedDict
 from io import BytesIO, StringIO
 from typing import Sequence
 
@@ -28,6 +29,7 @@ from application.risk_service import (
 )
 from application.portfolio_service import classify_symbol
 from services.notifications import NotificationFlags
+from services.cache.market_data_cache import get_market_data_cache
 from application.benchmark_service import benchmark_analysis
 from ui.charts import plot_correlation_heatmap, plot_factor_betas, _apply_layout
 from ui.export import PLOTLY_CONFIG
@@ -117,6 +119,8 @@ _TYPE_DISPLAY_OVERRIDES = {
 
 _SYMBOL_TYPE_OVERRIDES = {sym: "ACCION_LOCAL" for sym in _LOCAL_SYMBOL_BLACKLIST}
 
+_MONTE_CARLO_THRESHOLD = 5000
+
 
 def _extend_unique_types(target: list[str], values) -> None:
     """Append canonical types from *values* preserving order."""
@@ -196,6 +200,102 @@ def _normalize_type_label(value) -> str:
     if not token:
         return ""
     return _TYPE_ALIASES.get(token, token)
+
+
+def _fetch_history_resilient(
+    tasvc,
+    symbols: Sequence[str],
+    *,
+    period: str,
+    benchmark: str | None = None,
+):
+    """Fetch historical prices skipping symbols that fail individually."""
+
+    cache = get_market_data_cache()
+    request = [str(sym).strip() for sym in symbols if str(sym).strip()]
+    benchmark_key = str(benchmark).strip() if benchmark else ""
+
+    if not request and not benchmark_key:
+        return pd.DataFrame(), []
+
+    combined = list(dict.fromkeys(request + ([benchmark_key] if benchmark_key else [])))
+    collected: "OrderedDict[str, pd.Series]" = OrderedDict()
+    skipped: list[str] = []
+
+    def _load(target: Sequence[str]):
+        return tasvc.portfolio_history(simbolos=list(target), period=period)
+
+    try:
+        history = cache.get_history(
+            combined,
+            loader=lambda values=tuple(combined): _load(values),
+            period=period,
+            benchmark=benchmark_key,
+        )
+    except Exception as exc:
+        logger.debug(
+            "Fallo historial combinado para %s (%s): %s",
+            combined,
+            period,
+            exc,
+        )
+        history = pd.DataFrame()
+
+    if isinstance(history, pd.DataFrame) and not history.empty:
+        for col in history.columns:
+            series = history[col]
+            if isinstance(series, pd.Series) and not series.dropna().empty:
+                collected[str(col)] = series
+
+    for sym in request:
+        if sym in collected and not collected[sym].dropna().empty:
+            continue
+        subset = list(dict.fromkeys([sym] + ([benchmark_key] if benchmark_key else [])))
+        try:
+            subset_history = cache.get_history(
+                subset,
+                loader=lambda values=tuple(subset): _load(values),
+                period=period,
+                benchmark=benchmark_key,
+            )
+        except Exception as exc:
+            logger.warning("Omitiendo %s por error en historial: %s", sym, exc)
+            skipped.append(sym)
+            continue
+        if not isinstance(subset_history, pd.DataFrame) or sym not in subset_history.columns:
+            skipped.append(sym)
+            continue
+        series = subset_history[sym]
+        if series.dropna().empty:
+            skipped.append(sym)
+            continue
+        collected[sym] = series
+
+    if benchmark_key and benchmark_key not in collected:
+        try:
+            bench_history = cache.get_history(
+                [benchmark_key],
+                loader=lambda value=benchmark_key: _load([value]),
+                period=period,
+                benchmark=benchmark_key,
+            )
+        except Exception as exc:
+            logger.debug("No se pudo obtener benchmark %s: %s", benchmark_key, exc)
+        else:
+            if (
+                isinstance(bench_history, pd.DataFrame)
+                and benchmark_key in bench_history.columns
+                and not bench_history[benchmark_key].dropna().empty
+            ):
+                collected[benchmark_key] = bench_history[benchmark_key]
+
+    if not collected:
+        return pd.DataFrame(), skipped
+
+    combined_df = pd.concat(collected.values(), axis=1)
+    combined_df.columns = list(collected.keys())
+    combined_df = combined_df.sort_index().ffill().dropna(how="all")
+    return combined_df, skipped
 
 
 def _normalize_symbol(symbol) -> str:
@@ -390,15 +490,27 @@ def render_risk_analysis(
             for sym in getattr(filtered_df, "get", lambda *_: [])("simbolo", [])
             if str(sym).strip()
         ]
+    data_warning_placeholder = st.empty()
+    omitted_symbols: set[str] = set()
+
     if len(portfolio_symbols) >= 2:
         corr_latency: float | None = None
         with st.spinner(f"Calculando correlación ({corr_period})…"):
             start_time = time.perf_counter()
             try:
                 unique_symbols = sorted(set(portfolio_symbols))
-                hist_df = tasvc.portfolio_history(
-                    simbolos=unique_symbols, period=corr_period
+                hist_df, skipped = _fetch_history_resilient(
+                    tasvc,
+                    unique_symbols,
+                    period=corr_period,
                 )
+                if skipped:
+                    omitted_symbols.update(skipped)
+                    data_warning_placeholder.caption("⚠️ Datos incompletos")
+                    st.warning(
+                        "No pudimos descargar históricos para: "
+                        + ", ".join(sorted(skipped))
+                    )
             except AppError as err:
                 corr_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", corr_latency, status="error")
@@ -608,9 +720,18 @@ def render_risk_analysis(
         with st.spinner("Descargando históricos…"):
             start_time = time.perf_counter()
             try:
-                prices_df = tasvc.portfolio_history(
-                    simbolos=portfolio_symbols, period="1y"
+                prices_df, skipped = _fetch_history_resilient(
+                    tasvc,
+                    portfolio_symbols,
+                    period="1y",
                 )
+                if skipped:
+                    omitted_symbols.update(skipped)
+                    data_warning_placeholder.caption("⚠️ Datos incompletos")
+                    st.warning(
+                        "Se omitieron del análisis de riesgo por falta de datos: "
+                        + ", ".join(sorted(skipped))
+                    )
             except AppError as err:
                 risk_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", risk_latency, status="error")
@@ -660,9 +781,19 @@ def render_risk_analysis(
                 benchmark_symbol = benchmark_labels[benchmark_choice]
 
                 try:
-                    bench_df = tasvc.portfolio_history(
-                        simbolos=[benchmark_symbol], period="1y"
+                    bench_df, skipped_bench = _fetch_history_resilient(
+                        tasvc,
+                        [benchmark_symbol],
+                        period="1y",
+                        benchmark=benchmark_symbol,
                     )
+                    if skipped_bench:
+                        omitted_symbols.update(skipped_bench)
+                        data_warning_placeholder.caption("⚠️ Datos incompletos")
+                        st.warning(
+                            "Sin datos históricos suficientes para el benchmark seleccionado."
+                        )
+                        return
                 except AppError as err:
                     st.error(str(err))
                     return
@@ -920,27 +1051,46 @@ def render_risk_analysis(
                     )
 
                 with st.expander("Simulación Monte Carlo"):
-                    sims = st.number_input(
-                        "Nº de simulaciones",
-                        min_value=100,
-                        max_value=10000,
-                        value=1000,
-                        step=100,
+                    dataset_scale = returns_df.shape[0] * returns_df.shape[1]
+                    lazy_key = "risk_montecarlo_ready"
+                    requires_lazy_sim = dataset_scale > _MONTE_CARLO_THRESHOLD
+                    run_simulation = not requires_lazy_sim or st.session_state.get(
+                        lazy_key, False
                     )
-                    horizon = st.number_input(
-                        "Horizonte (días)",
-                        min_value=30,
-                        max_value=365,
-                        value=252,
-                        step=30,
-                    )
-                    final_prices = monte_carlo_simulation(
-                        returns_df, weights, n_sims=sims, horizon=horizon
-                    )
-                    st.line_chart(final_prices)
-                    st.caption(
-                        "Simula muchos escenarios posibles para estimar cómo podría variar el valor de la cartera en el futuro."
-                    )
+                    if requires_lazy_sim and not run_simulation:
+                        if st.button(
+                            "Generar simulación Monte Carlo",
+                            key="run_monte_carlo_btn",
+                        ):
+                            st.session_state[lazy_key] = True
+                            run_simulation = True
+                        else:
+                            st.info(
+                                "Ejecutá la simulación bajo demanda para evitar cálculos pesados en cada recarga."
+                            )
+                    if run_simulation:
+                        sims = st.number_input(
+                            "Nº de simulaciones",
+                            min_value=100,
+                            max_value=10000,
+                            value=1000,
+                            step=100,
+                        )
+                        horizon = st.number_input(
+                            "Horizonte (días)",
+                            min_value=30,
+                            max_value=365,
+                            value=252,
+                            step=30,
+                        )
+                        with st.spinner("Generando análisis avanzado…"):
+                            final_prices = monte_carlo_simulation(
+                                returns_df, weights, n_sims=sims, horizon=horizon
+                            )
+                        st.line_chart(final_prices)
+                        st.caption(
+                            "Simula muchos escenarios posibles para estimar cómo podría variar el valor de la cartera en el futuro."
+                        )
 
                 with st.expander("Aplicar shocks"):
                     templates = {"Leve": 0.03, "Moderado": 0.07, "Fuerte": 0.12}

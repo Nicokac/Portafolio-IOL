@@ -14,6 +14,7 @@ import pandas as pd
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from services import health
 from services import snapshots as snapshot_service
+from services.cache.market_data_cache import get_market_data_cache
 from application.risk_service import (
     annualized_volatility,
     beta,
@@ -47,9 +48,19 @@ def compute_symbol_risk_metrics(
     if tasvc is None or not symbols:
         return pd.DataFrame()
 
+    request_symbols = list({*symbols, benchmark})
+    if not request_symbols:
+        return pd.DataFrame()
+
+    cache = get_market_data_cache()
     try:
-        prices = tasvc.portfolio_history(
-            simbolos=list({*symbols, benchmark}), period=period
+        prices = cache.get_history(
+            request_symbols,
+            loader=lambda symbols=request_symbols: tasvc.portfolio_history(
+                simbolos=list(symbols), period=period
+            ),
+            period=period,
+            benchmark=benchmark,
         )
     except Exception:
         logger.exception("Error fetching portfolio history for risk metrics")
@@ -100,7 +111,13 @@ def compute_symbol_risk_metrics(
     if not metrics:
         return pd.DataFrame()
 
-    return pd.DataFrame(metrics)
+    metrics_df = pd.DataFrame(metrics)
+    for col in ("volatilidad", "drawdown", "beta"):
+        if col in metrics_df.columns:
+            metrics_df[col] = pd.to_numeric(metrics_df[col], errors="coerce").astype(
+                "float32"
+            )
+    return metrics_df
 
 
 @dataclass(frozen=True)

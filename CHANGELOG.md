@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch1 — Shared market-data cache, lazy analytics and resilient risk metrics.
+### Added
+- Introduced `services/cache/market_data_cache.py` to persist historical prices and fundamentals with a shared TTL of 6 horas.
+- Persisted `PortfolioService` y `TAService` en `st.session_state` para reutilizar instancias entre renders.
+- Agregamos controles de carga diferida para timeline, heatmap y simulación Monte Carlo con feedback de progreso en la UI.
+- Incorporamos mensajes UX específicos cuando el portafolio no devuelve posiciones (filtros vs. autenticación).
+
+### Changed
+- El análisis avanzado y de riesgo ahora reutiliza históricos/fundamentales cacheados y convierte las métricas a `float32` para evitar columnas `object`.
+- El controlador de riesgo omite símbolos individuales cuando fallan los históricos, mostrando el badge “⚠️ Datos incompletos”.
+
+### Fixed
+- Se normalizó la gestión de errores parciales en `controllers/portfolio/risk.py`, evitando abortar pestañas completas ante fallas puntuales.
+- Los avisos de portafolio vacío ahora guían al usuario sobre filtros activos o problemas de login.
+
 ## v0.6.4-perf-diagnostics — Performance telemetry, CPU/RAM logging and QA dashboard.
 - Added `services/performance_timer` with optional psutil integration, structured log export and helpers to consume recent entries.
 - Instrumented authentication (login & token refresh), portfolio loading, filter application, quote refresh, predictive computations and portfolio UI rendering with CPU/RAM metrics.

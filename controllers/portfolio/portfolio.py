@@ -34,6 +34,8 @@ _VIEW_MODEL_FACTORY_KEY = "view_model_service_factory"
 _NOTIFICATIONS_SERVICE_KEY = "notifications_service"
 _NOTIFICATIONS_FACTORY_KEY = "notifications_service_factory"
 _SNAPSHOT_BACKEND_KEY = "snapshot_backend_override"
+_PORTFOLIO_SERVICE_KEY = "portfolio_service"
+_TA_SERVICE_KEY = "ta_service"
 
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
@@ -72,6 +74,18 @@ def default_notifications_service_factory() -> NotificationsService:
     """Return a fresh notifications service instance."""
 
     return NotificationsService()
+
+
+def default_portfolio_service_factory() -> PortfolioService:
+    """Return a fresh portfolio service instance."""
+
+    return PortfolioService()
+
+
+def default_ta_service_factory() -> TAService:
+    """Return a fresh technical-analysis service instance."""
+
+    return TAService()
 
 
 def _get_or_create_service(
@@ -126,6 +140,30 @@ def get_notifications_service(
     return cast(NotificationsService, service)
 
 
+def get_portfolio_service(
+    factory: Callable[[], PortfolioService] | None = None,
+) -> PortfolioService:
+    """Return the cached portfolio service instance."""
+
+    service = _get_or_create_service(
+        _PORTFOLIO_SERVICE_KEY,
+        default_factory=default_portfolio_service_factory,
+        override_factory=factory,
+    )
+    return cast(PortfolioService, service)
+
+
+def get_ta_service(factory: Callable[[], TAService] | None = None) -> TAService:
+    """Return the cached technical-analysis service instance."""
+
+    service = _get_or_create_service(
+        _TA_SERVICE_KEY,
+        default_factory=default_ta_service_factory,
+        override_factory=factory,
+    )
+    return cast(TAService, service)
+
+
 def reset_portfolio_services() -> None:
     """Clear cached portfolio services for the current session."""
 
@@ -138,6 +176,8 @@ def reset_portfolio_services() -> None:
         _VIEW_MODEL_FACTORY_KEY,
         _NOTIFICATIONS_SERVICE_KEY,
         _NOTIFICATIONS_FACTORY_KEY,
+        _PORTFOLIO_SERVICE_KEY,
+        _TA_SERVICE_KEY,
     ):
         registry.pop(key, None)
 
@@ -553,8 +593,8 @@ def render_portfolio_section(
 ):
     """Render the main portfolio section and return refresh interval."""
     with container:
-        psvc = PortfolioService()
-        tasvc = TAService()
+        psvc = get_portfolio_service()
+        tasvc = get_ta_service()
 
         view_model_service = get_portfolio_view_service(view_model_service_factory)
         notifications_service = get_notifications_service(notifications_service_factory)

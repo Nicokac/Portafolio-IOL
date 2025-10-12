@@ -12,6 +12,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 >
 > Estado de calidad **v0.6.4-perf-diagnostics**: suma instrumentación con `services.performance_timer`, registra CPU/RAM en login, refresco de tokens, carga de portafolio, filtros y predicciones, e incorpora el tablero “⏱️ Performance” accesible desde la barra lateral.
 
+## ⚡ Performance Improvements (v0.6.4-patch1)
+
+- Nueva capa de cache (`services/cache/market_data_cache.py`) que reutiliza históricos de precios y fundamentos entre pestañas durante 6 horas, reduciendo descargas repetidas.
+- `PortfolioService` y `TAService` ahora se mantienen en `st.session_state`, evitando recreaciones costosas en cada render del portafolio.
+- Timeline, heatmap y la simulación Monte Carlo se generan bajo demanda cuando el dataset es grande, mostrando el spinner “Generando análisis avanzado…” mientras se procesan.
+- La pestaña de riesgo omite símbolos con errores individuales y muestra el badge “⚠️ Datos incompletos”, mientras que `load_portfolio_data` explica cuándo el portafolio vacío se debe a filtros o problemas de autenticación.
+
 ## Documentación clave
 
 - [Guía técnica de desarrollo](docs/dev_guide.md)

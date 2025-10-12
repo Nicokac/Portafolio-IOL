@@ -10,6 +10,37 @@ from shared.errors import AppError
 logger = logging.getLogger(__name__)
 
 
+def _filters_active() -> bool:
+    state = getattr(st, "session_state", {})
+    symbol_query = str(state.get("symbol_query", "") or "").strip()
+    if symbol_query:
+        return True
+
+    selected_syms = state.get("selected_syms")
+    last_all = state.get("portfolio_last_all_symbols")
+    if isinstance(selected_syms, list):
+        cleaned = [str(sym).strip() for sym in selected_syms if str(sym).strip()]
+        if not cleaned and (last_all or symbol_query):
+            return True
+        if last_all and isinstance(last_all, list) and 0 < len(cleaned) < len(last_all):
+            return True
+
+    selected_types = state.get("selected_types")
+    last_types = state.get("portfolio_last_available_types")
+    if isinstance(selected_types, list):
+        cleaned_types = [str(t).strip() for t in selected_types if str(t).strip()]
+        if not cleaned_types and last_types:
+            return True
+        if (
+            isinstance(last_types, list)
+            and last_types
+            and 0 < len(cleaned_types) < len(last_types)
+        ):
+            return True
+
+    return False
+
+
 def load_portfolio_data(cli, psvc):
     """Fetch and normalize portfolio positions."""
     tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
@@ -52,8 +83,9 @@ def load_portfolio_data(cli, psvc):
         )
 
     if st.session_state.get("force_login") or auth_error:
-        st.warning("Sesión expirada, por favor vuelva a iniciar sesión")
-        st.rerun()
+        st.session_state["force_login"] = True
+        st.error("No se pudo autenticar con IOL")
+        st.stop()
     elif isinstance(payload, dict) and payload.get("_cached"):
         st.warning(
             "No se pudo contactar a IOL; mostrando datos del portafolio en caché."
@@ -69,9 +101,12 @@ def load_portfolio_data(cli, psvc):
             "Portafolio vacío pero API respondió correctamente",
             extra={"tokens_file": tokens_path},
         )
-        st.warning(
-            "No se encontraron posiciones o no pudimos mapear la respuesta."
-        )
+        if _filters_active():
+            st.info("No se encontraron activos que cumplan los filtros.")
+        else:
+            st.warning(
+                "No se encontraron posiciones o no pudimos mapear la respuesta."
+            )
         if isinstance(payload, dict) and "activos" in payload:
             st.dataframe(pd.DataFrame(payload["activos"]).head(20))
             st.caption("Ejemplo de datos recibidos del portafolio")
@@ -85,5 +120,10 @@ def load_portfolio_data(cli, psvc):
             if psvc.classify_asset_cached(s)
         }
     )
+    try:
+        st.session_state["portfolio_last_all_symbols"] = all_symbols
+        st.session_state["portfolio_last_available_types"] = available_types
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudieron almacenar los metadatos de filtros", exc_info=True)
     return df_pos, all_symbols, available_types
 

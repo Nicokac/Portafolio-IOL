@@ -21,6 +21,9 @@ from ui.charts import (
 )
 
 
+_HEAVY_DATA_THRESHOLD = 250
+
+
 def generate_basic_charts(df_view, top_n):
     """Generate basic portfolio charts."""
     return {
@@ -157,35 +160,77 @@ def render_basic_section(
         st.info("Aún no hay datos de P/L diario.")
 
     st.subheader("Evolución histórica del portafolio")
-    timeline_fig = plot_portfolio_timeline(historical_total)
-    if timeline_fig is not None:
-        st.plotly_chart(
-            timeline_fig,
-            width="stretch",
-            key="portfolio_timeline",
-            config=PLOTLY_CONFIG,
-        )
-        st.caption(
-            "Sigue cómo varían tus totales (valor, costo y P/L) con el tiempo para detectar tendencias y cambios relevantes."
-        )
-    else:
-        st.info("Aún no hay suficientes datos históricos del portafolio.")
+    timeline_rows = (
+        len(historical_total)
+        if isinstance(historical_total, pd.DataFrame)
+        else 0
+    )
+    timeline_ready_key = "portfolio_timeline_ready"
+    requires_lazy_timeline = timeline_rows > _HEAVY_DATA_THRESHOLD
+    timeline_ready = not requires_lazy_timeline or st.session_state.get(
+        timeline_ready_key, False
+    )
+    if requires_lazy_timeline and not timeline_ready and timeline_rows:
+        if st.button(
+            "Generar evolución histórica",
+            key="portfolio_generate_timeline",
+        ):
+            st.session_state[timeline_ready_key] = True
+            timeline_ready = True
+        else:
+            st.info(
+                "El gráfico se genera bajo demanda para evitar demoras cuando hay muchos datos."
+            )
+    if timeline_ready:
+        with st.spinner("Generando análisis avanzado…"):
+            timeline_fig = plot_portfolio_timeline(historical_total)
+        if timeline_fig is not None:
+            st.plotly_chart(
+                timeline_fig,
+                width="stretch",
+                key="portfolio_timeline",
+                config=PLOTLY_CONFIG,
+            )
+            st.caption(
+                "Sigue cómo varían tus totales (valor, costo y P/L) con el tiempo para detectar tendencias y cambios relevantes."
+            )
+        else:
+            st.info("Aún no hay suficientes datos históricos del portafolio.")
 
     st.subheader("Contribución por símbolo y tipo")
     by_symbol = getattr(contribution_metrics, "by_symbol", None)
-    heatmap_fig = plot_contribution_heatmap(by_symbol)
-    if heatmap_fig is not None:
-        st.plotly_chart(
-            heatmap_fig,
-            width="stretch",
-            key="portfolio_contribution_heatmap",
-            config=PLOTLY_CONFIG,
-        )
-        st.caption(
-            "Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera."
-        )
-    else:
-        st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
+    heatmap_rows = len(by_symbol) if isinstance(by_symbol, pd.DataFrame) else 0
+    heatmap_ready_key = "portfolio_heatmap_ready"
+    requires_lazy_heatmap = heatmap_rows > _HEAVY_DATA_THRESHOLD
+    heatmap_ready = not requires_lazy_heatmap or st.session_state.get(
+        heatmap_ready_key, False
+    )
+    if requires_lazy_heatmap and not heatmap_ready and heatmap_rows:
+        if st.button(
+            "Generar mapa de calor",
+            key="portfolio_generate_heatmap",
+        ):
+            st.session_state[heatmap_ready_key] = True
+            heatmap_ready = True
+        else:
+            st.info(
+                "El mapa de calor se calcula cuando lo necesitás para reducir recomputaciones pesadas."
+            )
+    if heatmap_ready:
+        with st.spinner("Generando análisis avanzado…"):
+            heatmap_fig = plot_contribution_heatmap(by_symbol)
+        if heatmap_fig is not None:
+            st.plotly_chart(
+                heatmap_fig,
+                width="stretch",
+                key="portfolio_contribution_heatmap",
+                config=PLOTLY_CONFIG,
+            )
+            st.caption(
+                "Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera."
+            )
+        else:
+            st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
 
     by_type = getattr(contribution_metrics, "by_type", None)
     if isinstance(by_type, pd.DataFrame) and not by_type.empty:
@@ -299,6 +344,11 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
             columns=["es_benchmark"], errors="ignore"
         )
         assets_df = assets_df.merge(asset_metrics, on="simbolo", how="left")
+        for col in ("volatilidad", "drawdown", "beta"):
+            if col in assets_df.columns:
+                assets_df[col] = pd.to_numeric(assets_df[col], errors="coerce").astype(
+                    "float32"
+                )
         benchmark_row = metrics_df.loc[metrics_df["es_benchmark"]]
 
     axis_candidates = [
