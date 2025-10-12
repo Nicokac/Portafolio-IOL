@@ -11,7 +11,8 @@ from services.auth import AuthTokenError, generate_token, verify_token
 
 def test_generate_and_verify_token_returns_claims(monkeypatch: pytest.MonkeyPatch) -> None:
     key = Fernet.generate_key().decode()
-    monkeypatch.setenv("IOL_TOKENS_KEY", key)
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
+    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
 
     token = generate_token("alice", expiry=60)
     claims = verify_token(token)
@@ -22,7 +23,8 @@ def test_generate_and_verify_token_returns_claims(monkeypatch: pytest.MonkeyPatc
 
 def test_generate_token_requires_positive_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
     key = Fernet.generate_key().decode()
-    monkeypatch.setenv("IOL_TOKENS_KEY", key)
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
+    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
 
     with pytest.raises(AuthTokenError):
         generate_token("bob", expiry=0)
@@ -30,7 +32,8 @@ def test_generate_token_requires_positive_expiry(monkeypatch: pytest.MonkeyPatch
 
 def test_verify_token_expired(monkeypatch: pytest.MonkeyPatch) -> None:
     key = Fernet.generate_key().decode()
-    monkeypatch.setenv("IOL_TOKENS_KEY", key)
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
+    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
 
     base_time = 1_700_000_000
     monkeypatch.setattr(auth_module.time, "time", lambda: base_time)
@@ -44,10 +47,11 @@ def test_verify_token_expired(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_verify_token_with_wrong_key(monkeypatch: pytest.MonkeyPatch) -> None:
     key_one = Fernet.generate_key().decode()
     key_two = Fernet.generate_key().decode()
-    monkeypatch.setenv("IOL_TOKENS_KEY", key_one)
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", key_one)
+    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
 
     token = generate_token("dave", expiry=60)
-    monkeypatch.setenv("IOL_TOKENS_KEY", key_two)
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", key_two)
 
     with pytest.raises(AuthTokenError):
         verify_token(token)

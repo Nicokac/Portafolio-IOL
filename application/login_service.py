@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, MutableMapping, Literal
@@ -10,6 +11,8 @@ from shared.config import settings
 
 
 Severity = Literal["warning", "error"]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +40,9 @@ def validate_tokens_key() -> TokenKeyValidation:
         return TokenKeyValidation(can_proceed=True)
 
     if allow_plain_tokens:
+        logger.warning("Plain token storage enabled (development only)")
+        if getattr(settings, "app_env", "dev").lower() == "prod":
+            raise RuntimeError("Plain token storage cannot be enabled in production.")
         return TokenKeyValidation(
             can_proceed=True,
             level="warning",

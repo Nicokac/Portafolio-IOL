@@ -312,12 +312,33 @@ class Settings:
             "IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json"))
         )
         # Clave opcional para cifrar/descifrar el archivo de tokens (Fernet)
-        self.tokens_key: str | None = self.secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
+        raw_tokens_key = self.secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
+        if raw_tokens_key:
+            normalized_tokens_key = str(raw_tokens_key).strip()
+            self.tokens_key = normalized_tokens_key if normalized_tokens_key else None
+        else:
+            self.tokens_key = None
+
+        raw_fastapi_key = self.secret_or_env("FASTAPI_TOKENS_KEY", cfg.get("FASTAPI_TOKENS_KEY"))
+        if raw_fastapi_key:
+            normalized_fastapi_key = str(raw_fastapi_key).strip()
+            self.fastapi_tokens_key = normalized_fastapi_key if normalized_fastapi_key else None
+        else:
+            self.fastapi_tokens_key = None
+
+        if self.fastapi_tokens_key and self.tokens_key and self.fastapi_tokens_key == self.tokens_key:
+            raise RuntimeError(
+                "FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to isolate encryption scopes."
+            )
+
         # Permite (opcionalmente) guardar tokens sin cifrar si falta tokens_key
         self.allow_plain_tokens: bool = (
             os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
             in ("1", "true", "yes")
         )
+        raw_app_env = os.getenv("APP_ENV", cfg.get("APP_ENV", "dev"))
+        app_env_text = str(raw_app_env or "dev").strip()
+        self.app_env: str = app_env_text.lower() or "dev"
         # TTL máximo para reutilizar tokens guardados (en días)
         self.tokens_ttl_days: int = int(
             os.getenv("IOL_TOKENS_TTL_DAYS", cfg.get("IOL_TOKENS_TTL_DAYS", 30))
