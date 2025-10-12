@@ -23,10 +23,15 @@ class ExternalAPIError(AppError):
     """Se genera cuando una API externa devuelve un error."""
 
 
+class CacheUnavailableError(AppError):
+    """Se genera cuando el backend de caché no está disponible."""
+
+
 __all__ = [
     "AppError",
     "NetworkError",
     "InvalidCredentialsError",
     "TimeoutError",
     "ExternalAPIError",
+    "CacheUnavailableError",
 ]

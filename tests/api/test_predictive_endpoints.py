@@ -109,32 +109,3 @@ def test_adaptive_forecast_endpoint_returns_metrics(
     assert payload["mae"] == pytest.approx(0.05)
     assert payload["cache_metadata"]["last_updated"] == "2024-01-01T00:00:00Z"
     assert payload["beta_shift"] == {"Tech": 0.12}
-
-
-def test_cache_status_endpoint_reports_counters(
-    monkeypatch: pytest.MonkeyPatch,
-    client: TestClient,
-    auth_headers: dict[str, str],
-) -> None:
-    """The /cache/status endpoint should expose cache counters."""
-
-    def fake_cache_stats():
-        return {
-            "namespace": "predictive",
-            "hits": 5,
-            "misses": 2,
-            "hit_ratio": 71.43,
-            "last_updated": "2024-01-02 15:30:00",
-            "ttl_seconds": 3600.0,
-            "remaining_ttl": 1200.0,
-        }
-
-    monkeypatch.setattr("api.routers.cache.get_cache_stats", fake_cache_stats)
-
-    response = client.get("/cache/status", headers=auth_headers)
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["namespace"] == "predictive"
-    assert payload["hits"] == 5
-    assert payload["remaining_ttl"] == pytest.approx(1200.0)

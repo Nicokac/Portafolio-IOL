@@ -116,6 +116,12 @@ curl -H "Authorization: Bearer <token>" http://localhost:8000/predict
 - `POST /engine/forecast/adaptive`
 - `GET /engine/history`
 
+### ♻️ Cache management API
+
+- `GET /cache/status`: requiere autenticación y devuelve un resumen con el total de entradas, ratio de aciertos, TTL promedio y tamaño estimado del caché de mercado.
+- `POST /cache/invalidate`: acepta un patrón glob o una lista de claves para eliminar entradas específicas del caché (memoria y SQLite) y reporta cuántos registros fueron removidos.
+- `POST /cache/cleanup`: limpia registros expirados o inconsistentes y detalla las métricas de la operación.
+
 Los endpoints `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` requieren cabecera `Authorization: Bearer <token>` emitida desde la pantalla de login. `/engine/info` permanece público y devuelve el estado del microservicio.
 
 #### Ejemplos autenticados
