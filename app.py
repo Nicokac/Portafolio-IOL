@@ -35,6 +35,7 @@ if not hasattr(st, "columns"):
     st.columns = _dummy_columns  # type: ignore[attr-defined]
 
 from shared.config import configure_logging, ensure_tokens_key
+from shared.security_env_validator import validate_security_environment
 from shared.settings import FEATURE_OPPORTUNITIES_TAB
 from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui, render_ui_controls
@@ -60,6 +61,7 @@ analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
 
 # Configuración de UI centralizada (tema y layout)
+validate_security_environment()
 init_ui()
 
 st.markdown(

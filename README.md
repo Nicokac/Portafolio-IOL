@@ -24,6 +24,7 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 - [Guía técnica de desarrollo](docs/dev_guide.md)
 - [Guía de pruebas](docs/testing.md)
 - [Reportes de QA](docs/qa/)
+- [Validación automática de claves](docs/security_validation.md)
 
 ## Observabilidad y Monitoreo
 
@@ -85,6 +86,12 @@ Sesiones disponibles:
 - `nox -s typecheck`: mypy para validaciones de tipos.
 - `nox -s tests`: pytest con cobertura y reporte `term-missing`.
 - `nox -s security`: auditorías de `bandit` y `pip-audit`.
+
+Validá las claves sensibles antes de levantar la app con:
+
+```bash
+python -m shared.security_env_validator
+```
 
 ## API mode
 
