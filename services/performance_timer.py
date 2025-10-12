@@ -1,22 +1,78 @@
 from __future__ import annotations
 
-"""Lightweight runtime performance instrumentation helpers."""
+"""Lightweight runtime performance instrumentation helpers with observability."""
 
+import atexit
+import json
 import logging
 import os
+import queue
 import re
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from logging import LogRecord
+from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Iterator
 
+from shared.settings import app_env, settings
+
 _LOG_ENV_NAME = "PERFORMANCE_LOG_PATH"
 _DISABLE_PSUTIL_ENV = "PERFORMANCE_TIMER_DISABLE_PSUTIL"
+_JSON_LOG_ENV = "PERFORMANCE_JSON_LOG_PATH"
+_JSON_LOG_DEFAULT = Path("logs/performance/structured.log")
 _LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 _LOGGER_NAME = "performance"
 _LOG_SEGMENT_SEPARATOR = " | "
 _MESSAGE_PREFIX = "\u23f1\ufe0f "
+_DEFAULT_JSON_BACKUP_DAYS = 14
+
+_VERBOSE_TEXT_LOG = bool(getattr(settings, "PERFORMANCE_VERBOSE_TEXT_LOG", False))
+_REDIS_URL = getattr(settings, "REDIS_URL", None)
+_ENABLE_PROMETHEUS = bool(getattr(settings, "ENABLE_PROMETHEUS", True))
+
+try:  # pragma: no cover - optional dependency
+    from prometheus_client import CollectorRegistry, Gauge, Summary
+except ModuleNotFoundError:  # pragma: no cover - exercised when dependency missing
+    CollectorRegistry = None  # type: ignore[assignment]
+    Gauge = None  # type: ignore[assignment]
+    Summary = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - optional dependency
+    import redis  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - exercised when dependency missing
+    redis = None  # type: ignore[assignment]
+
+_PROMETHEUS_REGISTRY = (
+    CollectorRegistry(auto_describe=True) if CollectorRegistry and _ENABLE_PROMETHEUS else None
+)
+
+if Summary and Gauge and _PROMETHEUS_REGISTRY is not None:
+    PERFORMANCE_DURATION_SECONDS = Summary(
+        "performance_duration_seconds",
+        "Execution time for instrumented blocks",
+        labelnames=("module", "label", "success"),
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    PERFORMANCE_CPU_PERCENT = Gauge(
+        "performance_cpu_percent",
+        "CPU percent used by instrumented blocks",
+        labelnames=("module", "label", "success"),
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    PERFORMANCE_MEMORY_PERCENT = Gauge(
+        "performance_memory_percent",
+        "Memory percent used by instrumented blocks",
+        labelnames=("module", "label", "success"),
+        registry=_PROMETHEUS_REGISTRY,
+    )
+else:  # pragma: no cover - when prometheus_client missing or disabled
+    PERFORMANCE_DURATION_SECONDS = None  # type: ignore[assignment]
+    PERFORMANCE_CPU_PERCENT = None  # type: ignore[assignment]
+    PERFORMANCE_MEMORY_PERCENT = None  # type: ignore[assignment]
 
 
 def _resolve_log_path() -> Path:
@@ -25,23 +81,175 @@ def _resolve_log_path() -> Path:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception:
-        # Fall back to the working directory if the configured parent is not writable.
         path = Path.cwd() / Path(raw_path).name
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
-            # Last resort: keep the resolved path; logging will rely on a NullHandler.
             pass
     return path
 
 
+def _resolve_structured_path() -> Path:
+    raw_path = os.getenv(_JSON_LOG_ENV, str(_JSON_LOG_DEFAULT))
+    path = Path(raw_path).expanduser()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        fallback = Path.cwd() / Path(raw_path).name
+        try:
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        path = fallback
+    return path
+
+
 LOG_PATH: Path = _resolve_log_path()
+STRUCTURED_LOG_PATH: Path = _resolve_structured_path()
+
+
+class _JsonLineFormatter(logging.Formatter):
+    def format(self, record: LogRecord) -> str:
+        entry: PerformanceEntry | None = getattr(record, "perf_entry", None)
+        if entry is None:
+            payload: dict[str, Any] = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": super().format(record),
+            }
+        else:
+            payload = entry.as_dict(include_raw=False)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+class _PerformanceDispatchHandler(logging.Handler):
+    """Broadcast structured entries to persistence layers asynchronously."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self._redis_client = None
+        self._redis_attempted = False
+
+    def _publish_redis(self, entry: PerformanceEntry) -> None:
+        if not _REDIS_URL or redis is None:
+            return
+        if self._redis_client is None and not self._redis_attempted:
+            try:
+                self._redis_client = redis.Redis.from_url(_REDIS_URL)
+            except Exception:  # pragma: no cover - connection issues depend on runtime
+                self._redis_client = None
+            finally:
+                self._redis_attempted = True
+        if self._redis_client is None:
+            return
+        try:  # pragma: no cover - depends on redis availability
+            self._redis_client.xadd(
+                "redis_streams:performance",
+                {"entry": json.dumps(entry.as_dict(include_raw=False), ensure_ascii=False)},
+                maxlen=None,
+            )
+        except Exception:
+            pass
+
+    def _store_sqlite(self, entry: PerformanceEntry) -> None:
+        if app_env != "prod":
+            return
+        try:
+            from services.performance_store import store_entry
+        except Exception:  # pragma: no cover - defensive import guard
+            return
+        try:
+            store_entry(entry)
+        except Exception:
+            pass
+
+    def _record_metrics(self, entry: PerformanceEntry) -> None:
+        if not _ENABLE_PROMETHEUS:
+            return
+        if PERFORMANCE_DURATION_SECONDS is None:
+            return
+        labels = {
+            "module": entry.module,
+            "label": entry.label,
+            "success": "true" if entry.success else "false",
+        }
+        PERFORMANCE_DURATION_SECONDS.labels(**labels).observe(entry.duration_s)
+        if entry.cpu_percent is not None:
+            PERFORMANCE_CPU_PERCENT.labels(**labels).set(entry.cpu_percent)
+        if entry.ram_percent is not None:
+            PERFORMANCE_MEMORY_PERCENT.labels(**labels).set(entry.ram_percent)
+
+    def emit(self, record: LogRecord) -> None:  # pragma: no cover - integration behaviour
+        entry: PerformanceEntry | None = getattr(record, "perf_entry", None)
+        if entry is None:
+            return
+        try:
+            self._record_metrics(entry)
+            self._publish_redis(entry)
+            self._store_sqlite(entry)
+        except Exception:
+            pass
+
+
+def _build_text_handler(log_path: Path) -> logging.Handler:
+    try:
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+    except Exception:
+        handler = logging.NullHandler()
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
+    setattr(handler, "_performance_timer_handler", True)
+    return handler
+
+
+def _build_json_handler(path: Path) -> logging.Handler:
+    try:
+        handler = TimedRotatingFileHandler(
+            path,
+            when="midnight",
+            backupCount=_DEFAULT_JSON_BACKUP_DAYS,
+            encoding="utf-8",
+            utc=True,
+        )
+    except Exception:
+        handler = logging.NullHandler()
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(_JsonLineFormatter())
+    setattr(handler, "_performance_timer_handler", True)
+    return handler
+
+
+_LOG_QUEUE: queue.Queue[LogRecord] | None = None
+_LISTENER: QueueListener | None = None
+_LISTENER_HANDLERS: list[logging.Handler] = []
+
+
+def _shutdown_listener() -> None:
+    global _LISTENER, _LISTENER_HANDLERS
+    if _LISTENER is not None:
+        try:
+            _LISTENER.stop()
+        except Exception:
+            pass
+        _LISTENER = None
+    for handler in _LISTENER_HANDLERS:
+        try:
+            handler.flush()
+        except Exception:
+            pass
+        try:
+            handler.close()
+        except Exception:
+            pass
+    _LISTENER_HANDLERS = []
 
 
 def _configure_logger(log_path: Path) -> logging.Logger:
+    global _LOG_QUEUE, _LISTENER, _LISTENER_HANDLERS
     logger = logging.getLogger(_LOGGER_NAME)
     logger.setLevel(logging.INFO)
     logger.propagate = False
+
+    _shutdown_listener()
 
     for handler in list(logger.handlers):
         if getattr(handler, "_performance_timer_handler", False):
@@ -51,23 +259,31 @@ def _configure_logger(log_path: Path) -> logging.Logger:
             except Exception:
                 pass
 
-    handler: logging.Handler
-    try:
-        handler = logging.FileHandler(log_path, encoding="utf-8")
-    except Exception:
-        handler = logging.NullHandler()
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter(_LOG_FORMAT))
-    setattr(handler, "_performance_timer_handler", True)
-    logger.addHandler(handler)
+    _LOG_QUEUE = queue.Queue()
+    queue_handler = QueueHandler(_LOG_QUEUE)
+    queue_handler.setLevel(logging.INFO)
+    setattr(queue_handler, "_performance_timer_handler", True)
+    logger.addHandler(queue_handler)
 
-    if not any(getattr(h, "_performance_timer_handler", False) for h in logger.handlers):
-        logger.addHandler(logging.NullHandler())
+    handlers = [
+        _build_text_handler(log_path),
+        _build_json_handler(STRUCTURED_LOG_PATH),
+        _PerformanceDispatchHandler(),
+    ]
+    _LISTENER_HANDLERS = handlers
+    _LISTENER = QueueListener(
+        _LOG_QUEUE, *handlers, respect_handler_level=True
+    )
+    try:
+        _LISTENER.start()
+    except Exception:
+        pass
 
     return logger
 
 
 LOGGER = _configure_logger(LOG_PATH)
+atexit.register(_shutdown_listener)
 
 _FORCE_DISABLE_PSUTIL = os.getenv(_DISABLE_PSUTIL_ENV, "0").strip().lower() in {"1", "true", "yes"}
 
@@ -94,7 +310,7 @@ else:  # pragma: no cover - requires psutil at runtime
 
 if not _PSUTIL_AVAILABLE:
     LOGGER.warning(
-        "psutil no disponible; métricas de CPU/RAM deshabilitadas en performance_timer",  # noqa: TRY400
+        "psutil no disponible; métricas de CPU/RAM deshabilitadas en performance_timer",
     )
 
 
@@ -131,7 +347,9 @@ def _sanitize_extra(extra: Dict[str, Any] | None) -> Dict[str, str]:
 
 
 def _format_message(label: str, duration: float, details: Dict[str, str]) -> str:
-    base = f"{_MESSAGE_PREFIX}{label} completado en {duration:.3f}s"
+    base = f"{label} completado en {duration:.3f}s"
+    if _VERBOSE_TEXT_LOG:
+        base = f"{_MESSAGE_PREFIX}{base}"
     if not details:
         return base
     segments = [base]
@@ -140,17 +358,18 @@ def _format_message(label: str, duration: float, details: Dict[str, str]) -> str
     return _LOG_SEGMENT_SEPARATOR.join(segments)
 
 
-def _flush_logger() -> None:
-    for handler in LOGGER.handlers:
-        try:
-            handler.flush()
-        except Exception:
-            pass
+def _resolve_module_name() -> str:
+    try:
+        frame = sys._getframe(2)
+    except (AttributeError, ValueError):  # pragma: no cover - interpreter limitations
+        return "unknown"
+    module = frame.f_globals.get("__name__", "unknown")
+    return str(module or "unknown")
 
 
 @dataclass(frozen=True)
 class PerformanceEntry:
-    """Represents a single parsed entry from the performance log."""
+    """Represents a structured performance telemetry entry."""
 
     timestamp: str
     label: str
@@ -158,34 +377,40 @@ class PerformanceEntry:
     cpu_percent: float | None
     ram_percent: float | None
     extras: Dict[str, str] = field(default_factory=dict)
+    module: str = "unknown"
+    success: bool = True
     raw: str = ""
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self, *, include_raw: bool = True) -> Dict[str, Any]:
         payload: Dict[str, Any] = {
             "timestamp": self.timestamp,
             "label": self.label,
             "duration_s": self.duration_s,
             "cpu_percent": self.cpu_percent,
-            "ram_percent": self.ram_percent,
+            "mem_percent": self.ram_percent,
+            "module": self.module,
+            "success": self.success,
         }
         if self.extras:
             payload["extras"] = dict(self.extras)
+        if include_raw and self.raw:
+            payload["raw"] = self.raw
         return payload
 
 
 def _parse_log_line(line: str) -> PerformanceEntry | None:
-    if _MESSAGE_PREFIX not in line:
+    prefix_marker = "]"
+    if prefix_marker not in line:
         return None
     try:
-        prefix, message = line.split("]", 1)
+        prefix, message = line.split(prefix_marker, 1)
     except ValueError:
         return None
     timestamp = prefix.replace("[", " ").strip()
     message = message.lstrip()
-    if not message.startswith(_MESSAGE_PREFIX):
-        return None
-    body = message[len(_MESSAGE_PREFIX) :].strip()
-    parts = [segment.strip() for segment in body.split(_LOG_SEGMENT_SEPARATOR) if segment]
+    if _MESSAGE_PREFIX in message:
+        message = message.replace(_MESSAGE_PREFIX, "", 1).strip()
+    parts = [segment.strip() for segment in message.split(_LOG_SEGMENT_SEPARATOR) if segment]
     if not parts:
         return None
     main = parts[0]
@@ -206,6 +431,8 @@ def _parse_log_line(line: str) -> PerformanceEntry | None:
         metrics[key.strip()] = value.strip()
     cpu = _parse_percent(metrics.pop("cpu", None))
     ram = _parse_percent(metrics.pop("ram", None))
+    status = metrics.get("status")
+    success = status.lower() != "error" if isinstance(status, str) else True
     return PerformanceEntry(
         timestamp=timestamp,
         label=label.strip(),
@@ -213,6 +440,8 @@ def _parse_log_line(line: str) -> PerformanceEntry | None:
         cpu_percent=cpu,
         ram_percent=ram,
         extras=metrics,
+        module="unknown",
+        success=success,
         raw=line.strip(),
     )
 
@@ -236,12 +465,38 @@ def read_recent_entries(limit: int = 200) -> list[PerformanceEntry]:
     return entries
 
 
+def _build_entry(
+    *,
+    label: str,
+    duration: float,
+    cpu_pct: float | None,
+    ram_pct: float | None,
+    details: Dict[str, str],
+    module: str,
+    success: bool,
+    raw_message: str,
+) -> PerformanceEntry:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    return PerformanceEntry(
+        timestamp=timestamp,
+        label=label,
+        duration_s=duration,
+        cpu_percent=cpu_pct,
+        ram_percent=ram_pct,
+        extras=details,
+        module=module,
+        success=success,
+        raw=raw_message,
+    )
+
+
 @contextmanager
 def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Iterator[None]:
     """Measure a code block, logging duration (and CPU/RAM when available)."""
 
     start_time = time.perf_counter()
     cpu_start = None
+    success = True
     if _PSUTIL_AVAILABLE and PROCESS is not None:
         try:
             cpu_start = PROCESS.cpu_times()
@@ -249,6 +504,9 @@ def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Ite
             cpu_start = None
     try:
         yield
+    except Exception:
+        success = False
+        raise
     finally:
         elapsed = time.perf_counter() - start_time
         cpu_pct: float | None = None
@@ -274,17 +532,28 @@ def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Ite
             details.setdefault("cpu", f"{cpu_pct:.1f}%")
         if ram_pct is not None:
             details.setdefault("ram", f"{ram_pct:.1f}%")
+        details.setdefault("status", "ok" if success else "error")
+        module = _resolve_module_name()
         message = _format_message(label, elapsed, details)
+        entry = _build_entry(
+            label=label,
+            duration=elapsed,
+            cpu_pct=cpu_pct,
+            ram_pct=ram_pct,
+            details=details,
+            module=module,
+            success=success,
+            raw_message=message,
+        )
         log_extra = {
             "perf_label": label,
             "perf_duration": elapsed,
             "perf_cpu_percent": cpu_pct,
             "perf_ram_percent": ram_pct,
+            "perf_meta": dict(details) if details else {},
+            "perf_entry": entry,
         }
-        if details:
-            log_extra["perf_meta"] = dict(details)
         LOGGER.info(message, extra=log_extra)
-        _flush_logger()
 
 
 def track_performance(label: str):
@@ -303,9 +572,15 @@ def track_performance(label: str):
     return _decorator
 
 
+PROMETHEUS_REGISTRY = _PROMETHEUS_REGISTRY
+PROMETHEUS_ENABLED = _ENABLE_PROMETHEUS and PROMETHEUS_REGISTRY is not None
+
 __all__ = [
     "LOG_PATH",
+    "STRUCTURED_LOG_PATH",
     "PerformanceEntry",
+    "PROMETHEUS_REGISTRY",
+    "PROMETHEUS_ENABLED",
     "performance_timer",
     "read_recent_entries",
     "track_performance",

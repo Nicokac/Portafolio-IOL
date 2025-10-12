@@ -351,6 +351,16 @@ class Settings:
         # --- Logging ---
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
         self.LOG_FORMAT: str = os.getenv("LOG_FORMAT", cfg.get("LOG_FORMAT", "plain")).lower()
+        self.REDIS_URL: str | None = self.secret_or_env("REDIS_URL", cfg.get("REDIS_URL"))
+        self.ENABLE_PROMETHEUS: bool = str(
+            os.getenv("ENABLE_PROMETHEUS", cfg.get("ENABLE_PROMETHEUS", "1"))
+        ).lower() in {"1", "true", "yes"}
+        self.PERFORMANCE_VERBOSE_TEXT_LOG: bool = str(
+            os.getenv(
+                "PERFORMANCE_VERBOSE_TEXT_LOG",
+                cfg.get("PERFORMANCE_VERBOSE_TEXT_LOG", "0"),
+            )
+        ).lower() in {"1", "true", "yes"}
 
     def secret_or_env(self, key: str, default: Any | None = None) -> Any | None:
         try:

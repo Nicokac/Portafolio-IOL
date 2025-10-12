@@ -25,6 +25,20 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 - [Guía de pruebas](docs/testing.md)
 - [Reportes de QA](docs/qa/)
 
+## Observabilidad y Monitoreo
+
+- Formato estructurado (JSON logs) que acompaña cada medición de `services.performance_timer`.
+- Endpoint `/metrics` compatible con Prometheus y Grafana.
+- Persistencia local en SQLite (modo producción) para historizar métricas críticas.
+- Alertas y visualizaciones de CPU/RAM y duración en el dashboard de Streamlit.
+- Ejemplo de scraping Prometheus y dashboard Grafana:
+
+  ```bash
+  curl http://localhost:8000/metrics
+  ```
+
+  Importá el endpoint en Prometheus y enlazalo en Grafana para graficar `performance_duration_seconds` por módulo/bloque.
+
 ## 🔮 Núcleo Predictivo Independiente
 
 - El motor se divide en módulos autocontenidos:
