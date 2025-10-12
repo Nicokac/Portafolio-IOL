@@ -135,8 +135,7 @@ class IOLAuth:
 
             if r.status_code in (400, 401):
                 logger.warning(
-                    "Credenciales inválidas en login IOL: %s",
-                    r.text,
+                    f"Auth failed (code={r.status_code})",
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
                 raise InvalidCredentialsError("Credenciales inválidas")
@@ -222,8 +221,7 @@ class IOLAuth:
 
             if r.status_code in (400, 401):
                 logger.warning(
-                    "Credenciales inválidas en refresh IOL: %s",
-                    r.text,
+                    f"Auth failed (code={r.status_code})",
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
                 self.clear_tokens()

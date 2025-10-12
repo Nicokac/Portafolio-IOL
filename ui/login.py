@@ -18,7 +18,7 @@ from services.update_checker import (
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.helpers.navigation import safe_page_link
-from services.auth import generate_token
+from services.auth import MAX_TOKEN_TTL_SECONDS, generate_token
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
 from ui.panels.diagnostics import render_diagnostics_panel
@@ -84,14 +84,14 @@ def _is_engine_api_active(url: str = FASTAPI_ENGINE_INFO_URL) -> bool:
 
 
 def _get_auth_token_ttl() -> int:
-    """Return the configured TTL for API tokens, falling back to one hour."""
+    """Return the configured TTL for API tokens capped at fifteen minutes."""
 
-    raw_value = os.environ.get("FASTAPI_AUTH_TTL", "3600")
+    raw_value = os.environ.get("FASTAPI_AUTH_TTL", "900")
     try:
         value = int(raw_value)
     except (TypeError, ValueError):
-        return 3600
-    return max(1, value)
+        return 900
+    return max(1, min(value, MAX_TOKEN_TTL_SECONDS))
 
 
 def _ensure_auto_restart_default() -> bool:

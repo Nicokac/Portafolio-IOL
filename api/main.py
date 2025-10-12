@@ -7,7 +7,7 @@ from fastapi import Depends, FastAPI
 from services.auth import get_current_user
 from shared.version import __version__
 
-from .routers import cache, engine, predictive, profile
+from .routers import auth, engine, predictive, profile
 
 logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI backend - version %s", __version__)
@@ -17,7 +17,7 @@ app = FastAPI(title="Portafolio IOL API", version=__version__)
 
 app.include_router(predictive.router, dependencies=[Depends(get_current_user)])
 app.include_router(profile.router)
-app.include_router(cache.router, dependencies=[Depends(get_current_user)])
+app.include_router(auth.router)
 app.include_router(engine.router)
 
 
