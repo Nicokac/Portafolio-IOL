@@ -12,11 +12,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from application.adaptive_predictive_service import (
-    export_adaptive_report,
-    generate_synthetic_history,
-    prepare_adaptive_history,
-)
+from application.adaptive_predictive_service import export_adaptive_report
 from application.benchmark_service import (
     BENCHMARK_BASELINES,
     compute_benchmark_comparison,
@@ -90,8 +86,6 @@ __all__ = [
     "_resolve_mode",
     "_enrich_recommendations",
     "_build_numeric_lookup",
-    "prepare_adaptive_history",
-    "generate_synthetic_history",
     "export_adaptive_report",
     "build_correlation_figure",
     "recommendations_controller",
@@ -830,7 +824,11 @@ def render_recommendations_tab() -> None:
 
     adaptive_payload: dict[str, object] | None = None
     if not recommendations.empty:
-        adaptive_payload = _compute_adaptive_payload(recommendations, opportunities)
+        adaptive_payload = _compute_adaptive_payload(
+            recommendations,
+            opportunities,
+            profile=active_profile,
+        )
 
     if not recommendations.empty:
         _render_recommendations_visuals(

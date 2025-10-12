@@ -5,11 +5,10 @@ from typing import Mapping
 import numpy as np
 import streamlit as st
 
-from shared.settings import CACHE_HIT_THRESHOLDS
+from ui.utils.formatters import normalise_hit_ratio, resolve_badge_state
 
 __all__ = [
     "_normalise_cache_stats",
-    "_resolve_cache_status_color",
     "_render_cache_status",
 ]
 
@@ -42,31 +41,10 @@ def _normalise_cache_stats(stats: object) -> dict[str, object]:
     return data
 
 
-def _resolve_cache_status_color(ratio: float) -> str:
-    try:
-        green_threshold = float(CACHE_HIT_THRESHOLDS.get("green", 0.7))
-    except Exception:  # pragma: no cover - defensive
-        green_threshold = 0.7
-    try:
-        yellow_threshold = float(CACHE_HIT_THRESHOLDS.get("yellow", 0.4))
-    except Exception:  # pragma: no cover - defensive
-        yellow_threshold = 0.4
-    if ratio >= green_threshold:
-        return "green"
-    if ratio >= yellow_threshold:
-        return "yellow"
-    return "red"
-
-
 def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
     raw_ratio = cache_stats.get("hit_ratio", 0.0)
-    try:
-        ratio = float(raw_ratio)
-    except (TypeError, ValueError):
-        ratio = 0.0
-    if not np.isfinite(ratio) or ratio < 0.0 or ratio > 1.0:
-        ratio = 0.0
-    color = _resolve_cache_status_color(ratio)
+    ratio = normalise_hit_ratio(raw_ratio)
+    color = resolve_badge_state(ratio)
 
     ttl_value = cache_stats.get("remaining_ttl")
     ttl_seconds: float | None

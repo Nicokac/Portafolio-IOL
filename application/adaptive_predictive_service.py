@@ -11,10 +11,9 @@ import pandas as pd
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
     PredictiveCacheState,
-    extract_backtest_series,
-    normalise_symbol_sector,
     run_backtest,
 )
+from application.predictive_service import build_adaptive_history
 from services.cache import CacheService
 from services.performance_metrics import track_function
 from shared.settings import ADAPTIVE_TTL_HOURS
@@ -131,10 +130,6 @@ def update_model(
     return payload
 
 
-def _empty_history_frame() -> pd.DataFrame:
-    return pd.DataFrame(columns=["timestamp", "sector", "predicted_return", "actual_return"])
-
-
 def prepare_adaptive_history(
     opportunities: pd.DataFrame | None,
     *,
@@ -142,106 +137,27 @@ def prepare_adaptive_history(
     span: int = _DEFAULT_EMA_SPAN,
     max_symbols: int = 12,
 ) -> pd.DataFrame:
-    """Build a sector-level historical dataset using cached backtests."""
+    """Wrapper maintained for compatibility, delegates to build_adaptive_history."""
 
-    normalised = normalise_symbol_sector(opportunities)
-    if not isinstance(normalised, pd.DataFrame) or normalised.empty:
-        return _empty_history_frame()
-
-    svc = backtesting_service or BacktestingService()
-    frame = normalised.loc[:, ["symbol", "sector"]].copy()
-    frame = frame.dropna(subset=["symbol", "sector"])
-    frame = frame.drop_duplicates(subset=["symbol"])
-    if frame.empty:
-        return _empty_history_frame()
-
-    rows: list[dict[str, Any]] = []
-    selected = frame.head(max_symbols)
-    for symbol, sector in zip(selected["symbol"], selected["sector"]):
-        backtest = run_backtest(svc, str(symbol), logger=LOGGER)
-        if backtest is None:
-            continue
-
-        predicted_returns = extract_backtest_series(backtest, "strategy_ret")
-        actual_returns = extract_backtest_series(backtest, "ret")
-        aligned = pd.DataFrame({
-            "predicted": predicted_returns,
-            "actual": actual_returns,
-        }).dropna()
-        if aligned.empty:
-            continue
-
-        predicted_series = (
-            aligned["predicted"].ewm(span=max(int(span), 1), adjust=False).mean() * 100.0
-        )
-        actual_series = aligned["actual"] * 100.0
-        timestamps = pd.to_datetime(aligned.index, errors="coerce")
-        assembled = pd.DataFrame(
-            {
-                "timestamp": timestamps,
-                "sector": str(sector),
-                "symbol": str(symbol),
-                "predicted_return": predicted_series,
-                "actual_return": actual_series,
-            }
-        ).dropna(subset=["timestamp"])
-        if assembled.empty:
-            continue
-        rows.append(assembled)
-
-    if not rows:
-        return _empty_history_frame()
-
-    history = pd.concat(rows, ignore_index=True)
-    history = history.groupby(["timestamp", "sector"], as_index=False)[
-        ["predicted_return", "actual_return"]
-    ].mean()
-    history = history.sort_values("timestamp").reset_index(drop=True)
-    return history
+    return build_adaptive_history(
+        opportunities,
+        mode="real",
+        backtesting_service=backtesting_service,
+        span=span,
+        max_symbols=max_symbols,
+    )
 
 
-def generate_synthetic_history(recommendations: pd.DataFrame, periods: int = 6) -> pd.DataFrame:
-    if not isinstance(recommendations, pd.DataFrame) or recommendations.empty:
-        return _empty_history_frame()
+def generate_synthetic_history(
+    recommendations: pd.DataFrame, periods: int = 6
+) -> pd.DataFrame:
+    """Wrapper maintained for compatibility, delegates to build_adaptive_history."""
 
-    df = recommendations.copy()
-    if "sector" not in df.columns:
-        return _empty_history_frame()
-    df["sector"] = df.get("sector", pd.Series(dtype=str)).astype("string").str.strip()
-    df = df[df["sector"] != ""]
-    if df.empty:
-        return _empty_history_frame()
-
-    if "predicted_return_pct" in df.columns:
-        base_pred = pd.to_numeric(df["predicted_return_pct"], errors="coerce")
-    elif "predicted_return" in df.columns:
-        base_pred = pd.to_numeric(df["predicted_return"], errors="coerce")
-    else:
-        base_pred = pd.Series(np.nan, index=df.index)
-    base_pred = base_pred.fillna(base_pred.mean()).fillna(3.0)
-
-    rows: list[dict[str, Any]] = []
-    sectors = df["sector"].unique().tolist()
-    now = pd.Timestamp.utcnow().normalize()
-    for idx, sector in enumerate(sectors):
-        sector_bias = 0.6 + idx * 0.35
-        sector_base = float(base_pred[df["sector"] == sector].mean())
-        for step in range(periods):
-            ts = now - pd.Timedelta(days=periods - step)
-            seasonal = np.sin((step + 1) / (periods + 1) * np.pi) * 0.4
-            predicted = sector_base + seasonal
-            actual = predicted - sector_bias + ((step % 2) * 0.15)
-            rows.append(
-                {
-                    "timestamp": ts,
-                    "sector": sector,
-                    "predicted_return": predicted,
-                    "actual_return": actual,
-                }
-            )
-    history = pd.DataFrame(rows)
-    history = history.sort_values("timestamp").reset_index(drop=True)
-    return history
+    return build_adaptive_history(
+        recommendations,
+        mode="synthetic",
+        periods=periods,
+    )
 
 
 @track_function("simulate_adaptive_forecast")

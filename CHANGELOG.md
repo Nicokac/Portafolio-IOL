@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch2b — Validation hardening and adaptive UI consolidation.
+### Added
+- Validación de payload para `/forecast/adaptive` limitando a 10 000 filas o 30 símbolos mediante `AdaptiveForecastRequest`.
+- Nueva utilidad `build_adaptive_history` que fusiona históricos reales y sintéticos con cacheo y clipping seguro de predicciones.
+- Archivo `ui/utils/formatters.py` centralizando formatos de badges, porcentajes y variaciones para controladores y Streamlit.
+
+### Changed
+- El controlador de recomendaciones emite contexto de símbolo/sector/perfil en los logs y expone el estado del badge de caché.
+- La pestaña de correlaciones reutiliza `build_adaptive_history_view`, propagando el perfil del inversor y registrando históricos sintéticos cuando corresponde.
+- Se estandarizó el uso de formatters en la UI y se consolidó el manejo de estado adaptativo con toasts y métricas consistentes.
+
+### Fixed
+- Se truncan valores fuera de rango en `predicted_return_pct` antes de generar históricos adaptativos, registrando advertencias explícitas.
+- La UI evita construir payloads vacíos para la simulación adaptativa cuando no hay histórico disponible.
+
 ## v0.6.4-patch2a — Predictive caching per símbolo/período y lock adaptativo global.
 ### Added
 - Creado `domain/adaptive_cache_lock.py` con lock global reentrante y diagnósticos de retención/espera para proteger operaciones concurrentes del motor adaptativo.

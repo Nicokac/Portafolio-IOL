@@ -10,6 +10,14 @@ import pandas as pd
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
+    from pydantic import model_validator
+except ImportError:  # pragma: no cover
+    model_validator = None  # type: ignore[assignment]
+    from pydantic import root_validator  # type: ignore[attr-defined]
+else:  # pragma: no cover - ensure name exists for type checkers
+    root_validator = None  # type: ignore[assignment]
+
 from application.adaptive_predictive_service import simulate_adaptive_forecast
 from application.predictive_service import predict_sector_performance
 
@@ -80,6 +88,10 @@ class AdaptiveHistoryEntry(_BaseModel):
     sector: str
     predicted_return: float
     actual_return: float
+    symbol: str | None = Field(
+        default=None,
+        description="Optional symbol associated with the observation.",
+    )
 
 
 class AdaptiveForecastRequest(_BaseModel):
@@ -104,6 +116,58 @@ class AdaptiveForecastRequest(_BaseModel):
         ge=0.0,
         description="Override TTL for adaptive cache metadata in hours.",
     )
+
+    @classmethod
+    def _validate_limits(
+        cls, data: "AdaptiveForecastRequest" | dict[str, Any]
+    ) -> "AdaptiveForecastRequest" | dict[str, Any]:
+        if isinstance(data, cls):
+            history_items = list(data.history or [])
+        else:
+            history_items = list(data.get("history", []) or [])
+
+        if len(history_items) > 10_000:
+            raise ValueError("Se admiten hasta 10 000 observaciones en history")
+
+        symbols: set[str] = set()
+        for entry in history_items:
+            symbol = getattr(entry, "symbol", None)
+            if symbol is None and isinstance(entry, Mapping):
+                symbol = entry.get("symbol")
+            if symbol is not None:
+                symbol_str = str(symbol).strip().upper()
+                if symbol_str:
+                    symbols.add(symbol_str)
+                    continue
+            sector = getattr(entry, "sector", None)
+            if sector is None and isinstance(entry, Mapping):
+                sector = entry.get("sector")
+            sector_str = str(sector).strip().upper() if sector is not None else ""
+            if sector_str:
+                symbols.add(sector_str)
+
+        if len(symbols) > 30:
+            raise ValueError("Se admiten hasta 30 símbolos únicos en history")
+
+        return data
+
+    if model_validator is not None:  # pragma: no branch
+
+        @model_validator(mode="after")
+        def _check_limits(  # type: ignore[override]
+            cls, model: "AdaptiveForecastRequest"
+        ) -> "AdaptiveForecastRequest":
+            cls._validate_limits(model)
+            return model
+
+    else:  # pragma: no cover - fallback for Pydantic v1
+
+        @root_validator(skip_on_failure=True)  # type: ignore[misc]
+        def _check_limits_v1(
+            cls, values: dict[str, Any]
+        ) -> dict[str, Any]:
+            cls._validate_limits(values)
+            return values
 
 
 class AdaptiveForecastResponse(_BaseModel):

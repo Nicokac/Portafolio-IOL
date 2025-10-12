@@ -5,6 +5,7 @@ from .adaptive_predictive_service import (
     prepare_adaptive_history,
     simulate_adaptive_forecast,
 )
+from .predictive_service import build_adaptive_history
 from .backtesting_service import BacktestingService
 from .portfolio_service import PortfolioService
 from .predictive_service import get_cache_stats, predict_sector_performance, reset_cache
@@ -15,6 +16,7 @@ __all__ = [
     "PortfolioService",
     "RecommendationService",
     "export_adaptive_report",
+    "build_adaptive_history",
     "prepare_adaptive_history",
     "simulate_adaptive_forecast",
     "predict_sector_performance",

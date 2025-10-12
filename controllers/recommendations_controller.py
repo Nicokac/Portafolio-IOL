@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, asdict
 from typing import Any, Mapping
 
@@ -10,9 +11,14 @@ import pandas as pd
 from application.adaptive_predictive_service import simulate_adaptive_forecast
 from application.predictive_service import (
     PredictiveSnapshot,
+    build_adaptive_history,
     get_cache_stats,
     predict_sector_performance,
 )
+from ui.utils.formatters import normalise_hit_ratio, resolve_badge_state
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,13 +31,28 @@ class PredictiveCacheViewModel:
     ttl_hours: float | None = None
     remaining_ttl: float | None = None
 
+    @property
+    def hit_ratio(self) -> float:
+        total = int(self.hits) + int(self.misses)
+        if total <= 0:
+            return 0.0
+        return float(self.hits) / float(total)
+
+    @property
+    def badge_state(self) -> str:
+        ratio = normalise_hit_ratio(self.hit_ratio)
+        return resolve_badge_state(ratio)
+
     def to_dict(self) -> dict[str, Any]:
+        ratio = normalise_hit_ratio(self.hit_ratio)
         return {
             "hits": int(self.hits),
             "misses": int(self.misses),
             "last_updated": self.last_updated,
             "ttl_hours": self.ttl_hours,
             "remaining_ttl": self.remaining_ttl,
+            "hit_ratio": ratio,
+            "badge_state": resolve_badge_state(ratio),
         }
 
 
@@ -94,6 +115,74 @@ def _clone_value(value: Any) -> Any:
     return value
 
 
+def build_adaptive_history_view(
+    opportunities: pd.DataFrame | None,
+    recommendations: pd.DataFrame | None,
+    *,
+    profile: Mapping[str, Any] | None = None,
+    span: int = 5,
+    max_symbols: int = 12,
+    periods: int = 6,
+) -> tuple[pd.DataFrame, bool]:
+    """Return adaptive history frame and whether it was synthetically generated."""
+
+    context: dict[str, Any] = {}
+    if isinstance(profile, Mapping):
+        context["profile"] = dict(profile)
+
+    history = build_adaptive_history(
+        opportunities,
+        mode="real",
+        span=span,
+        max_symbols=max_symbols,
+        context=context or None,
+    )
+    if not history.empty:
+        return history, False
+
+    symbols: list[str] = []
+    sectors: list[str] = []
+    if isinstance(recommendations, pd.DataFrame) and not recommendations.empty:
+        if "symbol" in recommendations.columns:
+            symbols = (
+                recommendations.get("symbol", pd.Series(dtype=str))
+                .astype("string")
+                .dropna()
+                .astype(str)
+                .str.upper()
+                .str.strip()
+                .unique()
+                .tolist()
+            )
+        if "sector" in recommendations.columns:
+            sectors = (
+                recommendations.get("sector", pd.Series(dtype=str))
+                .astype("string")
+                .dropna()
+                .astype(str)
+                .str.strip()
+                .unique()
+                .tolist()
+            )
+
+    LOGGER.warning(
+        "Histórico adaptativo real vacío, generando histórico sintético",
+        extra={
+            "symbols": symbols[:30],
+            "sectors": sectors[:30],
+            "profile": profile,
+        },
+    )
+
+    synthetic = build_adaptive_history(
+        recommendations,
+        mode="synthetic",
+        periods=periods,
+        context=context or None,
+    )
+    return synthetic, True
+
+
 def load_sector_performance_view(
     opportunities: pd.DataFrame | None,
     *,
@@ -126,15 +215,33 @@ def run_adaptive_forecast_view(
     persist: bool = True,
     rolling_window: int = 20,
     ttl_hours: float | None = None,
+    context: Mapping[str, Any] | None = None,
 ) -> AdaptiveForecastViewModel:
-    payload = simulate_adaptive_forecast(
-        history,
-        ema_span=ema_span,
-        cache=cache,
-        persist=persist,
-        rolling_window=rolling_window,
-        ttl_hours=ttl_hours,
-    )
+    try:
+        payload = simulate_adaptive_forecast(
+            history,
+            ema_span=ema_span,
+            cache=cache,
+            persist=persist,
+            rolling_window=rolling_window,
+            ttl_hours=ttl_hours,
+        )
+    except Exception:
+        log_context: dict[str, Any] = {
+            "ema_span": ema_span,
+            "persist": persist,
+            "rolling_window": rolling_window,
+        }
+        if isinstance(context, Mapping):
+            for key in ("symbols", "sectors", "profile"):
+                if key in context:
+                    log_context[key] = context[key]
+        LOGGER.error(
+            "Error al simular el pronóstico adaptativo",
+            extra=log_context,
+            exc_info=True,
+        )
+        raise
     if not isinstance(payload, Mapping):
         payload = {}
     cloned_payload = {key: _clone_value(value) for key, value in payload.items()}
@@ -161,6 +268,7 @@ __all__ = [
     "PredictiveCacheViewModel",
     "SectorPerformanceViewModel",
     "AdaptiveForecastViewModel",
+    "build_adaptive_history_view",
     "load_sector_performance_view",
     "get_predictive_cache_view",
     "run_adaptive_forecast_view",

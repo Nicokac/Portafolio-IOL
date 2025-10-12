@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+import hashlib
+from typing import Any, Mapping
 
 import pandas as pd
+import numpy as np
 
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
@@ -31,10 +34,14 @@ LOGGER = logging.getLogger(__name__)
 
 _CACHE_NAMESPACE = "predictive"
 _CACHE_KEY_PREFIX = "sector_predictions"
+_HISTORY_CACHE_PREFIX = "adaptive_history"
 _MARKET_CACHE = get_market_data_cache()
 _CACHE = _MARKET_CACHE.prediction_cache
 _CACHE.set_ttl_override(PREDICTIVE_TTL_HOURS * 3600.0)
 _CACHE_STATE = PredictiveCacheState()
+
+_ADAPTIVE_DEFAULT_SPAN = 5
+_SYNTHETIC_DEFAULT_PERIODS = 6
 
 
 def _cache_last_updated(cache: CacheService) -> str | None:
@@ -91,6 +98,270 @@ def _prepare_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
     if len(required) < 2:
         return pd.DataFrame(columns=["symbol", "sector"])
     return frame.loc[:, required].copy()
+
+
+def _empty_history_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=["timestamp", "sector", "predicted_return", "actual_return"]
+    )
+
+
+def _build_history_cache_key(
+    mode: str,
+    symbols: list[str],
+    sectors: list[str],
+    span: int,
+    max_symbols: int,
+    periods: int,
+) -> str:
+    payload = "|".join(f"{sym}:{sec}" for sym, sec in zip(symbols, sectors))
+    digest = hashlib.sha1(  # noqa: S324 - deterministic cache key
+        payload.encode("utf-8"),
+        usedforsecurity=False,
+    ).hexdigest()
+    return (
+        f"{_HISTORY_CACHE_PREFIX}:{mode}:{span}:{max_symbols}:{periods}:{digest}"
+    )
+
+
+def build_adaptive_history(
+    data: pd.DataFrame | None,
+    *,
+    mode: str = "real",
+    backtesting_service: BacktestingService | None = None,
+    span: int = _ADAPTIVE_DEFAULT_SPAN,
+    max_symbols: int = 12,
+    periods: int = _SYNTHETIC_DEFAULT_PERIODS,
+    cache: CacheService | None = None,
+    ttl_hours: float | None = None,
+    context: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Assemble an adaptive history frame either from backtests or synthetic data."""
+
+    mode_key = str(mode or "real").strip().lower()
+    if mode_key not in {"real", "synthetic"}:
+        raise ValueError(
+            "Modo de histórico adaptativo no soportado: solo se permite 'real' o 'synthetic'"
+        )
+
+    frame = normalise_symbol_sector(data)
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return _empty_history_frame()
+
+    working = frame.loc[:, [col for col in frame.columns if col in {"symbol", "sector"}]]
+    if {"symbol", "sector"} - set(working.columns):
+        return _empty_history_frame()
+
+    working["symbol"] = (
+        working.get("symbol", pd.Series(dtype=str))
+        .astype("string")
+        .fillna("")
+        .str.upper()
+        .str.strip()
+    )
+    working["sector"] = (
+        working.get("sector", pd.Series(dtype=str))
+        .astype("string")
+        .fillna("")
+        .str.strip()
+    )
+    working = working.dropna(subset=["symbol", "sector"])
+    working = working[working["symbol"] != ""]
+    if working.empty:
+        return _empty_history_frame()
+
+    selected = working.drop_duplicates(subset=["symbol"]).head(max(int(max_symbols), 1))
+    symbols = selected["symbol"].tolist()
+    sectors = selected["sector"].tolist()
+
+    effective_ttl_hours = (
+        float(ttl_hours)
+        if ttl_hours is not None
+        else float(PREDICTIVE_TTL_HOURS)
+    )
+    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
+
+    active_cache = cache if cache is not None else _CACHE
+    if isinstance(active_cache, CacheService):
+        active_cache.set_ttl_override(ttl_seconds)
+
+    cache_key = _build_history_cache_key(
+        mode_key,
+        symbols,
+        sectors,
+        span,
+        max_symbols,
+        periods,
+    )
+
+    with adaptive_cache_lock:
+        cached = active_cache.get(cache_key) if active_cache is not None else None
+        if isinstance(cached, pd.DataFrame):
+            LOGGER.debug(
+                "Histórico adaptativo recuperado desde caché (modo=%s, símbolos=%s)",
+                mode_key,
+                symbols,
+            )
+            return cached.copy()
+
+    history = _empty_history_frame()
+    if mode_key == "real":
+        service = backtesting_service or BacktestingService()
+        rows: list[pd.DataFrame] = []
+        ema_span = max(int(span), 1)
+        for symbol, sector in zip(symbols, sectors):
+            try:
+                backtest = run_backtest(service, str(symbol), logger=LOGGER)
+            except Exception:  # pragma: no cover - defensive logging
+                LOGGER.exception(
+                    "No se pudo obtener backtest para el histórico adaptativo",
+                    extra={"symbol": symbol, "sector": sector},
+                )
+                continue
+            if backtest is None:
+                LOGGER.warning(
+                    "Backtest inexistente para histórico adaptativo",
+                    extra={"symbol": symbol, "sector": sector},
+                )
+                continue
+
+            predicted_returns = extract_backtest_series(backtest, "strategy_ret")
+            actual_returns = extract_backtest_series(backtest, "ret")
+            aligned = pd.DataFrame(
+                {
+                    "predicted": predicted_returns,
+                    "actual": actual_returns,
+                }
+            ).dropna()
+            if aligned.empty:
+                continue
+
+            predicted_series = aligned["predicted"].ewm(
+                span=ema_span,
+                adjust=False,
+            ).mean()
+            actual_series = aligned["actual"]
+            timestamps = pd.to_datetime(aligned.index, errors="coerce")
+            assembled = pd.DataFrame(
+                {
+                    "timestamp": timestamps,
+                    "sector": str(sector),
+                    "predicted_return": predicted_series * 100.0,
+                    "actual_return": actual_series * 100.0,
+                }
+            ).dropna(subset=["timestamp"])
+            if assembled.empty:
+                continue
+            rows.append(assembled)
+
+        if rows:
+            history = pd.concat(rows, ignore_index=True)
+            history = history.groupby(["timestamp", "sector"], as_index=False)[
+                ["predicted_return", "actual_return"]
+            ].mean()
+            history = history.sort_values("timestamp").reset_index(drop=True)
+    else:
+        df = frame.copy()
+        if "symbol" not in df.columns and "ticker" in df.columns:
+            df = df.rename(columns={"ticker": "symbol"})
+        df["symbol"] = (
+            df.get("symbol", pd.Series(dtype=str))
+            .astype("string")
+            .fillna("")
+            .str.upper()
+            .str.strip()
+        )
+        df["sector"] = (
+            df.get("sector", pd.Series(dtype=str))
+            .astype("string")
+            .fillna("")
+            .str.strip()
+        )
+        df = df.dropna(subset=["symbol", "sector"])
+        df = df[df["symbol"] != ""]
+        if df.empty:
+            history = _empty_history_frame()
+        else:
+            predicted_pct = pd.to_numeric(
+                df.get("predicted_return_pct"), errors="coerce"
+            )
+            predicted_alt = pd.to_numeric(
+                df.get("predicted_return"), errors="coerce"
+            )
+            if predicted_pct.isna().all():
+                predicted_pct = predicted_alt
+            if predicted_pct.isna().all():
+                predicted_pct = pd.Series(np.nan, index=df.index)
+
+            needs_scaling = predicted_pct.abs() > 1.0
+            if needs_scaling.any():
+                predicted_pct.loc[needs_scaling] = predicted_pct.loc[needs_scaling] / 100.0
+
+            predicted_pct = predicted_pct.fillna(predicted_pct.mean())
+            predicted_pct = predicted_pct.fillna(0.03)
+
+            clipped = predicted_pct.clip(lower=-0.5, upper=0.5)
+            if not clipped.equals(predicted_pct):
+                profile = None
+                if isinstance(context, Mapping):
+                    profile = context.get("profile")
+                for idx, original in predicted_pct.items():
+                    clipped_value = clipped.loc[idx]
+                    if not np.isfinite(original) or np.isclose(original, clipped_value):
+                        continue
+                    symbol = str(df.loc[idx, "symbol"]) if idx in df.index else ""
+                    sector = str(df.loc[idx, "sector"]) if idx in df.index else ""
+                    LOGGER.warning(
+                        "Predicted return fuera de rango, truncando valor",
+                        extra={
+                            "symbol": symbol,
+                            "sector": sector,
+                            "profile": profile,
+                            "valor_original": float(original),
+                            "valor_truncado": float(clipped_value),
+                            "modo": mode_key,
+                        },
+                    )
+            predicted_pct = clipped
+
+            rows = []
+            now = pd.Timestamp.utcnow().normalize()
+            for idx, sector in enumerate(df["sector"].unique().tolist()):
+                sector_mask = df["sector"] == sector
+                sector_base = float(predicted_pct.loc[sector_mask].mean())
+                sector_bias = 0.006 + idx * 0.0035
+                for step in range(int(max(periods, 1))):
+                    ts = now - pd.Timedelta(days=int(periods) - step)
+                    seasonal = float(
+                        np.sin((step + 1) / (int(periods) + 1) * np.pi) * 0.04
+                    )
+                    predicted_decimal = sector_base + seasonal
+                    actual_decimal = predicted_decimal - sector_bias + ((step % 2) * 0.015)
+                    rows.append(
+                        {
+                            "timestamp": ts,
+                            "sector": str(sector),
+                            "predicted_return": predicted_decimal * 100.0,
+                            "actual_return": actual_decimal * 100.0,
+                        }
+                    )
+            if rows:
+                history = pd.DataFrame(rows)
+                history = history.sort_values("timestamp").reset_index(drop=True)
+
+    if history.empty:
+        return history
+
+    with adaptive_cache_lock:
+        if active_cache is not None:
+            active_cache.set(cache_key, history, ttl=ttl_seconds)
+            LOGGER.debug(
+                "Histórico adaptativo almacenado en caché (modo=%s, símbolos=%s)",
+                mode_key,
+                symbols,
+            )
+
+    return history.copy()
 
 
 @track_function("predict_sector_performance")
