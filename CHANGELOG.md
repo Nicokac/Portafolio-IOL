@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch4a — Security hardening for credential storage and telemetry.
+### Added
+- Variable de entorno `FASTAPI_TOKENS_KEY` dedicada a los tokens internos del backend y validación de `APP_ENV`.
+- Pruebas de seguridad para impedir fugas de credenciales en la telemetría y para validar políticas de almacenamiento de tokens.
+
+### Changed
+- Telemetría de sesión redacta automáticamente tokens, claves y contraseñas antes de registrarse en `analysis_logger`.
+- El backend y el broker IOL exigen claves Fernet distintas y abortan el arranque si coinciden.
+- `allow_plain_tokens` registra advertencias explícitas y se bloquea automáticamente en `APP_ENV=prod`.
+
 ## v0.6.4-patch3b — Opportunities UI & maintainability refresh.
 ### Added
 - Fixture `docs/fixtures/base_opportunities.csv` para el universo determinista del screener, cargado on-demand con `pandas.read_csv` y con logs que detallan cantidad de filas y timestamp de carga.

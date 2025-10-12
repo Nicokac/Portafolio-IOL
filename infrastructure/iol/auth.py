@@ -24,9 +24,16 @@ TOKEN_URL = "https://api.invertironline.com/token"
 REQ_TIMEOUT = 30
 
 FERNET: Fernet | None = None
-if settings.tokens_key:
+_iol_key = (settings.tokens_key or "").strip() if isinstance(settings.tokens_key, str) else ""
+_fastapi_key = getattr(settings, "fastapi_tokens_key", None)
+_fastapi_key = (_fastapi_key or "").strip()
+
+if _fastapi_key and _iol_key and _fastapi_key == _iol_key:
+    raise RuntimeError("FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY.")
+
+if _iol_key:
     try:
-        FERNET = Fernet(settings.tokens_key.encode())
+        FERNET = Fernet(_iol_key.encode())
     except Exception as e:
         logger.warning("Clave de cifrado inválida: %s", e)
 
@@ -46,6 +53,11 @@ class IOLAuth:
         except OSError as e:
             logger.exception("No se pudo crear directorio de tokens: %s", e)
         object.__setattr__(self, "tokens_file", path)
+        app_env = getattr(settings, "app_env", "dev").lower()
+        if self.allow_plain_tokens:
+            logger.warning("Plain token storage enabled (development only)")
+            if app_env == "prod":
+                raise RuntimeError("Plain token storage cannot be enabled in production.")
         if FERNET is None:
             msg = "IOL_TOKENS_KEY no está configurada; los tokens se guardarían sin cifrar."
             if self.allow_plain_tokens:

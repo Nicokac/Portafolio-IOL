@@ -48,6 +48,56 @@ def _normalize_value(value: Any) -> Any:
     return str(value)
 
 
+_SENSITIVE_SESSION_KEYS = {
+    "auth_token",
+    "authorization",
+    "bearer_token",
+    "fastapi_tokens_key",
+    "fernet_key",
+    "iol_password",
+    "iol_tokens_key",
+    "iol_username",
+    "password",
+    "refresh_token",
+    "secret",
+    "token",
+    "tokens_file",
+    "username",
+}
+
+_SENSITIVE_KEY_HINTS = (
+    "password",
+    "secret",
+    "token",
+    "key",
+    "username",
+    "credential",
+)
+
+
+def _is_sensitive_key(key: str) -> bool:
+    normalized = str(key or "").strip().casefold()
+    if not normalized:
+        return False
+    if normalized in _SENSITIVE_SESSION_KEYS:
+        return True
+    return any(hint in normalized for hint in _SENSITIVE_KEY_HINTS)
+
+
+def _sanitize_session_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        sanitized: dict[str, Any] = {}
+        for nested_key, nested_value in value.items():
+            if _is_sensitive_key(str(nested_key)):
+                sanitized[str(nested_key)] = "[REDACTED]"
+            else:
+                sanitized[str(nested_key)] = _sanitize_session_value(nested_value)
+        return sanitized
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_session_value(item) for item in value]
+    return _normalize_value(value)
+
+
 def _snapshot_session_state(state: Mapping[str, Any]) -> dict[str, Any]:
     session_id = state.get("session_id")
     snapshot: dict[str, Any] = {
@@ -61,12 +111,15 @@ def _snapshot_session_state(state: Mapping[str, Any]) -> dict[str, Any]:
         if key == "session_id" or key.startswith("_"):
             continue
         value = state[key]
+        if _is_sensitive_key(key):
+            values[key] = "[REDACTED]"
+            continue
         if isinstance(value, bool):
             values[key] = value
             if value:
                 flags.append(key)
             continue
-        values[key] = _normalize_value(value)
+        values[key] = _sanitize_session_value(value)
 
     if values:
         snapshot["values"] = values

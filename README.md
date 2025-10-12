@@ -814,8 +814,12 @@ USER_AGENT="Portafolio-IOL/1.0"
 IOL_TOKENS_FILE="tokens_iol.json"
 # Clave para cifrar el archivo de tokens (Fernet). Debe definirse en producción
 IOL_TOKENS_KEY="..."
+# Clave exclusiva para los tokens internos de FastAPI (debe ser distinta a IOL_TOKENS_KEY)
+FASTAPI_TOKENS_KEY="..."
 # Permite guardar tokens sin cifrar (NO recomendado)
 IOL_ALLOW_PLAIN_TOKENS=0
+# Entorno actual: dev, staging o prod. En prod se rechaza IOL_ALLOW_PLAIN_TOKENS
+APP_ENV=dev
 # Otros ajustes opcionales
 CACHE_TTL_PORTFOLIO=3600
 CACHE_TTL_LAST_PRICE=10
@@ -851,17 +855,18 @@ IOL_USERNAME = "tu_usuario"
 IOL_PASSWORD = "tu_contraseña"
 IOL_TOKENS_KEY = "clave"
 IOL_TOKENS_FILE = "tokens_iol.json"
+FASTAPI_TOKENS_KEY = "otra_clave"
 ```
 
 `LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Evita usar `DEBUG` u otros niveles muy verbosos en producción, ya que pueden revelar información sensible y generar un volumen excesivo de datos. `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, útil cuando se integran sistemas de logging centralizado o se requiere auditoría. Si `LOG_LEVEL` o `LOG_FORMAT` no están definidos, la aplicación utiliza `INFO` y `plain` como valores por defecto. El valor de `LOG_USER` se incluye en los registros si está definido.
 
-Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`. Puedes generar una clave con:
+Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`, pero en `APP_ENV=prod` se abortará igualmente para impedir configuraciones inseguras. Puedes generar una clave con:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Este archivo es sensible: **manténlo fuera del control de versiones** (ya está incluido en `.gitignore`) y con permisos restringidos, por ejemplo `chmod 600`. Si el token expira o se desea forzar una nueva autenticación, borra dicho archivo.
+Este archivo es sensible: **manténlo fuera del control de versiones** (ya está incluido en `.gitignore`) y con permisos restringidos, por ejemplo `chmod 600`. Si el token expira o se desea forzar una nueva autenticación, borra dicho archivo. La clave `FASTAPI_TOKENS_KEY` cifra exclusivamente los tokens internos del backend y debe ser distinta a `IOL_TOKENS_KEY` para evitar que una brecha en un servicio comprometa al otro.
 
 ## Ejecución local
 
@@ -894,7 +899,7 @@ mostrará el enlace al changelog para realizar la actualización de forma manual
 
 ## Despliegue
 
-En entornos de producción es obligatorio definir la variable `IOL_TOKENS_KEY` para que el archivo de tokens se almacene cifrado. Si falta y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará el problema y se cerrará.
+En entornos de producción es obligatorio definir las variables `IOL_TOKENS_KEY` y `FASTAPI_TOKENS_KEY`, asegurando que sean distintas. Si falta alguna, coinciden o se fuerza `IOL_ALLOW_PLAIN_TOKENS` en `APP_ENV=prod`, la aplicación registrará el problema y se cerrará para proteger las credenciales.
 
 ### Docker
 

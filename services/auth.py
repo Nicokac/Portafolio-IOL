@@ -64,16 +64,22 @@ class AuthTokenError(ValueError):
 
 
 def _get_tokens_key() -> bytes:
-    """Return the configured Fernet key used to protect authentication tokens."""
+    """Return the configured Fernet key used to protect FastAPI auth tokens."""
 
-    key = os.getenv("IOL_TOKENS_KEY")
+    key = os.getenv("FASTAPI_TOKENS_KEY")
     if not key:
         raise RuntimeError(
-            "IOL_TOKENS_KEY environment variable is not configured for authentication tokens."
+            "FASTAPI_TOKENS_KEY environment variable is not configured for authentication tokens."
         )
     normalized = key.strip()
     if not normalized:
-        raise RuntimeError("IOL_TOKENS_KEY cannot be empty.")
+        raise RuntimeError("FASTAPI_TOKENS_KEY cannot be empty.")
+
+    iol_key = os.getenv("IOL_TOKENS_KEY", "").strip()
+    if iol_key and iol_key == normalized:
+        raise RuntimeError(
+            "FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to avoid key reuse."
+        )
     return normalized.encode()
 
 

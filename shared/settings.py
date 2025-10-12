@@ -27,6 +27,8 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
+fastapi_tokens_key: str | None = getattr(settings, "fastapi_tokens_key", None)
+app_env: str = getattr(settings, "app_env", "dev")
 market_data_cache_backend: str = getattr(settings, "MARKET_DATA_CACHE_BACKEND", "sqlite")
 market_data_cache_path: str | None = getattr(settings, "MARKET_DATA_CACHE_PATH", None)
 market_data_cache_redis_url: str | None = getattr(settings, "MARKET_DATA_CACHE_REDIS_URL", None)
@@ -174,4 +176,6 @@ __all__ = [
     "alpha_vantage_base_url",
     "polygon_api_key",
     "polygon_base_url",
+    "fastapi_tokens_key",
+    "app_env",
 ]
