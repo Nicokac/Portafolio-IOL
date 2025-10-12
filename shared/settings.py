@@ -33,6 +33,9 @@ market_data_cache_backend: str = getattr(settings, "MARKET_DATA_CACHE_BACKEND", 
 market_data_cache_path: str | None = getattr(settings, "MARKET_DATA_CACHE_PATH", None)
 market_data_cache_redis_url: str | None = getattr(settings, "MARKET_DATA_CACHE_REDIS_URL", None)
 market_data_cache_ttl: float = getattr(settings, "MARKET_DATA_CACHE_TTL", 6 * 60 * 60)
+redis_url: str | None = getattr(settings, "REDIS_URL", None)
+enable_prometheus: bool = getattr(settings, "ENABLE_PROMETHEUS", True)
+performance_verbose_text_log: bool = getattr(settings, "PERFORMANCE_VERBOSE_TEXT_LOG", False)
 yahoo_request_delay: float = getattr(settings, "YAHOO_REQUEST_DELAY", 0.0)
 quotes_ttl_seconds: int = getattr(settings, "QUOTES_TTL_SECONDS", 300)
 quotes_rps_iol: float = getattr(settings, "QUOTES_RPS_IOL", 3.0)
@@ -129,6 +132,9 @@ __all__ = [
     "market_data_cache_backend",
     "market_data_cache_path",
     "market_data_cache_redis_url",
+    "redis_url",
+    "enable_prometheus",
+    "performance_verbose_text_log",
     "market_data_cache_ttl",
     "yahoo_request_delay",
     "quotes_ttl_seconds",

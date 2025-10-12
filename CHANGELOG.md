@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.5-monitoring-and-observability — Observability layer for performance telemetry.
+### Added
+- JSON structured telemetry with daily rotation at `logs/performance/structured.log` and optional Redis streaming.
+- Prometheus summaries and gauges (duration, CPU, RAM) exposed via the new `/metrics` router with module/label/success labels.
+- SQLite persistence helper (`services/performance_store.store_entry`) habilitado automáticamente en `APP_ENV=prod`.
+- Streamlit performance dashboard ahora incluye filtros por bloque/tiempo/keywords, percentiles P50/P95/P99, alertas y exportes CSV/JSON.
+
+### Changed
+- `services/performance_timer` ahora utiliza `QueueHandler` + `QueueListener` para desacoplar I/O, integra métricas Prometheus y elimina `_flush_logger`.
+- El formato de log plano se controla con `PERFORMANCE_VERBOSE_TEXT_LOG` y se simplificó la cabecera del dashboard.
+
 ## v0.6.4-patch4b — Security claims and endpoint guardrails.
 ### Added
 - Claims enriquecidos (`iss`, `aud`, `version`, `session_id`) en los tokens Fernet y registro en memoria de sesiones activas.
