@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from infrastructure.market.yahoo_client import make_symbol_url
 import shared.settings as shared_settings
 from shared.version import __version__
 from shared.ui import notes as shared_notes
@@ -76,12 +77,14 @@ PRESET_FILTERS: Mapping[str, Mapping[str, object]] = {
 
 
 _CUSTOM_PRESETS_STATE_KEY = "custom_presets"
-_PENDING_PRESET_STATE_KEY = "opportunities_pending_preset"
+_ACTIVE_PRESET_STATE_KEY = "opportunities_active_preset"
 _SUMMARY_STATE_KEY = "opportunities_summary"
 _SUMMARY_EXPANDED_STATE_KEY = "opportunities_summary_expanded"
 _SUMMARY_COMPACT_OVERRIDE_KEY = "opportunities_summary_compact_override"
 _SUMMARY_COMPACT_BREAKPOINT = 768
 _SUMMARY_SECTOR_SCROLL_THRESHOLD = 6
+_LAST_RESULT_TABLE_STATE_KEY = "opportunities_last_result_table"
+_LAST_MACRO_ENTRIES_STATE_KEY = "opportunities_last_macro_entries"
 
 
 _INT_STATE_KEYS = {"min_market_cap", "min_div_streak", "max_results", "min_score_threshold"}
@@ -116,12 +119,31 @@ def _compute_default_widget_values() -> dict[str, object]:
     }
 
 
+def _initialise_filter_state() -> None:
+    defaults = _compute_default_widget_values()
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
+
+
 def _get_custom_presets() -> dict[str, Mapping[str, object]]:
     presets = st.session_state.setdefault(_CUSTOM_PRESETS_STATE_KEY, {})
     if not isinstance(presets, dict):
         presets = {}
         st.session_state[_CUSTOM_PRESETS_STATE_KEY] = presets
     return presets
+
+
+def _count_active_filters(filters: Mapping[str, object]) -> int:
+    count = 0
+    for value in filters.values():
+        if value is None:
+            continue
+        if isinstance(value, Mapping) and not value:
+            continue
+        if isinstance(value, (list, tuple, set, frozenset)) and not value:
+            continue
+        count += 1
+    return count
 
 
 def _iter_available_presets() -> Sequence[str]:
@@ -142,10 +164,12 @@ def _resolve_preset_definition(preset_name: str | None) -> Mapping[str, object] 
 
 
 def _apply_preset(preset_name: str | None) -> None:
-    if not preset_name:
+    if not preset_name or preset_name == "Personalizado":
+        st.session_state[_ACTIVE_PRESET_STATE_KEY] = "Personalizado"
         return
     preset = _resolve_preset_definition(preset_name)
     if not preset:
+        st.session_state[_ACTIVE_PRESET_STATE_KEY] = "Personalizado"
         return
     defaults = _compute_default_widget_values()
     for key, default_value in defaults.items():
@@ -169,11 +193,9 @@ def _apply_preset(preset_name: str | None) -> None:
             st.session_state[key] = sectors
         else:
             st.session_state[key] = value
+    st.session_state[_ACTIVE_PRESET_STATE_KEY] = preset_name
 
 
-def _handle_preset_change() -> None:
-    preset_name = st.session_state.get("opportunities_preset")
-    _apply_preset(preset_name)
 def _format_note(note: str) -> str:
     """Format backend notes based on their severity category.
 
@@ -351,11 +373,142 @@ def _should_use_compact_layout() -> bool:
     return False
 
 
+def _render_sector_score_chart(table: pd.DataFrame | None) -> None:
+    if table is None or table.empty or not {"sector", "score_compuesto"}.issubset(table.columns):
+        st.caption("Sin datos de score por sector disponibles.")
+        return
+
+    working = table[["sector", "score_compuesto"]].copy()
+    working["sector"] = (
+        working["sector"].astype("string").str.strip().replace("", pd.NA)
+    )
+    working["score_compuesto"] = pd.to_numeric(
+        working["score_compuesto"], errors="coerce"
+    )
+    working = working.dropna(subset=["sector", "score_compuesto"])
+    if working.empty:
+        st.caption("Sin datos de score por sector disponibles.")
+        return
+
+    grouped = (
+        working.groupby("sector", dropna=False)
+        .agg(score_promedio=("score_compuesto", "mean"), cantidad=("score_compuesto", "size"))
+        .reset_index()
+    )
+    grouped["score_promedio"] = grouped["score_promedio"].astype(float)
+    grouped = grouped.sort_values("score_promedio", ascending=False)
+
+    chart_builder = alt.Chart(grouped)
+    if hasattr(chart_builder, "mark_bar"):
+        chart_builder = chart_builder.mark_bar()
+    else:  # pragma: no cover - fallback para dummies de testing
+        chart_builder = chart_builder.mark_arc(innerRadius=40)
+
+    if hasattr(alt, "X"):
+        x_field = alt.X("score_promedio:Q", title="Score promedio")
+        y_field = alt.Y("sector:N", sort="-x", title="Sector")
+        color_field = alt.Color("sector:N", legend=None)
+        tooltip_fields = [
+            alt.Tooltip("sector:N", title="Sector"),
+            alt.Tooltip("score_promedio:Q", title="Score promedio", format=".2f"),
+            alt.Tooltip("cantidad:Q", title="Empresas"),
+        ]
+    else:  # pragma: no cover - fallback para entornos sin Altair completo
+        x_field = "score_promedio:Q"
+        y_field = {"field": "sector", "type": "nominal"}
+        color_field = {"field": "sector", "type": "nominal"}
+        tooltip_fields = [
+            {"field": "sector", "type": "nominal", "title": "Sector"},
+            {"field": "score_promedio", "type": "quantitative", "title": "Score promedio"},
+            {"field": "cantidad", "type": "quantitative", "title": "Empresas"},
+        ]
+
+    chart = (
+        chart_builder
+        .encode(
+            x=x_field,
+            y=y_field,
+            color=color_field,
+            tooltip=tooltip_fields,
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(chart, use_container_width=True, key="opportunities_sector_chart")
+
+
+def _render_macro_history_chart(entries: Sequence[Mapping[str, object]] | None) -> None:
+    if not entries:
+        st.caption("Sin historial macro disponible.")
+        return
+
+    df = pd.DataFrame(entries)
+    if df.empty:
+        st.caption("Sin historial macro disponible.")
+        return
+
+    df["value"] = pd.to_numeric(df.get("value"), errors="coerce")
+    df = df.dropna(subset=["value"])
+    if df.empty:
+        st.caption("Sin historial macro disponible.")
+        return
+
+    df["sector"] = df.get("sector").astype("string").fillna("General")
+    timestamp = pd.to_datetime(df.get("as_of"), errors="coerce")
+    if "run_ts" in df.columns:
+        fallback_ts = pd.to_datetime(df["run_ts"], unit="s", errors="coerce")
+        timestamp = timestamp.fillna(fallback_ts)
+    df["timestamp"] = timestamp
+    df = df.dropna(subset=["timestamp"])
+    if df.empty:
+        st.caption("Sin historial macro disponible.")
+        return
+
+    df = df.sort_values("timestamp")
+    chart_builder = alt.Chart(df)
+    if hasattr(chart_builder, "mark_line"):
+        chart_builder = chart_builder.mark_line(point=True)
+    else:  # pragma: no cover - fallback para stubs sin soporte completo
+        chart_builder = chart_builder.mark_arc(innerRadius=0)
+
+    if hasattr(alt, "X"):
+        x_field = alt.X("timestamp:T", title="Fecha de referencia")
+        y_field = alt.Y("value:Q", title="Indicador promedio")
+        color_field = alt.Color("sector:N", title="Sector")
+        tooltip_fields = [
+            alt.Tooltip("sector:N", title="Sector"),
+            alt.Tooltip("value:Q", title="Valor", format=".2f"),
+            alt.Tooltip("timestamp:T", title="Fecha"),
+        ]
+    else:  # pragma: no cover - fallback para stubs
+        x_field = {"field": "timestamp", "type": "temporal"}
+        y_field = {"field": "value", "type": "quantitative"}
+        color_field = {"field": "sector", "type": "nominal"}
+        tooltip_fields = [
+            {"field": "sector", "type": "nominal", "title": "Sector"},
+            {"field": "value", "type": "quantitative", "title": "Valor"},
+            {"field": "timestamp", "type": "temporal", "title": "Fecha"},
+        ]
+
+    chart = (
+        chart_builder
+        .encode(
+            x=x_field,
+            y=y_field,
+            color=color_field,
+            tooltip=tooltip_fields,
+        )
+        .properties(height=320)
+    )
+    st.altair_chart(chart, use_container_width=True, key="opportunities_macro_chart")
+
+
 def _render_summary_block(
     summary: Mapping[str, object] | None,
     *,
     placeholder: st.delta_generator.DeltaGenerator | None = None,
     expanded: bool = True,
+    table: pd.DataFrame | None = None,
+    macro_entries: Sequence[Mapping[str, object]] | None = None,
 ) -> None:
     target = placeholder.empty() if placeholder is not None else st
     with target.container():
@@ -453,35 +606,38 @@ def _render_summary_block(
             for idx, description in enumerate(filter_descriptions):
                 st.markdown(f"- {description}")
 
-        st.markdown("#### Distribución por sector")
-        distribution = normalized.get("sector_distribution")
-        if isinstance(distribution, Mapping) and distribution:
-            rows = [
-                (str(sector), int(count))
-                for sector, count in distribution.items()
-                if count is not None
-            ]
-            chart_df = pd.DataFrame(rows, columns=["sector", "count"])
-            chart = (
-                alt.Chart(chart_df)
-                .mark_arc(innerRadius=60)
-                .encode(
-                    theta=alt.Theta(field="count", type="quantitative"),
-                    color=alt.Color(field="sector", type="nominal", legend=alt.Legend(title="Sector")),
-                    tooltip=[
-                        alt.Tooltip("sector:N", title="Sector"),
-                        alt.Tooltip("count:Q", title="Empresas"),
-                    ],
-                )
-                .properties(height=280)
+        st.markdown("#### Visualizaciones avanzadas")
+        chart_options = ("Sector", "Tiempo")
+        if hasattr(st, "radio"):
+            chart_mode = st.radio(
+                "Visualización del resumen",
+                chart_options,
+                index=0,
+                horizontal=True,
+                key="opportunities_summary_chart_mode",
+                label_visibility="collapsed",
             )
-            st.altair_chart(
-                chart,
-                use_container_width=True,
-                key="opportunities_summary_sector_chart",
+        else:  # pragma: no cover - fallback for simplified stubs
+            chart_mode = st.selectbox(
+                "Visualización del resumen",
+                chart_options,
+                index=0,
+                key="opportunities_summary_chart_mode_select",
             )
+        st.caption(
+            "Elegí comparar por sector o revisar la evolución de indicadores macro históricos."
+        )
+
+        macro_payload: Sequence[Mapping[str, object]] | None = macro_entries
+        if macro_payload is None:
+            candidate = normalized.get("macro_entries")
+            if isinstance(candidate, Sequence):
+                macro_payload = [entry for entry in candidate if isinstance(entry, Mapping)]
+
+        if chart_mode == "Sector":
+            _render_sector_score_chart(table)
         else:
-            st.caption("Sin datos de sector disponibles.")
+            _render_macro_history_chart(macro_payload)
 
 def _slugify_label(label: str) -> str:
     normalized = [
@@ -518,10 +674,12 @@ def _render_screening_block(
                 raw_url = row.get(link_column)
                 ticker_value = row.get("ticker")
 
-                url = str(raw_url).strip() if raw_url else ""
-                if not url and ticker_value:
-                    url = f"https://finance.yahoo.com/quote/{ticker_value}"
-                return url or None
+                if raw_url is not None and not pd.isna(raw_url):
+                    url_candidate = str(raw_url).strip()
+                    if url_candidate and url_candidate.upper() != "<NA>":
+                        return url_candidate
+
+                return make_symbol_url(ticker_value)
 
             display_table[link_column] = display_table.apply(
                 _resolve_yahoo_url, axis=1
@@ -626,28 +784,30 @@ def render_opportunities_tab() -> None:
         "que podrían presentar oportunidades de inversión."
     )
 
-    defaults = _compute_default_widget_values()
-    for key, value in defaults.items():
-        st.session_state.setdefault(key, value)
+    _initialise_filter_state()
     st.session_state.setdefault("opportunities_preset", "Personalizado")
     _get_custom_presets()
 
-    pending_preset = st.session_state.pop(_PENDING_PRESET_STATE_KEY, None)
-    if pending_preset:
-        st.session_state["opportunities_preset"] = pending_preset
-        _apply_preset(pending_preset)
-
     available_presets = list(_iter_available_presets())
-    if st.session_state["opportunities_preset"] not in available_presets:
-        st.session_state["opportunities_preset"] = "Personalizado"
+    active_preset = st.session_state.get(_ACTIVE_PRESET_STATE_KEY) or st.session_state[
+        "opportunities_preset"
+    ]
+    if active_preset not in available_presets:
+        active_preset = "Personalizado"
+    st.session_state[_ACTIVE_PRESET_STATE_KEY] = active_preset
 
-    st.selectbox(
+    preset_selection = st.selectbox(
         "Perfil recomendado",
         options=available_presets,
+        index=available_presets.index(active_preset),
         key="opportunities_preset",
-        on_change=_handle_preset_change,
         help="Aplicá perfiles sugeridos con criterios preconfigurados para iniciar el screening.",
     )
+    if preset_selection != active_preset:
+        _apply_preset(preset_selection)
+        active_preset = preset_selection if preset_selection else "Personalizado"
+    else:
+        st.session_state[_ACTIVE_PRESET_STATE_KEY] = active_preset or "Personalizado"
 
     with st.expander("Parámetros del screening", expanded=True):
         min_market_cap = st.number_input(
@@ -768,6 +928,16 @@ def render_opportunities_tab() -> None:
         "sectors": list(sectors),
     }
 
+    active_preset_label = st.session_state.get(_ACTIVE_PRESET_STATE_KEY, "Personalizado")
+    active_filters_count = _count_active_filters(current_filters)
+    badge_html = (
+        "<span style='background-color:#1f77b4;color:white;padding:0.25rem 0.75rem;"
+        "border-radius:999px;font-size:0.85rem;font-weight:600;display:inline-block;'>"
+        + f"Preset activo: {active_preset_label} · {active_filters_count} filtros"
+        + "</span>"
+    )
+    st.markdown(badge_html, unsafe_allow_html=True)
+
     st.session_state.setdefault(_SUMMARY_EXPANDED_STATE_KEY, True)
     summary_expanded = st.checkbox(
         "Mostrar resumen del screening",
@@ -779,10 +949,18 @@ def render_opportunities_tab() -> None:
     summary_placeholder = st.empty()
     stored_summary = st.session_state.get(_SUMMARY_STATE_KEY)
     initial_summary = stored_summary if isinstance(stored_summary, Mapping) else None
+    stored_table = st.session_state.get(_LAST_RESULT_TABLE_STATE_KEY)
+    initial_table = stored_table if isinstance(stored_table, pd.DataFrame) else None
+    stored_macro = st.session_state.get(_LAST_MACRO_ENTRIES_STATE_KEY)
+    initial_macro = (
+        stored_macro if isinstance(stored_macro, Sequence) else None
+    )
     _render_summary_block(
         initial_summary,
         placeholder=summary_placeholder,
         expanded=summary_expanded,
+        table=initial_table,
+        macro_entries=initial_macro,
     )
 
     st.markdown(
@@ -809,7 +987,8 @@ def render_opportunities_tab() -> None:
                     custom_presets = dict(_get_custom_presets())
                     custom_presets[preset_name] = payload
                     st.session_state[_CUSTOM_PRESETS_STATE_KEY] = custom_presets
-                    st.session_state[_PENDING_PRESET_STATE_KEY] = preset_name
+                    st.session_state["opportunities_preset"] = preset_name
+                    _apply_preset(preset_name)
                     st.success(f"Preset '{preset_name}' guardado correctamente.")
 
         custom_presets = _get_custom_presets()
@@ -827,7 +1006,8 @@ def render_opportunities_tab() -> None:
                 )
                 apply_preset = st.form_submit_button("Aplicar preset guardado")
                 if apply_preset and selected_custom:
-                    st.session_state[_PENDING_PRESET_STATE_KEY] = selected_custom
+                    st.session_state["opportunities_preset"] = selected_custom
+                    _apply_preset(selected_custom)
                     st.success(f"Preset '{selected_custom}' aplicado correctamente.")
 
     def _resolve_generate_callable() -> "Callable[[Mapping[str, object]], Mapping[str, object]] | None":
@@ -868,10 +1048,43 @@ def render_opportunities_tab() -> None:
             st.session_state[_SUMMARY_STATE_KEY] = normalized_summary
         else:
             st.session_state.pop(_SUMMARY_STATE_KEY, None)
+
+        result_table: pd.DataFrame | None = None
+        if isinstance(result, Mapping):
+            table_candidate = result.get("table")
+            if isinstance(table_candidate, pd.DataFrame):
+                result_table = table_candidate
+            else:
+                extracted_table, _, _ = _extract_result(result)
+                if isinstance(extracted_table, pd.DataFrame):
+                    result_table = extracted_table
+        elif isinstance(result, pd.DataFrame):
+            result_table = result
+        if result_table is not None:
+            st.session_state[_LAST_RESULT_TABLE_STATE_KEY] = result_table
+        else:
+            st.session_state.pop(_LAST_RESULT_TABLE_STATE_KEY, None)
+
+        macro_entries_payload: Sequence[Mapping[str, object]] | None = None
+        if isinstance(result, Mapping):
+            metrics_payload = result.get("metrics")
+            if isinstance(metrics_payload, Mapping):
+                entries_candidate = metrics_payload.get("macro_entries")
+                if isinstance(entries_candidate, Sequence):
+                    macro_entries_payload = [
+                        entry for entry in entries_candidate if isinstance(entry, Mapping)
+                    ]
+        if macro_entries_payload:
+            st.session_state[_LAST_MACRO_ENTRIES_STATE_KEY] = list(macro_entries_payload)
+        else:
+            st.session_state.pop(_LAST_MACRO_ENTRIES_STATE_KEY, None)
+
         _render_summary_block(
             normalized_summary,
             placeholder=summary_placeholder,
             expanded=st.session_state.get(_SUMMARY_EXPANDED_STATE_KEY, True),
+            table=result_table,
+            macro_entries=macro_entries_payload,
         )
 
         _render_screening_block(result, heading="Resultados del screening")

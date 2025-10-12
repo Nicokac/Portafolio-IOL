@@ -51,6 +51,7 @@ def test_button_executes_controller_and_updates_summary(
                 "https://finance.yahoo.com/quote/AAPL",
                 "https://finance.yahoo.com/quote/NEE",
             ],
+            "sector": ["Technology", "Utilities"],
             "score_compuesto": [85.0, 72.0],
         }
     )
@@ -62,6 +63,16 @@ def test_button_executes_controller_and_updates_summary(
         "sector_distribution": {},
     }
     result_notes = ["✅ Screening completado", "⚠️ Revisar filtros"]
+    result_metrics = {
+        "macro_entries": [
+            {
+                "sector": "Technology",
+                "value": 1.5,
+                "as_of": "2023-01-01",
+                "run_ts": 1_680_000_000.0,
+            }
+        ]
+    }
 
     expected_params: Mapping[str, object] | None = None
 
@@ -73,6 +84,7 @@ def test_button_executes_controller_and_updates_summary(
             "summary": result_summary,
             "notes": result_notes,
             "source": "yahoo",
+            "metrics": result_metrics,
         }
 
     monkeypatch.setitem(sys.modules, "controllers.opportunities", SimpleNamespace(generate_opportunities_report=fake_generate))
@@ -89,6 +101,15 @@ def test_button_executes_controller_and_updates_summary(
     assert dataframes, "Expected results dataframe to be rendered"
     captions = streamlit_stub.get_records("caption")
     assert any("Resultados" in entry["text"] for entry in captions)
+
+    markdown_entries = [entry["text"] for entry in streamlit_stub.get_records("markdown")]
+    assert any("Preset activo" in text for text in markdown_entries)
+
+    selectboxes = streamlit_stub.get_records("selectbox")
+    assert any(entry["label"] == "Visualización del resumen" for entry in selectboxes)
+
+    altair_calls = streamlit_stub.get_records("altair_chart")
+    assert altair_calls, "Expected visualizations to render"
 
 
 def test_compare_presets_invokes_controller_for_each_column(
