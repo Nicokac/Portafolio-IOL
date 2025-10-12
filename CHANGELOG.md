@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-patch4b — Security claims and endpoint guardrails.
+### Added
+- Claims enriquecidos (`iss`, `aud`, `version`, `session_id`) en los tokens Fernet y registro en memoria de sesiones activas.
+- Endpoint `/auth/refresh` con rotación automática dentro de los últimos 5 minutos y auditoría `token_refreshed`.
+- Suite de pruebas para validar el ciclo de vida de tokens, la protección de `/profile` y la sanitización de logs del broker.
+
+### Changed
+- El TTL configurable (`FASTAPI_AUTH_TTL`) queda limitado a 15 minutos y los tokens se revocan automáticamente al hacer logout.
+- `/profile` ahora exige autenticación explícita y `/cache` se deshabilita hasta contar con implementación final.
+- Los logs de fallos en IOL omiten cuerpos de respuesta, registrando sólo `Auth failed (code=<status>)`.
+
 ## v0.6.4-patch4a — Security hardening for credential storage and telemetry.
 ### Added
 - Variable de entorno `FASTAPI_TOKENS_KEY` dedicada a los tokens internos del backend y validación de `APP_ENV`.

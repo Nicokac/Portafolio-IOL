@@ -10,6 +10,7 @@ from uuid import uuid4
 import logging
 
 from services.performance_timer import performance_timer
+from services.auth import revoke_token
 
 import streamlit as st
 
@@ -166,6 +167,7 @@ def logout(user: str = "", password: str = "") -> None:
     """Wrapper para el logout utilizando el proveedor registrado."""
 
     user = user or st.session_state.get("IOL_USERNAME", "")
+    revoke_token(st.session_state.get("auth_token"))
     try:
         _provider.logout(user, password)
     except Exception as e:  # pragma: no cover - defensive

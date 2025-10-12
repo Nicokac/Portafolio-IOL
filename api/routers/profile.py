@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-router = APIRouter(prefix="/profile", tags=["profile"])
+from services.auth import get_current_user
+
+router = APIRouter(prefix="/profile", tags=["profile"], dependencies=[Depends(get_current_user)])
 
 
 try:  # pragma: no cover - compatibility across Pydantic versions

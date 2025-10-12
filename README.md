@@ -127,10 +127,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/engine/history
 ### 🔐 Autenticación unificada
 
 1. Iniciá sesión desde la UI de Streamlit como lo hacés habitualmente.
-2. La pantalla de login emite un token Fernet válido por una hora (configurable mediante `FASTAPI_AUTH_TTL`) y lo guarda en `st.session_state["auth_token"]`.
+2. La pantalla de login emite un token Fernet con TTL máximo de 15 minutos (limitado por `FASTAPI_AUTH_TTL`) y lo guarda en `st.session_state["auth_token"]`.
 3. Reutilizá ese token para invocar los endpoints protegidos del backend, por ejemplo enviándolo en la cabecera `Authorization: Bearer <token>`.
 
 La UI reenvía automáticamente el token en cada request HTTP que realiza hacia el backend, manteniendo alineado el estado entre Streamlit y FastAPI.
+
+### ♻️ Token Lifecycle & Endpoint Protection
+
+- Los tokens incluyen claims enriquecidos (`iss=portafolio-iol`, `aud=frontend`, `version=1.0`, `session_id=<uuid4>`) y se validan en cada request mediante `get_current_user`.
+- Cada emisión queda registrada en memoria (`ACTIVE_TOKENS`) para soportar revocación inmediata al hacer logout desde la UI.
+- `/auth/refresh` permite renovar un token durante los últimos 5 minutos de validez manteniendo el `session_id` original y registrando el evento `token_refreshed` en los logs de auditoría.
+- El TTL efectivo se limita a 900 segundos incluso si `FASTAPI_AUTH_TTL` define un valor superior, asegurando caducidad controlada.
+- `/profile` exige autenticación explícita y `/cache` permanece deshabilitado hasta su implementación definitiva.
 
 ### 📜 Historial de actualizaciones
 

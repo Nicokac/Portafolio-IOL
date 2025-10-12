@@ -1,44 +1,49 @@
-import importlib
-import logging
+"""Ensure sensitive information is not leaked in IOL auth logs."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
+from cryptography.fernet import Fernet
 
-from shared import config
+from infrastructure.iol import auth as iol_auth
 
 
 @pytest.fixture(autouse=True)
-def reset_keys(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config.settings, "tokens_key", None, raising=False)
-    monkeypatch.setattr(config.settings, "fastapi_tokens_key", None, raising=False)
-    monkeypatch.setattr(config.settings, "allow_plain_tokens", False, raising=False)
-    monkeypatch.setattr(config.settings, "app_env", "dev", raising=False)
-    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
-    monkeypatch.delenv("FASTAPI_TOKENS_KEY", raising=False)
-    yield
+def _prepare_fernet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(iol_auth, "FERNET", Fernet(Fernet.generate_key()))
 
 
-def _reload_auth_module():
-    import infrastructure.iol.auth as auth_module
-
-    return importlib.reload(auth_module)
-
-
-def test_plain_tokens_emit_warning(tmp_path, caplog, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config.settings, "tokens_key", None, raising=False)
-    monkeypatch.setattr(config.settings, "allow_plain_tokens", True, raising=False)
-    auth_module = _reload_auth_module()
-    target = tmp_path / "tokens.json"
-    with caplog.at_level(logging.WARNING, logger="infrastructure.iol.auth"):
-        auth = auth_module.IOLAuth("user", "pass", tokens_file=target, allow_plain_tokens=True)
-        assert auth.allow_plain_tokens is True
-    assert "Plain token storage enabled (development only)" in caplog.text
+def _fake_response(status_code: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        status_code=status_code,
+        text="sensitive-body",
+        json=lambda: {},
+        raise_for_status=lambda: None,
+    )
 
 
-def test_plain_tokens_rejected_in_prod(tmp_path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(config.settings, "tokens_key", None, raising=False)
-    monkeypatch.setattr(config.settings, "allow_plain_tokens", True, raising=False)
-    monkeypatch.setattr(config.settings, "app_env", "prod", raising=False)
-    auth_module = _reload_auth_module()
-    target = tmp_path / "tokens.json"
-    with pytest.raises(RuntimeError, match="Plain token storage cannot be enabled"):
-        auth_module.IOLAuth("user", "pass", tokens_file=target, allow_plain_tokens=True)
+def test_login_failure_logs_without_payload(monkeypatch: pytest.MonkeyPatch, caplog, tmp_path):
+    auth = iol_auth.IOLAuth("user", "pass", tokens_file=tmp_path / "tokens.json")
+    monkeypatch.setattr(auth.session, "post", lambda *_, **__: _fake_response(401))
+
+    caplog.set_level("WARNING", logger=iol_auth.__name__)
+    with pytest.raises(iol_auth.InvalidCredentialsError):
+        auth.login()
+
+    assert "Auth failed (code=401)" in caplog.text
+    assert "sensitive-body" not in caplog.text
+
+
+def test_refresh_failure_logs_without_payload(monkeypatch: pytest.MonkeyPatch, caplog, tmp_path):
+    auth = iol_auth.IOLAuth("user", "pass", tokens_file=tmp_path / "tokens.json")
+    auth.tokens = {"refresh_token": "token"}
+    monkeypatch.setattr(auth.session, "post", lambda *_, **__: _fake_response(400))
+
+    caplog.set_level("WARNING", logger=iol_auth.__name__)
+    with pytest.raises(iol_auth.InvalidCredentialsError):
+        auth.refresh()
+
+    assert "Auth failed (code=400)" in caplog.text
+    assert "sensitive-body" not in caplog.text
