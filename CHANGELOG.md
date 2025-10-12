@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## v0.6.4-perf-diagnostics — Performance telemetry, CPU/RAM logging and QA dashboard.
+- Added `services/performance_timer` with optional psutil integration, structured log export and helpers to consume recent entries.
+- Instrumented authentication (login & token refresh), portfolio loading, filter application, quote refresh, predictive computations and portfolio UI rendering with CPU/RAM metrics.
+- Introduced the Streamlit tab `ui.tabs.performance_dashboard` and controller helpers to surface performance logs in-app.
+- Extended diagnostics sidebar navigation, added regression tests for the timer utilities and refreshed documentation/version metadata.
+
 ## v0.6.3-patch3 — Hardened Kaleido export, updated Plotly calls to modern API, and silenced deprecated kwargs warnings.
 - Wrapped Kaleido initialisation and runtime checks to gracefully disable image export when Chromium is missing.
 - Added Chromium availability warning during environment inspection to highlight limited export support.

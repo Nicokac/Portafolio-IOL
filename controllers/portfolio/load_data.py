@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from services.cache import fetch_portfolio
+from services.performance_timer import performance_timer
 from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
@@ -14,8 +15,21 @@ def load_portfolio_data(cli, psvc):
     tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
     payload = None
     with st.spinner("Cargando y actualizando portafolio... ⏳"):
+        telemetry: dict[str, object] = {"status": "success", "source": "api"}
         try:
-            payload = fetch_portfolio(cli)
+            with performance_timer("portfolio_load_data", extra=telemetry):
+                try:
+                    payload = fetch_portfolio(cli)
+                except AppError as err:
+                    telemetry["status"] = "error"
+                    telemetry["detail"] = err.__class__.__name__
+                    raise
+                except Exception:
+                    telemetry["status"] = "error"
+                    telemetry["detail"] = "exception"
+                    raise
+                if isinstance(payload, dict) and payload.get("_cached"):
+                    telemetry["source"] = "cache"
         except AppError as err:
             st.error(str(err))
             st.stop()

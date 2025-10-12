@@ -9,6 +9,8 @@ import hashlib
 from uuid import uuid4
 import logging
 
+from services.performance_timer import performance_timer
+
 import streamlit as st
 
 from infrastructure.iol.auth import IOLAuth
@@ -121,6 +123,15 @@ class IOLAuthenticationProvider(AuthenticationProvider):
 _provider: AuthenticationProvider = IOLAuthenticationProvider()
 
 
+def _mask_username(user: str) -> str:
+    sanitized = (user or "").strip()
+    if not sanitized:
+        return "anon"
+    if len(sanitized) <= 3:
+        return sanitized[:1] + "**"
+    return f"{sanitized[:3]}***"
+
+
 def register_auth_provider(provider: AuthenticationProvider) -> None:
     """Registra un proveedor de autenticación alternativo."""
 
@@ -136,7 +147,16 @@ def get_auth_provider() -> AuthenticationProvider:
 
 def login(user: str, password: str) -> dict:
     """Wrapper para el login utilizando el proveedor registrado."""
-    tokens = _provider.login(user, password)
+    telemetry: dict[str, object] = {
+        "user": _mask_username(user),
+        "status": "success",
+    }
+    with performance_timer("login_iol", extra=telemetry):
+        try:
+            tokens = _provider.login(user, password)
+        except Exception:
+            telemetry["status"] = "error"
+            raise
     if "client_salt" not in st.session_state:
         st.session_state["client_salt"] = uuid4().hex
     return tokens

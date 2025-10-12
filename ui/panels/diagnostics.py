@@ -5,6 +5,8 @@ import streamlit as st
 
 from application.predictive_service import get_cache_stats
 from services.performance_metrics import export_metrics_csv, get_recent_metrics
+from ui.helpers.navigation import safe_page_link
+from ui.tabs.performance_dashboard import render_performance_dashboard_tab
 
 
 def _format_memory(value: float | None) -> str:
@@ -54,6 +56,14 @@ def render_diagnostics_panel() -> None:
         file_name="performance_metrics.csv",
         mime="text/csv",
         disabled=not metrics,
+    )
+
+    st.divider()
+    st.subheader("⏱️ Telemetría detallada")
+    safe_page_link(
+        "ui.tabs.performance_dashboard",
+        label="Abrir dashboard de performance",
+        render_fallback=render_performance_dashboard_tab,
     )
 
 
