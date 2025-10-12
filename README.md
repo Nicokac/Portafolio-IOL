@@ -163,6 +163,8 @@ La versión **0.5.6** refuerza la reproducibilidad offline consolidando el smoke
 
 La versión **0.5.5** refuerza la experiencia de recomendaciones con un badge de estado del caché predictivo (ratio de aciertos, TTL restante y color contextualizado según los umbrales definidos en `shared.settings.CACHE_HIT_THRESHOLDS`). Además, el botón de exportación del reporte adaptativo emite toasts de progreso/resultado junto al mensaje tradicional y los indicadores de β-shift y σ sectorial incorporan tooltips para clarificar su lectura.
 
+La versión **0.6.4-patch2b** endurece la validación del flujo adaptativo limitando los payloads a 10 000 filas o 30 símbolos, truncando `predicted_return_pct` fuera de ±50 % y unificando la generación de históricos mediante `build_adaptive_history` con cacheo y logs de contexto (símbolo, sector, perfil). La UI reutiliza los nuevos formatters compartidos y refleja el estado del caché adaptativo con badges consistentes entre controlador y Streamlit.
+
 La versión **0.4.3** añade botones de descarga directos para obtener las sugerencias en CSV/XLSX (incluyendo una fila resumen con promedios de retorno esperado y beta) y expone un *racional extendido* que cuantifica cuánto aporta cada activo al retorno, cómo modifica el beta total y de qué modo refuerza la diversificación sectorial. El insight automático también muestra el sector dominante detectado en la combinación final para acelerar la interpretación.
 
 > Nota: Para ejecutar este flujo en entornos locales se requiere conexión válida a la API de IOL o habilitar el modo `--mock-data` con los servicios de mock disponibles; sin ese backend las vistas pueden quedar restringidas al formulario de login.

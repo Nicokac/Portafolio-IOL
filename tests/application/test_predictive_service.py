@@ -11,9 +11,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import logging
+
 import application.predictive_service as predictive_service
 from application.predictive_core.state import PredictiveCacheState
 from application.predictive_service import (
+    build_adaptive_history,
     get_cache_stats,
     predict_sector_performance,
 )
@@ -197,3 +200,61 @@ def test_predictive_ttl_respects_monkeypatch(monkeypatch, cache_state: Predictiv
     _, stored_ttl = _last_cache_entry(cache)
     assert stored_ttl == pytest.approx(0.02 * 3600.0)
     assert cache_state.ttl_hours == pytest.approx(0.02)
+
+
+def test_build_adaptive_history_real_mode_uses_cache() -> None:
+    returns_a = pd.Series([0.01, 0.012, 0.013])
+    returns_b = pd.Series([0.008, 0.007, 0.009])
+    service = DummyBacktestingService(
+        {
+            "AAA": _make_backtest(returns_a),
+            "BBB": _make_backtest(returns_b),
+        }
+    )
+    cache = DummyCache()
+    opportunities = pd.DataFrame(
+        [
+            {"symbol": "AAA", "sector": "Tech"},
+            {"symbol": "BBB", "sector": "Finance"},
+        ]
+    )
+
+    history_first = build_adaptive_history(
+        opportunities,
+        mode="real",
+        backtesting_service=service,
+        span=2,
+        max_symbols=2,
+        cache=cache,
+    )
+
+    assert not history_first.empty
+    assert len(service.calls) == 2
+
+    history_second = build_adaptive_history(
+        opportunities,
+        mode="real",
+        backtesting_service=service,
+        span=2,
+        max_symbols=2,
+        cache=cache,
+    )
+
+    assert history_second.equals(history_first)
+    assert len(service.calls) == 2
+
+
+def test_build_adaptive_history_synthetic_clips_and_warns(caplog: pytest.LogCaptureFixture) -> None:
+    recommendations = pd.DataFrame(
+        [
+            {"symbol": "AAA", "sector": "Tech", "predicted_return_pct": 0.75},
+            {"symbol": "BBB", "sector": "Finance", "predicted_return_pct": -1.2},
+        ]
+    )
+
+    with caplog.at_level(logging.WARNING, logger="application.predictive_service"):
+        history = build_adaptive_history(recommendations, mode="synthetic", periods=3)
+
+    assert not history.empty
+    assert history["predicted_return"].between(-60, 60).all()
+    assert any("truncando" in record.message for record in caplog.records)

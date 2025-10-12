@@ -7,11 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from application.adaptive_predictive_service import (
-    export_adaptive_report,
-    generate_synthetic_history,
-    prepare_adaptive_history,
-)
+from application.adaptive_predictive_service import export_adaptive_report
 from controllers import recommendations_controller
 from ui.charts.correlation_matrix import build_correlation_figure
 
@@ -63,16 +59,18 @@ def _merge_symbol_sector_frames(*frames: pd.DataFrame) -> pd.DataFrame:
 def _compute_adaptive_payload(
     recommendations: pd.DataFrame,
     opportunities: pd.DataFrame,
+    *,
+    profile: Mapping[str, object] | None = None,
 ) -> dict[str, object] | None:
     if not isinstance(recommendations, pd.DataFrame) or recommendations.empty:
         return None
 
     opportunity_frame = _merge_symbol_sector_frames(recommendations, opportunities)
-    history = prepare_adaptive_history(opportunity_frame)
-    synthetic = False
-    if history.empty:
-        history = generate_synthetic_history(recommendations)
-        synthetic = True
+    history, synthetic = recommendations_controller.build_adaptive_history_view(
+        opportunity_frame,
+        recommendations,
+        profile=profile,
+    )
     if history.empty:
         return None
 
@@ -81,6 +79,15 @@ def _compute_adaptive_payload(
             history,
             ema_span=4,
             persist=not synthetic,
+            context={
+                "profile": profile,
+                "symbols": opportunity_frame.get("symbol").tolist()
+                if isinstance(opportunity_frame, pd.DataFrame)
+                else [],
+                "sectors": opportunity_frame.get("sector").tolist()
+                if isinstance(opportunity_frame, pd.DataFrame)
+                else [],
+            },
         )
     except Exception:  # pragma: no cover - defensive logging
         LOGGER.exception("No se pudo calcular el modelo adaptativo", exc_info=True)
