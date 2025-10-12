@@ -5,11 +5,15 @@ import logging
 import os
 import pickle
 import sqlite3
+import sys
 import time
+from fnmatch import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Iterable, Sequence
+
+from shared.errors import CacheUnavailableError
 
 import pandas as pd
 
@@ -37,6 +41,34 @@ def _normalize_symbol(symbol: str | None) -> str:
 def _normalize_iterable(values: Iterable[str | None]) -> tuple[str, ...]:
     normalized = [_normalize_symbol(value) for value in values if _normalize_symbol(value)]
     return tuple(sorted(dict.fromkeys(normalized)))
+
+
+def _strip_namespace(cache: CacheService, full_key: str) -> str:
+    namespace = getattr(cache, "_namespace", "")
+    if namespace:
+        prefix = f"{namespace}:"
+        if full_key.startswith(prefix):
+            return full_key[len(prefix) :]
+    return full_key
+
+
+def _snapshot_store(cache: CacheService) -> list[tuple[str, Any]]:
+    store = getattr(cache, "_store", {})
+    lock = getattr(cache, "_lock", None)
+    if lock is not None:
+        with lock:
+            return list(store.items())
+    return list(store.items())
+
+
+def _estimate_size(value: Any) -> int:
+    try:
+        return len(pickle.dumps(value))
+    except Exception:  # pragma: no cover - fallback path
+        try:
+            return sys.getsizeof(value)
+        except Exception:  # pragma: no cover - last resort
+            return 0
 
 
 def _clone_dataframe(df: pd.DataFrame | None) -> pd.DataFrame | None:
@@ -382,6 +414,120 @@ class MarketDataCache:
         if ttl_seconds is None:
             return self.prediction_ttl
         return float(ttl_seconds)
+
+    def _caches(self) -> dict[str, CacheService]:
+        caches = {
+            "history": self.history_cache,
+            "fundamentals": self.fundamentals_cache,
+            "predictions": self.prediction_cache,
+        }
+        for name, cache in caches.items():
+            if cache is None:
+                raise CacheUnavailableError(f"Cache '{name}' no está inicializada")
+        return caches  # type: ignore[return-value]
+
+    def get_status_summary(self) -> dict[str, Any]:
+        caches = self._caches()
+        total_entries = 0
+        total_hits = 0
+        total_misses = 0
+        ttl_accumulator = 0.0
+        ttl_count = 0
+        size_bytes = 0
+
+        for cache in caches.values():
+            total_hits += getattr(cache, "hits", 0)
+            total_misses += getattr(cache, "misses", 0)
+            items = _snapshot_store(cache)
+            total_entries += len(items)
+            monotonic = getattr(cache, "_monotonic", time.monotonic)
+            now = float(monotonic())
+            for full_key, entry in items:
+                base_key = _strip_namespace(cache, full_key)
+                value = getattr(entry, "value", None)
+                size_bytes += _estimate_size(base_key)
+                size_bytes += _estimate_size(value)
+                expires_at = getattr(entry, "expires_at", None)
+                if expires_at is None:
+                    continue
+                remaining = float(expires_at) - now
+                if remaining < 0:
+                    remaining = 0.0
+                ttl_accumulator += remaining
+                ttl_count += 1
+
+        hit_ratio = 0.0
+        if (total_hits + total_misses) > 0:
+            hit_ratio = float(total_hits) / float(total_hits + total_misses) * 100.0
+        avg_ttl = ttl_accumulator / ttl_count if ttl_count > 0 else None
+        size_mb = size_bytes / (1024.0 * 1024.0)
+
+        return {
+            "total_entries": total_entries,
+            "hit_ratio": hit_ratio,
+            "avg_ttl_seconds": avg_ttl,
+            "size_mb": size_mb,
+        }
+
+    def invalidate_matching(
+        self,
+        *,
+        keys: Sequence[str] | None = None,
+        pattern: str | None = None,
+    ) -> int:
+        caches = self._caches()
+        if not keys and not pattern:
+            raise ValueError("Se requiere 'pattern' o 'keys' para invalidar entradas")
+
+        unique_keys: set[tuple[str, str]] = set()
+        for cache_name, cache in caches.items():
+            items = _snapshot_store(cache)
+            namespace = getattr(cache, "_namespace", "")
+            prefix = f"{namespace}:" if namespace else ""
+            for full_key, _entry in items:
+                base_key = full_key[len(prefix) :] if prefix and full_key.startswith(prefix) else full_key
+                match = False
+                if keys and base_key in keys:
+                    match = True
+                if pattern and fnmatch(base_key, pattern):
+                    match = True
+                if match:
+                    unique_keys.add((cache_name, base_key))
+
+        removed = 0
+        for cache_name, base_key in unique_keys:
+            cache = caches[cache_name]
+            cache.invalidate(base_key)
+            removed += 1
+        return removed
+
+    def cleanup_expired(self) -> dict[str, int]:
+        caches = self._caches()
+        expired = 0
+        orphans = 0
+
+        for cache in caches.values():
+            items = _snapshot_store(cache)
+            monotonic = getattr(cache, "_monotonic", time.monotonic)
+            now = float(monotonic())
+            namespace = getattr(cache, "_namespace", "")
+            prefix = f"{namespace}:" if namespace else ""
+
+            for full_key, entry in items:
+                base_key = full_key[len(prefix) :] if prefix and full_key.startswith(prefix) else full_key
+                expires_at = getattr(entry, "expires_at", None)
+                has_value = hasattr(entry, "value")
+                if not has_value:
+                    cache.invalidate(base_key)
+                    orphans += 1
+                    continue
+                if expires_at is None:
+                    continue
+                if float(expires_at) <= now:
+                    cache.invalidate(base_key)
+                    expired += 1
+
+        return {"expired_removed": expired, "orphans_removed": orphans}
 
     def _history_key(
         self,
