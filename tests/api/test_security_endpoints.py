@@ -7,17 +7,24 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from services import auth as auth_module
-from services.auth import ACTIVE_TOKENS, MAX_TOKEN_TTL_SECONDS, generate_token
+from services.auth import (
+    ACTIVE_TOKENS,
+    USED_REFRESH_NONCES,
+    MAX_TOKEN_TTL_SECONDS,
+    generate_token,
+)
 
 
 @pytest.fixture(autouse=True)
 def _configure_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
-    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
+    monkeypatch.setenv("IOL_TOKENS_KEY", Fernet.generate_key().decode())
     ACTIVE_TOKENS.clear()
+    USED_REFRESH_NONCES.clear()
     yield
     ACTIVE_TOKENS.clear()
+    USED_REFRESH_NONCES.clear()
 
 
 @pytest.fixture()
