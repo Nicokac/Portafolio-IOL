@@ -73,6 +73,13 @@ MAX_TOKEN_TTL_SECONDS = 15 * 60
 # Active token registry used to track issued sessions and support revocation.
 ACTIVE_TOKENS: Dict[str, Dict[str, Any]] = {}
 
+# Registry tracking nonce usage for refresh anti-replay protections.
+USED_REFRESH_NONCES: Dict[str, Dict[str, int]] = {}
+
+# Allow nonce history to linger slightly longer than the token lifetime to catch
+# delayed replays while still preventing unbounded growth.
+NONCE_HISTORY_TTL_SECONDS = MAX_TOKEN_TTL_SECONDS + 300
+
 
 def _get_tokens_key() -> bytes:
     """Return the configured Fernet key used to protect FastAPI auth tokens."""
@@ -106,8 +113,39 @@ def _normalize_expiry(expiry: int) -> int:
     return max(1, min(int(expiry), MAX_TOKEN_TTL_SECONDS))
 
 
+def _cleanup_nonce_history(session_id: str | None = None, now: int | None = None) -> None:
+    """Remove nonce entries older than ``NONCE_HISTORY_TTL_SECONDS``."""
+
+    if session_id is not None:
+        entries = USED_REFRESH_NONCES.get(session_id)
+        if not entries:
+            return
+        reference = int(now if now is not None else time.time()) - NONCE_HISTORY_TTL_SECONDS
+        for value, ts in list(entries.items()):
+            if ts < reference:
+                del entries[value]
+        if not entries:
+            USED_REFRESH_NONCES.pop(session_id, None)
+        return
+
+    reference = int(now if now is not None else time.time()) - NONCE_HISTORY_TTL_SECONDS
+    for session, entries in list(USED_REFRESH_NONCES.items()):
+        for value, ts in list(entries.items()):
+            if ts < reference:
+                del entries[value]
+        if not entries:
+            USED_REFRESH_NONCES.pop(session, None)
+
+
 def _register_token(session_id: str, token: str, payload: Dict[str, Any], ttl: int) -> None:
     """Register ``token`` as active for the given ``session_id``."""
+
+    nonce = str(payload.get("nonce", ""))
+    if not nonce:
+        raise AuthTokenError("Token is missing nonce.")
+
+    now = int(time.time())
+    _cleanup_nonce_history(session_id, now)
 
     ACTIVE_TOKENS[session_id] = {
         "token": token,
@@ -116,6 +154,7 @@ def _register_token(session_id: str, token: str, payload: Dict[str, Any], ttl: i
         "issued_at": int(payload.get("iat", 0)),
         "expires_at": int(payload.get("exp", 0)),
         "username": payload.get("sub", ""),
+        "nonce": nonce,
     }
 
 
@@ -123,6 +162,7 @@ def _remove_active_session(session_id: str) -> None:
     """Remove the active session with ``session_id`` if present."""
 
     ACTIVE_TOKENS.pop(session_id, None)
+    USED_REFRESH_NONCES.pop(session_id, None)
 
 
 def describe_active_token(token: str | None) -> Dict[str, Any] | None:
@@ -139,6 +179,7 @@ def describe_active_token(token: str | None) -> Dict[str, Any] | None:
             "issued_at": entry.get("issued_at"),
             "expires_at": entry.get("expires_at"),
             "username": entry.get("username"),
+            "nonce": entry.get("nonce"),
         }
         payload = entry.get("payload")
         if isinstance(payload, Dict):
@@ -158,6 +199,7 @@ def generate_token(username: str, expiry: int) -> str:
     issued_at = int(time.time())
     ttl = _normalize_expiry(expiry)
     session_id = uuid.uuid4().hex
+    nonce = uuid.uuid4().hex
     payload: Dict[str, Any] = {
         "sub": username,
         "iat": issued_at,
@@ -166,6 +208,7 @@ def generate_token(username: str, expiry: int) -> str:
         "aud": TOKEN_AUDIENCE,
         "session_id": session_id,
         "version": TOKEN_VERSION,
+        "nonce": nonce,
     }
     token_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     cipher = _get_fernet()
@@ -196,7 +239,16 @@ def verify_token(token: str) -> Dict[str, Any]:
         raise AuthTokenError("Authentication token missing session identifier.")
 
     entry = ACTIVE_TOKENS.get(session_id)
-    if entry is None or entry.get("token") != token:
+    nonce = str(payload.get("nonce", ""))
+    used_nonces = USED_REFRESH_NONCES.get(session_id, {})
+    if entry is None:
+        if nonce and nonce in used_nonces:
+            raise AuthTokenError("Token refresh request has been replayed.")
+        raise AuthTokenError("Authentication token has been revoked.")
+
+    if entry.get("token") != token:
+        if nonce and nonce in used_nonces:
+            raise AuthTokenError("Token refresh request has been replayed.")
         raise AuthTokenError("Authentication token has been revoked.")
 
     expires_at = int(payload.get("exp", 0))
@@ -204,6 +256,8 @@ def verify_token(token: str) -> Dict[str, Any]:
     if expires_at <= now:
         _remove_active_session(session_id)
         raise AuthTokenError("Authentication token has expired.")
+
+    _cleanup_nonce_history(session_id, now)
 
     return payload
 
@@ -247,9 +301,24 @@ def refresh_active_token(claims: Dict[str, Any]) -> Dict[str, Any]:
     if expires_at - now > 300:
         raise AuthTokenError("Token is not eligible for refresh yet.")
 
+    nonce = str(claims.get("nonce", ""))
+    if not nonce:
+        raise AuthTokenError("Token is missing nonce.")
+
+    expected_nonce = str(entry.get("nonce", ""))
+    if expected_nonce != nonce:
+        raise AuthTokenError("Token refresh request has been replayed.")
+
+    used_nonces = USED_REFRESH_NONCES.setdefault(session_id, {})
+    _cleanup_nonce_history(session_id, now)
+    if nonce in used_nonces:
+        raise AuthTokenError("Token refresh request has been replayed.")
+    used_nonces[nonce] = now
+
     ttl = int(entry.get("ttl") or max(1, int(claims.get("exp", 0)) - int(claims.get("iat", 0))))
     ttl = _normalize_expiry(ttl)
     issued_at = now
+    new_nonce = uuid.uuid4().hex
     payload: Dict[str, Any] = {
         "sub": claims.get("sub"),
         "iat": issued_at,
@@ -258,6 +327,7 @@ def refresh_active_token(claims: Dict[str, Any]) -> Dict[str, Any]:
         "aud": TOKEN_AUDIENCE,
         "session_id": session_id,
         "version": TOKEN_VERSION,
+        "nonce": new_nonce,
     }
     token_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     cipher = _get_fernet()
@@ -320,6 +390,7 @@ __all__ = [
     "revoke_session",
     "describe_active_token",
     "ACTIVE_TOKENS",
+    "USED_REFRESH_NONCES",
     "TOKEN_ISSUER",
     "TOKEN_AUDIENCE",
     "TOKEN_VERSION",

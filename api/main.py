@@ -9,6 +9,7 @@ from services.maintenance import ensure_sqlite_maintenance_started
 from shared.security_env_validator import validate_security_environment
 from shared.version import __version__
 
+from .middleware.refresh_rate_limit import RefreshRateLimitMiddleware
 from .routers import auth, cache, engine, metrics, predictive, profile
 
 logger = logging.getLogger(__name__)
@@ -18,6 +19,9 @@ validate_security_environment()
 ensure_sqlite_maintenance_started()
 
 app = FastAPI(title="Portafolio IOL API", version=__version__)
+
+
+app.add_middleware(RefreshRateLimitMiddleware)
 
 
 app.include_router(predictive.router, dependencies=[Depends(get_current_user)])

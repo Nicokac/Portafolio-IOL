@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from services import auth as auth_module
 from services.auth import (
     ACTIVE_TOKENS,
+    USED_REFRESH_NONCES,
     AuthTokenError,
     MAX_TOKEN_TTL_SECONDS,
     TOKEN_AUDIENCE,
@@ -24,10 +25,12 @@ from services.auth import (
 def _configure_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
-    monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
+    monkeypatch.setenv("IOL_TOKENS_KEY", Fernet.generate_key().decode())
     ACTIVE_TOKENS.clear()
+    USED_REFRESH_NONCES.clear()
     yield
     ACTIVE_TOKENS.clear()
+    USED_REFRESH_NONCES.clear()
 
 
 def test_tokens_include_enriched_claims_and_limited_ttl() -> None:
@@ -39,6 +42,7 @@ def test_tokens_include_enriched_claims_and_limited_ttl() -> None:
     assert claims["version"] == TOKEN_VERSION
     assert claims["exp"] - claims["iat"] == MAX_TOKEN_TTL_SECONDS
     assert claims["session_id"] in ACTIVE_TOKENS
+    assert claims["nonce"]
 
 
 def test_refresh_requires_window_and_preserves_session(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,3 +79,41 @@ def test_revoked_token_cannot_be_verified() -> None:
     revoke_token(token)
     with pytest.raises(AuthTokenError):
         verify_token(token)
+
+
+def test_refresh_rejects_nonce_reuse(monkeypatch: pytest.MonkeyPatch) -> None:
+    base_time = 1_800_000_000
+
+    class FakeTime:
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+        def __call__(self) -> int:
+            return self.value
+
+        def set(self, value: int) -> None:
+            self.value = value
+
+        def advance(self, delta: int) -> None:
+            self.value += delta
+
+    fake_time = FakeTime(base_time)
+    monkeypatch.setattr(auth_module.time, "time", fake_time)
+
+    token = generate_token("dave", expiry=MAX_TOKEN_TTL_SECONDS)
+    claims = verify_token(token)
+
+    fake_time.set(base_time + MAX_TOKEN_TTL_SECONDS - 120)
+    refreshed = refresh_active_token(claims)
+    new_token = refreshed["token"]
+    new_claims = refreshed["claims"]
+
+    assert new_claims["nonce"] != claims["nonce"]
+
+    with pytest.raises(AuthTokenError):
+        refresh_active_token(claims)
+
+    fake_time.advance(MAX_TOKEN_TTL_SECONDS - 120)
+    verified_new_claims = verify_token(new_token)
+    second_refresh = refresh_active_token(verified_new_claims)
+    assert second_refresh["claims"]["nonce"] != new_claims["nonce"]
