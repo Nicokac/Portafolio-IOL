@@ -1,27 +1,33 @@
+"""Project version and release metadata."""
 from __future__ import annotations
 
-from pathlib import Path
-
-try:
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
-    import tomli as _toml  # type: ignore[import-untyped]
-
-
+__version__ = "v0.6.6-patch9b2"
+__codename__ = "Optimization Nexus"
+__release_date__ = "2025-10-13"
+__changelog_ref__ = "Reduced predictive and quotes latency under 10s total render time"
+__stability__ = "stable"
 # Keep in sync with ``pyproject.toml``'s ``project.version``.
-DEFAULT_VERSION: str = "0.6.4-perf-diagnostics"
-PROJECT_FILE = Path(__file__).resolve().parent.parent / "pyproject.toml"
+DEFAULT_VERSION = __version__
 
 
-def _read_version() -> str:
-    try:
-        with PROJECT_FILE.open("rb") as f:
-            data = _toml.load(f)
-    except Exception:
-        return DEFAULT_VERSION
+def get_version_info() -> dict[str, str]:
+    """Return the version metadata for consumers."""
 
-    version = data.get("project", {}).get("version", DEFAULT_VERSION)
-    return version if isinstance(version, str) and version else DEFAULT_VERSION
+    return {
+        "version": __version__,
+        "codename": __codename__,
+        "release_date": __release_date__,
+        "changelog_ref": __changelog_ref__,
+        "stability": __stability__,
+    }
 
 
-__version__ = _read_version()
+__all__ = [
+    "__version__",
+    "__codename__",
+    "__release_date__",
+    "__changelog_ref__",
+    "__stability__",
+    "DEFAULT_VERSION",
+    "get_version_info",
+]
