@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Endpoints `/cache/status`, `/cache/invalidate` y `/cache/cleanup` con autenticación y métricas consolidadas del caché de mercado.
+- Cache observability & metrics integration.
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
