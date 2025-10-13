@@ -7,44 +7,14 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
-
-from shared.settings import (
-    enable_prometheus,
-    performance_store_ttl_days,
-    sqlite_maintenance_interval_hours,
-    sqlite_maintenance_size_threshold_mb,
-)
+from typing import Any, Callable
 
 LOGGER = logging.getLogger(__name__)
 _BYTES_PER_MB = 1024.0 * 1024.0
 
-try:  # pragma: no cover - prometheus_client optional at runtime
-    if enable_prometheus:
-        from prometheus_client import Counter, Summary  # type: ignore import
-    else:  # pragma: no cover - disabled via settings
-        Counter = Summary = None  # type: ignore[assignment]
-except Exception:  # pragma: no cover - dependency missing or misconfigured
-    Counter = Summary = None  # type: ignore[assignment]
-
-_CACHE_CLEANUP_TOTAL = (
-    Counter(
-        "cache_cleanup_total",
-        "Total cache rows deleted during maintenance.",
-        labelnames=("database", "reason"),
-    )
-    if Counter is not None
-    else None
-)
-_VACUUM_DURATION_SECONDS = (
-    Summary(
-        "vacuum_duration_seconds",
-        "Duration of SQLite VACUUM operations.",
-        labelnames=("database", "reason"),
-    )
-    if Summary is not None
-    else None
-)
+_CACHE_CLEANUP_TOTAL: Any | None = None
+_VACUUM_DURATION_SECONDS: Any | None = None
+_METRICS_INITIALIZED = False
 
 
 @dataclass(frozen=True)
@@ -76,9 +46,7 @@ def _performance_store_path() -> Path | None:
 def _performance_store_maintenance(now: float | None, vacuum: bool) -> dict[str, float | int] | None:
     from services.performance_store import run_maintenance
 
-    retention = performance_store_ttl_days
-    if retention <= 0:
-        retention = None
+    retention = _load_performance_store_retention_days()
     return run_maintenance(retention_days=retention, now=now, vacuum=vacuum)
 
 
@@ -96,6 +64,57 @@ _TARGETS: tuple[_MaintenanceTarget, ...] = (
 )
 
 
+def _ensure_metrics_initialized() -> None:
+    global _CACHE_CLEANUP_TOTAL, _VACUUM_DURATION_SECONDS, _METRICS_INITIALIZED
+
+    if _METRICS_INITIALIZED:
+        return
+
+    _METRICS_INITIALIZED = True
+    try:  # pragma: no cover - prometheus_client optional at runtime
+        from shared.settings import enable_prometheus
+
+        if not enable_prometheus:  # pragma: no cover - disabled via settings
+            _CACHE_CLEANUP_TOTAL = None
+            _VACUUM_DURATION_SECONDS = None
+            return
+
+        from prometheus_client import Counter, Summary  # type: ignore import
+
+        _CACHE_CLEANUP_TOTAL = Counter(
+            "cache_cleanup_total",
+            "Total cache rows deleted during maintenance.",
+            labelnames=("database", "reason"),
+        )
+        _VACUUM_DURATION_SECONDS = Summary(
+            "vacuum_duration_seconds",
+            "Duration of SQLite VACUUM operations.",
+            labelnames=("database", "reason"),
+        )
+    except Exception:  # pragma: no cover - dependency missing or misconfigured
+        _CACHE_CLEANUP_TOTAL = None
+        _VACUUM_DURATION_SECONDS = None
+
+
+def _load_performance_store_retention_days() -> float | None:
+    from shared.settings import performance_store_ttl_days
+
+    retention = float(performance_store_ttl_days)
+    return None if retention <= 0 else retention
+
+
+def _load_scheduler_config() -> tuple[float, float]:
+    from shared.settings import (
+        sqlite_maintenance_interval_hours,
+        sqlite_maintenance_size_threshold_mb,
+    )
+
+    return (
+        float(sqlite_maintenance_interval_hours),
+        float(sqlite_maintenance_size_threshold_mb),
+    )
+
+
 def _safe_file_size(path: Path | None) -> float:
     if path is None:
         return 0.0
@@ -110,6 +129,10 @@ def _run_targets(
 ) -> list[dict[str, float | int | str]]:
     reports: list[dict[str, float | int | str]] = []
     timestamp = float(now if now is not None else time.time())
+
+    _ensure_metrics_initialized()
+    cache_counter = _CACHE_CLEANUP_TOTAL
+    vacuum_summary = _VACUUM_DURATION_SECONDS
 
     for target in _TARGETS:
         path = target.path_resolver()
@@ -150,10 +173,10 @@ def _run_targets(
         deleted = int(stats.get("deleted", 0))
         vacuum_duration = float(stats.get("vacuum_duration", 0.0))
 
-        if _CACHE_CLEANUP_TOTAL is not None and deleted:
-            _CACHE_CLEANUP_TOTAL.labels(database=target.name, reason=reason).inc(deleted)
-        if _VACUUM_DURATION_SECONDS is not None:
-            _VACUUM_DURATION_SECONDS.labels(database=target.name, reason=reason).observe(
+        if cache_counter is not None and deleted:
+            cache_counter.labels(database=target.name, reason=reason).inc(deleted)
+        if vacuum_summary is not None:
+            vacuum_summary.labels(database=target.name, reason=reason).observe(
                 vacuum_duration
             )
 
@@ -192,26 +215,25 @@ def _run_targets(
 
 class _SQLiteMaintenanceScheduler:
     def __init__(self) -> None:
-        self.interval_seconds = max(0.0, float(sqlite_maintenance_interval_hours) * 3600.0)
-        self.threshold_bytes = max(
-            0.0, float(sqlite_maintenance_size_threshold_mb) * _BYTES_PER_MB
-        )
+        interval_hours, threshold_mb = _load_scheduler_config()
+        self.interval_seconds = max(0.0, interval_hours * 3600.0)
+        self.threshold_bytes = max(0.0, threshold_mb * _BYTES_PER_MB)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_run = 0.0
 
-    def ensure_running(self) -> None:
+    def ensure_running(self) -> bool:
         if self.interval_seconds <= 0 and self.threshold_bytes <= 0:
             LOGGER.info(
                 "sqlite-maintenance disabled: interval=%.2fh threshold=%.2fMB",
-                sqlite_maintenance_interval_hours,
-                sqlite_maintenance_size_threshold_mb,
+                self.interval_seconds / 3600.0,
+                self.threshold_bytes / _BYTES_PER_MB,
             )
-            return
+            return False
         with self._lock:
             if self._thread and self._thread.is_alive():
-                return
+                return False
             self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run_loop, name="sqlite-maintenance", daemon=True
@@ -222,6 +244,7 @@ class _SQLiteMaintenanceScheduler:
                 self.interval_seconds,
                 self.threshold_bytes / _BYTES_PER_MB,
             )
+            return True
 
     def run_once(
         self, reason: str, *, now: float | None = None, vacuum: bool = True
@@ -275,13 +298,21 @@ class _SQLiteMaintenanceScheduler:
         return 300.0
 
 
-_SCHEDULER = _SQLiteMaintenanceScheduler()
+_SCHEDULER: _SQLiteMaintenanceScheduler | None = None
 
 
-def ensure_sqlite_maintenance_started() -> None:
+def _get_scheduler() -> _SQLiteMaintenanceScheduler:
+    global _SCHEDULER
+
+    if _SCHEDULER is None:
+        _SCHEDULER = _SQLiteMaintenanceScheduler()
+    return _SCHEDULER
+
+
+def ensure_sqlite_maintenance_started() -> bool:
     """Ensure the background scheduler is running."""
 
-    _SCHEDULER.ensure_running()
+    return _get_scheduler().ensure_running()
 
 
 def run_sqlite_maintenance_now(
@@ -289,7 +320,7 @@ def run_sqlite_maintenance_now(
 ) -> list[dict[str, float | int | str]]:
     """Execute the maintenance cycle immediately and return collected reports."""
 
-    return _SCHEDULER.run_once(reason, now=now, vacuum=vacuum)
+    return _get_scheduler().run_once(reason, now=now, vacuum=vacuum)
 
 
 __all__ = ["ensure_sqlite_maintenance_started", "run_sqlite_maintenance_now"]

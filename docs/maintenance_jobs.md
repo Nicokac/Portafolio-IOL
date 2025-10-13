@@ -56,6 +56,14 @@ python -c "from services.maintenance import run_sqlite_maintenance_now; print(ru
 El resultado es una lista de diccionarios con los tamaños (en bytes), filas
 borradas y duración del VACUUM por base.
 
+## Notas de implementación
+
+Desde `v0.6.6-patch3b` los imports del scheduler se resuelven de forma diferida
+para evitar dependencias circulares al inicializar `app.py` o `api/main.py`.
+Los ajustes mantienen la inicialización automática del thread y las métricas de
+Prometheus, pero ahora el módulo sólo crea el scheduler cuando alguna función
+lo solicita.
+
 ## Buenas prácticas
 
 * Revisá los logs `sqlite-maintenance` al desplegar nuevas versiones para
