@@ -2,7 +2,30 @@
 
 Este documento describe el flujo operativo para monitorear y mantener la
 aplicación de Portafolio IOL con foco en la visibilidad expuesta en el panel
-**"🔍 Estado del Sistema"**.
+**"🔍 Estado del Sistema"** y los diagnósticos automáticos.
+
+## Monitoreo de rendimiento
+
+Un job en segundo plano ejecuta benchmarks periódicos sobre los endpoints
+críticos (`/predictive_compute`, `/quotes_refresh`, `/apply_filters` y otros
+instrumentados) y registra los resultados en ``logs/system_diagnostics.log``.
+Cada ciclo calcula el promedio de latencia reciente y lo compara con la media
+histórica. Si la métrica actual duplica (o supera 2×) la media previa, el panel
+marca la condición como degradada.
+
+Además del promedio de latencias, el snapshot incluye:
+
+* Estado del caché predictivo (hits, misses, hit ratio, TTL efectivo y TTL
+  restante).
+* Validación de claves Fernet obligatorias (`FASTAPI_TOKENS_KEY` e
+  `IOL_TOKENS_KEY`) con un *fingerprint* seguro para identificar cambios.
+* Información del entorno de ejecución (APP_ENV, zona horaria, versión de
+  Python y plataforma).
+
+Para acceder a estos datos desde la UI abrí **"🔎 Diagnóstico del sistema"** en
+la barra lateral. El panel muestra las latencias promedio, posibles
+degradaciones y un resumen del caché y las claves Fernet. El archivo de log
+permite auditar los ciclos históricos o integrarlo a pipelines externos.
 
 ## Panel de estado
 
