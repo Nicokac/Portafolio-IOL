@@ -15,12 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
-## v0.6.6-patch9b2 — Quotes batching and stale-while-revalidate refresh.
-### Added
-- Pipeline de `quotes_refresh` con batching por tipo de activo, estrategia Stale-While-Revalidate y métricas `quotes_swr_served_total` / `quotes_batch_latency_seconds`.
-### Changed
-- `controllers.portfolio.load_data.refresh_quotes_pipeline` utiliza `StaleWhileRevalidateCache` persistente y agrupa símbolos por tipo de activo para reducir la latencia del front-end.
-- `services.cache.market_data_cache.StaleWhileRevalidateCache` ejecuta renovaciones asincrónicas con `ThreadPoolExecutor`, emitiendo métricas de latencia y registros estructurados por lote.
+## [v0.6.6-patch9b2] — Optimization Nexus (2025-10-13)
+- Updated version metadata in shared/version.py
+- Marks completion of predictive and quotes optimization cycle
+- Stable build for deployment validation (<10s total render time)
 
 ## v0.6.6-patch9b1 — Predictive worker async and cache reuse.
 ### Added
