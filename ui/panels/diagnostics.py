@@ -8,6 +8,7 @@ from application.predictive_service import get_cache_stats
 from services.performance_metrics import export_metrics_csv, get_recent_metrics
 from ui.helpers.navigation import safe_page_link
 from ui.tabs.performance_dashboard import render_performance_dashboard_tab
+from shared.time_provider import TimeProvider
 
 
 def _format_memory(value: float | None) -> str:
@@ -55,15 +56,29 @@ def render_diagnostics_panel() -> None:
     st.header("🩺 Diagnóstico de rendimiento")
 
     stage_timings = st.session_state.get("portfolio_stage_timings")
+    total_load_ms = st.session_state.get("total_load_ms")
+    timing_rows: list[dict[str, object]] = []
     if isinstance(stage_timings, dict) and stage_timings:
-        st.subheader("🧭 Última renderización del portafolio")
-        timing_rows = [
+        timing_rows.extend(
             {
                 "Subetapa": _format_stage_label(f"portfolio_ui.{name}"),
                 "Duración (ms)": round(float(value), 2),
             }
             for name, value in sorted(stage_timings.items())
-        ]
+        )
+    include_total_load_row = isinstance(total_load_ms, (int, float)) and (
+        not isinstance(stage_timings, dict) or "total_ms" not in stage_timings
+    )
+    if include_total_load_row:
+        timing_rows.insert(
+            0,
+            {
+                "Subetapa": _format_stage_label("portfolio_ui.total_ms"),
+                "Duración (ms)": round(float(total_load_ms), 2),
+            },
+        )
+    if timing_rows:
+        st.subheader("🧭 Última renderización del portafolio")
         timings_frame = pd.DataFrame(timing_rows)
         st.dataframe(timings_frame, use_container_width=True, hide_index=True)
 
@@ -71,13 +86,35 @@ def render_diagnostics_panel() -> None:
     portfolio_metrics = [m for m in metrics if m.name.startswith("portfolio_ui.")]
     remaining_metrics = [m for m in metrics if m not in portfolio_metrics]
 
+    portfolio_frame = None
     if portfolio_metrics:
-        st.subheader("⏱️ Portfolio UI (subcomponentes)")
         portfolio_frame = _metrics_to_dataframe(
             portfolio_metrics,
             name_label="Subcomponente",
             name_transform=_format_stage_label,
         )
+
+    if isinstance(total_load_ms, (int, float)):
+        load_row = pd.DataFrame(
+            [
+                {
+                    "Subcomponente": _format_stage_label("portfolio_ui.total_ms"),
+                    "Muestras": 1,
+                    "Promedio (ms)": round(float(total_load_ms), 2),
+                    "Último (ms)": round(float(total_load_ms), 2),
+                    "Memoria prom. (KB)": "-",
+                    "Memoria última (KB)": "-",
+                    "Última ejecución": TimeProvider.now(),
+                }
+            ]
+        )
+        if portfolio_frame is None:
+            portfolio_frame = load_row
+        else:
+            portfolio_frame = pd.concat([load_row, portfolio_frame], ignore_index=True)
+
+    if portfolio_frame is not None and not portfolio_frame.empty:
+        st.subheader("⏱️ Portfolio UI (subcomponentes)")
         st.dataframe(portfolio_frame, use_container_width=True, hide_index=True)
 
     if remaining_metrics:
