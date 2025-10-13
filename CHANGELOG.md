@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
+## v0.6.6-patch3d — Added persistent startup logger (logs/app_startup.log) to capture detailed import errors before Streamlit masking.
+### Added
+- Logger de arranque persistente que captura excepciones de importación con PID, versión y traceback completo en `logs/app_startup.log`.
+
 ## v0.6.6-patch3c — Fixed persistent import loop between sqlite_maintenance and shared.settings, refactored initialization to runtime-safe phase.
 ### Fixed
 - Broke the circular dependency by deferring the SQLite maintenance configuration until runtime and ensuring Prometheus metrics continue to register safely.

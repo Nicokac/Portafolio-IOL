@@ -34,6 +34,10 @@ if not hasattr(st, "columns"):
 
     st.columns = _dummy_columns  # type: ignore[attr-defined]
 
+from services.startup_logger import log_startup_event, log_startup_exception
+
+log_startup_event("Streamlit app bootstrap initiated")
+
 from shared.config import configure_logging, ensure_tokens_key
 from shared.security_env_validator import validate_security_environment
 from shared.settings import (
@@ -43,11 +47,16 @@ from shared.settings import (
     sqlite_maintenance_interval_hours,
     sqlite_maintenance_size_threshold_mb,
 )
-from services.maintenance import (
-    SQLiteMaintenanceConfiguration,
-    configure_sqlite_maintenance,
-    ensure_sqlite_maintenance_started,
-)
+try:
+    from services.maintenance import (
+        SQLiteMaintenanceConfiguration,
+        configure_sqlite_maintenance,
+        ensure_sqlite_maintenance_started,
+    )
+except Exception as exc:  # pragma: no cover - exercised via dedicated test
+    log_startup_exception(exc)
+    print("⚠️ Error capturado, revisar logs/app_startup.log")
+    raise
 from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.header import render_header
