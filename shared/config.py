@@ -152,6 +152,24 @@ class Settings:
             "LOG_RETENTION_DAYS", cfg.get("LOG_RETENTION_DAYS", DEFAULT_LOG_RETENTION_DAYS)
         )
         self.LOG_RETENTION_DAYS: int = self._coerce_positive_int(retention_candidate)
+        self.SQLITE_MAINTENANCE_INTERVAL_HOURS: float = float(
+            os.getenv(
+                "SQLITE_MAINTENANCE_INTERVAL_HOURS",
+                cfg.get("SQLITE_MAINTENANCE_INTERVAL_HOURS", 6.0),
+            )
+        )
+        self.SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB: float = float(
+            os.getenv(
+                "SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB",
+                cfg.get("SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB", 256.0),
+            )
+        )
+        self.PERFORMANCE_STORE_TTL_DAYS: float = float(
+            os.getenv(
+                "PERFORMANCE_STORE_TTL_DAYS",
+                cfg.get("PERFORMANCE_STORE_TTL_DAYS", self.LOG_RETENTION_DAYS),
+            )
+        )
 
         # --- Cache/TTLs usados en app.py ---
         self.cache_ttl_portfolio: int = int(

@@ -105,6 +105,11 @@ class _SQLiteBackend(_BasePersistentBackend):
         self._lock = Lock()
         self._initialised = False
 
+    def database_path(self) -> Path:
+        """Return the on-disk path for the SQLite cache database."""
+
+        return self._path
+
     def _ensure(self) -> None:
         if self._initialised:
             return
@@ -125,6 +130,47 @@ class _SQLiteBackend(_BasePersistentBackend):
         conn = sqlite3.connect(self._path)
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
+
+    @staticmethod
+    def _safe_stat(path: Path) -> int:
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+
+    def run_maintenance(
+        self, *, vacuum: bool = True, now: float | None = None
+    ) -> dict[str, float | int]:
+        """Clean expired rows and optionally compact the SQLite cache."""
+
+        self._ensure()
+        reference_time = float(now if now is not None else time.time())
+        size_before = float(self._safe_stat(self._path))
+        deleted = 0
+        vacuum_duration = 0.0
+
+        with self._connection() as conn:
+            before_changes = conn.total_changes
+            conn.execute(
+                "DELETE FROM cache WHERE expires_at IS NOT NULL AND expires_at <= ?",
+                (reference_time,),
+            )
+            conn.commit()
+            delta = conn.total_changes - before_changes
+            if delta > 0:
+                deleted = int(delta)
+            if vacuum:
+                start = time.perf_counter()
+                conn.execute("VACUUM")
+                vacuum_duration = float(time.perf_counter() - start)
+
+        size_after = float(self._safe_stat(self._path))
+        return {
+            "deleted": deleted,
+            "size_before": size_before,
+            "size_after": size_after,
+            "vacuum_duration": vacuum_duration,
+        }
 
     def get(self, key: str) -> tuple[float | None, Any] | None:
         self._ensure()
@@ -372,6 +418,35 @@ def create_persistent_cache(namespace: str) -> PersistentCacheService:
     """Expose a helper for services requiring a persistent cache."""
 
     return _create_cache(namespace)
+
+
+def run_persistent_cache_maintenance(
+    *, now: float | None = None, vacuum: bool = True
+) -> dict[str, float | int] | None:
+    """Run maintenance tasks for the SQLite persistent cache backend."""
+
+    backend = _get_backend()
+    if not isinstance(backend, _SQLiteBackend):
+        if backend is None:
+            LOGGER.debug(
+                "Omitiendo mantenimiento de caché persistente: backend sin inicializar"
+            )
+        else:
+            LOGGER.debug(
+                "Omitiendo mantenimiento de caché persistente: backend %s no es SQLite",
+                type(backend).__name__,
+            )
+        return None
+    return backend.run_maintenance(now=now, vacuum=vacuum)
+
+
+def get_sqlite_backend_path() -> Path | None:
+    """Return the SQLite path when the persistent cache uses it."""
+
+    backend = _get_backend()
+    if isinstance(backend, _SQLiteBackend):
+        return backend.database_path()
+    return None
 
 
 @dataclass
@@ -698,4 +773,6 @@ __all__ = [
     "get_market_data_cache",
     "create_persistent_cache",
     "DEFAULT_TTL_SECONDS",
+    "run_persistent_cache_maintenance",
+    "get_sqlite_backend_path",
 ]
