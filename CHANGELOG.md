@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
+## v0.6.6-patch2b2 — Cache management documentation & CI integration
+### Added
+- Guía operativa `docs/cache_management.md` con ejemplos y recomendaciones para la gestión del caché.
+- Script `scripts/test_smoke_endpoints.sh` y job de CI que validan los endpoints `/cache/*`, tiempos < 2 s y generan un reporte JSON.
+- Nuevos escenarios en `tests/api/test_cache_endpoints.py` que cubren errores de backend, límites y logs estructurados.
+
 ## v0.6.5-monitoring-and-observability — Observability layer for performance telemetry.
 ### Added
 - JSON structured telemetry with daily rotation at `logs/performance/structured.log` and optional Redis streaming.

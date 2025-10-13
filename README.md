@@ -131,6 +131,10 @@ Métricas Prometheus disponibles tras operaciones del caché:
 
 > ⚠️ Por seguridad, cada invalidación acepta un máximo de 500 claves (`max_keys=500`) y rechazará patrones vacíos.
 
+### Monitoreo y mantenimiento de caché
+
+La guía [docs/cache_management.md](docs/cache_management.md) documenta procedimientos operativos, ejemplos con `curl`/Python y recomendaciones de limpieza programada, TTL sugeridos, métricas clave y resolución de errores frecuentes para el módulo de caché.
+
 Los endpoints `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` requieren cabecera `Authorization: Bearer <token>` emitida desde la pantalla de login. `/engine/info` permanece público y devuelve el estado del microservicio.
 
 #### Ejemplos autenticados
