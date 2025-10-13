@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 import hashlib
 from typing import Any, Mapping
@@ -10,6 +11,7 @@ from typing import Any, Mapping
 import pandas as pd
 import numpy as np
 
+from application import predictive_jobs
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
     PredictiveCacheState,
@@ -87,6 +89,10 @@ class FallbackMarketDataCache:
 
     def status(self) -> dict[str, Any]:
         return self.prediction_cache.status()
+
+    def resolve_prediction_ttl(self, ttl_hours: float | None = None) -> float:
+        hours = float(ttl_hours) if ttl_hours is not None else float(PREDICTIVE_TTL_HOURS)
+        return max(hours, 0.0) * 3600.0
 
 
 def lazy_get_cache() -> Any:
@@ -172,6 +178,118 @@ def _prepare_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
     return frame.loc[:, required].copy()
 
 
+def _empty_prediction_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "sector",
+            "predicted_return",
+            "sample_size",
+            "avg_correlation",
+            "confidence",
+        ]
+    )
+
+
+def _with_job_metadata(
+    frame: pd.DataFrame,
+    metadata: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    if not isinstance(frame, pd.DataFrame):
+        return frame
+    result = frame.copy()
+    result.attrs["predictive_job"] = dict(metadata or {})
+    return result
+
+
+def _compute_prediction_frame(
+    frame: pd.DataFrame,
+    *,
+    span: int,
+    cache_key: str,
+    active_cache: CacheService | None,
+    prediction_ttl: float,
+    effective_ttl_hours: float,
+    telemetry: dict[str, Any] | None = None,
+    backtesting_service: BacktestingService | None = None,
+) -> pd.DataFrame:
+    LOGGER.debug(
+        "Ejecutando predictive engine %s (span=%s, símbolos=%s)",
+        ENGINE_VERSION,
+        span,
+        frame.get("symbol", pd.Series(dtype=str)).tolist(),
+    )
+
+    local_telemetry = dict(telemetry or {})
+    service = backtesting_service or BacktestingService()
+
+    with performance_timer("predictive_compute", extra=local_telemetry):
+        predictions = build_sector_prediction_frame(
+            frame,
+            backtesting_service=service,
+            run_backtest=lambda svc, symbol: run_backtest(svc, symbol, logger=LOGGER),
+            extract_series=lambda backtest, column: extract_backtest_series(backtest, column),
+            ema_predictor=lambda series, ema_span: compute_ema_prediction(series, span=ema_span),
+            average_correlation=average_correlation,
+            span=span,
+        )
+
+    local_telemetry["result_rows"] = int(len(predictions))
+
+    stored_frame: pd.DataFrame = predictions
+    reused = False
+
+    with adaptive_cache_lock:
+        LOGGER.debug(
+            "Lock adaptativo adquirido para actualizar caché predictivo (span=%s)",
+            span,
+        )
+        existing = active_cache.get(cache_key) if active_cache is not None else None
+        if isinstance(existing, pd.DataFrame):
+            stored_frame = existing
+            reused = True
+            local_telemetry["cache"] = "hit"
+            last_updated = (
+                _cache_last_updated(active_cache)
+                if isinstance(active_cache, CacheService)
+                else None
+            )
+            _CACHE_STATE.record_hit(
+                last_updated=last_updated,
+                ttl_hours=effective_ttl_hours,
+            )
+        else:
+            if active_cache is not None:
+                active_cache.set(cache_key, predictions, ttl=prediction_ttl)
+            last_updated = (
+                _cache_last_updated(active_cache)
+                if isinstance(active_cache, CacheService)
+                else None
+            )
+            _CACHE_STATE.record_miss(
+                last_updated=last_updated,
+                ttl_hours=effective_ttl_hours,
+            )
+        LOGGER.debug(
+            "Lock adaptativo liberado tras actualizar caché predictivo",
+        )
+
+    if reused:
+        LOGGER.debug(
+            "Predicciones ya presentes en caché reutilizadas (span=%s)",
+            span,
+        )
+    else:
+        LOGGER.debug(
+            "Predicciones almacenadas en caché (span=%s)",
+            span,
+        )
+
+    if telemetry is not None:
+        telemetry.update(local_telemetry)
+
+    return stored_frame.copy()
+
+
 def _empty_history_frame() -> pd.DataFrame:
     return pd.DataFrame(
         columns=["timestamp", "sector", "predicted_return", "actual_return"]
@@ -246,12 +364,8 @@ def build_adaptive_history(
     symbols = selected["symbol"].tolist()
     sectors = selected["sector"].tolist()
 
-    effective_ttl_hours = (
-        float(ttl_hours)
-        if ttl_hours is not None
-        else float(PREDICTIVE_TTL_HOURS)
-    )
-    ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
+    ttl_seconds = _MARKET_CACHE.resolve_prediction_ttl(ttl_hours=ttl_hours)
+    effective_ttl_hours = float(ttl_seconds) / 3600.0 if ttl_seconds > 0 else 0.0
 
     active_cache = cache if cache is not None else _CACHE
     if isinstance(active_cache, CacheService):
@@ -444,8 +558,13 @@ def predict_sector_performance(
     cache: CacheService | None = None,
     span: int = 10,
     ttl_hours: float | None = None,
+    background: bool = False,
 ) -> pd.DataFrame:
-    """Return expected sector returns using EMA-smoothed backtests."""
+    """Return expected sector returns using EMA-smoothed backtests.
+
+    When ``background`` is ``True`` the heavy predictive computation is executed in
+    a background worker and the latest cached result is returned immediately.
+    """
 
     effective_ttl_hours = (
         float(ttl_hours)
@@ -527,15 +646,7 @@ def predict_sector_performance(
     telemetry["cache"] = "miss"
 
     if frame.empty:
-        empty = pd.DataFrame(
-            columns=[
-                "sector",
-                "predicted_return",
-                "sample_size",
-                "avg_correlation",
-                "confidence",
-            ]
-        )
+        empty = _empty_prediction_frame()
         with adaptive_cache_lock:
             LOGGER.debug(
                 "Lock adaptativo adquirido para persistir predicciones vacías (span=%s)",
@@ -556,84 +667,86 @@ def predict_sector_performance(
                 "Lock adaptativo liberado tras almacenar predicciones vacías"
             )
         telemetry["result_rows"] = 0
-        return empty
+        metadata = {
+            "job_id": None,
+            "status": "finished",
+            "cache_state": "miss",
+            "cache_key": cache_key,
+            "result_rows": 0,
+        }
+        return _with_job_metadata(empty, metadata)
 
-    LOGGER.debug(
-        "Ejecutando predictive engine %s (span=%s, símbolos=%s, sectores=%s)",
-        ENGINE_VERSION,
-        span,
-        symbols,
-        sectors,
+    if not background:
+        telemetry["job_mode"] = "inline"
+        result = _compute_prediction_frame(
+            frame,
+            span=span,
+            cache_key=cache_key,
+            active_cache=active_cache,
+            prediction_ttl=ttl_seconds,
+            effective_ttl_hours=effective_ttl_hours,
+            telemetry=telemetry,
+            backtesting_service=backtesting_service,
+        )
+        metadata = {
+            "job_id": None,
+            "status": "finished",
+            "cache_state": telemetry.get("cache", "miss"),
+            "cache_key": cache_key,
+            "result_rows": telemetry.get("result_rows"),
+            "completed_at": time.time(),
+        }
+        return _with_job_metadata(result, metadata)
+
+    telemetry["job_mode"] = "background"
+
+    job_frame = frame.copy(deep=True)
+    job_telemetry = dict(telemetry)
+    submitted_at = time.time()
+    job_telemetry["submitted_at"] = submitted_at
+    job_id = predictive_jobs.submit(
+        cache_key,
+        _compute_prediction_frame,
+        job_frame,
+        span=span,
+        cache_key=cache_key,
+        active_cache=active_cache,
+        prediction_ttl=ttl_seconds,
+        effective_ttl_hours=effective_ttl_hours,
+        telemetry=job_telemetry,
+        backtesting_service=backtesting_service,
+        ttl_seconds=ttl_seconds,
     )
 
-    service = backtesting_service or BacktestingService()
+    latest = predictive_jobs.get_latest(cache_key)
+    job_metadata: dict[str, Any] = {
+        "job_id": job_id,
+        "status": "pending",
+        "cache_key": cache_key,
+        "submitted_at": submitted_at,
+    }
+    if latest is not None:
+        latest_value, latest_meta = latest
+        if isinstance(latest_meta, Mapping):
+            for key, value in latest_meta.items():
+                if key == "job_id":
+                    job_metadata["latest_job_id"] = value
+                    continue
+                job_metadata[key] = value
+        if isinstance(latest_value, pd.DataFrame):
+            return _with_job_metadata(latest_value, job_metadata)
 
-    with performance_timer("predictive_compute", extra=telemetry):
-        predictions = build_sector_prediction_frame(
-            frame,
-            backtesting_service=service,
-            run_backtest=lambda svc, symbol: run_backtest(svc, symbol, logger=LOGGER),
-            extract_series=lambda backtest, column: extract_backtest_series(backtest, column),
-            ema_predictor=lambda series, ema_span: compute_ema_prediction(series, span=ema_span),
-            average_correlation=average_correlation,
-            span=span,
-        )
+    fallback = _empty_prediction_frame()
+    job_metadata.setdefault("status", "pending")
+    return _with_job_metadata(fallback, job_metadata)
 
-    telemetry["result_rows"] = int(len(predictions))
 
-    stored_frame: pd.DataFrame = predictions
-    reused = False
+def predictive_job_status(job_id: str | None) -> dict[str, Any]:
+    """Expose current status for background predictive jobs."""
 
-    with adaptive_cache_lock:
-        LOGGER.debug(
-            "Lock adaptativo adquirido para actualizar caché predictivo (span=%s)",
-            span,
-        )
-        existing = active_cache.get(cache_key) if active_cache is not None else None
-        if isinstance(existing, pd.DataFrame):
-            stored_frame = existing
-            reused = True
-            telemetry["cache"] = "hit"
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
-            _CACHE_STATE.record_hit(
-                last_updated=last_updated,
-                ttl_hours=effective_ttl_hours,
-            )
-        else:
-            if active_cache is not None:
-                active_cache.set(cache_key, predictions, ttl=ttl_seconds)
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
-            _CACHE_STATE.record_miss(
-                last_updated=last_updated,
-                ttl_hours=effective_ttl_hours,
-            )
-        LOGGER.debug(
-            "Lock adaptativo liberado tras actualizar caché predictivo"
-        )
-
-    if reused:
-        LOGGER.debug(
-            "Predicciones ya presentes en caché reutilizadas (span=%s, símbolos=%s)",
-            span,
-            symbols,
-        )
-    else:
-        LOGGER.debug(
-            "Predicciones almacenadas en caché (span=%s, símbolos=%s, sectores=%s)",
-            span,
-            symbols,
-            sectors,
-        )
-
-    return stored_frame.copy()
+    if not job_id:
+        return {"job_id": None, "status": "idle"}
+    return predictive_jobs.status(job_id)
 
 
 def update_cache_metrics(cache: CacheService | None = None) -> PredictiveSnapshot:
@@ -744,6 +857,7 @@ def reset_cache() -> None:
 __all__ = [
     "PredictiveSnapshot",
     "predict_sector_performance",
+    "predictive_job_status",
     "update_cache_metrics",
     "get_cache_stats",
     "reset_cache",
