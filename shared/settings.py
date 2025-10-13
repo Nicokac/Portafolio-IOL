@@ -47,6 +47,15 @@ notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
 log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
+sqlite_maintenance_interval_hours: float = getattr(
+    settings, "SQLITE_MAINTENANCE_INTERVAL_HOURS", 6.0
+)
+sqlite_maintenance_size_threshold_mb: float = getattr(
+    settings, "SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB", 256.0
+)
+performance_store_ttl_days: float = getattr(
+    settings, "PERFORMANCE_STORE_TTL_DAYS", float(log_retention_days)
+)
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
@@ -147,6 +156,9 @@ __all__ = [
     "min_score_threshold",
     "max_results",
     "log_retention_days",
+    "sqlite_maintenance_interval_hours",
+    "sqlite_maintenance_size_threshold_mb",
+    "performance_store_ttl_days",
     "stub_max_runtime_warn",
     "STUB_MAX_RUNTIME_WARN",
     "CACHE_HIT_THRESHOLDS",

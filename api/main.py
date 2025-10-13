@@ -5,6 +5,7 @@ import logging
 from fastapi import Depends, FastAPI
 
 from services.auth import get_current_user
+from services.maintenance import ensure_sqlite_maintenance_started
 from shared.security_env_validator import validate_security_environment
 from shared.version import __version__
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 logger.info("Starting FastAPI backend - version %s", __version__)
 
 validate_security_environment()
+ensure_sqlite_maintenance_started()
 
 app = FastAPI(title="Portafolio IOL API", version=__version__)
 

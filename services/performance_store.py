@@ -3,8 +3,11 @@ from __future__ import annotations
 """SQLite persistence helpers for performance telemetry."""
 
 import json
+import logging
 import os
 import sqlite3
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING
@@ -13,6 +16,8 @@ from shared.settings import app_env
 
 if TYPE_CHECKING:  # pragma: no cover - only used for type checkers
     from services.performance_timer import PerformanceEntry
+
+LOGGER = logging.getLogger(__name__)
 
 _DB_ENV = "PERFORMANCE_DB_PATH"
 _DEFAULT_DB_PATH = Path("logs/performance/performance_metrics.db")
@@ -114,4 +119,63 @@ def store_entry(entry: "PerformanceEntry") -> None:
             conn.close()
 
 
-__all__ = ["store_entry"]
+def get_database_path() -> Path:
+    """Expose the resolved SQLite database path."""
+
+    return _get_db_path()
+
+
+def run_maintenance(
+    *,
+    vacuum: bool = True,
+    retention_days: float | None = None,
+    now: float | None = None,
+) -> dict[str, float | int] | None:
+    """Compact the SQLite store and purge entries older than the retention window."""
+
+    path = _get_db_path()
+    if not path.exists():
+        LOGGER.debug(
+            "Omitiendo mantenimiento de performance_store: la base %s no existe", path
+        )
+        return None
+
+    reference_time = float(now if now is not None else time.time())
+    cutoff_iso: str | None = None
+    if retention_days is not None and retention_days > 0:
+        cutoff = datetime.fromtimestamp(reference_time, tz=timezone.utc) - timedelta(
+            days=float(retention_days)
+        )
+        cutoff_iso = cutoff.isoformat()
+
+    size_before = float(path.stat().st_size if path.exists() else 0)
+    deleted = 0
+    vacuum_duration = 0.0
+
+    with sqlite3.connect(path) as conn:
+        _ensure_schema(conn)
+        if cutoff_iso is not None:
+            before_changes = conn.total_changes
+            conn.execute(
+                "DELETE FROM performance_metrics WHERE timestamp <= ?",
+                (cutoff_iso,),
+            )
+            conn.commit()
+            delta = conn.total_changes - before_changes
+            if delta > 0:
+                deleted = int(delta)
+        if vacuum:
+            start = time.perf_counter()
+            conn.execute("VACUUM")
+            vacuum_duration = float(time.perf_counter() - start)
+
+    size_after = float(path.stat().st_size if path.exists() else 0)
+    return {
+        "deleted": deleted,
+        "size_before": size_before,
+        "size_after": size_after,
+        "vacuum_duration": vacuum_duration,
+    }
+
+
+__all__ = ["store_entry", "get_database_path", "run_maintenance"]
