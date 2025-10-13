@@ -667,29 +667,52 @@ def render_portfolio_section(
             base_label = str(tab_idx)
         tab_slug = _slugify_metric_label(base_label)
 
+        _set_active_tab(tab_slug)
+        render_cache = _ensure_render_cache()
+        cache_entry = _ensure_tab_cache(render_cache, tab_slug)
+        tab_signature = _tab_signature(viewmodel, df_view, tab_slug)
+
         with _record_stage(f"render_tab.{tab_slug}", timings):
-            if tab_idx == 0:
-                render_basic_tab(viewmodel, favorites, snapshot)
-            elif tab_idx == 1:
-                render_advanced_analysis(df_view, tasvc)
-            elif tab_idx == 2:
-                render_risk_tab(
-                    df_view,
-                    tasvc,
-                    favorites,
-                    notifications,
-                    available_types=available_types,
-                )
-            elif tab_idx == 3:
-                render_fundamentals_tab(df_view, tasvc, favorites, notifications)
+            should_render = cache_entry.get("signature") != tab_signature or not cache_entry.get(
+                "rendered"
+            )
+            source = "fresh" if not cache_entry.get("rendered") else "cache"
+            latency_ms: float | None = cache_entry.get("latency_ms")
+            if should_render:
+                if cache_entry.get("rendered"):
+                    source = "hot"
+                body_placeholder = cache_entry["body_placeholder"]
+                body_placeholder.empty()
+                spinner_message = _loading_message(base_label)
+                start = time.perf_counter()
+                with body_placeholder.container():
+                    with st.spinner(spinner_message):
+                        _render_selected_tab(
+                            tab_idx,
+                            df_view,
+                            tasvc,
+                            favorites,
+                            notifications,
+                            available_types,
+                            all_symbols,
+                            viewmodel,
+                            snapshot,
+                        )
+                latency_ms = (time.perf_counter() - start) * 1000.0
+                cache_entry["signature"] = tab_signature
+                cache_entry["rendered"] = True
+                cache_entry["latency_ms"] = latency_ms
+                record_tab_latency(tab_slug, latency_ms, status=source)
             else:
-                render_technical_tab(
-                    tasvc,
-                    favorites,
-                    notifications,
-                    all_symbols,
-                    viewmodel,
-                )
+                record_tab_latency(tab_slug, 0.0, status="cache")
+
+            cache_entry["last_source"] = source
+            _update_status_message(
+                cache_entry["info_placeholder"],
+                base_label,
+                latency_ms,
+                source,
+            )
 
         return refresh_secs
 @contextmanager
@@ -723,3 +746,134 @@ def _get_cached_favorites() -> FavoriteSymbols:
     """Return the persistent favorites manager using Streamlit's resource cache."""
 
     return get_persistent_favorites()
+
+
+def _set_active_tab(tab_slug: str) -> None:
+    """Persist the currently active tab slug in the session state."""
+
+    try:
+        st.session_state["active_tab"] = tab_slug
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo actualizar active_tab en session_state", exc_info=True)
+
+
+def _ensure_render_cache() -> dict[str, dict[str, Any]]:
+    """Return the mutable render cache stored in the session state."""
+
+    cache = st.session_state.get("render_cache")
+    if not isinstance(cache, dict):
+        cache = {}
+        st.session_state["render_cache"] = cache
+    return cache
+
+
+def _ensure_tab_cache(cache: dict[str, dict[str, Any]], tab_slug: str) -> dict[str, Any]:
+    """Ensure cache scaffolding for ``tab_slug`` and return the entry."""
+
+    entry: dict[str, Any]
+    raw_entry = cache.get(tab_slug)
+    if isinstance(raw_entry, dict):
+        entry = raw_entry
+    else:
+        entry = {}
+        cache[tab_slug] = entry
+
+    info_placeholder = entry.get("info_placeholder")
+    if not hasattr(info_placeholder, "markdown"):
+        info_placeholder = st.empty()
+        entry["info_placeholder"] = info_placeholder
+
+    body_placeholder = entry.get("body_placeholder")
+    if not hasattr(body_placeholder, "container"):
+        body_placeholder = st.empty()
+        entry["body_placeholder"] = body_placeholder
+
+    return entry
+
+
+def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ...]:
+    """Build a lightweight signature to detect content changes per tab."""
+
+    snapshot_id = getattr(viewmodel, "snapshot_id", None)
+    rows = 0
+    symbols: tuple[str, ...] = ()
+    total_value = None
+    try:
+        if hasattr(df_view, "shape"):
+            rows = int(getattr(df_view, "shape", (0,))[0])
+        values = getattr(df_view, "get", lambda _: None)("valor_actual")
+        if values is not None:
+            total_value = float(values.sum())  # type: ignore[assignment]
+        raw_symbols = getattr(df_view, "get", lambda _: [])("simbolo")
+        if raw_symbols is not None:
+            symbols = tuple(str(sym) for sym in raw_symbols)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo calcular la firma de la pestaña %s", tab_slug, exc_info=True)
+    return (tab_slug, snapshot_id, rows, symbols, total_value)
+
+
+def _loading_message(base_label: str) -> str:
+    """Return a user-friendly loading message for ``base_label``."""
+
+    label = re.sub(r"^[^\w]+", "", base_label).strip()
+    if not label:
+        label = base_label.strip()
+    label = label or "sección"
+    return f"Cargando {label.lower()}…"
+
+
+def _render_selected_tab(
+    tab_idx: int,
+    df_view,
+    tasvc: TAService,
+    favorites,
+    notifications: NotificationFlags,
+    available_types: Sequence[str] | None,
+    all_symbols: list[str],
+    viewmodel,
+    snapshot,
+) -> None:
+    """Dispatch rendering to the appropriate tab implementation."""
+
+    if tab_idx == 0:
+        render_basic_tab(viewmodel, favorites, snapshot)
+    elif tab_idx == 1:
+        render_advanced_analysis(df_view, tasvc)
+    elif tab_idx == 2:
+        render_risk_tab(
+            df_view,
+            tasvc,
+            favorites,
+            notifications,
+            available_types=available_types,
+        )
+    elif tab_idx == 3:
+        render_fundamentals_tab(df_view, tasvc, favorites, notifications)
+    else:
+        render_technical_tab(
+            tasvc,
+            favorites,
+            notifications,
+            all_symbols,
+            viewmodel,
+        )
+
+
+_SOURCE_LABELS = {
+    "fresh": "cálculo inicial",
+    "hot": "recalculado",
+    "cache": "caché en memoria",
+}
+
+
+def _update_status_message(placeholder, base_label: str, latency_ms: float | None, source: str) -> None:
+    """Render a status line with latency metadata for the active tab."""
+
+    label = base_label.strip() or "Sección"
+    latency_text = "–" if latency_ms is None else f"{latency_ms:.0f} ms"
+    source_label = _SOURCE_LABELS.get(source, source)
+    message = f"**{label}** · {latency_text} · Fuente: {source_label}"
+    try:
+        placeholder.markdown(message)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo actualizar el estado de la pestaña %s", base_label, exc_info=True)
