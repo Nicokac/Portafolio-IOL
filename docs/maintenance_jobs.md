@@ -58,11 +58,22 @@ borradas y duración del VACUUM por base.
 
 ## Notas de implementación
 
-Desde `v0.6.6-patch3b` los imports del scheduler se resuelven de forma diferida
-para evitar dependencias circulares al inicializar `app.py` o `api/main.py`.
-Los ajustes mantienen la inicialización automática del thread y las métricas de
-Prometheus, pero ahora el módulo sólo crea el scheduler cuando alguna función
-lo solicita.
+Desde `v0.6.6-patch3b` los imports del scheduler se resolvían de forma diferida
+para evitar dependencias circulares durante la carga de `app.py` o `api/main.py`.
+En `v0.6.6-patch3c` se reforzó este enfoque moviendo toda la lectura de
+configuración a tiempo de ejecución: `app.py` invoca explícitamente
+`services.maintenance.configure_sqlite_maintenance(...)` una vez que
+`shared.settings` terminó de inicializarse y recién entonces arranca el
+scheduler con `ensure_sqlite_maintenance_started()`. De esta manera el módulo
+`services.maintenance.sqlite_maintenance` deja de depender de
+`shared.settings` al importarse, eliminando definitivamente el bucle de imports
+que disparaba el `ImportError` durante el arranque.
+
+El helper `configure_sqlite_maintenance` acepta tanto una instancia de
+`SQLiteMaintenanceConfiguration` como parámetros nombrados (`interval_hours`,
+`size_threshold_mb`, `performance_store_ttl_days`, `enable_prometheus`). Esto
+permite recalibrar el scheduler (por ejemplo en un hook de inicio de FastAPI)
+sin necesidad de reiniciar el proceso.
 
 ## Buenas prácticas
 

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
+## v0.6.6-patch3c — Fixed persistent import loop between sqlite_maintenance and shared.settings, refactored initialization to runtime-safe phase.
+### Fixed
+- Broke the circular dependency by deferring the SQLite maintenance configuration until runtime and ensuring Prometheus metrics continue to register safely.
+### Changed
+- Added `services.maintenance.configure_sqlite_maintenance` to refresh scheduler settings without importing `shared.settings` at module load.
+
 ## v0.6.6-patch3b — Fix SQLite maintenance import dependency
 ### Fixed
 - Deferred the SQLite maintenance scheduler imports to avoid circular dependencies during app/bootstrap while preserving Prometheus metrics.
