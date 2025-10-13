@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from controllers.portfolio.portfolio import render_portfolio_section
 from services.performance_timer import performance_timer
+from services.performance_metrics import measure_execution
 
 
 def render_portfolio_ui(
@@ -22,18 +23,23 @@ def render_portfolio_ui(
         "status": "success",
         "has_cli": cli is not None,
     }
+    stage_timings: dict[str, float] = {}
     with performance_timer("render_portfolio_ui", extra=telemetry):
         try:
-            refresh_secs = render_portfolio_section(
-                container,
-                cli,
-                fx_rates,
-                view_model_service_factory=view_model_service_factory,
-                notifications_service_factory=notifications_service_factory,
-            )
+            with measure_execution("portfolio_ui.total"):
+                refresh_secs = render_portfolio_section(
+                    container,
+                    cli,
+                    fx_rates,
+                    view_model_service_factory=view_model_service_factory,
+                    notifications_service_factory=notifications_service_factory,
+                    timings=stage_timings,
+                )
         except Exception:
             telemetry["status"] = "error"
             raise
+        if stage_timings:
+            telemetry["timings_ms"] = stage_timings
         if isinstance(refresh_secs, (int, float)):
             telemetry["refresh_secs"] = float(refresh_secs)
         return refresh_secs

@@ -1,6 +1,9 @@
 import logging
+import re
 import time
-from typing import Any, Callable, Iterable, Mapping, Sequence, cast
+import unicodedata
+from contextlib import contextmanager
+from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 
 import streamlit as st
 
@@ -14,13 +17,14 @@ from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from shared.errors import AppError
-from shared.favorite_symbols import get_persistent_favorites
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from services.notifications import NotificationFlags, NotificationsService
 from services.health import record_tab_latency
 from services.portfolio_view import PortfolioViewModelService
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
+from services.performance_metrics import measure_execution
 
 from .load_data import load_portfolio_data
 from .charts import render_basic_section, render_advanced_analysis
@@ -590,7 +594,8 @@ def render_portfolio_section(
     *,
     view_model_service_factory: Callable[[], PortfolioViewModelService] | None = None,
     notifications_service_factory: Callable[[], NotificationsService] | None = None,
-):
+    timings: dict[str, float] | None = None,
+) -> Any:
     """Render the main portfolio section and return refresh interval."""
     with container:
         psvc = get_portfolio_service()
@@ -609,28 +614,32 @@ def render_portfolio_section(
                 "definidos en `SNAPSHOT_STORAGE_PATH` para volver a habilitarlo."
             )
 
-        df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
-        favorites = get_persistent_favorites()
+        with _record_stage("load_data", timings):
+            df_pos, all_symbols, available_types = load_portfolio_data(cli, psvc)
 
-        controls: Controls = render_sidebar(
-            all_symbols,
-            available_types,
-        )
+        favorites = _get_cached_favorites()
+
+        with _record_stage("apply_filters", timings):
+            controls: Controls = render_sidebar(
+                all_symbols,
+                available_types,
+            )
 
         refresh_secs = controls.refresh_secs
-        snapshot = view_model_service.get_portfolio_view(
-            df_pos=df_pos,
-            controls=controls,
-            cli=cli,
-            psvc=psvc,
-        )
+        with _record_stage("build_viewmodel", timings):
+            snapshot = view_model_service.get_portfolio_view(
+                df_pos=df_pos,
+                controls=controls,
+                cli=cli,
+                psvc=psvc,
+            )
 
-        viewmodel = build_portfolio_viewmodel(
-            snapshot=snapshot,
-            controls=controls,
-            fx_rates=fx_rates,
-            all_symbols=all_symbols,
-        )
+            viewmodel = build_portfolio_viewmodel(
+                snapshot=snapshot,
+                controls=controls,
+                fx_rates=fx_rates,
+                all_symbols=all_symbols,
+            )
 
         try:
             st.session_state["portfolio_last_viewmodel"] = viewmodel
@@ -639,7 +648,8 @@ def render_portfolio_section(
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo almacenar el viewmodel en session_state", exc_info=True)
 
-        notifications = notifications_service.get_flags()
+        with _record_stage("notifications", timings):
+            notifications = notifications_service.get_flags()
         tab_labels = _apply_tab_badges(list(viewmodel.tab_options), notifications)
 
         tab_idx = st.radio(
@@ -651,27 +661,65 @@ def render_portfolio_section(
         )
         df_view = viewmodel.positions
 
-        if tab_idx == 0:
-            render_basic_tab(viewmodel, favorites, snapshot)
-        elif tab_idx == 1:
-            render_advanced_analysis(df_view, tasvc)
-        elif tab_idx == 2:
-            render_risk_tab(
-                df_view,
-                tasvc,
-                favorites,
-                notifications,
-                available_types=available_types,
-            )
-        elif tab_idx == 3:
-            render_fundamentals_tab(df_view, tasvc, favorites, notifications)
-        else:
-            render_technical_tab(
-                tasvc,
-                favorites,
-                notifications,
-                all_symbols,
-                viewmodel,
-            )
+        try:
+            base_label = viewmodel.tab_options[tab_idx]
+        except (IndexError, TypeError):
+            base_label = str(tab_idx)
+        tab_slug = _slugify_metric_label(base_label)
+
+        with _record_stage(f"render_tab.{tab_slug}", timings):
+            if tab_idx == 0:
+                render_basic_tab(viewmodel, favorites, snapshot)
+            elif tab_idx == 1:
+                render_advanced_analysis(df_view, tasvc)
+            elif tab_idx == 2:
+                render_risk_tab(
+                    df_view,
+                    tasvc,
+                    favorites,
+                    notifications,
+                    available_types=available_types,
+                )
+            elif tab_idx == 3:
+                render_fundamentals_tab(df_view, tasvc, favorites, notifications)
+            else:
+                render_technical_tab(
+                    tasvc,
+                    favorites,
+                    notifications,
+                    all_symbols,
+                    viewmodel,
+                )
 
         return refresh_secs
+@contextmanager
+def _record_stage(name: str, timings: dict[str, float] | None = None) -> Iterator[None]:
+    """Measure a render stage while recording diagnostics and timings."""
+
+    start = time.perf_counter()
+    metric_name = f"portfolio_ui.{name}"
+    with measure_execution(metric_name):
+        try:
+            yield
+        finally:
+            elapsed = (time.perf_counter() - start) * 1000.0
+            if timings is not None:
+                timings[name] = round(elapsed, 2)
+
+
+def _slugify_metric_label(label: str) -> str:
+    """Return a slug suitable for metric identifiers based on ``label``."""
+
+    normalized = unicodedata.normalize("NFKD", str(label))
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.lower()
+    normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+    normalized = normalized.strip("_")
+    return normalized or "tab"
+
+
+@st.cache_resource(show_spinner=False)
+def _get_cached_favorites() -> FavoriteSymbols:
+    """Return the persistent favorites manager using Streamlit's resource cache."""
+
+    return get_persistent_favorites()
