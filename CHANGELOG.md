@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cache observability & metrics integration.
 - Caché incremental para resumen, tablas y gráficos del portafolio con TTL intradía y marca de tiempo visible en la UI.
 - Telemetría de subetapas del portafolio expuesta en el panel de diagnósticos.
+- Pipeline de `quotes_refresh` con batching por tipo de activo, estrategia Stale-While-Revalidate y métricas `quotes_swr_served_total` / `quotes_batch_latency_seconds`.
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.

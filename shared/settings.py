@@ -25,6 +25,11 @@ cache_ttl_yf_fundamentals: int = settings.cache_ttl_yf_fundamentals
 cache_ttl_yf_portfolio_fundamentals: int = settings.cache_ttl_yf_portfolio_fundamentals
 quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
+quotes_batch_size: int = getattr(settings, "quotes_batch_size", max_quote_workers)
+quotes_swr_ttl_seconds: float = getattr(settings, "quotes_swr_ttl_seconds", 30.0)
+quotes_swr_grace_seconds: float = getattr(
+    settings, "quotes_swr_grace_seconds", float(cache_ttl_quotes)
+)
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
 fastapi_tokens_key: str | None = getattr(settings, "fastapi_tokens_key", None)
@@ -136,6 +141,9 @@ __all__ = [
     "cache_ttl_yf_portfolio_fundamentals",
     "quotes_hist_maxlen",
     "max_quote_workers",
+    "quotes_batch_size",
+    "quotes_swr_ttl_seconds",
+    "quotes_swr_grace_seconds",
     "yahoo_fundamentals_ttl",
     "yahoo_quotes_ttl",
     "market_data_cache_backend",

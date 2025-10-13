@@ -7,6 +7,7 @@ import pickle
 import sqlite3
 import sys
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from fnmatch import fnmatch
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,6 +80,234 @@ def _clone_dataframe(df: pd.DataFrame | None) -> pd.DataFrame | None:
     if df.empty:
         return df.copy()
     return df.copy(deep=True)
+
+
+@dataclass
+class StaleWhileRevalidateResult:
+    """Result returned when consulting the SWR cache."""
+
+    value: Any
+    is_stale: bool
+    was_refreshed: bool
+    refresh_scheduled: bool
+    duration: float | None = None
+
+
+@dataclass
+class _SWRRecord:
+    value: Any
+    stored_at: float
+    ttl: float
+    grace: float
+
+
+class StaleWhileRevalidateCache:
+    """Provide stale-while-revalidate semantics on top of ``CacheService``."""
+
+    def __init__(
+        self,
+        cache: CacheService,
+        *,
+        default_ttl: float | None = None,
+        grace_ttl: float | None = None,
+        max_workers: int | None = None,
+        executor: ThreadPoolExecutor | None = None,
+    ) -> None:
+        self._cache = cache
+        self._default_ttl = float(default_ttl) if default_ttl is not None else 0.0
+        self._grace_ttl = float(grace_ttl) if grace_ttl is not None else self._default_ttl
+        self._max_workers = max(int(max_workers or 1), 1)
+        self._executor = executor
+        self._inflight: dict[str, Future[Any]] = {}
+        self._lock = Lock()
+
+    def _get_executor(self) -> ThreadPoolExecutor:
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(max_workers=self._max_workers)
+        return self._executor
+
+    @staticmethod
+    def _build_record(value: Any, *, ttl: float, grace: float, now: float) -> _SWRRecord:
+        ttl = max(float(ttl), 0.0)
+        grace = max(float(grace), 0.0)
+        return _SWRRecord(value=value, stored_at=float(now), ttl=ttl, grace=grace)
+
+    @staticmethod
+    def _coerce_entry(entry: Any) -> _SWRRecord | None:
+        if isinstance(entry, _SWRRecord):
+            return entry
+        if isinstance(entry, dict):
+            try:
+                return _SWRRecord(
+                    value=entry.get("value"),
+                    stored_at=float(entry.get("stored_at", 0.0)),
+                    ttl=float(entry.get("ttl", 0.0)),
+                    grace=float(entry.get("grace", 0.0)),
+                )
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    def _store_entry(self, key: str, record: _SWRRecord) -> None:
+        ttl_total = record.ttl + record.grace
+        ttl_total = max(ttl_total, 0.0)
+        payload = {
+            "value": record.value,
+            "stored_at": record.stored_at,
+            "ttl": record.ttl,
+            "grace": record.grace,
+        }
+        ttl_arg: float | None = ttl_total if ttl_total > 0 else None
+        self._cache.set(key, payload, ttl=ttl_arg)
+
+    def _run_loader(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        *,
+        ttl: float,
+        grace: float,
+        on_refresh: Callable[[float, Any, bool], None] | None,
+        background: bool,
+    ) -> tuple[Any, float]:
+        start = time.perf_counter()
+        value = loader()
+        duration = float(time.perf_counter() - start)
+        record = self._build_record(value, ttl=ttl, grace=grace, now=time.time())
+        self._store_entry(key, record)
+        if on_refresh is not None:
+            try:
+                on_refresh(duration, value, background)
+            except Exception:  # pragma: no cover - defensive observer errors
+                LOGGER.exception("on_refresh callback for %s failed", key)
+        return value, duration
+
+    def _schedule_refresh(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        *,
+        ttl: float,
+        grace: float,
+        on_refresh: Callable[[float, Any, bool], None] | None,
+    ) -> bool:
+        with self._lock:
+            if key in self._inflight:
+                return False
+
+            executor = self._get_executor()
+
+            def _task() -> None:
+                try:
+                    self._run_loader(
+                        key,
+                        loader,
+                        ttl=ttl,
+                        grace=grace,
+                        on_refresh=on_refresh,
+                        background=True,
+                    )
+                except Exception:  # pragma: no cover - loader failures depend on runtime
+                    LOGGER.exception("SWR refresh failed for %s", key)
+                finally:
+                    with self._lock:
+                        self._inflight.pop(key, None)
+
+            future = executor.submit(_task)
+            self._inflight[key] = future
+        return True
+
+    def get_or_refresh(
+        self,
+        key: str,
+        loader: Callable[[], Any],
+        *,
+        ttl: float | None = None,
+        grace: float | None = None,
+        now: float | None = None,
+        on_refresh: Callable[[float, Any, bool], None] | None = None,
+    ) -> StaleWhileRevalidateResult:
+        ttl_value = self._default_ttl if ttl is None else float(ttl)
+        grace_value = self._grace_ttl if grace is None else float(grace)
+        reference = float(time.time() if now is None else now)
+        cached = self._cache.get(key)
+        record = self._coerce_entry(cached)
+
+        if record is None:
+            value, duration = self._run_loader(
+                key,
+                loader,
+                ttl=ttl_value,
+                grace=grace_value,
+                on_refresh=on_refresh,
+                background=False,
+            )
+            return StaleWhileRevalidateResult(
+                value=value,
+                is_stale=False,
+                was_refreshed=True,
+                refresh_scheduled=False,
+                duration=duration,
+            )
+
+        age = max(0.0, reference - record.stored_at)
+        if age < record.ttl:
+            return StaleWhileRevalidateResult(
+                value=record.value,
+                is_stale=False,
+                was_refreshed=False,
+                refresh_scheduled=False,
+            )
+
+        expiration = record.ttl + record.grace
+        if expiration <= 0 or age >= expiration:
+            value, duration = self._run_loader(
+                key,
+                loader,
+                ttl=ttl_value,
+                grace=grace_value,
+                on_refresh=on_refresh,
+                background=False,
+            )
+            return StaleWhileRevalidateResult(
+                value=value,
+                is_stale=False,
+                was_refreshed=True,
+                refresh_scheduled=False,
+                duration=duration,
+            )
+
+        self._schedule_refresh(
+            key,
+            loader,
+            ttl=ttl_value,
+            grace=grace_value,
+            on_refresh=on_refresh,
+        )
+        return StaleWhileRevalidateResult(
+            value=record.value,
+            is_stale=True,
+            was_refreshed=False,
+            refresh_scheduled=True,
+        )
+
+    def wait(self, timeout: float | None = None) -> None:
+        """Block until in-flight refresh operations complete."""
+
+        futures: list[Future[Any]]
+        with self._lock:
+            futures = list(self._inflight.values())
+        for future in futures:
+            try:
+                future.result(timeout=timeout)
+            except Exception:  # pragma: no cover - best effort draining
+                pass
+
+    def shutdown(self, wait: bool = True) -> None:
+        executor = self._executor
+        if executor is not None:
+            executor.shutdown(wait=wait)
+        self._executor = None
 
 
 class _BasePersistentBackend:
@@ -782,4 +1011,6 @@ __all__ = [
     "DEFAULT_TTL_SECONDS",
     "run_persistent_cache_maintenance",
     "get_sqlite_backend_path",
+    "StaleWhileRevalidateCache",
+    "StaleWhileRevalidateResult",
 ]
