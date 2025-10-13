@@ -490,6 +490,13 @@ class MarketDataCache:
             return self.prediction_ttl
         return float(ttl_seconds)
 
+    def resolve_prediction_ttl(self, ttl_hours: float | None = None) -> float:
+        seconds = None if ttl_hours is None else max(float(ttl_hours), 0.0) * 3600.0
+        effective = self._effective_prediction_ttl(seconds)
+        if effective is None:
+            return 0.0
+        return float(effective)
+
     def _caches(self) -> dict[str, CacheService]:
         caches = {
             "history": self.history_cache,

@@ -14,6 +14,7 @@ from application.predictive_service import (
     build_adaptive_history,
     get_cache_stats,
     predict_sector_performance,
+    predictive_job_status,
 )
 from ui.utils.formatters import normalise_hit_ratio, resolve_badge_state
 
@@ -62,11 +63,13 @@ class SectorPerformanceViewModel:
 
     predictions: pd.DataFrame = field(default_factory=pd.DataFrame)
     cache: PredictiveCacheViewModel = field(default_factory=PredictiveCacheViewModel)
+    job_status: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "predictions": self.predictions.copy(),
             "cache": self.cache.to_dict(),
+            "job_status": dict(self.job_status),
         }
 
 
@@ -193,13 +196,42 @@ def load_sector_performance_view(
         opportunities,
         span=span,
         ttl_hours=ttl_hours,
+        background=True,
     )
+    job_status: dict[str, Any] = {}
     if not isinstance(predictions, pd.DataFrame):
         predictions = pd.DataFrame(predictions)
     else:
+        metadata = predictions.attrs.get("predictive_job")
         predictions = predictions.copy()
+        if isinstance(metadata, Mapping):
+            job_status = dict(metadata)
+            snapshot = predictive_job_status(job_status.get("job_id"))
+            if isinstance(snapshot, Mapping):
+                for key, value in snapshot.items():
+                    job_status.setdefault(key, value)
     cache_view = _snapshot_to_view(get_cache_stats())
-    return SectorPerformanceViewModel(predictions=predictions, cache=cache_view)
+    return SectorPerformanceViewModel(
+        predictions=predictions,
+        cache=cache_view,
+        job_status=job_status,
+    )
+
+
+def resolve_predictive_spinner(job_status: Mapping[str, Any] | None) -> str | None:
+    """Return a spinner message when background predictive jobs are active."""
+
+    if not isinstance(job_status, Mapping) or not job_status:
+        return None
+    status = str(job_status.get("status") or "").lower()
+    if status in {"pending", "running"}:
+        job_reference = job_status.get("job_id") or job_status.get("latest_job_id")
+        if job_reference:
+            return f"Calculando predicciones en segundo plano (job {job_reference})..."
+        return "Calculando predicciones en segundo plano..."
+    if status in {"failed", "cancelled"}:
+        return "No se pudieron actualizar las predicciones sectoriales."
+    return None
 
 
 def get_predictive_cache_view() -> PredictiveCacheViewModel:
@@ -272,4 +304,5 @@ __all__ = [
     "load_sector_performance_view",
     "get_predictive_cache_view",
     "run_adaptive_forecast_view",
+    "resolve_predictive_spinner",
 ]

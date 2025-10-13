@@ -47,6 +47,20 @@ cards superiores del panel:
 | **Refresh tokens** | Cantidad acumulada de renovaciones exitosas del token backend. |
 | **Hit ratio caché** | Porcentaje de aciertos sobre el caché predictivo. Valores menores al 70 % requieren investigación. |
 
+### Worker predictivo asincrónico
+
+Las simulaciones sectoriales ahora se ejecutan a través de un worker en segundo
+plano definido en `application/predictive_jobs`. Cada solicitud publica un job
+identificado por `job_id`; la UI muestra el último resultado cacheado y un
+spinner con el estado (`pending`, `running`, `failed`).
+
+* El TTL del resultado se sincroniza con `MarketDataCache.resolve_prediction_ttl`
+  para evitar drift entre el cache y el worker.
+* Consultá el estado en caliente mediante la función
+  `application.predictive_service.predictive_job_status(job_id)`.
+* Cuando el job finaliza, las métricas de latencia (`predictive_job_latency`) se
+  registran junto con los contadores de hits/misses existentes.
+
 ## Gestión del token de autenticación
 
 La UI emite un token Fernet con TTL máximo configurado por `FASTAPI_AUTH_TTL`

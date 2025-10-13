@@ -15,6 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## v0.6.6-patch9b1 — Predictive worker async and cache reuse.
+### Added
+- `application/predictive_jobs` con un worker asíncrono compartido que permite
+  `submit()`, `get_latest()` y `status(job_id)` con TTL sincronizado con
+  `MarketDataCache`.
+- Superficie de `predictive_job_status` y metadatos en `predict_sector_performance`
+  para que la UI y los controladores puedan mostrar el progreso del cálculo.
+- Spinner informativo en recomendaciones cuando las predicciones se recalculan en
+  background.
+### Changed
+- `predict_sector_performance` reusa el último resultado cacheado mientras una
+  corrida nueva se ejecuta en segundo plano, evitando bloqueos de la UI.
+- `MarketDataCache` expone `resolve_prediction_ttl` para unificar la caducidad de
+  predicciones entre el cache y el worker.
+
 ## v0.6.6-patch3f — Deferred market_data_cache import and added safe fallback for missing dependencies during startup.
 ### Fixed
 - Diferimos la importación de `market_data_cache` y proveímos un fallback seguro para iniciar la aplicación cuando faltan dependencias de caché.
