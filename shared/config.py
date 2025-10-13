@@ -215,6 +215,20 @@ class Settings:
         )
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
+        default_quotes_batch = cfg.get("QUOTES_BATCH_SIZE", max(self.max_quote_workers, 8))
+        self.quotes_batch_size: int = int(
+            os.getenv("QUOTES_BATCH_SIZE", default_quotes_batch)
+        )
+        default_swr_ttl = cfg.get("QUOTES_SWR_TTL_SECONDS", 30.0)
+        self.quotes_swr_ttl_seconds: float = float(
+            os.getenv("QUOTES_SWR_TTL_SECONDS", default_swr_ttl)
+        )
+        default_swr_grace = cfg.get(
+            "QUOTES_SWR_GRACE_SECONDS", float(self.cache_ttl_quotes)
+        )
+        self.quotes_swr_grace_seconds: float = float(
+            os.getenv("QUOTES_SWR_GRACE_SECONDS", default_swr_grace)
+        )
         self.YAHOO_FUNDAMENTALS_TTL: int = int(
             os.getenv("YAHOO_FUNDAMENTALS_TTL", cfg.get("YAHOO_FUNDAMENTALS_TTL", 3600))
         )

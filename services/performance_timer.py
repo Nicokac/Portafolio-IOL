@@ -35,11 +35,12 @@ _REDIS_URL = getattr(settings, "REDIS_URL", None)
 _ENABLE_PROMETHEUS = bool(getattr(settings, "ENABLE_PROMETHEUS", True))
 
 try:  # pragma: no cover - optional dependency
-    from prometheus_client import CollectorRegistry, Gauge, Summary
+    from prometheus_client import CollectorRegistry, Gauge, Summary, Counter
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency missing
     CollectorRegistry = None  # type: ignore[assignment]
     Gauge = None  # type: ignore[assignment]
     Summary = None  # type: ignore[assignment]
+    Counter = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - optional dependency
     import redis  # type: ignore
@@ -50,7 +51,7 @@ _PROMETHEUS_REGISTRY = (
     CollectorRegistry(auto_describe=True) if CollectorRegistry and _ENABLE_PROMETHEUS else None
 )
 
-if Summary and Gauge and _PROMETHEUS_REGISTRY is not None:
+if Summary and Gauge and Counter and _PROMETHEUS_REGISTRY is not None:
     PERFORMANCE_DURATION_SECONDS = Summary(
         "performance_duration_seconds",
         "Execution time for instrumented blocks",
@@ -69,10 +70,24 @@ if Summary and Gauge and _PROMETHEUS_REGISTRY is not None:
         labelnames=("module", "label", "success"),
         registry=_PROMETHEUS_REGISTRY,
     )
+    QUOTES_SWR_SERVED_TOTAL = Counter(
+        "quotes_swr_served_total",
+        "Number of quote batches served via stale-while-revalidate",
+        labelnames=("mode",),
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    QUOTES_BATCH_LATENCY_SECONDS = Summary(
+        "quotes_batch_latency_seconds",
+        "Latency of individual quote refresh batches",
+        labelnames=("batch_size", "background"),
+        registry=_PROMETHEUS_REGISTRY,
+    )
 else:  # pragma: no cover - when prometheus_client missing or disabled
     PERFORMANCE_DURATION_SECONDS = None  # type: ignore[assignment]
     PERFORMANCE_CPU_PERCENT = None  # type: ignore[assignment]
     PERFORMANCE_MEMORY_PERCENT = None  # type: ignore[assignment]
+    QUOTES_SWR_SERVED_TOTAL = None  # type: ignore[assignment]
+    QUOTES_BATCH_LATENCY_SECONDS = None  # type: ignore[assignment]
 
 
 def _resolve_log_path() -> Path:
@@ -584,4 +599,6 @@ __all__ = [
     "performance_timer",
     "read_recent_entries",
     "track_performance",
+    "QUOTES_SWR_SERVED_TOTAL",
+    "QUOTES_BATCH_LATENCY_SECONDS",
 ]

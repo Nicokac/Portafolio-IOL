@@ -76,6 +76,28 @@ UI.
   registran tiempos parciales que ahora se exponen en el panel de diagnósticos
   sin depender del backend histórico.
 
+## Actualización de cotizaciones con Stale-While-Revalidate (v0.6.6-patch9b2)
+
+La canalización `quotes_refresh` ahora divide los símbolos del portafolio en
+lotes homogéneos por tipo de activo y los resuelve en paralelo respetando
+`MAX_QUOTE_WORKERS`. Cada lote se almacena en un caché persistente con la
+estrategia *Stale-While-Revalidate*: si los datos están dentro del TTL efectivo
+(`QUOTES_SWR_TTL_SECONDS`) se sirven al instante; cuando caducan pero continúan
+dentro de la ventana de gracia (`QUOTES_SWR_GRACE_SECONDS`) se devuelven desde
+caché mientras un *refresh* asincrónico actualiza el lote en segundo plano.
+
+Los resultados se instrumentan con métricas Prometheus:
+
+- `quotes_swr_served_total` etiqueta cuántos lotes se sirven en modo `fresh`,
+  `refresh` o `stale`.
+- `quotes_batch_latency_seconds` resume la latencia de cada lote indicando si se
+  ejecutó en segundo plano.
+
+Los logs estructurados incluyen `group`, `symbols`, `size` y el modo de servicio
+de cada lote, lo que facilita auditar cuellos de botella o lotes con alta tasa
+de staleness. La mejora reduce la latencia observada en el front-end de ~5.5 s a
+aprox. 2–3 s bajo carga moderada, al eliminar esperas innecesarias en la UI.
+
 ## Diagnostics panel
 
 `ui.panels.diagnostics.render_diagnostics_panel` now renders a dedicated table
