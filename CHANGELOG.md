@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
+## v0.6.6-patch3b — Fix SQLite maintenance import dependency
+### Fixed
+- Deferred the SQLite maintenance scheduler imports to avoid circular dependencies during app/bootstrap while preserving Prometheus metrics.
+- Added regression coverage that imports `app.py` and validates the lazy scheduler bootstrap.
+
 ## v0.6.6-patch2b2 — Cache management documentation & CI integration
 ### Added
 - Guía operativa `docs/cache_management.md` con ejemplos y recomendaciones para la gestión del caché.
