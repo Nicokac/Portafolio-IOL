@@ -40,6 +40,26 @@ UI artefacts:
 Cached functions rely on Streamlit's hashing, so they automatically invalidate
 when the underlying `DataFrame` inputs change.
 
+## Render diferido por pestaña
+
+La versión `v0.6.6-patch9a1` introduce render diferido por pestaña para el
+portafolio. `controllers.portfolio.portfolio.render_portfolio_section` ahora
+almacena en `st.session_state["render_cache"]` los placeholders y la firma de
+datos asociada a cada pestaña. Solo la pestaña activa se renderiza; el resto
+queda vacía hasta que el usuario la selecciona.
+
+Cada pestaña reutiliza su placeholder cuando el usuario vuelve a visitarla, por
+lo que la vista se muestra desde caché sin volver a ejecutar el código pesado.
+Cuando cambian los datos (por ejemplo, un nuevo snapshot o valores distintos en
+el `DataFrame`), la firma se invalida y el contenido se recalcula marcando la
+fuente como `hot`.
+
+Además, se muestra un mensaje contextual con el tiempo de carga y la fuente
+(`cálculo inicial`, `recalculado` o `caché en memoria`). Las métricas de
+latencia se registran mediante `services.health.record_tab_latency`, lo que
+permite auditar la mejora desde el panel de diagnósticos y el sistema de
+telemetría.
+
 ## Diagnostics panel
 
 `ui.panels.diagnostics.render_diagnostics_panel` now renders a dedicated table

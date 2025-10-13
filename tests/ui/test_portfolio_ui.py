@@ -73,6 +73,27 @@ class _ContextManager:
         return self._owner.bar_chart(*args, **kwargs)
 
 
+class _Placeholder:
+    def __init__(self, owner: "FakeStreamlit") -> None:
+        self._owner = owner
+
+    def empty(self) -> None:
+        return None
+
+    def container(self) -> _ContextManager:
+        return _ContextManager(self._owner)
+
+    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
+        self._owner.markdowns.append({
+            "body": body,
+            "unsafe": unsafe_allow_html,
+            "placeholder": True,
+        })
+
+    def info(self, message: str) -> None:
+        self._owner.info(message)
+
+
 class FakeStreamlit:
     """Minimal Streamlit stub capturing the interactions we care about."""
 
@@ -109,6 +130,7 @@ class FakeStreamlit:
         self.checkbox_calls: list[dict[str, Any]] = []
         self.slider_calls: list[dict[str, Any]] = []
         self.download_buttons: list[dict[str, Any]] = []
+        self._placeholders: list[_Placeholder] = []
 
     # ---- Core widgets -------------------------------------------------
     def radio(
@@ -231,6 +253,11 @@ class FakeStreamlit:
 
     def spinner(self, *_: Any, **__: Any) -> _ContextManager:
         return _ContextManager(self)
+
+    def empty(self) -> _Placeholder:
+        placeholder = _Placeholder(self)
+        self._placeholders.append(placeholder)
+        return placeholder
 
     # ---- Feedback widgets ---------------------------------------------
     def subheader(self, text: str) -> None:

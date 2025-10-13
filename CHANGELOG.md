@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cache observability & metrics integration.
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
+- Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
 ## v0.6.6-patch3f — Deferred market_data_cache import and added safe fallback for missing dependencies during startup.
 ### Fixed
