@@ -108,6 +108,25 @@ Additional instrumented metrics continue to appear in a separate
 `services.performance_metrics.get_recent_metrics` and can be exported as CSV for
 offline analysis.
 
+## Total load indicator (v0.6.6-patch10a)
+
+`app.py` now captures the timestamp at import time (`time.perf_counter`) and
+computes the elapsed milliseconds once the Streamlit layout finishes rendering.
+The duration is stored in `st.session_state["total_load_ms"]`, surfaced in the
+home header as `🕒 Tiempo total de carga: <X> ms` and logged through
+`services.performance_timer.record_stage("ui_total_load", ...)` for telemetry.
+
+The metric complements the per-stage latencies (`render_portfolio_ui.total`,
+`quotes_refresh`, `apply_filters`, etc.) by providing an end-to-end view of the
+initial render. If `total_load_ms` is significantly higher than the sum of the
+subcomponents, investigate gaps caused by Streamlit layout work, API retries or
+browser-side rendering. Conversely, similar values indicate that most time is
+spent inside the measured stages.
+
+The goal is to keep the total UI load below **10 000 ms** on cold sessions. When
+optimising the portfolio dashboard, validate improvements by checking that both
+the per-stage metrics and the total indicator trend in the same direction.
+
 ## Operational notes
 
 - When adding new render steps to the portfolio UI, wrap them with

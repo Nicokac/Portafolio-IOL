@@ -571,6 +571,51 @@ def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Ite
         LOGGER.info(message, extra=log_extra)
 
 
+def record_stage(
+    label: str,
+    *,
+    total_ms: float | int,
+    status: str = "success",
+    extra: Dict[str, Any] | None = None,
+) -> None:
+    """Log a timing entry without wrapping the measured block."""
+
+    try:
+        duration_s = max(float(total_ms) / 1000.0, 0.0)
+    except Exception:
+        duration_s = 0.0
+    metadata: Dict[str, Any] = {}
+    if extra:
+        metadata.update(extra)
+    metadata.setdefault("status", status)
+    metadata.setdefault("total_ms", f"{float(total_ms):.2f}")
+    sanitized = _sanitize_extra(metadata)
+    status_value = str(metadata.get("status", ""))
+    normalized_status = status_value.strip().lower()
+    success = normalized_status not in {"error", "failed", "failure"}
+    module = _resolve_module_name()
+    message = _format_message(label, duration_s, sanitized)
+    entry = _build_entry(
+        label=label,
+        duration=duration_s,
+        cpu_pct=None,
+        ram_pct=None,
+        details=sanitized,
+        module=module,
+        success=success,
+        raw_message=message,
+    )
+    log_extra = {
+        "perf_label": label,
+        "perf_duration": duration_s,
+        "perf_cpu_percent": None,
+        "perf_ram_percent": None,
+        "perf_meta": dict(sanitized) if sanitized else {},
+        "perf_entry": entry,
+    }
+    LOGGER.info(message, extra=log_extra)
+
+
 def track_performance(label: str):
     """Decorator that wraps a callable with :func:`performance_timer`."""
 
@@ -597,6 +642,7 @@ __all__ = [
     "PROMETHEUS_REGISTRY",
     "PROMETHEUS_ENABLED",
     "performance_timer",
+    "record_stage",
     "read_recent_entries",
     "track_performance",
     "QUOTES_SWR_SERVED_TOTAL",

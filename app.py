@@ -16,6 +16,8 @@ from uuid import uuid4
 
 import streamlit as st
 
+_TOTAL_LOAD_START = time.perf_counter()
+
 if not hasattr(st, "stop"):
     st.stop = lambda: None  # type: ignore[attr-defined]
 
@@ -40,6 +42,8 @@ from services.system_diagnostics import (
     configure_system_diagnostics,
     ensure_system_diagnostics_started,
 )
+
+from services.performance_timer import record_stage
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -84,6 +88,49 @@ from ui.controllers.portfolio_ui import render_portfolio_ui
 logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
+
+
+def _format_total_load_value(total_ms: int) -> str:
+    return f"{int(total_ms):,}".replace(",", " ")
+
+
+def _render_total_load_indicator(placeholder) -> None:
+    try:
+        elapsed_ms = max(int((time.perf_counter() - _TOTAL_LOAD_START) * 1000), 0)
+    except Exception:
+        logger.debug("No se pudo calcular el tiempo total de carga", exc_info=True)
+        return
+
+    try:
+        st.session_state["total_load_ms"] = elapsed_ms
+    except Exception:
+        logger.debug("No se pudo persistir total_load_ms en session_state", exc_info=True)
+
+    try:
+        timings = st.session_state.get("portfolio_stage_timings")
+        if isinstance(timings, dict) and "total_ms" not in timings:
+            timings["total_ms"] = float(elapsed_ms)
+    except Exception:
+        logger.debug("No se pudo extender portfolio_stage_timings con total_ms", exc_info=True)
+
+    formatted_value = _format_total_load_value(elapsed_ms)
+    block = (
+        "<div class='load-time-indicator'>"
+        f"🕒 Tiempo total de carga: {formatted_value} ms"
+        "</div>"
+    )
+    try:
+        if placeholder is not None:
+            placeholder.markdown(block, unsafe_allow_html=True)
+        else:
+            st.markdown(block, unsafe_allow_html=True)
+    except Exception:
+        logger.debug("No se pudo renderizar el indicador de tiempo total", exc_info=True)
+
+    try:
+        record_stage("ui_total_load", total_ms=elapsed_ms, status="success")
+    except Exception:
+        logger.debug("No se pudo registrar ui_total_load en performance_timer", exc_info=True)
 
 # Configuración de UI centralizada (tema y layout)
 validate_security_environment()
@@ -165,6 +212,16 @@ st.markdown(
             --badge-detail: rgba(7, 65, 55, 0.7);
             --badge-indicator: rgba(16, 163, 127, 0.95);
             --badge-indicator-shadow: rgba(16, 163, 127, 0.35);
+        }
+
+        .load-time-indicator {
+            color: rgba(15, 23, 42, 0.65);
+            font-size: 0.9rem;
+            margin: -0.75rem 0 1.5rem;
+        }
+
+        [data-theme="dark"] .load-time-indicator {
+            color: rgba(226, 232, 240, 0.75);
         }
 
         .health-status-badge--warning {
@@ -680,6 +737,8 @@ def main(argv: list[str] | None = None):
         unsafe_allow_html=True,
     )
 
+    load_time_placeholder = getattr(st, "empty", lambda: None)()
+
     main_col = st.container()
 
     cli = build_iol_client()
@@ -796,6 +855,8 @@ def main(argv: list[str] | None = None):
             st.session_state["iol_startup_metric_logged"] = True
 
     render_footer()
+
+    _render_total_load_indicator(load_time_placeholder)
 
     if "last_refresh" not in st.session_state:
         st.session_state["last_refresh"] = time.time()
