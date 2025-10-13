@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import sqlite3
 from collections.abc import Generator
 
 import pytest
@@ -13,6 +16,37 @@ from api.main import app
 from services.auth import generate_token
 from services.cache.core import CacheService
 from services.cache.market_data_cache import MarketDataCache
+from shared.errors import CacheUnavailableError
+
+
+_STRUCTURED_LOGGER_NAMES = {"performance", "performance_test"}
+
+
+def _structured_logs(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    for record in caplog.records:
+        if record.name not in _STRUCTURED_LOGGER_NAMES:
+            continue
+        try:
+            payload = json.loads(record.message)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _prepare_performance_logger(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logger = logging.getLogger("performance_test")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = True
+    monkeypatch.setattr("api.routers.cache.PERF_LOGGER", logger)
+    caplog.set_level(logging.INFO, logger="performance_test")
+    caplog.set_level(logging.INFO, logger="performance")
 
 
 class FakeClock:
@@ -204,7 +238,8 @@ def test_cache_metrics_exposed_after_operations(
     auth_headers: dict[str, str],
     market_cache: MarketDataCache,
 ) -> None:
-    from prometheus_client import CollectorRegistry
+    prometheus_client = pytest.importorskip("prometheus_client")
+    CollectorRegistry = prometheus_client.CollectorRegistry
 
     from api.routers import cache as cache_router
     from services import performance_timer as perf_timer
@@ -237,4 +272,79 @@ def test_cache_metrics_exposed_after_operations(
     assert "cache_invalidate_total{result=\"success\"}" in body
     assert "cache_cleanup_total{result=\"success\"}" in body
     assert "cache_operation_duration_seconds_sum" in body
+
+
+def test_cache_cleanup_emits_structured_log(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_performance_logger(caplog, monkeypatch)
+    caplog.clear()
+
+    response = client.post("/cache/cleanup", headers=auth_headers)
+
+    assert response.status_code == 200
+    entries = _structured_logs(caplog)
+    assert entries, "Debe registrarse un log estructurado de performance"
+    payload = entries[-1]
+    assert payload.get("operation") == "cleanup"
+    assert payload.get("success") is True
+    assert payload.get("elapsed_s") is not None
+
+
+def test_cache_status_handles_cache_unavailable(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _prepare_performance_logger(caplog, monkeypatch)
+    caplog.clear()
+
+    def _raise_cache_unavailable() -> MarketDataCache:
+        raise CacheUnavailableError("backend down")
+
+    monkeypatch.setattr("api.routers.cache._market_cache", _raise_cache_unavailable)
+
+    response = client.get("/cache/status", headers=auth_headers)
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "El servicio de caché no está disponible"
+    entries = _structured_logs(caplog)
+    assert entries, "Debe registrarse un log estructurado en fallos"
+    payload = entries[-1]
+    assert payload.get("operation") == "status"
+    assert payload.get("success") is False
+
+
+def test_cache_invalidate_handles_sqlite_locked(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    market_cache: MarketDataCache,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _prepare_performance_logger(caplog, monkeypatch)
+    caplog.clear()
+
+    def _raise_locked(*args: object, **kwargs: object) -> int:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(market_cache, "invalidate_matching", _raise_locked)
+
+    response = client.post(
+        "/cache/invalidate",
+        json={"keys": ["GGAL"]},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Error inesperado invalidando la caché"
+    entries = _structured_logs(caplog)
+    assert entries, "El fallo debe registrar un log estructurado"
+    payload = entries[-1]
+    assert payload.get("operation") == "invalidate"
+    assert payload.get("success") is False
 

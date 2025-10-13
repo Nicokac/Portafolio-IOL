@@ -56,6 +56,30 @@ jobs:
           name: coverage-report
           path: coverage.xml
 
+  cache-smoke:
+    name: cache-smoke
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      CACHE_SMOKE_REPORT: cache_smoke_report.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run cache endpoint smoke-test
+        run: bash scripts/test_smoke_endpoints.sh "$CACHE_SMOKE_REPORT"
+      - name: Upload cache smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cache-smoke-report
+          path: ${{ env.CACHE_SMOKE_REPORT }}
+
   live-yahoo-smoke:
     if: >-
       (vars.LIVE_YAHOO_SMOKE_FORCE_SKIP || 'false') != 'true' &&
