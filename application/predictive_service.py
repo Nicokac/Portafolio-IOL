@@ -21,7 +21,6 @@ from application.predictive_core import (
 )
 from domain.adaptive_cache_lock import adaptive_cache_lock
 from services.cache import CacheService
-from services.cache.market_data_cache import get_market_data_cache
 from services.performance_metrics import track_function
 from services.performance_timer import performance_timer
 from shared.settings import PREDICTIVE_TTL_HOURS
@@ -35,9 +34,82 @@ LOGGER = logging.getLogger(__name__)
 _CACHE_NAMESPACE = "predictive"
 _CACHE_KEY_PREFIX = "sector_predictions"
 _HISTORY_CACHE_PREFIX = "adaptive_history"
-_MARKET_CACHE = get_market_data_cache()
-_CACHE = _MARKET_CACHE.prediction_cache
-_CACHE.set_ttl_override(PREDICTIVE_TTL_HOURS * 3600.0)
+class FallbackCache:
+    """Minimal cache stand-in used when the market data cache is unavailable."""
+
+    hits: int
+    misses: int
+    last_updated_human: str
+
+    def __init__(self) -> None:
+        self.hits = 0
+        self.misses = 0
+        self.last_updated_human = "-"
+
+    def get(self, *_, **__) -> None:  # pragma: no cover - trivial behaviour
+        return None
+
+    def set(self, *_, **__) -> None:  # pragma: no cover - trivial behaviour
+        return None
+
+    def clear(self) -> None:  # pragma: no cover - trivial behaviour
+        return None
+
+    def set_ttl_override(self, *_: Any, **__: Any) -> None:  # pragma: no cover
+        return None
+
+    def get_effective_ttl(self) -> None:  # pragma: no cover - fallback has no TTL
+        return None
+
+    def remaining_ttl(self) -> None:  # pragma: no cover - fallback has no TTL
+        return None
+
+    def status(self) -> dict[str, Any]:
+        return {"backend": "fallback", "available": False}
+
+
+class FallbackMarketDataCache:
+    """Fallback market data cache container for degraded mode."""
+
+    def __init__(self) -> None:
+        self.prediction_cache = FallbackCache()
+
+    def build_prediction_key(
+        self,
+        symbols: list[str] | tuple[str, ...] | None = None,
+        *,
+        span: int | None = None,
+        sectors: list[str] | tuple[str, ...] | None = None,
+    ) -> str:
+        joined_symbols = ",".join(map(str, symbols or ()))
+        joined_sectors = ",".join(map(str, sectors or ()))
+        return f"fallback:{joined_symbols}:{joined_sectors}:{span}"
+
+    def status(self) -> dict[str, Any]:
+        return self.prediction_cache.status()
+
+
+def lazy_get_cache() -> Any:
+    """Return the market data cache or a safe fallback when unavailable."""
+
+    try:
+        from services.cache.market_data_cache import get_market_data_cache
+    except ImportError:
+        LOGGER.warning("⚠️ MarketDataCache unavailable — running with fallback cache")
+        return FallbackMarketDataCache()
+
+    try:
+        return get_market_data_cache()
+    except Exception:  # pragma: no cover - defensive degradation
+        LOGGER.exception("No se pudo inicializar MarketDataCache, usando fallback")
+        LOGGER.warning("⚠️ MarketDataCache unavailable — running with fallback cache")
+        return FallbackMarketDataCache()
+
+
+_MARKET_CACHE = lazy_get_cache()
+_CACHE = getattr(_MARKET_CACHE, "prediction_cache", _MARKET_CACHE)
+if hasattr(_CACHE, "set_ttl_override"):
+    _CACHE.set_ttl_override(PREDICTIVE_TTL_HOURS * 3600.0)
 _CACHE_STATE = PredictiveCacheState()
 
 _ADAPTIVE_DEFAULT_SPAN = 5

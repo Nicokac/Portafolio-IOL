@@ -39,13 +39,21 @@ class _MaintenanceTarget:
 
 
 def _market_cache_path() -> Path | None:
-    from services.cache.market_data_cache import get_sqlite_backend_path
+    try:
+        from services.cache.market_data_cache import get_sqlite_backend_path
+    except ImportError:
+        LOGGER.warning("⚠️ MarketDataCache unavailable — running with fallback cache")
+        return None
 
     return get_sqlite_backend_path()
 
 
 def _market_cache_maintenance(now: float | None, vacuum: bool) -> dict[str, float | int] | None:
-    from services.cache.market_data_cache import run_persistent_cache_maintenance
+    try:
+        from services.cache.market_data_cache import run_persistent_cache_maintenance
+    except ImportError:
+        LOGGER.warning("⚠️ MarketDataCache unavailable — running with fallback cache")
+        return None
 
     return run_persistent_cache_maintenance(now=now, vacuum=vacuum)
 

@@ -166,6 +166,19 @@ Si la interfaz muestra desalineaciones o badges incorrectos tras actualizar, for
 
 ## Plataforma técnica y despliegue
 
+- ### Modo degradado de caché
+
+  - **Síntomas:** Durante el arranque aparece un warning
+    `⚠️ MarketDataCache unavailable — running with fallback cache` en consola o en
+    `logs/app_startup.log`, pero la aplicación continúa inicializando.
+  - **Diagnóstico rápido:** Confirmá que el entorno carece de dependencias como
+    `pandas` o `sqlite3` requeridas por `services.cache.market_data_cache`. Podés
+    validar el estado del caché invocando `application.predictive_service.lazy_get_cache().status()`.
+  - **Resolución:**
+    1. Si necesitás la caché persistente, instalá las dependencias faltantes y reiniciá la app.
+    2. Mientras tanto, la aplicación opera en modo degradado: las predicciones se calculan al vuelo y la caché responde con `None`/sin TTL.
+    3. El mantenimiento de SQLite ignorará el backend ausente hasta que las dependencias estén disponibles nuevamente.
+
 - **Diagnóstico de arranque.**
   - **Síntomas:** Streamlit detiene la inicialización con un mensaje genérico de importación y la traza completa no aparece en la consola.
   - **Diagnóstico rápido:** Inspeccioná `logs/app_startup.log`, que ahora registra cada excepción durante el arranque con fecha, PID y versión del build. El archivo se genera automáticamente incluso si el fallo ocurre antes de que Streamlit configure sus propios logs.
