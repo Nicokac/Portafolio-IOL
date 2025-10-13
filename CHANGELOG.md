@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 
+## v0.6.6-patch3f — Deferred market_data_cache import and added safe fallback for missing dependencies during startup.
+### Fixed
+- Diferimos la importación de `market_data_cache` y proveímos un fallback seguro para iniciar la aplicación cuando faltan dependencias de caché.
+
 ## v0.6.6-patch3d — Added persistent startup logger (logs/app_startup.log) to capture detailed import errors before Streamlit masking.
 ### Added
 - Logger de arranque persistente que captura excepciones de importación con PID, versión y traceback completo en `logs/app_startup.log`.
