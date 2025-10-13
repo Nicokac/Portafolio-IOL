@@ -45,6 +45,10 @@ def render_portfolio_ui(
             raise
         if stage_timings:
             telemetry["timings_ms"] = stage_timings
+            try:
+                st.session_state["portfolio_stage_timings"] = dict(stage_timings)
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
         if isinstance(refresh_secs, (int, float)):
             telemetry["refresh_secs"] = float(refresh_secs)
         render_cache = st.session_state.get("render_cache")

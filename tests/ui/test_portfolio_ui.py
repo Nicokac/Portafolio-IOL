@@ -344,6 +344,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
     ):
         portfolio_mod.st = fake_st
         portfolio_mod.reset_portfolio_services()
+        portfolio_mod._INCREMENTAL_CACHE.clear()
         monkeypatch.setattr(portfolio_mod, "render_favorite_badges", lambda *a, **k: None)
         monkeypatch.setattr(portfolio_mod, "render_favorite_toggle", lambda *a, **k: None)
 
@@ -406,7 +407,20 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         fundamental = MagicMock()
         technical_badge = MagicMock()
 
-        monkeypatch.setattr(portfolio_mod, "render_basic_section", basic)
+        def _summary_stub(*args, **kwargs):
+            basic()
+            return True
+
+        def _table_stub(*args, **kwargs):
+            basic()
+
+        def _charts_stub(*args, **kwargs):
+            basic()
+
+        monkeypatch.setattr(portfolio_mod, "render_summary_section", _summary_stub)
+        monkeypatch.setattr(portfolio_mod, "render_table_section", _table_stub)
+        monkeypatch.setattr(portfolio_mod, "render_charts_section", _charts_stub)
+        monkeypatch.setattr(portfolio_mod, "_render_updated_caption", lambda *_: None)
         monkeypatch.setattr(portfolio_mod, "render_advanced_analysis", advanced)
         monkeypatch.setattr(portfolio_mod, "render_risk_analysis", risk)
         monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", fundamental)

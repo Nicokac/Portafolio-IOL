@@ -60,6 +60,22 @@ latencia se registran mediante `services.health.record_tab_latency`, lo que
 permite auditar la mejora desde el panel de diagnósticos y el sistema de
 telemetría.
 
+## Caché incremental por subcomponente (v0.6.6-patch9a2)
+
+La iteración `patch9a2` suma una capa de cacheo más granular: resumen, tabla y
+gráficos almacenan su propio placeholder y firma de datos mediante
+`portfolio_id|filters_hash|tab`. Cada componente utiliza `CacheService` con un
+TTL de cinco minutos para persistir el timestamp de cálculo y mostrarlo en la
+UI.
+
+- `_portfolio_dataset_key` genera la huella a partir de `snapshot_id` (si
+  existe) o de hashes de `positions`, `historical_total` y `contribution_metrics`.
+- Los filtros de tabla (orden, dirección y USD) invalidan únicamente la tabla;
+  cambios en `top_n`, dataset o favoritos fuerzan la recomputación del resto.
+- `_record_stage("render_summary")`, `render_charts` y `render_table`
+  registran tiempos parciales que ahora se exponen en el panel de diagnósticos
+  sin depender del backend histórico.
+
 ## Diagnostics panel
 
 `ui.panels.diagnostics.render_diagnostics_panel` now renders a dedicated table

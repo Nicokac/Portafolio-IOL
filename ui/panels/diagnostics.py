@@ -54,6 +54,19 @@ def render_diagnostics_panel() -> None:
 
     st.header("🩺 Diagnóstico de rendimiento")
 
+    stage_timings = st.session_state.get("portfolio_stage_timings")
+    if isinstance(stage_timings, dict) and stage_timings:
+        st.subheader("🧭 Última renderización del portafolio")
+        timing_rows = [
+            {
+                "Subetapa": _format_stage_label(f"portfolio_ui.{name}"),
+                "Duración (ms)": round(float(value), 2),
+            }
+            for name, value in sorted(stage_timings.items())
+        ]
+        timings_frame = pd.DataFrame(timing_rows)
+        st.dataframe(timings_frame, use_container_width=True, hide_index=True)
+
     metrics = get_recent_metrics()
     portfolio_metrics = [m for m in metrics if m.name.startswith("portfolio_ui.")]
     remaining_metrics = [m for m in metrics if m not in portfolio_metrics]
