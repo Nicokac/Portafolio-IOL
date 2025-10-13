@@ -154,3 +154,87 @@ def test_cache_cleanup_removes_expired_and_orphans(
     assert payload["orphans_removed"] == 1
     assert payload["elapsed_s"] >= 0
 
+
+def test_cache_invalidate_rejects_empty_pattern(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        "/cache/invalidate",
+        json={"pattern": "   "},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid pattern"
+
+
+def test_cache_invalidate_rejects_empty_keys_list(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        "/cache/invalidate",
+        json={"keys": []},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "invalid pattern"
+
+
+def test_cache_invalidate_enforces_max_keys(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    keys = [f"SYMBOL_{index}" for index in range(0, 501)]
+
+    response = client.post(
+        "/cache/invalidate",
+        json={"keys": keys},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "max keys exceeded" in response.json()["detail"]
+
+
+def test_cache_metrics_exposed_after_operations(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    market_cache: MarketDataCache,
+) -> None:
+    from prometheus_client import CollectorRegistry
+
+    from api.routers import cache as cache_router
+    from services import performance_timer as perf_timer
+
+    perf_timer.PROMETHEUS_REGISTRY = CollectorRegistry(auto_describe=True)
+    perf_timer.PROMETHEUS_ENABLED = True
+    cache_router._CACHE_STATUS_COUNTER = None
+    cache_router._CACHE_INVALIDATE_COUNTER = None
+    cache_router._CACHE_CLEANUP_COUNTER = None
+    cache_router._CACHE_OPERATION_DURATION = None
+
+    response_status = client.get("/cache/status", headers=auth_headers)
+    assert response_status.status_code == 200
+
+    response_invalidate = client.post(
+        "/cache/invalidate",
+        json={"keys": ["MISSING"]},
+        headers=auth_headers,
+    )
+    assert response_invalidate.status_code == 200
+
+    response_cleanup = client.post("/cache/cleanup", headers=auth_headers)
+    assert response_cleanup.status_code == 200
+
+    metrics_response = client.get("/metrics")
+
+    assert metrics_response.status_code == 200
+    body = metrics_response.text
+    assert "cache_status_requests_total{result=\"success\"}" in body
+    assert "cache_invalidate_total{result=\"success\"}" in body
+    assert "cache_cleanup_total{result=\"success\"}" in body
+    assert "cache_operation_duration_seconds_sum" in body
+

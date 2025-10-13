@@ -122,6 +122,15 @@ curl -H "Authorization: Bearer <token>" http://localhost:8000/predict
 - `POST /cache/invalidate`: acepta un patrón glob o una lista de claves para eliminar entradas específicas del caché (memoria y SQLite) y reporta cuántos registros fueron removidos.
 - `POST /cache/cleanup`: limpia registros expirados o inconsistentes y detalla las métricas de la operación.
 
+Métricas Prometheus disponibles tras operaciones del caché:
+
+- `cache_status_requests_total{result="success"|"error"}`
+- `cache_invalidate_total{result="success"|"error"}`
+- `cache_cleanup_total{result="success"|"error"}`
+- `cache_operation_duration_seconds{operation="status"|"invalidate"|"cleanup",result="success"|"error"}`
+
+> ⚠️ Por seguridad, cada invalidación acepta un máximo de 500 claves (`max_keys=500`) y rechazará patrones vacíos.
+
 Los endpoints `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` requieren cabecera `Authorization: Bearer <token>` emitida desde la pantalla de login. `/engine/info` permanece público y devuelve el estado del microservicio.
 
 #### Ejemplos autenticados
