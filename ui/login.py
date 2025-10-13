@@ -18,14 +18,16 @@ from services.update_checker import (
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.helpers.navigation import safe_page_link
-from services.auth import MAX_TOKEN_TTL_SECONDS, generate_token
+from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate_token
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
 from ui.panels.diagnostics import render_diagnostics_panel
+from ui.panels.system_status import render_system_status_panel
 from ui.tabs.performance_dashboard import render_performance_dashboard_tab
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
+from shared.time_provider import TimeProvider
 
 
 FASTAPI_HEALTH_URL = os.environ.get("FASTAPI_HEALTH_URL", "http://localhost:8000/health")
@@ -173,6 +175,11 @@ def render_login_page() -> None:
             render_fallback=render_diagnostics_panel,
         )
         safe_page_link(
+            "ui.panels.system_status",
+            label="🔍 Estado del Sistema",
+            render_fallback=render_system_status_panel,
+        )
+        safe_page_link(
             "ui.tabs.performance_dashboard",
             label="⏱️ Performance",
             render_fallback=render_performance_dashboard_tab,
@@ -306,10 +313,17 @@ def render_login_page() -> None:
 
         try:
             provider.login(user, password)
-            st.session_state["auth_token"] = generate_token(
+            token = generate_token(
                 user,
                 _get_auth_token_ttl(),
             )
+            st.session_state["auth_token"] = token
+            snapshot = describe_active_token(token)
+            if snapshot and isinstance(snapshot.get("claims"), dict):
+                st.session_state["auth_token_claims"] = dict(snapshot["claims"])
+            else:
+                st.session_state.pop("auth_token_claims", None)
+            st.session_state["auth_token_refreshed_at"] = TimeProvider.now()
             st.session_state["authenticated"] = True
             st.session_state.pop("force_login", None)
             st.session_state.pop("login_error", None)

@@ -104,6 +104,8 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 "controls_snapshot",
                 "quotes_hist",
                 "auth_token",
+                "auth_token_claims",
+                "auth_token_refreshed_at",
             ):
                 st.session_state.pop(key, None)
             cache.pop("tokens_file", None)

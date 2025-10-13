@@ -125,6 +125,28 @@ def _remove_active_session(session_id: str) -> None:
     ACTIVE_TOKENS.pop(session_id, None)
 
 
+def describe_active_token(token: str | None) -> Dict[str, Any] | None:
+    """Return metadata for the active ``token`` if it exists."""
+
+    if not token:
+        return None
+    for session_id, entry in ACTIVE_TOKENS.items():
+        if entry.get("token") != token:
+            continue
+        snapshot: Dict[str, Any] = {
+            "session_id": session_id,
+            "ttl": entry.get("ttl"),
+            "issued_at": entry.get("issued_at"),
+            "expires_at": entry.get("expires_at"),
+            "username": entry.get("username"),
+        }
+        payload = entry.get("payload")
+        if isinstance(payload, Dict):
+            snapshot["claims"] = dict(payload)
+        return snapshot
+    return None
+
+
 def generate_token(username: str, expiry: int) -> str:
     """Generate a signed token for the given ``username`` valid for ``expiry`` seconds."""
 
@@ -241,6 +263,7 @@ def refresh_active_token(claims: Dict[str, Any]) -> Dict[str, Any]:
     cipher = _get_fernet()
     token = cipher.encrypt(token_bytes).decode("utf-8")
     _register_token(session_id, token, payload, ttl)
+    payload["ttl"] = ttl
     audit_logger.info(
         "token_refreshed",
         extra={"session_id": session_id, "user": claims.get("sub"), "result": "ok"},
@@ -295,6 +318,7 @@ __all__ = [
     "refresh_active_token",
     "revoke_token",
     "revoke_session",
+    "describe_active_token",
     "ACTIVE_TOKENS",
     "TOKEN_ISSUER",
     "TOKEN_AUDIENCE",
