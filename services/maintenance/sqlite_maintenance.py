@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from dataclasses import dataclass
@@ -15,6 +16,19 @@ _BYTES_PER_MB = 1024.0 * 1024.0
 _CACHE_CLEANUP_TOTAL: Any | None = None
 _VACUUM_DURATION_SECONDS: Any | None = None
 _METRICS_INITIALIZED = False
+
+
+@dataclass(frozen=True)
+class SQLiteMaintenanceConfiguration:
+    """Runtime configuration required to schedule and report maintenance."""
+
+    interval_hours: float
+    size_threshold_mb: float
+    performance_store_ttl_days: float | None
+    enable_prometheus: bool
+
+
+_CONFIGURATION: SQLiteMaintenanceConfiguration | None = None
 
 
 @dataclass(frozen=True)
@@ -46,7 +60,7 @@ def _performance_store_path() -> Path | None:
 def _performance_store_maintenance(now: float | None, vacuum: bool) -> dict[str, float | int] | None:
     from services.performance_store import run_maintenance
 
-    retention = _load_performance_store_retention_days()
+    retention = _current_configuration().performance_store_ttl_days
     return run_maintenance(retention_days=retention, now=now, vacuum=vacuum)
 
 
@@ -71,10 +85,10 @@ def _ensure_metrics_initialized() -> None:
         return
 
     _METRICS_INITIALIZED = True
-    try:  # pragma: no cover - prometheus_client optional at runtime
-        from shared.settings import enable_prometheus
+    configuration = _current_configuration()
 
-        if not enable_prometheus:  # pragma: no cover - disabled via settings
+    try:  # pragma: no cover - prometheus_client optional at runtime
+        if not configuration.enable_prometheus:  # pragma: no cover
             _CACHE_CLEANUP_TOTAL = None
             _VACUUM_DURATION_SECONDS = None
             return
@@ -94,25 +108,6 @@ def _ensure_metrics_initialized() -> None:
     except Exception:  # pragma: no cover - dependency missing or misconfigured
         _CACHE_CLEANUP_TOTAL = None
         _VACUUM_DURATION_SECONDS = None
-
-
-def _load_performance_store_retention_days() -> float | None:
-    from shared.settings import performance_store_ttl_days
-
-    retention = float(performance_store_ttl_days)
-    return None if retention <= 0 else retention
-
-
-def _load_scheduler_config() -> tuple[float, float]:
-    from shared.settings import (
-        sqlite_maintenance_interval_hours,
-        sqlite_maintenance_size_threshold_mb,
-    )
-
-    return (
-        float(sqlite_maintenance_interval_hours),
-        float(sqlite_maintenance_size_threshold_mb),
-    )
 
 
 def _safe_file_size(path: Path | None) -> float:
@@ -214,14 +209,14 @@ def _run_targets(
 
 
 class _SQLiteMaintenanceScheduler:
-    def __init__(self) -> None:
-        interval_hours, threshold_mb = _load_scheduler_config()
-        self.interval_seconds = max(0.0, interval_hours * 3600.0)
-        self.threshold_bytes = max(0.0, threshold_mb * _BYTES_PER_MB)
+    def __init__(self, configuration: SQLiteMaintenanceConfiguration) -> None:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_run = 0.0
+        self.interval_seconds = 0.0
+        self.threshold_bytes = 0.0
+        self.reload_configuration(configuration)
 
     def ensure_running(self) -> bool:
         if self.interval_seconds <= 0 and self.threshold_bytes <= 0:
@@ -297,15 +292,135 @@ class _SQLiteMaintenanceScheduler:
             return max(60.0, min(self.interval_seconds / 4.0, 900.0))
         return 300.0
 
+    def reload_configuration(self, configuration: SQLiteMaintenanceConfiguration) -> None:
+        with self._lock:
+            self.interval_seconds = max(0.0, float(configuration.interval_hours) * 3600.0)
+            self.threshold_bytes = max(0.0, float(configuration.size_threshold_mb) * _BYTES_PER_MB)
+
 
 _SCHEDULER: _SQLiteMaintenanceScheduler | None = None
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _coerce_positive_float_or_none(value: Any) -> float | None:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return numeric if numeric > 0 else None
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        if normalized in {"", "none", "null"}:
+            return default
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _load_default_configuration() -> SQLiteMaintenanceConfiguration:
+    try:  # pragma: no cover - during early startup shared.config may fail
+        from shared.config import settings as config_settings
+    except Exception:  # pragma: no cover - fallback to environment values
+        config_settings = None
+
+    if config_settings is not None:
+        interval = _coerce_float(
+            getattr(config_settings, "SQLITE_MAINTENANCE_INTERVAL_HOURS", 6.0),
+            6.0,
+        )
+        threshold = _coerce_float(
+            getattr(config_settings, "SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB", 256.0),
+            256.0,
+        )
+        raw_retention = getattr(config_settings, "PERFORMANCE_STORE_TTL_DAYS", None)
+        retention = _coerce_positive_float_or_none(raw_retention)
+        if raw_retention is None:
+            fallback = _coerce_positive_float_or_none(
+                getattr(config_settings, "LOG_RETENTION_DAYS", 7)
+            )
+            retention = fallback if fallback is not None else 7.0
+        enable_prom = bool(getattr(config_settings, "ENABLE_PROMETHEUS", True))
+    else:
+        interval = _coerce_float(
+            os.getenv("SQLITE_MAINTENANCE_INTERVAL_HOURS"),
+            6.0,
+        )
+        threshold = _coerce_float(
+            os.getenv("SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB"),
+            256.0,
+        )
+        retention_candidate = os.getenv("PERFORMANCE_STORE_TTL_DAYS")
+        retention = _coerce_positive_float_or_none(retention_candidate)
+        if retention_candidate is None:
+            fallback_candidate = os.getenv("LOG_RETENTION_DAYS")
+            fallback = _coerce_positive_float_or_none(fallback_candidate)
+            retention = fallback if fallback is not None else 7.0
+        enable_prom = _coerce_bool(os.getenv("ENABLE_PROMETHEUS"), True)
+
+    return SQLiteMaintenanceConfiguration(
+        interval_hours=interval,
+        size_threshold_mb=threshold,
+        performance_store_ttl_days=retention,
+        enable_prometheus=enable_prom,
+    )
+
+
+def _current_configuration() -> SQLiteMaintenanceConfiguration:
+    global _CONFIGURATION
+
+    if _CONFIGURATION is None:
+        _CONFIGURATION = _load_default_configuration()
+    return _CONFIGURATION
+
+
+def configure_sqlite_maintenance(
+    configuration: SQLiteMaintenanceConfiguration | None = None,
+    **overrides: Any,
+) -> None:
+    """Update runtime configuration for maintenance without forcing imports."""
+
+    global _CONFIGURATION, _CACHE_CLEANUP_TOTAL, _VACUUM_DURATION_SECONDS, _METRICS_INITIALIZED
+
+    if configuration is not None and overrides:
+        msg = "Cannot mix configuration object with keyword overrides"
+        raise ValueError(msg)
+
+    if configuration is None:
+        if overrides:
+            configuration = SQLiteMaintenanceConfiguration(**overrides)
+        else:
+            configuration = _load_default_configuration()
+
+    _CONFIGURATION = configuration
+    _CACHE_CLEANUP_TOTAL = None
+    _VACUUM_DURATION_SECONDS = None
+    _METRICS_INITIALIZED = False
+
+    if _SCHEDULER is not None:
+        _SCHEDULER.reload_configuration(_CONFIGURATION)
 
 
 def _get_scheduler() -> _SQLiteMaintenanceScheduler:
     global _SCHEDULER
 
+    configuration = _current_configuration()
     if _SCHEDULER is None:
-        _SCHEDULER = _SQLiteMaintenanceScheduler()
+        _SCHEDULER = _SQLiteMaintenanceScheduler(configuration)
+    else:
+        _SCHEDULER.reload_configuration(configuration)
     return _SCHEDULER
 
 
@@ -323,4 +438,9 @@ def run_sqlite_maintenance_now(
     return _get_scheduler().run_once(reason, now=now, vacuum=vacuum)
 
 
-__all__ = ["ensure_sqlite_maintenance_started", "run_sqlite_maintenance_now"]
+__all__ = [
+    "SQLiteMaintenanceConfiguration",
+    "configure_sqlite_maintenance",
+    "ensure_sqlite_maintenance_started",
+    "run_sqlite_maintenance_now",
+]
