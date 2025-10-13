@@ -1,11 +1,15 @@
+import hashlib
+import json
 import logging
 import re
 import time
 import unicodedata
 from contextlib import contextmanager
+from datetime import datetime
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 
 import streamlit as st
+import pandas as pd
 
 from domain.models import Controls
 from ui.sidebar_controls import render_sidebar
@@ -25,9 +29,16 @@ from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
+from services.cache import CacheService
 
 from .load_data import load_portfolio_data
-from .charts import render_basic_section, render_advanced_analysis
+from .charts import (
+    render_basic_section,
+    render_summary as render_summary_section,
+    render_table as render_table_section,
+    render_charts as render_charts_section,
+    render_advanced_analysis,
+)
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
@@ -40,6 +51,9 @@ _NOTIFICATIONS_FACTORY_KEY = "notifications_service_factory"
 _SNAPSHOT_BACKEND_KEY = "snapshot_backend_override"
 _PORTFOLIO_SERVICE_KEY = "portfolio_service"
 _TA_SERVICE_KEY = "ta_service"
+
+_CACHE_TTL_SECONDS = 300.0
+_INCREMENTAL_CACHE = CacheService(namespace="portfolio_incremental")
 
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
@@ -289,20 +303,326 @@ def _render_snapshot_metrics(comparison: Mapping[str, Any], label: str) -> None:
             col.caption(f"Referencia: {format_money(baseline_val)}")
 
 
-def render_basic_tab(viewmodel, favorites, snapshot) -> None:
-    """Render the summary view for the basic portfolio tab."""
+def _hash_dataframe(df: Any) -> str:
+    """Return a stable hash for the provided DataFrame-like object."""
 
-    _render_snapshot_comparison_controls(viewmodel)
-    render_basic_section(
-        viewmodel.positions,
-        viewmodel.controls,
-        viewmodel.metrics.ccl_rate,
-        favorites=favorites,
-        totals=viewmodel.totals,
-        historical_total=viewmodel.historical_total,
-        contribution_metrics=viewmodel.contributions,
-        snapshot=snapshot,
+    if not isinstance(df, pd.DataFrame):
+        return "none"
+    if df.empty:
+        return "empty"
+    try:
+        hashed = pd.util.hash_pandas_object(df, index=True, categorize=True)
+        return hashlib.sha1(hashed.values.tobytes()).hexdigest()
+    except TypeError:
+        payload = df.to_dict(orient="list")
+    except Exception:
+        payload = json.loads(df.to_json(orient="split", date_format="iso"))
+    data = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha1(data).hexdigest()
+
+
+def _favorites_signature(favorites: Any) -> tuple[str, ...]:
+    """Return a deterministic tuple describing the current favorites list."""
+
+    if favorites is None:
+        return ()
+    getter = getattr(favorites, "list", None)
+    if not callable(getter):
+        return ()
+    try:
+        return tuple(sorted(str(sym) for sym in getter()))
+    except Exception:
+        logger.debug("No se pudo obtener la lista de favoritos", exc_info=True)
+        return ()
+
+
+def _portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
+    """Return a fingerprint for the current portfolio dataset."""
+
+    snapshot_id = getattr(viewmodel, "snapshot_id", None)
+    if snapshot_id:
+        return f"id:{snapshot_id}"
+
+    totals = getattr(viewmodel, "totals", None)
+    totals_sig = "|".join(
+        str(getattr(totals, attr, "")) for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
     )
+    history = _hash_dataframe(getattr(viewmodel, "historical_total", None))
+    contributions = getattr(viewmodel, "contributions", None)
+    contrib_sig = ""
+    if contributions is not None:
+        contrib_sig = f"{_hash_dataframe(getattr(contributions, 'by_symbol', None))}|{_hash_dataframe(getattr(contributions, 'by_type', None))}"
+
+    return "|".join(
+        [
+            _hash_dataframe(df_view),
+            history,
+            contrib_sig,
+            totals_sig,
+        ]
+    )
+
+
+def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: Any) -> str:
+    """Return a hashable representation of summary-relevant filters."""
+
+    payload = {
+        "hide_cash": getattr(controls, "hide_cash", None),
+        "selected_syms": sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()),
+        "selected_types": sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()),
+        "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
+        "ccl_rate": getattr(metrics, "ccl_rate", None),
+        "snapshot": getattr(snapshot, "storage_id", None) or getattr(snapshot, "id", None),
+        "favorites": _favorites_signature(favorites),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _table_filters_key(controls: Any, favorites: Any) -> str:
+    """Return a hash representing table-specific filters."""
+
+    payload = {
+        "order_by": getattr(controls, "order_by", None),
+        "desc": getattr(controls, "desc", None),
+        "show_usd": getattr(controls, "show_usd", None),
+        "favorites": _favorites_signature(favorites),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _charts_filters_key(controls: Any) -> str:
+    """Return a hash for chart configuration filters."""
+
+    payload = {
+        "top_n": getattr(controls, "top_n", None),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _component_cache_key(
+    portfolio_id: str,
+    filters_hash: str,
+    tab_slug: str,
+    component: str,
+) -> str:
+    slug = tab_slug or "tab"
+    return f"{portfolio_id}|{filters_hash}|{slug}|{component}"
+
+
+def _get_component_metadata(
+    portfolio_id: str,
+    filters_hash: str,
+    tab_slug: str,
+    component: str,
+) -> Mapping[str, float] | None:
+    """Return cached metadata for the given component if available."""
+
+    key = _component_cache_key(portfolio_id, filters_hash, tab_slug, component)
+    cached = _INCREMENTAL_CACHE.get(key)
+    if isinstance(cached, Mapping):
+        return cached
+    return None
+
+
+def _store_component_metadata(
+    portfolio_id: str,
+    filters_hash: str,
+    tab_slug: str,
+    component: str,
+    computed_at: float,
+) -> None:
+    """Persist metadata for a rendered component with TTL."""
+
+    key = _component_cache_key(portfolio_id, filters_hash, tab_slug, component)
+    payload = {"computed_at": float(computed_at)}
+    _INCREMENTAL_CACHE.set(key, payload, ttl=_CACHE_TTL_SECONDS)
+
+
+def _ensure_component_store(tab_cache: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    """Return the component cache store associated with the current tab."""
+
+    if tab_cache is None:
+        return {}
+    store = tab_cache.get("components")
+    if not isinstance(store, dict):
+        store = {}
+        tab_cache["components"] = store
+    return store
+
+
+def _ensure_component_entry(
+    store: dict[str, dict[str, Any]],
+    name: str,
+) -> dict[str, Any]:
+    """Ensure component scaffolding exists for ``name`` and return it."""
+
+    entry = store.get(name)
+    if not isinstance(entry, dict):
+        entry = {}
+        store[name] = entry
+    placeholder = entry.get("placeholder")
+    if not hasattr(placeholder, "container"):
+        placeholder = st.empty()
+        entry["placeholder"] = placeholder
+    return entry
+
+
+def _render_updated_caption(timestamp: float | None) -> None:
+    """Render a caption with the last update timestamp."""
+
+    if timestamp is None:
+        label = "Actualizado: –"
+    else:
+        dt = datetime.fromtimestamp(timestamp)
+        label = f"Actualizado: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
+    if _CACHE_TTL_SECONDS:
+        minutes = int(_CACHE_TTL_SECONDS // 60)
+        label = f"{label} · Caché {minutes} min"
+    try:
+        st.caption(label)
+    except Exception:  # pragma: no cover - defensive
+        logger.debug("No se pudo renderizar la marca de tiempo de actualización", exc_info=True)
+
+
+def render_basic_tab(
+    viewmodel,
+    favorites,
+    snapshot,
+    *,
+    tab_slug: str = "portafolio",
+    tab_cache: dict[str, Any] | None = None,
+    timings: dict[str, float] | None = None,
+) -> None:
+    """Render the summary view for the basic portfolio tab with incremental caching."""
+
+    favorites = favorites or _get_cached_favorites()
+    controls = getattr(viewmodel, "controls", Controls())
+    metrics = getattr(viewmodel, "metrics", None)
+    df_view = getattr(viewmodel, "positions", pd.DataFrame())
+    totals = getattr(viewmodel, "totals", None)
+    historical_total = getattr(viewmodel, "historical_total", None)
+    contributions = getattr(viewmodel, "contributions", None)
+    ccl_rate = getattr(metrics, "ccl_rate", None)
+
+    portfolio_id = _portfolio_dataset_key(viewmodel, df_view)
+    summary_filters = _summary_filters_key(controls, metrics, favorites, snapshot)
+    table_filters = _table_filters_key(controls, favorites)
+    chart_filters = _charts_filters_key(controls)
+
+    component_store = _ensure_component_store(tab_cache)
+    summary_entry = _ensure_component_entry(component_store, "summary")
+    table_entry = _ensure_component_entry(component_store, "table")
+    charts_entry = _ensure_component_entry(component_store, "charts")
+
+    summary_signature = (portfolio_id, summary_filters)
+    summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
+    should_render_summary = (
+        summary_entry.get("signature") != summary_signature or summary_meta is None
+    )
+
+    has_positions = bool(summary_entry.get("has_positions", not getattr(df_view, "empty", True)))
+    summary_timestamp = summary_entry.get("updated_at")
+    with _record_stage("render_summary", timings):
+        if should_render_summary:
+            placeholder = summary_entry["placeholder"]
+            placeholder.empty()
+            with placeholder.container():
+                _render_snapshot_comparison_controls(viewmodel)
+                has_positions = bool(
+                    render_summary_section(
+                        df_view,
+                        controls,
+                        ccl_rate,
+                        totals=totals,
+                        favorites=favorites,
+                        historical_total=historical_total,
+                        contribution_metrics=contributions,
+                        snapshot=snapshot,
+                    )
+                )
+                summary_timestamp = time.time()
+                _render_updated_caption(summary_timestamp)
+            summary_entry["signature"] = summary_signature
+            summary_entry["rendered"] = True
+            summary_entry["has_positions"] = has_positions
+            summary_entry["updated_at"] = summary_timestamp
+            _store_component_metadata(
+                portfolio_id,
+                summary_filters,
+                tab_slug,
+                "summary",
+                summary_timestamp,
+            )
+        else:
+            has_positions = bool(summary_entry.get("has_positions", has_positions))
+            if summary_meta is not None:
+                summary_timestamp = summary_meta.get("computed_at")
+                summary_entry.setdefault("updated_at", summary_timestamp)
+
+    table_signature = (portfolio_id, table_filters)
+    table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
+    should_render_table = (
+        table_entry.get("signature") != table_signature or table_meta is None
+    )
+
+    with _record_stage("render_table", timings):
+        if should_render_table:
+            placeholder = table_entry["placeholder"]
+            placeholder.empty()
+            with placeholder.container():
+                render_table_section(
+                    df_view,
+                    controls,
+                    ccl_rate,
+                    favorites=favorites,
+                )
+            table_timestamp = time.time()
+            table_entry["signature"] = table_signature
+            table_entry["rendered"] = True
+            table_entry["updated_at"] = table_timestamp
+            _store_component_metadata(
+                portfolio_id,
+                table_filters,
+                tab_slug,
+                "table",
+                table_timestamp,
+            )
+        elif table_meta is not None:
+            table_entry.setdefault("updated_at", table_meta.get("computed_at"))
+
+    charts_signature = (portfolio_id, chart_filters)
+    charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
+    should_render_charts = (
+        charts_entry.get("signature") != charts_signature or charts_meta is None
+    )
+
+    with _record_stage("render_charts", timings):
+        if should_render_charts:
+            placeholder = charts_entry["placeholder"]
+            placeholder.empty()
+            with placeholder.container():
+                render_charts_section(
+                    df_view,
+                    controls,
+                    ccl_rate,
+                    totals=totals,
+                    historical_total=historical_total,
+                    contribution_metrics=contributions,
+                    snapshot=snapshot,
+                )
+            charts_timestamp = time.time()
+            charts_entry["signature"] = charts_signature
+            charts_entry["rendered"] = True
+            charts_entry["updated_at"] = charts_timestamp
+            _store_component_metadata(
+                portfolio_id,
+                chart_filters,
+                tab_slug,
+                "charts",
+                charts_timestamp,
+            )
+        elif charts_meta is not None:
+            charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
 
 
 def render_risk_tab(
@@ -697,6 +1017,9 @@ def render_portfolio_section(
                             all_symbols,
                             viewmodel,
                             snapshot,
+                            tab_slug=tab_slug,
+                            tab_cache=cache_entry,
+                            timings=timings,
                         )
                 latency_ms = (time.perf_counter() - start) * 1000.0
                 cache_entry["signature"] = tab_signature
@@ -795,21 +1118,35 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
     """Build a lightweight signature to detect content changes per tab."""
 
     snapshot_id = getattr(viewmodel, "snapshot_id", None)
-    rows = 0
-    symbols: tuple[str, ...] = ()
-    total_value = None
+    controls = getattr(viewmodel, "controls", None)
+    dataset_key = _portfolio_dataset_key(viewmodel, df_view)
     try:
-        if hasattr(df_view, "shape"):
-            rows = int(getattr(df_view, "shape", (0,))[0])
-        values = getattr(df_view, "get", lambda _: None)("valor_actual")
-        if values is not None:
-            total_value = float(values.sum())  # type: ignore[assignment]
-        raw_symbols = getattr(df_view, "get", lambda _: [])("simbolo")
-        if raw_symbols is not None:
-            symbols = tuple(str(sym) for sym in raw_symbols)
+        order_by = getattr(controls, "order_by", None)
+        desc = getattr(controls, "desc", None)
+        show_usd = getattr(controls, "show_usd", None)
+        top_n = getattr(controls, "top_n", None)
+        selected_syms = tuple(sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()))
+        selected_types = tuple(sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()))
+        symbol_query = (getattr(controls, "symbol_query", "") or "").strip()
+        hide_cash = getattr(controls, "hide_cash", None)
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo calcular la firma de la pestaña %s", tab_slug, exc_info=True)
-    return (tab_slug, snapshot_id, rows, symbols, total_value)
+        order_by = desc = show_usd = top_n = symbol_query = hide_cash = None
+        selected_syms = ()
+        selected_types = ()
+    return (
+        tab_slug,
+        snapshot_id,
+        dataset_key,
+        order_by,
+        desc,
+        show_usd,
+        top_n,
+        selected_syms,
+        selected_types,
+        symbol_query,
+        hide_cash,
+    )
 
 
 def _loading_message(base_label: str) -> str:
@@ -832,11 +1169,22 @@ def _render_selected_tab(
     all_symbols: list[str],
     viewmodel,
     snapshot,
+    *,
+    tab_slug: str,
+    tab_cache: dict[str, Any] | None = None,
+    timings: dict[str, float] | None = None,
 ) -> None:
     """Dispatch rendering to the appropriate tab implementation."""
 
     if tab_idx == 0:
-        render_basic_tab(viewmodel, favorites, snapshot)
+        render_basic_tab(
+            viewmodel,
+            favorites,
+            snapshot,
+            tab_slug=tab_slug,
+            tab_cache=tab_cache,
+            timings=timings,
+        )
     elif tab_idx == 1:
         render_advanced_analysis(df_view, tasvc)
     elif tab_idx == 2:

@@ -5,7 +5,7 @@ import streamlit as st
 
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
-from ui.tables import render_totals, render_table
+from ui.tables import render_totals, render_table as render_positions_table
 from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from services.portfolio_view import compute_symbol_risk_metrics
 from ui.charts import (
@@ -55,7 +55,7 @@ def generate_basic_charts(df_view, top_n):
     }
 
 
-def render_basic_section(
+def render_summary(
     df_view,
     controls,
     ccl_rate,
@@ -65,7 +65,7 @@ def render_basic_section(
     contribution_metrics=None,
     snapshot=None,
 ):
-    """Render totals, table and basic charts for the portfolio."""
+    """Render the summary controls, totals and exports for the portfolio."""
     favorites = favorites or get_persistent_favorites()
     symbols = (
         sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
@@ -96,7 +96,7 @@ def render_basic_section(
 
     if df_view.empty:
         st.info("No hay datos del portafolio para mostrar.")
-        return
+        return False
 
     render_totals(df_view, ccl_rate=ccl_rate, totals=totals)
     render_portfolio_exports(
@@ -108,7 +108,19 @@ def render_basic_section(
         filename_prefix="portafolio",
         ranking_limit=max(5, getattr(controls, "top_n", 10)),
     )
-    render_table(
+    return True
+
+
+def render_table(
+    df_view,
+    controls,
+    ccl_rate,
+    *,
+    favorites: FavoriteSymbols | None = None,
+):
+    """Render the positions table for the portfolio."""
+    favorites = favorites or get_persistent_favorites()
+    render_positions_table(
         df_view,
         controls.order_by,
         controls.desc,
@@ -116,6 +128,22 @@ def render_basic_section(
         show_usd=controls.show_usd,
         favorites=favorites,
     )
+
+
+def render_charts(
+    df_view,
+    controls,
+    ccl_rate,
+    *,
+    totals=None,
+    historical_total=None,
+    contribution_metrics=None,
+    snapshot=None,
+):
+    """Render the chart section for the portfolio."""
+    if df_view is None or df_view.empty:
+        st.info("No hay datos del portafolio para mostrar.")
+        return
 
     charts = _cached_basic_charts(df_view, controls.top_n)
     colA, colB = st.columns(2)
@@ -297,6 +325,49 @@ def render_basic_section(
         )
     else:
         st.info("No hay datos agregados por tipo para mostrar en tabla.")
+
+
+def render_basic_section(
+    df_view,
+    controls,
+    ccl_rate,
+    totals=None,
+    favorites: FavoriteSymbols | None = None,
+    historical_total=None,
+    contribution_metrics=None,
+    snapshot=None,
+):
+    """Render totals, table and basic charts for the portfolio."""
+
+    favorites = favorites or get_persistent_favorites()
+    has_data = render_summary(
+        df_view,
+        controls,
+        ccl_rate,
+        totals=totals,
+        favorites=favorites,
+        historical_total=historical_total,
+        contribution_metrics=contribution_metrics,
+        snapshot=snapshot,
+    )
+    if not has_data:
+        return
+
+    render_table(
+        df_view,
+        controls,
+        ccl_rate,
+        favorites=favorites,
+    )
+    render_charts(
+        df_view,
+        controls,
+        ccl_rate,
+        totals=totals,
+        historical_total=historical_total,
+        contribution_metrics=contribution_metrics,
+        snapshot=snapshot,
+    )
 
 
 RISK_METRIC_OPTIONS = {
