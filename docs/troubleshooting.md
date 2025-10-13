@@ -166,6 +166,23 @@ Si la interfaz muestra desalineaciones o badges incorrectos tras actualizar, for
 
 ## Plataforma técnica y despliegue
 
+- **Diagnóstico de arranque.**
+  - **Síntomas:** Streamlit detiene la inicialización con un mensaje genérico de importación y la traza completa no aparece en la consola.
+  - **Diagnóstico rápido:** Inspeccioná `logs/app_startup.log`, que ahora registra cada excepción durante el arranque con fecha, PID y versión del build. El archivo se genera automáticamente incluso si el fallo ocurre antes de que Streamlit configure sus propios logs.
+  - **Resolución:**
+    1. Abrí el archivo con tu editor o ejecutá:
+
+       ```bash
+       python - <<'PY'
+       from pathlib import Path
+       print(Path("logs/app_startup.log").read_text())
+       PY
+       ```
+
+       para ver el traceback completo.
+    2. Identificá el módulo ausente o la importación circular mencionada en la traza y corregí dependencias/paths según corresponda.
+    3. Reiniciá la app; si el arranque es exitoso, el log conservará el historial de eventos previos para auditoría.
+
 - **Streamlit falla al iniciar con `ModuleNotFoundError`.**
   - **Síntomas:** La ejecución `streamlit run app.py` detiene con módulos ausentes (`streamlit`, `controllers`, etc.).
   - **Diagnóstico rápido:** Comprueba que la virtualenv esté activa y que las dependencias estén instaladas.
