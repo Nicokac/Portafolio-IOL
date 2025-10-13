@@ -22,6 +22,7 @@ from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate
 from ui.security_info import render_security_info
 from ui.panels.about import render_about_panel
 from ui.panels.diagnostics import render_diagnostics_panel
+from ui.panels.system_diagnostics import render_system_diagnostics_panel
 from ui.panels.system_status import render_system_status_panel
 from ui.tabs.performance_dashboard import render_performance_dashboard_tab
 from shared.config import settings  # Re-exported for backwards compatibility
@@ -173,6 +174,11 @@ def render_login_page() -> None:
             "ui.panels.diagnostics",
             label="🩺 Diagnóstico",
             render_fallback=render_diagnostics_panel,
+        )
+        safe_page_link(
+            "ui.panels.system_diagnostics",
+            label="🔎 Diagnóstico del sistema",
+            render_fallback=render_system_diagnostics_panel,
         )
         safe_page_link(
             "ui.panels.system_status",

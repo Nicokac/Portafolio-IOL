@@ -35,6 +35,11 @@ if not hasattr(st, "columns"):
     st.columns = _dummy_columns  # type: ignore[attr-defined]
 
 from services.startup_logger import log_startup_event, log_startup_exception
+from services.system_diagnostics import (
+    SystemDiagnosticsConfiguration,
+    configure_system_diagnostics,
+    ensure_system_diagnostics_started,
+)
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -92,6 +97,8 @@ configure_sqlite_maintenance(
     )
 )
 ensure_sqlite_maintenance_started()
+configure_system_diagnostics(SystemDiagnosticsConfiguration())
+ensure_system_diagnostics_started()
 
 st.markdown(
     """
