@@ -24,6 +24,27 @@ from ui.charts import (
 _HEAVY_DATA_THRESHOLD = 250
 
 
+@st.cache_data(show_spinner=False)
+def _cached_basic_charts(df_view, top_n):
+    """Cache generation of the basic charts to avoid recomputation."""
+
+    return generate_basic_charts(df_view, top_n)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_portfolio_timeline(historical_total):
+    """Cache the portfolio timeline chart as it is expensive to build."""
+
+    return plot_portfolio_timeline(historical_total)
+
+
+@st.cache_data(show_spinner=False)
+def _cached_contribution_heatmap(by_symbol):
+    """Cache the contribution heatmap figure due to heavy calculations."""
+
+    return plot_contribution_heatmap(by_symbol)
+
+
 def generate_basic_charts(df_view, top_n):
     """Generate basic portfolio charts."""
     return {
@@ -96,7 +117,7 @@ def render_basic_section(
         favorites=favorites,
     )
 
-    charts = generate_basic_charts(df_view, controls.top_n)
+    charts = _cached_basic_charts(df_view, controls.top_n)
     colA, colB = st.columns(2)
     with colA:
         st.subheader("P/L por símbolo (Top N)")
@@ -183,7 +204,7 @@ def render_basic_section(
             )
     if timeline_ready:
         with st.spinner("Generando análisis avanzado…"):
-            timeline_fig = plot_portfolio_timeline(historical_total)
+            timeline_fig = _cached_portfolio_timeline(historical_total)
         if timeline_fig is not None:
             st.plotly_chart(
                 timeline_fig,
@@ -218,7 +239,7 @@ def render_basic_section(
             )
     if heatmap_ready:
         with st.spinner("Generando análisis avanzado…"):
-            heatmap_fig = plot_contribution_heatmap(by_symbol)
+            heatmap_fig = _cached_contribution_heatmap(by_symbol)
         if heatmap_fig is not None:
             st.plotly_chart(
                 heatmap_fig,
