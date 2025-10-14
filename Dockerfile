@@ -2,6 +2,7 @@
 
 FROM python:3.10-slim AS builder
 ENV UV_USE_REQUIREMENTS=true
+ENV PYTHONDONTWRITEBYTECODE=0
 WORKDIR /app
 # Install only production dependencies
 COPY requirements.txt .
@@ -9,6 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 FROM python:3.10-slim
 ENV UV_USE_REQUIREMENTS=true
+ENV PYTHONDONTWRITEBYTECODE=0
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /usr/local /usr/local

@@ -80,6 +80,26 @@ if Summary and Gauge and Counter and _PROMETHEUS_REGISTRY is not None:
         "Login render latency in milliseconds before the authenticated UI loads.",
         registry=_PROMETHEUS_REGISTRY,
     )
+    PRELOAD_TOTAL_MS = Gauge(
+        "preload_total_ms",
+        "Total time spent importing scientific libraries after authentication in milliseconds.",
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    PRELOAD_PANDAS_MS = Gauge(
+        "preload_pandas_ms",
+        "Duration of pandas preload in milliseconds.",
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    PRELOAD_PLOTLY_MS = Gauge(
+        "preload_plotly_ms",
+        "Duration of plotly preload in milliseconds.",
+        registry=_PROMETHEUS_REGISTRY,
+    )
+    PRELOAD_STATSMODELS_MS = Gauge(
+        "preload_statsmodels_ms",
+        "Duration of statsmodels preload in milliseconds.",
+        registry=_PROMETHEUS_REGISTRY,
+    )
     QUOTES_SWR_SERVED_TOTAL = Counter(
         "quotes_swr_served_total",
         "Number of quote batches served via stale-while-revalidate",
@@ -100,6 +120,10 @@ else:  # pragma: no cover - when prometheus_client missing or disabled
     QUOTES_BATCH_LATENCY_SECONDS = None  # type: ignore[assignment]
     UI_TOTAL_LOAD_MS = None  # type: ignore[assignment]
     UI_STARTUP_LOAD_MS = None  # type: ignore[assignment]
+    PRELOAD_TOTAL_MS = None  # type: ignore[assignment]
+    PRELOAD_PANDAS_MS = None  # type: ignore[assignment]
+    PRELOAD_PLOTLY_MS = None  # type: ignore[assignment]
+    PRELOAD_STATSMODELS_MS = None  # type: ignore[assignment]
 
 
 def update_ui_total_load_metric(total_ms: float | int | None) -> None:
@@ -124,6 +148,39 @@ def update_ui_startup_load_metric(total_ms: float | int | None) -> None:
     except Exception:
         value = float("nan")
     UI_STARTUP_LOAD_MS.set(value)
+
+
+_PRELOAD_LIBRARY_GAUGES: dict[str, Gauge | None] = {
+    "pandas": PRELOAD_PANDAS_MS if "PRELOAD_PANDAS_MS" in globals() else None,
+    "plotly": PRELOAD_PLOTLY_MS if "PRELOAD_PLOTLY_MS" in globals() else None,
+    "statsmodels": PRELOAD_STATSMODELS_MS if "PRELOAD_STATSMODELS_MS" in globals() else None,
+}
+
+
+def update_preload_total_metric(total_ms: float | int | None) -> None:
+    """Expose the overall scientific preload duration to Prometheus."""
+
+    gauge = globals().get("PRELOAD_TOTAL_MS")
+    if gauge is None:
+        return
+    try:
+        value = float(total_ms) if total_ms is not None else float("nan")
+    except Exception:
+        value = float("nan")
+    gauge.set(value)
+
+
+def update_preload_library_metric(library: str, duration_ms: float | int | None) -> None:
+    """Propagate per-library preload timings to dedicated gauges when available."""
+
+    gauge = _PRELOAD_LIBRARY_GAUGES.get(library)
+    if gauge is None:
+        return
+    try:
+        value = float(duration_ms) if duration_ms is not None else float("nan")
+    except Exception:
+        value = float("nan")
+    gauge.set(value)
 
 
 def init_metrics() -> None:
@@ -689,12 +746,18 @@ __all__ = [
     "PROMETHEUS_ENABLED",
     "UI_TOTAL_LOAD_MS",
     "UI_STARTUP_LOAD_MS",
+    "PRELOAD_TOTAL_MS",
+    "PRELOAD_PANDAS_MS",
+    "PRELOAD_PLOTLY_MS",
+    "PRELOAD_STATSMODELS_MS",
     "performance_timer",
     "record_stage",
     "read_recent_entries",
     "track_performance",
     "update_ui_total_load_metric",
     "update_ui_startup_load_metric",
+    "update_preload_total_metric",
+    "update_preload_library_metric",
     "QUOTES_SWR_SERVED_TOTAL",
     "QUOTES_BATCH_LATENCY_SECONDS",
 ]
