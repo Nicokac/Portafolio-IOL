@@ -55,6 +55,7 @@ def test_metrics_endpoint_exposes_ui_total_load_gauge(
     timer, app = _prepare_app(tmp_path, monkeypatch, enable_prometheus=True)
 
     timer.update_ui_total_load_metric(8532)
+    timer.update_ui_startup_load_metric(1450)
     timer._shutdown_listener()
 
     with TestClient(app) as client:
@@ -63,3 +64,5 @@ def test_metrics_endpoint_exposes_ui_total_load_gauge(
     assert response.status_code == 200
     assert "ui_total_load_ms" in response.text
     assert "ui_total_load_ms 8532.0" in response.text
+    assert "ui_startup_load_ms" in response.text
+    assert "ui_startup_load_ms 1450.0" in response.text

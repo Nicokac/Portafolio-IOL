@@ -76,6 +76,9 @@ _POST_LOGIN_INIT_STARTED = False
 _POST_LOGIN_INIT_LOCK = threading.Lock()
 _PRE_LAZY_LOGGED_KEY = "_startup_logged_pre_lazy"
 _POST_LAZY_LOGGED_KEY = "_startup_logged_post_lazy"
+_UI_STARTUP_METRIC_KEY = "ui_startup_load_ms"
+_UI_STARTUP_LOGGED_KEY = "_ui_startup_logged"
+_UI_STARTUP_REPORTED_KEY = "_ui_startup_metric_reported"
 
 
 @lru_cache(maxsize=None)
@@ -150,6 +153,75 @@ def _update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
         update_metric(total_ms)
     except Exception:
         logger.debug("No se pudo actualizar ui_startup_load_ms", exc_info=True)
+
+
+def _update_ui_startup_metric_lazy(total_ms: float | int | None) -> None:
+    try:
+        update_metric = _lazy_attr(
+            "services.performance_timer", "update_ui_startup_load_metric"
+        )
+    except Exception:
+        logger.debug("No se pudo importar update_ui_startup_load_metric", exc_info=True)
+        return
+    try:
+        update_metric(total_ms)
+    except Exception:
+        logger.debug("No se pudo actualizar ui_startup_load_ms", exc_info=True)
+
+
+def _record_ui_startup_metric() -> None:
+    try:
+        if st.session_state.get(_UI_STARTUP_LOGGED_KEY):
+            return
+    except Exception:
+        pass
+
+    elapsed = max((time.perf_counter() - _TOTAL_LOAD_START) * 1000.0, 0.0)
+
+    try:
+        st.session_state[_UI_STARTUP_METRIC_KEY] = float(elapsed)
+    except Exception:
+        logger.debug("No se pudo persistir ui_startup_load_ms", exc_info=True)
+    try:
+        st.session_state[_UI_STARTUP_REPORTED_KEY] = False
+    except Exception:
+        logger.debug("No se pudo marcar ui_startup_metric_reported", exc_info=True)
+    try:
+        st.session_state[_UI_STARTUP_LOGGED_KEY] = True
+    except Exception:
+        logger.debug("No se pudo marcar _ui_startup_logged", exc_info=True)
+
+    try:
+        log_startup_event(
+            f"ui_startup_load | value_ms={elapsed:.2f}"
+        )
+    except Exception:
+        logger.debug("No se pudo registrar ui_startup_load en startup_logger", exc_info=True)
+
+
+def _flush_ui_startup_metric(startup_ms: float | int | None) -> None:
+    if startup_ms is None:
+        return
+
+    try:
+        if st.session_state.get(_UI_STARTUP_REPORTED_KEY):
+            return
+    except Exception:
+        pass
+
+    try:
+        value = float(startup_ms)
+    except Exception:
+        logger.debug("Valor ui_startup_load_ms inválido", exc_info=True)
+        return
+
+    _record_stage_lazy("ui_startup_load", total_ms=value, status="success")
+    _update_ui_startup_metric_lazy(value)
+
+    try:
+        st.session_state[_UI_STARTUP_REPORTED_KEY] = True
+    except Exception:
+        logger.debug("No se pudo marcar ui_startup_metric_reported", exc_info=True)
 
 
 def _run_initialization_stage(label: str, action: Callable[[], None]) -> None:
@@ -260,6 +332,14 @@ def _render_total_load_indicator(placeholder) -> None:
             timings["total_ms"] = float(elapsed_ms)
     except Exception:
         logger.debug("No se pudo extender portfolio_stage_timings con total_ms", exc_info=True)
+
+    try:
+        startup_ms = st.session_state.get(_UI_STARTUP_METRIC_KEY)
+    except Exception:
+        logger.debug("No se pudo obtener ui_startup_load_ms", exc_info=True)
+        startup_ms = None
+
+    _flush_ui_startup_metric(startup_ms)
 
     formatted_value = _format_total_load_value(elapsed_ms)
     block = (
@@ -833,13 +913,19 @@ def main(argv: list[str] | None = None):
     if st.session_state.get("force_login"):
         _maybe_log_pre_login_checkpoint()
         start_preload_worker()
-        render_login_page()
+        try:
+            render_login_page()
+        finally:
+            _record_ui_startup_metric()
         st.stop()
 
     if not st.session_state.get("authenticated"):
         _maybe_log_pre_login_checkpoint()
         start_preload_worker()
-        render_login_page()
+        try:
+            render_login_page()
+        finally:
+            _record_ui_startup_metric()
         st.stop()
 
     _schedule_post_login_initialization()

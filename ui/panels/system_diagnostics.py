@@ -12,6 +12,16 @@ def _format_ms(value: float | None) -> str:
     return f"{value:.2f}"
 
 
+def _format_metric_value(value: float | int | None) -> str:
+    if value is None:
+        return "s/d"
+    try:
+        numeric = float(value)
+    except Exception:
+        return "s/d"
+    return f"{numeric:.0f} ms"
+
+
 def _format_status(valid: bool, is_weak: bool | None) -> str:
     if not valid:
         return "⚠️ Revisar"
@@ -27,6 +37,22 @@ def render_system_diagnostics_panel() -> None:
 
     st.header("🔎 Diagnóstico del sistema")
     st.caption("Benchmarks periódicos sobre endpoints críticos y salud operativa.")
+
+    try:
+        startup_ms = st.session_state.get("ui_startup_load_ms")
+        total_ms = st.session_state.get("total_load_ms")
+    except Exception:
+        startup_ms = None
+        total_ms = None
+
+    st.subheader("🕒 Tiempos de arranque")
+    cols = st.columns(2)
+    cols[0].metric("ui_startup_load_ms", _format_metric_value(startup_ms))
+    cols[1].metric("ui_total_load_ms", _format_metric_value(total_ms))
+    st.caption(
+        "`ui_startup_load_ms` refleja el tiempo hasta que el login queda interactivo;"
+        " `ui_total_load_ms` cubre el render completo tras autenticar."
+    )
 
     st.subheader("⏱️ Latencias promedio")
     if snapshot.endpoints:

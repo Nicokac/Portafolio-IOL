@@ -25,6 +25,11 @@ if (
         "Total UI load time in milliseconds (from Streamlit startup to full render).",
         registry=perf_timer.PROMETHEUS_REGISTRY,
     )
+    perf_timer.UI_STARTUP_LOAD_MS = Gauge(
+        "ui_startup_load_ms",
+        "Login render latency in milliseconds before the authenticated UI loads.",
+        registry=perf_timer.PROMETHEUS_REGISTRY,
+    )
 
 
 @router.get("/metrics", include_in_schema=False)
