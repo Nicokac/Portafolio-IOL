@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+import logging
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
+import requests
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -107,6 +109,25 @@ def test_make_symbol_url_normalises_input(symbol, expected):
     assert make_symbol_url(symbol) == expected
 
 
+def test_invalid_ticker_validation_prevents_request(monkeypatch: pytest.MonkeyPatch):
+    from infrastructure.market import yahoo_client as module
+
+    def _unexpected_session():
+        raise AssertionError("Session should not be created for invalid ticker")
+
+    monkeypatch.setattr(module.requests, "Session", _unexpected_session)
+    monkeypatch.setattr(
+        module.yf,
+        "Ticker",
+        lambda *args, **kwargs: pytest.fail("Ticker should not be requested"),
+    )
+
+    client = YahooFinanceClient()
+
+    with pytest.raises(AppError):
+        client.get_price_history("bad ticker !")
+
+
 def test_get_dividends_returns_dataframe(setup_fake_environment):
     dates = pd.to_datetime(["2020-01-01", "2021-01-01"])
     series = pd.Series([0.5, 0.55], index=dates)
@@ -182,3 +203,39 @@ def test_get_fundamentals_uses_persistent_cache(setup_fake_environment):
     another_client = YahooFinanceClient()
     another_client.get_fundamentals("cache")
     assert len(session_factory.sessions) == initial_sessions
+
+
+def test_http_404_downgraded_and_cached(monkeypatch: pytest.MonkeyPatch, caplog):
+    from infrastructure.market import yahoo_client as module
+
+    session_factory = SessionFactory()
+    monkeypatch.setattr(module.requests, "Session", session_factory)
+
+    response = requests.Response()
+    response.status_code = 404
+    error = requests.HTTPError("not found", response=response)
+
+    class RaisingTicker(FakeTicker):
+        def get_info(self):
+            raise error
+
+    monkeypatch.setattr(module.yf, "Ticker", lambda symbol, session=None: RaisingTicker())
+
+    client = YahooFinanceClient()
+
+    with caplog.at_level(logging.DEBUG):
+        with pytest.raises(AppError):
+            client.get_fundamentals("missing")
+
+    debug_messages = [
+        record.message for record in caplog.records if record.levelno == logging.DEBUG
+    ]
+    assert any("Yahoo Finance devolvió 404" in message for message in debug_messages)
+    assert len(session_factory.sessions) == 1
+
+    caplog.clear()
+
+    with pytest.raises(AppError):
+        client.get_fundamentals("missing")
+
+    assert len(session_factory.sessions) == 1

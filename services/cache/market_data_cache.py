@@ -39,6 +39,18 @@ def _normalize_symbol(symbol: str | None) -> str:
     return text.upper()
 
 
+_ALLOWED_SYMBOL_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-^=/+&_")
+
+
+def is_probably_valid_symbol(symbol: str | None) -> bool:
+    """Return ``True`` when the ticker contains only supported characters."""
+
+    normalized = _normalize_symbol(symbol)
+    if not normalized:
+        return False
+    return all(char in _ALLOWED_SYMBOL_CHARS for char in normalized)
+
+
 def _normalize_iterable(values: Iterable[str | None]) -> tuple[str, ...]:
     normalized = [_normalize_symbol(value) for value in values if _normalize_symbol(value)]
     return tuple(sorted(dict.fromkeys(normalized)))
@@ -1013,4 +1025,5 @@ __all__ = [
     "get_sqlite_backend_path",
     "StaleWhileRevalidateCache",
     "StaleWhileRevalidateResult",
+    "is_probably_valid_symbol",
 ]
