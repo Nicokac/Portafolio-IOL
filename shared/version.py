@@ -1,11 +1,11 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch10b"
-RELEASE_NAME = "UI Total Load Metrics Export"
-BUILD_DATE = "2025-10-13"
+VERSION = "v0.6.6-patch11a"
+RELEASE_NAME = "Startup telemetry hotfix"
+BUILD_DATE = "2025-10-14"
 CHANGELOG_REF = (
-    "Unified UI total load observability across diagnostics, Prometheus and startup logs"
+    "Reduced UI total load metric contention and moved startup logging off the main thread"
 )
 
 __version__ = VERSION
