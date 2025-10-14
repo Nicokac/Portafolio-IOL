@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import html
 import importlib
+import importlib.util
 import json
 import logging
 import threading
@@ -889,11 +890,12 @@ def _ensure_kaleido_runtime_safe() -> None:
 
 def _check_critical_dependencies() -> dict[str, dict[str, str | None]]:
     def _probe_plotly() -> None:
-        importlib.import_module("plotly")
+        if importlib.util.find_spec("plotly") is None:
+            raise ImportError("plotly no está disponible")
 
     def _probe_kaleido() -> None:
-        importlib.import_module("kaleido")
-        _ensure_kaleido_runtime_safe()
+        if importlib.util.find_spec("kaleido") is None:
+            raise ImportError("kaleido no está disponible")
 
     results: dict[str, dict[str, str | None]] = {}
     results["plotly"] = _check_dependency("plotly", "Plotly", _probe_plotly)
