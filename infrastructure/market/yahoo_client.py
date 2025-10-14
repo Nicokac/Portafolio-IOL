@@ -8,8 +8,12 @@ from typing import Any, Callable, Dict, Iterable, Sequence, TypeVar
 import pandas as pd
 import requests
 import yfinance as yf
+from requests import HTTPError, RequestException
 
-from services.cache.market_data_cache import create_persistent_cache
+from services.cache.market_data_cache import (
+    create_persistent_cache,
+    is_probably_valid_symbol,
+)
 from shared.errors import AppError
 
 T = TypeVar("T")
@@ -60,19 +64,47 @@ class YahooFinanceClient:
     _DIVIDENDS_CACHE = create_persistent_cache("yahoo_dividends")
     _SHARES_CACHE = create_persistent_cache("yahoo_shares")
     _PRICES_CACHE = create_persistent_cache("yahoo_prices")
+    _INVALID_SYMBOL_CACHE = create_persistent_cache("yahoo_invalid_symbols")
+
+    @classmethod
+    def _validate_symbol(cls, ticker: str) -> str:
+        symbol = _normalise_symbol(ticker)
+        if not symbol:
+            raise AppError("Se requiere un ticker de Yahoo Finance válido")
+        if not is_probably_valid_symbol(symbol):
+            raise AppError(f"Ticker de Yahoo Finance inválido: {symbol}")
+        flagged = cls._INVALID_SYMBOL_CACHE.get(symbol)
+        if flagged:
+            raise AppError(f"Yahoo Finance no reconoce el ticker {symbol}")
+        return symbol
 
     def _with_ticker(self, ticker: str, loader: Callable[[yf.Ticker], T]) -> T:
-        session = requests.Session()
-        symbol = _normalise_symbol(ticker)
+        symbol = self._validate_symbol(ticker)
+        session: requests.Session | None = None
         try:
+            session = requests.Session()
             yft = yf.Ticker(symbol, session=session)
             return loader(yft)
         except AppError:
             raise
+        except HTTPError as exc:
+            status_code = getattr(exc.response, "status_code", None)
+            if status_code == 404:
+                LOGGER.debug("Yahoo Finance devolvió 404 para %s", symbol)
+                self._INVALID_SYMBOL_CACHE.set(symbol, True, ttl=self._CACHE_TTL)
+                raise AppError(f"Yahoo Finance no encontró datos para {symbol}") from exc
+            raise AppError(
+                f"Error HTTP al obtener datos para {symbol} desde Yahoo Finance"
+            ) from exc
+        except RequestException as exc:  # pragma: no cover - network issues
+            raise AppError(
+                f"Error de red al obtener datos para {symbol} desde Yahoo Finance"
+            ) from exc
         except Exception as exc:  # pragma: no cover - network/parsing issues
             raise AppError(f"Error al obtener datos para {symbol} desde Yahoo Finance") from exc
         finally:
-            session.close()
+            if session is not None:
+                session.close()
 
     def list_symbols_by_markets(
         self, markets: Sequence[str], *, size: int | None = None
@@ -316,6 +348,7 @@ class YahooFinanceClient:
             cls._DIVIDENDS_CACHE,
             cls._SHARES_CACHE,
             cls._PRICES_CACHE,
+            cls._INVALID_SYMBOL_CACHE,
         ):
             try:
                 cache.clear()
