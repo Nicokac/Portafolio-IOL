@@ -26,6 +26,7 @@ def test_ui_total_load_metric_log_entry(
 
     fixed_timestamp = datetime(2025, 10, 13, 4, 31, 2, tzinfo=timezone.utc)
     startup_logger.log_ui_total_load_metric(8532, timestamp=fixed_timestamp)
+    startup_logger.flush_startup_logger()
 
     assert log_path.exists()
     contents = log_path.read_text(encoding="utf-8").strip().splitlines()

@@ -47,7 +47,7 @@ from services.system_diagnostics import (
     ensure_system_diagnostics_started,
 )
 
-from services.performance_timer import record_stage, update_ui_total_load_metric
+from services.performance_timer import record_stage
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -104,13 +104,6 @@ def _render_total_load_indicator(placeholder) -> None:
     except Exception:
         logger.debug("No se pudo calcular el tiempo total de carga", exc_info=True)
         try:
-            update_ui_total_load_metric(None)
-        except Exception:
-            logger.debug(
-                "No se pudo actualizar el gauge ui_total_load_ms con NaN",
-                exc_info=True,
-            )
-        try:
             log_ui_total_load_metric(None)
         except Exception:
             logger.debug(
@@ -149,13 +142,6 @@ def _render_total_load_indicator(placeholder) -> None:
         record_stage("ui_total_load", total_ms=elapsed_ms, status="success")
     except Exception:
         logger.debug("No se pudo registrar ui_total_load en performance_timer", exc_info=True)
-    try:
-        update_ui_total_load_metric(elapsed_ms)
-    except Exception:
-        logger.debug(
-            "No se pudo actualizar el gauge ui_total_load_ms con el valor actual",
-            exc_info=True,
-        )
     try:
         log_ui_total_load_metric(elapsed_ms)
     except Exception:

@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.6-patch11a] — Startup telemetry performance hotfix (2025-10-14)
+### Changed
+- Eliminamos la actualización redundante del gauge `ui_total_load_ms` en `app.py`, delegando en `record_stage` para evitar escrituras duplicadas y mantener el indicador visible en la UI y `/metrics`.
+- `services.startup_logger` ahora utiliza una cola asincrónica con worker dedicado para persistir `logs/app_startup.log`, eliminando bloqueos de I/O en el hilo principal y añadiendo `flush_startup_logger()` para sincronizar en tests y apagado.
+
 ## [v0.6.6-patch9b2] — Optimization Nexus (2025-10-13)
 - Updated version metadata in shared/version.py
 - Marks completion of predictive and quotes optimization cycle
