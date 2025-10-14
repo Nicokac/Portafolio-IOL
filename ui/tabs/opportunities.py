@@ -433,7 +433,7 @@ def _render_sector_score_chart(table: pd.DataFrame | None) -> None:
         )
         .properties(height=320)
     )
-    st.altair_chart(chart, use_container_width=True, key="opportunities_sector_chart")
+    st.altair_chart(chart, width="stretch", key="opportunities_sector_chart")
 
 
 def _render_macro_history_chart(entries: Sequence[Mapping[str, object]] | None) -> None:
@@ -499,7 +499,7 @@ def _render_macro_history_chart(entries: Sequence[Mapping[str, object]] | None) 
         )
         .properties(height=320)
     )
-    st.altair_chart(chart, use_container_width=True, key="opportunities_macro_chart")
+    st.altair_chart(chart, width="stretch", key="opportunities_macro_chart")
 
 
 def _render_summary_block(
@@ -702,7 +702,7 @@ def _render_screening_block(
 
         st.dataframe(
             display_table,
-            use_container_width=True,
+            width="stretch",
             column_config=column_config,
             column_order=column_order,
         )
@@ -1029,7 +1029,7 @@ def render_opportunities_tab() -> None:
         "Buscar oportunidades",
         key="search_opportunities",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     ):
         generate_callable = _resolve_generate_callable()
         if generate_callable is None:

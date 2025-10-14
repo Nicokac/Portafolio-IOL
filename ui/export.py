@@ -242,7 +242,7 @@ def _render_export_summary(
     if callable(dataframe_fn):
         dataframe_fn(
             preview_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
     else:  # pragma: no cover - exercised via lightweight stubs in tests

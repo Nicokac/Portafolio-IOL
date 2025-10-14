@@ -42,7 +42,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         if self._warn_after > 0 and self._wait_started is not None:
             waited = acquired_at - self._wait_started
             if waited > self._warn_after:
-                LOGGER.warning(
+                LOGGER.debug(
                     "El lock adaptativo demoró %.2fs en adquirirse", waited
                 )
 
@@ -61,7 +61,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         if self._acquired_at is not None:
             held_for = time.monotonic() - self._acquired_at
             if self._warn_after > 0 and held_for > self._warn_after:
-                LOGGER.warning(
+                LOGGER.debug(
                     "El lock adaptativo permaneció retenido %.2fs", held_for
                 )
 

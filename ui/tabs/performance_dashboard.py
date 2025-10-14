@@ -166,7 +166,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
         return
 
     st.subheader("Registros recientes")
-    st.dataframe(_prepare_display(df), use_container_width=True, hide_index=True)
+    st.dataframe(_prepare_display(df), width="stretch", hide_index=True)
 
     alerts_df = _build_alert_rows(df)
     if not alerts_df.empty:
@@ -174,14 +174,14 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
         st.warning("⚠️ Se detectaron bloques con duración prolongada o alto consumo de CPU/RAM.")
         st.dataframe(
             _prepare_display(alerts_df.assign(success=alerts_df["success"])),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
     percentiles = _build_percentile_summary(df)
     if not percentiles.empty:
         st.subheader("Percentiles de duración por bloque")
-        st.dataframe(percentiles, use_container_width=True)
+        st.dataframe(percentiles, width="stretch")
 
     timeline = df.dropna(subset=["timestamp"]).sort_values("timestamp")
     if not timeline.empty:
