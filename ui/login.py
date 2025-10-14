@@ -1,5 +1,7 @@
+import importlib
 import logging
 import os
+from functools import lru_cache
 
 import requests
 import streamlit as st
@@ -15,20 +17,12 @@ from services.update_checker import (
     get_update_history,
     safe_restart_app,
 )
-from ui.footer import render_footer
-from ui.header import render_header
-from ui.helpers.navigation import safe_page_link
 from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate_token
-from ui.security_info import render_security_info
-from ui.panels.about import render_about_panel
-from ui.panels.diagnostics import render_diagnostics_panel
-from ui.panels.system_diagnostics import render_system_diagnostics_panel
-from ui.panels.system_status import render_system_status_panel
-from ui.tabs.performance_dashboard import render_performance_dashboard_tab
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.version import __version__
 from shared.time_provider import TimeProvider
+from ui.security_info import render_security_info
 
 
 FASTAPI_HEALTH_URL = os.environ.get("FASTAPI_HEALTH_URL", "http://localhost:8000/health")
@@ -42,6 +36,16 @@ logger = logging.getLogger(__name__)
 AUTO_RESTART_KEY = "auto_restart_after_update"
 UPDATE_CONFIRM_KEY = "confirm_update_request"
 FORCE_CONFIRM_KEY = "confirm_force_update_request"
+
+
+@lru_cache(maxsize=None)
+def _lazy_module(name: str):
+    return importlib.import_module(name)
+
+
+@lru_cache(maxsize=None)
+def _lazy_attr(module: str, attr: str):
+    return getattr(_lazy_module(module), attr)
 
 
 def _perform_backend_get(
@@ -139,6 +143,10 @@ def _handle_restart(auto_restart_enabled: bool) -> None:
 
 def render_login_page() -> None:
     """Display the login form with header and footer."""
+    render_header = _lazy_attr("ui.header", "render_header")
+    render_footer = _lazy_attr("ui.footer", "render_footer")
+    safe_page_link = _lazy_attr("ui.helpers.navigation", "safe_page_link")
+
     render_header()
 
     if _is_fastapi_available():
@@ -168,27 +176,27 @@ def render_login_page() -> None:
         safe_page_link(
             "ui.panels.about",
             label="ℹ️ Acerca de",
-            render_fallback=render_about_panel,
+            render_fallback=lambda: _lazy_attr("ui.panels.about", "render_about_panel")(),
         )
         safe_page_link(
             "ui.panels.diagnostics",
             label="🩺 Diagnóstico",
-            render_fallback=render_diagnostics_panel,
+            render_fallback=lambda: _lazy_attr("ui.panels.diagnostics", "render_diagnostics_panel")(),
         )
         safe_page_link(
             "ui.panels.system_diagnostics",
             label="🔎 Diagnóstico del sistema",
-            render_fallback=render_system_diagnostics_panel,
+            render_fallback=lambda: _lazy_attr("ui.panels.system_diagnostics", "render_system_diagnostics_panel")(),
         )
         safe_page_link(
             "ui.panels.system_status",
             label="🔍 Estado del Sistema",
-            render_fallback=render_system_status_panel,
+            render_fallback=lambda: _lazy_attr("ui.panels.system_status", "render_system_status_panel")(),
         )
         safe_page_link(
             "ui.tabs.performance_dashboard",
             label="⏱️ Performance",
-            render_fallback=render_performance_dashboard_tab,
+            render_fallback=lambda: _lazy_attr("ui.tabs.performance_dashboard", "render_performance_dashboard_tab")(),
         )
 
     latest = check_for_update()

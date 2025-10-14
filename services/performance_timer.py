@@ -108,6 +108,14 @@ def update_ui_total_load_metric(total_ms: float | int | None) -> None:
     UI_TOTAL_LOAD_MS.set(value)
 
 
+def init_metrics() -> None:
+    """Compatibility shim for lazy initialisation callers."""
+
+    # Import-time side-effects already set up metrics; this function exists for
+    # backwards compatibility with callers that expect an explicit hook.
+    return None
+
+
 def _resolve_log_path() -> Path:
     raw_path = os.getenv(_LOG_ENV_NAME, "performance_metrics.log")
     path = Path(raw_path).expanduser()

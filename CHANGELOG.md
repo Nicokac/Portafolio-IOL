@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.6-patch11d] — Implementación de lazy imports y optimización de arranque inicial (2025-10-16)
+### Changed
+- Implementación de lazy imports y optimización de arranque inicial.
+
 ## [v0.6.6-patch11c] — UI tests alignment & risk stub fixes (2025-10-16)
 ### Changed
 - Alineamos la suite de UI con el flujo de render diferido en tres etapas, verificando métricas de fingerprint cache entre renderizados consecutivos.
