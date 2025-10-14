@@ -82,20 +82,31 @@ def render_diagnostics_panel() -> None:
         st.subheader("🧭 Última renderización del portafolio")
         timings_frame = pd.DataFrame(timing_rows)
         st.dataframe(timings_frame, use_container_width=True, hide_index=True)
-        if isinstance(fingerprint_stats, dict) and fingerprint_stats:
-            hits = int(fingerprint_stats.get("hits", 0) or 0)
-            misses = int(fingerprint_stats.get("misses", 0) or 0)
-            ratio = float(fingerprint_stats.get("hit_ratio", 0.0) or 0.0) * 100.0
-            last_status = str(fingerprint_stats.get("last_status") or "").strip().title()
-            last_latency = float(fingerprint_stats.get("last_latency_ms", 0.0) or 0.0)
-            cols = st.columns(3)
-            cols[0].metric("Hits", hits)
-            cols[1].metric("Misses", misses)
-            cols[2].metric("Hit ratio", f"{ratio:.1f}%")
-            if last_status:
-                st.caption(
-                    f"Fingerprint cache · Último acceso: {last_status} · {last_latency:.2f} ms"
-                )
+
+    if isinstance(fingerprint_stats, dict) and fingerprint_stats:
+        hits = int(fingerprint_stats.get("hits", 0) or 0)
+        misses = int(fingerprint_stats.get("misses", 0) or 0)
+        ratio = float(fingerprint_stats.get("hit_ratio", 0.0) or 0.0) * 100.0
+        last_status = str(fingerprint_stats.get("last_status") or "").strip().title()
+        last_latency = float(fingerprint_stats.get("last_latency_ms", 0.0) or 0.0)
+        last_key = str(fingerprint_stats.get("last_key") or "").strip()
+        st.subheader("🔐 Caché de fingerprint de portafolio")
+        cols = st.columns(3)
+        cols[0].metric("Hits", hits)
+        cols[1].metric("Misses", misses)
+        cols[2].metric("Hit ratio", f"{ratio:.1f}%")
+        caption_bits = []
+        if last_status:
+            caption_bits.append(f"Último acceso: {last_status}")
+        if last_latency:
+            caption_bits.append(f"Latencia: {last_latency:.2f} ms")
+        if last_key:
+            caption_bits.append(f"Clave: {last_key}")
+        if caption_bits:
+            st.caption(" · ".join(caption_bits))
+    elif fingerprint_stats is not None:
+        st.subheader("🔐 Caché de fingerprint de portafolio")
+        st.caption("Aún no hay métricas registradas para el caché de fingerprints.")
 
     metrics = get_recent_metrics()
     portfolio_metrics = [m for m in metrics if m.name.startswith("portfolio_ui.")]

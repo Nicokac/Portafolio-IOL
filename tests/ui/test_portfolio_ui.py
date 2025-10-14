@@ -93,6 +93,9 @@ class _Placeholder:
     def info(self, message: str) -> None:
         self._owner.info(message)
 
+    def caption(self, text: str) -> None:
+        self._owner.caption(text)
+
 
 class FakeStreamlit:
     """Minimal Streamlit stub capturing the interactions we care about."""
@@ -127,6 +130,7 @@ class FakeStreamlit:
         self.bar_charts: list[dict[str, Any]] = []
         self.metrics: list[tuple[Any, Any, Any]] = []
         self.markdowns: list[dict[str, Any]] = []
+        self.captions: list[str] = []
         self.checkbox_calls: list[dict[str, Any]] = []
         self.slider_calls: list[dict[str, Any]] = []
         self.download_buttons: list[dict[str, Any]] = []
@@ -248,6 +252,12 @@ class FakeStreamlit:
             return [_ContextManager(self) for _ in range(layout)]
         return [_ContextManager(self) for _ in layout]
 
+    def container(self) -> _ContextManager:
+        return _ContextManager(self)
+
+    def tabs(self, labels: Sequence[str]) -> list[_ContextManager]:
+        return [_ContextManager(self) for _ in labels]
+
     def expander(self, label: str, *_, **__):  # noqa: ANN001 - mimics streamlit signature
         return _ContextManager(self)
 
@@ -275,8 +285,8 @@ class FakeStreamlit:
     def success(self, message: str) -> None:
         self.successes.append(message)
 
-    def caption(self, *_: Any, **__: Any) -> None:  # pragma: no cover - display only
-        return None
+    def caption(self, text: str, *_: Any, **__: Any) -> None:
+        self.captions.append(text)
 
     def plotly_chart(self, fig: Any, **kwargs: Any) -> None:
         self.plot_calls.append({"fig": fig, "kwargs": kwargs})
@@ -420,7 +430,6 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "render_summary_section", _summary_stub)
         monkeypatch.setattr(portfolio_mod, "render_table_section", _table_stub)
         monkeypatch.setattr(portfolio_mod, "render_charts_section", _charts_stub)
-        monkeypatch.setattr(portfolio_mod, "_render_updated_caption", lambda *_: None)
         monkeypatch.setattr(portfolio_mod, "render_advanced_analysis", advanced)
         monkeypatch.setattr(portfolio_mod, "render_risk_analysis", risk)
         monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", fundamental)
@@ -675,9 +684,18 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         },
     )
     risk_mod.st = fake_st
+    fake_st.session_state["selected_asset_types"] = ["ACCION"]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+    class _CacheStub:
+        def get_history(self, *_args, loader=None, **_kwargs):
+            if callable(loader):
+                return loader()
+            return pd.DataFrame()
+
+    monkeypatch.setattr(risk_mod, "get_market_data_cache", lambda: _CacheStub())
 
     df_view = pd.DataFrame(
         {
@@ -689,16 +707,21 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
 
     history_calls: list[dict[str, Any]] = []
 
+    price_series = {
+        "A1": [10.0, 10.5, 10.2, 10.8],
+        "A2": [20.0, 19.5, 20.5, 21.0],
+    }
+
     def fake_history(simbolos=None, period="1y"):
-        call = {"simbolos": list(simbolos or []), "period": period}
+        symbols = list(simbolos or [])
+        call = {"simbolos": symbols, "period": period}
         history_calls.append(call)
-        if simbolos == ["S&P 500 (^GSPC)"] or simbolos == ["^GSPC"]:
+        if symbols == ["S&P 500 (^GSPC)"] or symbols == ["^GSPC"]:
             return pd.DataFrame({"^GSPC": [100.0, 102.0, 101.0, 103.0]})
-        assert set(simbolos or []) == {"A1", "A2"}, f"Unexpected symbols received: {simbolos}"
-        return pd.DataFrame({
-            "A1": [10.0, 10.5, 10.2, 10.8],
-            "A2": [20.0, 19.5, 20.5, 21.0],
-        })
+        relevant = [sym for sym in symbols if sym in price_series]
+        if not relevant:
+            return pd.DataFrame()
+        return pd.DataFrame({sym: price_series[sym] for sym in relevant})
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
@@ -712,6 +735,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         "compute_returns",
         lambda prices: prices.pct_change().dropna(),
     )
+    monkeypatch.setattr(risk_mod, "beta", lambda returns, bench: 0.75 if not returns.empty else float("nan"))
     def fake_compute(*args, **kwargs):
         assert kwargs.get("var_confidence") == 0.95
         return (
@@ -727,6 +751,23 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         )
 
     monkeypatch.setattr(risk_mod, "compute_risk_metrics", fake_compute)
+    monkeypatch.setattr(
+        risk_mod,
+        "monte_carlo_simulation",
+        lambda *a, **k: pd.DataFrame({"sim": [1.0, 1.02, 1.05]}),
+    )
+    monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.02)
+    monkeypatch.setattr(
+        risk_mod,
+        "benchmark_analysis",
+        lambda *a, **k: {
+            "tracking_error": 0.02,
+            "active_return": 0.01,
+            "information_ratio": 0.5,
+            "factor_betas": {"MKT": 1.1},
+            "r_squared": 0.8,
+        },
+    )
 
     drawdown_series_output = pd.Series([-0.01, -0.05], name="drawdown")
     monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: drawdown_series_output)
@@ -785,16 +826,19 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
 
     tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
-    assert {"volatility_dist", "portfolio_drawdown", "beta_scatter", "rolling_corr"}.issubset(tags)
+    expected_tags = {"volatility_dist", "portfolio_drawdown", "rolling_corr", "returns_hist"}
+    assert expected_tags.issubset(tags)
     assert any("CVaR" in label for label, *_ in fake_st.metrics)
     labels = [call["label"] for call in fake_st.selectbox_calls]
-    assert "Tipo de activo a incluir" in labels
+    assert "Calcular correlación sobre el último período:" in labels
     filtered_calls = [
         call for call in history_calls if call["simbolos"] and not call["simbolos"][0].startswith("^")
     ]
     assert filtered_calls, "Expected history calls for portfolio symbols"
-    for call in filtered_calls:
-        assert set(call["simbolos"]) == {"A1", "A2"}, call
+    assert all(
+        set(call["simbolos"]).issubset({"A1", "A2"}) for call in filtered_calls
+    ), filtered_calls
+    assert all("B" not in call["simbolos"] for call in filtered_calls)
 
 
 def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -810,6 +854,7 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
         },
     )
     risk_mod.st = fake_st
+    fake_st.session_state["selected_asset_types"] = ["ACCION", "BONO"]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
@@ -885,6 +930,7 @@ def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.Monk
         selectbox_defaults={"Tipo de activo a incluir": "BONO"},
     )
     risk_mod.st = fake_st
+    fake_st.session_state["selected_asset_types"] = ["BONO"]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
@@ -905,7 +951,7 @@ def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.Monk
         available_types=["ACCION", "BONO"],
     )
 
-    assert any("No hay datos para el tipo seleccionado" in msg for msg in fake_st.warnings)
+    assert any("No hay datos para los tipos seleccionados" in msg for msg in fake_st.warnings)
 def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
     fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]

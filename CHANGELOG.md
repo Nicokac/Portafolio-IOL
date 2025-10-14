@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.6-patch11c] — UI tests alignment & risk stub fixes (2025-10-16)
+### Changed
+- Alineamos la suite de UI con el flujo de render diferido en tres etapas, verificando métricas de fingerprint cache entre renderizados consecutivos.
+- El panel de diagnósticos ahora muestra siempre los hits/misses y la última clave utilizada del caché de fingerprints.
+### Fixed
+- Ajustamos los stubs de riesgo para respetar filtros de tipo de activo en los tests y evitar dependencias de históricos reales.
+
 ## [v0.6.6-patch11b] — Portfolio fingerprint memoization (2025-10-16)
 
 - Memoised `_portfolio_dataset_key` across portfolio components using an LRU
