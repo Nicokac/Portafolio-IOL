@@ -17,19 +17,40 @@ except ModuleNotFoundError as exc:  # pragma: no cover - requires Streamlit runt
     ) from exc
 
 
-def _resolve_streamlit_api_exception() -> type[Exception]:
+def _resolve_streamlit_api_exception() -> type[BaseException]:
     """Return the Streamlit API exception class available in the runtime."""
 
-    try:  # pragma: no cover - depends on Streamlit internals
-        from streamlit.errors import StreamlitAPIException as _StreamlitAPIException
-    except ImportError:  # pragma: no cover - compatibility with older Streamlit
+    # Streamlit has moved the public exception class through different modules in
+    # recent releases.  Instead of hard-coding a single import we try a list of
+    # known locations and gracefully fall back to ``Exception`` when none of
+    # them are available.  This keeps the preload helper compatible across
+    # Streamlit versions without failing during module import time.
+    candidate_paths = (
+        "streamlit.errors.StreamlitAPIException",
+        "streamlit.runtime.scriptrunner.script_runner.StreamlitAPIException",
+        "streamlit.runtime.exceptions.StreamlitAPIException",
+    )
+
+    for dotted_path in candidate_paths:  # pragma: no branch - short candidate list
+        module_path, _, attr_name = dotted_path.rpartition(".")
+        if not module_path:
+            continue
         try:
-            from streamlit.runtime.scriptrunner.script_runner import (
-                StreamlitAPIException as _StreamlitAPIException,
-            )
-        except Exception:  # pragma: no cover - fallback when the symbol is missing
-            return Exception
-    return _StreamlitAPIException
+            module = importlib.import_module(module_path)
+        except Exception:  # pragma: no cover - depends on optional Streamlit bits
+            continue
+        exc_type = getattr(module, attr_name, None)
+        if isinstance(exc_type, type) and issubclass(exc_type, BaseException):
+            return exc_type
+
+    # ``StreamlitAPIException`` may not be present in minimal environments (for
+    # example, running the API service without Streamlit installed).  In those
+    # cases we only need an ``Exception`` subclass to keep the helper working.
+    fallback = getattr(st, "StreamlitAPIException", None)
+    if isinstance(fallback, type) and issubclass(fallback, BaseException):
+        return fallback
+
+    return Exception
 
 
 StreamlitAPIException = _resolve_streamlit_api_exception()
