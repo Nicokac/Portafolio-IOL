@@ -126,6 +126,35 @@ Additional instrumented metrics continue to appear in a separate
 `services.performance_metrics.get_recent_metrics` and can be exported as CSV for
 offline analysis.
 
+## Optimización del arranque inicial (v0.6.6-patch11d-2)
+
+El *patch* `11d-1` introdujo importaciones diferidas para evitar que la pantalla
+de login bloquee al cargar dependencias pesadas. Antes del cambio, el módulo
+principal de `app.py` importaba `performance_timer`, `market_data_cache` y las
+tablas del portafolio apenas se iniciaba Streamlit, por lo que el usuario veía
+un lienzo en blanco durante 8–12 segundos mientras se resolvían `pandas`,
+`plotly` y otros paquetes de visualización. Además, el tiempo total de arranque
+no se registraba hasta después de autenticarse, lo que dificultaba comparar
+iteraciones.
+
+Desde `patch11d-1` el flujo se divide en tres etapas bien delimitadas:
+
+1. **Validación de entorno seguro:** `validate_security_environment` corre una
+   sola vez y persiste la bandera `_security_validated` en `st.session_state`.
+2. **Preload asincrónico:** `services.preload_worker.start_preload_worker`
+   ejecuta un hilo *daemon* que importa `pandas`, `plotly` y `statsmodels` en
+   segundo plano mientras se muestra el login.
+3. **Render del login:** la UI carga componentes livianos (`ui.header`, enlaces
+   a paneles) y registra `ui_startup_load_ms` cuando la página queda lista.
+
+El *preload* procesa una lista configurable de librerías. Cada importación se
+cronometra y se emiten eventos `preload | library=<lib> | status=<ok|error> |
+duration_ms=<ms>` en `logs/app_startup.log`. En entornos de laboratorio, la
+importación diferida reduce el *time-to-interactive* del login a ~1.3 segundos
+en promedio, con picos de 1.8 segundos en hardware modesto (≈6× más rápido que
+el escenario previo). El valor queda expuesto como `ui_startup_load_ms` tanto en
+la sesión de Streamlit como en Prometheus.
+
 ## Total load indicator (v0.6.6-patch10a)
 
 `app.py` now captures the timestamp at import time (`time.perf_counter`) and

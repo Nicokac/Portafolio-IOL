@@ -49,6 +49,30 @@ Objetivos de operación sugeridos:
 * **10 000–15 000 ms:** advertencia, revisar latencias de dependencias.
 * **> 15 000 ms:** crítico, disparar alerta y escalar al equipo de backend.
 
+### Secuencia de arranque y métrica `ui_startup_load_ms`
+
+El arranque inicial sigue un orden estricto para maximizar el *time-to*
+*interactive* del login:
+
+1. **Validación de seguridad:** `shared.security_env_validator.validate_security_environment`
+   corre una única vez, marca `_security_validated` en `st.session_state` y detiene la
+   ejecución ante claves inválidas.
+2. **Preload asincrónico:** `services.preload_worker.start_preload_worker` inicia un
+   hilo *daemon* que importa `pandas`, `plotly` y `statsmodels` mientras la UI sigue
+   respondiendo.
+3. **Login interactivo:** `ui.login.render_login_page` renderiza la pantalla y
+   persiste `ui_startup_load_ms` con el tiempo transcurrido desde `_TOTAL_LOAD_START`.
+4. **Inicialización post-auth:** una vez autenticado el usuario, `app._schedule_post_login_initialization`
+   prepara métricas, mantenimiento SQLite y diagnósticos en segundo plano.
+
+El valor de `ui_startup_load_ms` queda visible en el panel **"🔎 Diagnóstico del sistema"**
+junto a `ui_total_load_ms`, y se publica en Prometheus como gauge homónimo.
+Para consultarlo manualmente:
+
+* **Prometheus:** solicitá `/metrics` y buscá la línea `ui_startup_load_ms <valor>`.
+* **UI:** abrí la sección "🕒 Tiempos de arranque" dentro del panel de diagnóstico para ver
+  el último registro en milisegundos.
+
 ## Panel de estado
 
 La UI de Streamlit ofrece un panel dedicado con las siguientes secciones:
