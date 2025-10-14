@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import sys
+from types import ModuleType
 
 import pytest
 
@@ -78,3 +80,19 @@ def test_ensure_scientific_preload_ready_fast_path(monkeypatch: pytest.MonkeyPat
     assert result is True
     assert container.calls == 0
     assert preload_helper.st.session_state["scientific_preload_ready"] is True
+
+
+def test_ensure_scientific_preload_ready_handles_stub_module(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    stub = ModuleType("services.preload_worker")
+    monkeypatch.setitem(sys.modules, "services.preload_worker", stub)
+    caplog.set_level("WARNING")
+
+    container = _Container()
+    result = preload_helper.ensure_scientific_preload_ready(container)
+
+    assert result is False
+    assert preload_helper.st.session_state["scientific_preload_ready"] is False
+    assert "[preload]" in caplog.text
+    assert container.calls == 0

@@ -1048,8 +1048,12 @@ def main(argv: list[str] | None = None):
 
     main_col = st.container()
 
-    if not ensure_scientific_preload_ready(main_col):
-        return
+    preload_ready = ensure_scientific_preload_ready(main_col)
+    if not preload_ready:
+        st.warning(
+            "No se pudieron precargar las librerías científicas. "
+            "Continuamos con una carga diferida."
+        )
 
     cli = build_iol_client()
 
