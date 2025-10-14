@@ -127,6 +127,30 @@ The goal is to keep the total UI load below **10 000 ms** on cold sessions. Wh
 optimising the portfolio dashboard, validate improvements by checking that both
 the per-stage metrics and the total indicator trend in the same direction.
 
+## ui_total_load_ms observability (v0.6.6-patch10b)
+
+Release `v0.6.6-patch10b` surfaces the same total load measurement across every
+observability layer:
+
+- **Streamlit diagnostics panel:** `ui.panels.diagnostics.render_diagnostics_panel`
+  now includes the `total_load_ms` row in the *Métricas instrumentadas* table so
+  analysts can validate optimisations without leaving the UI.
+- **Prometheus `/metrics`:** the FastAPI backend exports a `ui_total_load_ms`
+  gauge. Streamlit updates the gauge after each successful render via
+  `services.performance_timer.update_ui_total_load_metric`, and it publishes
+  `NaN` during headless runs where the UI session is unavailable.
+- **Startup log:** once the first render completes, `services.startup_logger`
+  emits a JSON line to `logs/app_startup.log` with `{metric, value_ms, version,
+  timestamp}` so operations can correlate cold-start performance alongside other
+  boot diagnostics.
+
+Operational targets for the gauge and diagnostic row are:
+
+- **< 10 000 ms:** normal startup.
+- **10 000–15 000 ms:** warning zone, investigate API retries or asset loading.
+- **> 15 000 ms:** critical, trigger an incident and correlate with backend
+  traces.
+
 ## Operational notes
 
 - When adding new render steps to the portfolio UI, wrap them with

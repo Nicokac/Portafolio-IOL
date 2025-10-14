@@ -36,14 +36,18 @@ if not hasattr(st, "columns"):
 
     st.columns = _dummy_columns  # type: ignore[attr-defined]
 
-from services.startup_logger import log_startup_event, log_startup_exception
+from services.startup_logger import (
+    log_startup_event,
+    log_startup_exception,
+    log_ui_total_load_metric,
+)
 from services.system_diagnostics import (
     SystemDiagnosticsConfiguration,
     configure_system_diagnostics,
     ensure_system_diagnostics_started,
 )
 
-from services.performance_timer import record_stage
+from services.performance_timer import record_stage, update_ui_total_load_metric
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -99,6 +103,20 @@ def _render_total_load_indicator(placeholder) -> None:
         elapsed_ms = max(int((time.perf_counter() - _TOTAL_LOAD_START) * 1000), 0)
     except Exception:
         logger.debug("No se pudo calcular el tiempo total de carga", exc_info=True)
+        try:
+            update_ui_total_load_metric(None)
+        except Exception:
+            logger.debug(
+                "No se pudo actualizar el gauge ui_total_load_ms con NaN",
+                exc_info=True,
+            )
+        try:
+            log_ui_total_load_metric(None)
+        except Exception:
+            logger.debug(
+                "No se pudo registrar ui_total_load en el startup logger",
+                exc_info=True,
+            )
         return
 
     try:
@@ -131,6 +149,20 @@ def _render_total_load_indicator(placeholder) -> None:
         record_stage("ui_total_load", total_ms=elapsed_ms, status="success")
     except Exception:
         logger.debug("No se pudo registrar ui_total_load en performance_timer", exc_info=True)
+    try:
+        update_ui_total_load_metric(elapsed_ms)
+    except Exception:
+        logger.debug(
+            "No se pudo actualizar el gauge ui_total_load_ms con el valor actual",
+            exc_info=True,
+        )
+    try:
+        log_ui_total_load_metric(elapsed_ms)
+    except Exception:
+        logger.debug(
+            "No se pudo registrar ui_total_load en el startup logger",
+            exc_info=True,
+        )
 
 # Configuración de UI centralizada (tema y layout)
 validate_security_environment()
