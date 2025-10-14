@@ -1,11 +1,11 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch11a"
-RELEASE_NAME = "Startup telemetry hotfix"
-BUILD_DATE = "2025-10-14"
+VERSION = "v0.6.6-patch11b"
+RELEASE_NAME = "Portfolio fingerprint memoization"
+BUILD_DATE = "2025-10-16"
 CHANGELOG_REF = (
-    "Reduced UI total load metric contention and moved startup logging off the main thread"
+    "Memoised portfolio dataset fingerprints, surfaced cache hit/miss telemetry and expanded diagnostics"
 )
 
 __version__ = VERSION

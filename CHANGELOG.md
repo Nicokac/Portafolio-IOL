@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.6-patch11b] — Portfolio fingerprint memoization (2025-10-16)
+
+- Memoised `_portfolio_dataset_key` across portfolio components using an LRU
+  cache keyed by `snapshot_id` and dataset filters, eliminating redundant DataFrame
+  hashing during a render.
+- Recorded fingerprint cache hit/miss telemetry through
+  `performance_timer.record_stage("portfolio_ui.fingerprint_cache")` and surfaced
+  the stats in the diagnostics panel next to `render_tab.*` timings.
+- Added regression coverage to ensure the fingerprint is computed once per
+  dataset snapshot, re-used across renders and measurably faster on 5k–10k row
+  simulations.
+
 ## [v0.6.6-patch11a] — Startup telemetry performance hotfix (2025-10-14)
 ### Changed
 - Eliminamos la actualización redundante del gauge `ui_total_load_ms` en `app.py`, delegando en `record_stage` para evitar escrituras duplicadas y mantener el indicador visible en la UI y `/metrics`.

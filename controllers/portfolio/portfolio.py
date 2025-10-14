@@ -4,6 +4,7 @@ import logging
 import re
 import time
 import unicodedata
+from collections import OrderedDict
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
@@ -29,6 +30,7 @@ from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
+from services.performance_timer import record_stage as log_performance_stage
 from services.cache import CacheService
 
 from .load_data import load_portfolio_data
@@ -54,6 +56,19 @@ _TA_SERVICE_KEY = "ta_service"
 
 _CACHE_TTL_SECONDS = 300.0
 _INCREMENTAL_CACHE = CacheService(namespace="portfolio_incremental")
+
+_DATASET_FINGERPRINT_CACHE_KEY = "__portfolio_dataset_fingerprints__"
+_DATASET_FINGERPRINT_STATS_KEY = "__portfolio_dataset_fingerprint_stats__"
+_MAX_DATASET_FINGERPRINTS = 32
+_DATASET_CACHE_FALLBACK: "OrderedDict[str, dict[str, Any]]" = OrderedDict()
+_DATASET_STATS_FALLBACK: dict[str, Any] = {
+    "hits": 0,
+    "misses": 0,
+    "hit_ratio": 0.0,
+    "last_status": None,
+    "last_latency_ms": 0.0,
+    "last_key": None,
+}
 
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
@@ -321,6 +336,113 @@ def _hash_dataframe(df: Any) -> str:
     return hashlib.sha1(data).hexdigest()
 
 
+def _get_dataset_fingerprint_cache() -> "OrderedDict[str, dict[str, Any]]":
+    """Return the in-session cache for portfolio dataset fingerprints."""
+
+    state = getattr(st, "session_state", None)
+    cache: "OrderedDict[str, dict[str, Any]]" | None = None
+    if state is not None:
+        raw_cache = state.get(_DATASET_FINGERPRINT_CACHE_KEY)
+        if isinstance(raw_cache, OrderedDict):
+            cache = raw_cache
+        elif isinstance(raw_cache, dict):
+            cache = OrderedDict(raw_cache)
+        else:
+            cache = OrderedDict()
+        try:
+            state[_DATASET_FINGERPRINT_CACHE_KEY] = cache
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+    if cache is None:
+        cache = _DATASET_CACHE_FALLBACK
+    return cache
+
+
+def _get_dataset_fingerprint_stats() -> dict[str, Any]:
+    """Return mutable statistics for the dataset fingerprint cache."""
+
+    state = getattr(st, "session_state", None)
+    stats: dict[str, Any] | None = None
+    if state is not None:
+        raw_stats = state.get(_DATASET_FINGERPRINT_STATS_KEY)
+        if isinstance(raw_stats, dict):
+            stats = raw_stats
+        else:
+            stats = dict(_DATASET_STATS_FALLBACK)
+        try:
+            state[_DATASET_FINGERPRINT_STATS_KEY] = stats
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+    if stats is None:
+        stats = _DATASET_STATS_FALLBACK
+    return stats
+
+
+def _publish_fingerprint_stats(stats: Mapping[str, Any]) -> None:
+    """Expose the latest fingerprint cache stats for diagnostics."""
+
+    snapshot = {
+        "hits": int(stats.get("hits", 0) or 0),
+        "misses": int(stats.get("misses", 0) or 0),
+        "hit_ratio": float(stats.get("hit_ratio", 0.0) or 0.0),
+        "last_status": stats.get("last_status"),
+        "last_latency_ms": float(stats.get("last_latency_ms", 0.0) or 0.0),
+        "last_key": stats.get("last_key"),
+    }
+    try:
+        st.session_state["portfolio_fingerprint_cache_stats"] = snapshot
+    except Exception:  # pragma: no cover - defensive safeguard
+        pass
+
+
+def _record_fingerprint_event(status: str, elapsed_ms: float, cache_key: str) -> None:
+    """Update statistics and telemetry for fingerprint cache activity."""
+
+    stats = _get_dataset_fingerprint_stats()
+    bucket = "hits" if status == "hit" else "misses"
+    stats[bucket] = int(stats.get(bucket, 0) or 0) + 1
+    total = int(stats.get("hits", 0) or 0) + int(stats.get("misses", 0) or 0)
+    stats["hit_ratio"] = float(stats.get("hits", 0) or 0) / total if total else 0.0
+    stats["last_status"] = status
+    stats["last_latency_ms"] = float(elapsed_ms)
+    stats["last_key"] = cache_key
+    try:
+        st.session_state[_DATASET_FINGERPRINT_STATS_KEY] = stats
+    except Exception:  # pragma: no cover - defensive safeguard
+        pass
+    _publish_fingerprint_stats(stats)
+    try:
+        log_performance_stage(
+            "portfolio_ui.fingerprint_cache",
+            total_ms=elapsed_ms,
+            extra={"status": status},
+        )
+    except Exception:  # pragma: no cover - telemetry should not break rendering
+        logger.debug(
+            "No se pudo registrar métricas de fingerprint cache", exc_info=True
+        )
+
+
+def _dataset_filters_key(controls: Any) -> str:
+    """Return a hash describing the filters that affect the dataset view."""
+
+    payload = {
+        "hide_cash": getattr(controls, "hide_cash", None),
+        "selected_syms": sorted(
+            str(sym) for sym in getattr(controls, "selected_syms", []) or ()
+        ),
+        "selected_types": sorted(
+            str(tp) for tp in getattr(controls, "selected_types", []) or ()
+        ),
+        "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
+        "order_by": getattr(controls, "order_by", None),
+        "desc": getattr(controls, "desc", None),
+        "show_usd": getattr(controls, "show_usd", None),
+        "top_n": getattr(controls, "top_n", None),
+    }
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
 def _favorites_signature(favorites: Any) -> tuple[str, ...]:
     """Return a deterministic tuple describing the current favorites list."""
 
@@ -336,8 +458,8 @@ def _favorites_signature(favorites: Any) -> tuple[str, ...]:
         return ()
 
 
-def _portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
-    """Return a fingerprint for the current portfolio dataset."""
+def _compute_portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
+    """Compute the dataset fingerprint without consulting memoized values."""
 
     snapshot_id = getattr(viewmodel, "snapshot_id", None)
     if snapshot_id:
@@ -345,13 +467,19 @@ def _portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
 
     totals = getattr(viewmodel, "totals", None)
     totals_sig = "|".join(
-        str(getattr(totals, attr, "")) for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
+        str(getattr(totals, attr, ""))
+        for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
     )
     history = _hash_dataframe(getattr(viewmodel, "historical_total", None))
     contributions = getattr(viewmodel, "contributions", None)
     contrib_sig = ""
     if contributions is not None:
-        contrib_sig = f"{_hash_dataframe(getattr(contributions, 'by_symbol', None))}|{_hash_dataframe(getattr(contributions, 'by_type', None))}"
+        contrib_sig = "|".join(
+            [
+                _hash_dataframe(getattr(contributions, "by_symbol", None)),
+                _hash_dataframe(getattr(contributions, "by_type", None)),
+            ]
+        )
 
     return "|".join(
         [
@@ -361,6 +489,40 @@ def _portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
             totals_sig,
         ]
     )
+
+
+def _portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
+    """Return a fingerprint for the current portfolio dataset with memoization."""
+
+    controls = getattr(viewmodel, "controls", None)
+    filters_hash = _dataset_filters_key(controls)
+    snapshot_id = getattr(viewmodel, "snapshot_id", None)
+    if snapshot_id:
+        base_key = f"id:{snapshot_id}"
+    else:
+        base_key = f"obj:{id(df_view)}"
+    cache_key = f"{base_key}|{filters_hash}"
+
+    cache = _get_dataset_fingerprint_cache()
+    status = "hit"
+    start = time.perf_counter()
+    with measure_execution("portfolio_ui.fingerprint_cache"):
+        entry = cache.get(cache_key)
+        fingerprint = entry.get("value") if isinstance(entry, Mapping) else None
+        if not isinstance(fingerprint, str):
+            status = "miss"
+            fingerprint = _compute_portfolio_dataset_key(viewmodel, df_view)
+            cache[cache_key] = {
+                "value": fingerprint,
+                "timestamp": time.time(),
+                "snapshot": snapshot_id,
+                "filters": filters_hash,
+            }
+            while len(cache) > _MAX_DATASET_FINGERPRINTS:
+                cache.popitem(last=False)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    _record_fingerprint_event(status, elapsed_ms, cache_key)
+    return fingerprint
 
 
 def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: Any) -> str:
