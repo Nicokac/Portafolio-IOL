@@ -70,6 +70,11 @@ if Summary and Gauge and Counter and _PROMETHEUS_REGISTRY is not None:
         labelnames=("module", "label", "success"),
         registry=_PROMETHEUS_REGISTRY,
     )
+    UI_TOTAL_LOAD_MS = Gauge(
+        "ui_total_load_ms",
+        "Total UI load time in milliseconds (from Streamlit startup to full render).",
+        registry=_PROMETHEUS_REGISTRY,
+    )
     QUOTES_SWR_SERVED_TOTAL = Counter(
         "quotes_swr_served_total",
         "Number of quote batches served via stale-while-revalidate",
@@ -88,6 +93,19 @@ else:  # pragma: no cover - when prometheus_client missing or disabled
     PERFORMANCE_MEMORY_PERCENT = None  # type: ignore[assignment]
     QUOTES_SWR_SERVED_TOTAL = None  # type: ignore[assignment]
     QUOTES_BATCH_LATENCY_SECONDS = None  # type: ignore[assignment]
+    UI_TOTAL_LOAD_MS = None  # type: ignore[assignment]
+
+
+def update_ui_total_load_metric(total_ms: float | int | None) -> None:
+    """Propagate UI total load values to the Prometheus gauge if enabled."""
+
+    if UI_TOTAL_LOAD_MS is None:
+        return
+    try:
+        value = float(total_ms) if total_ms is not None else float("nan")
+    except Exception:
+        value = float("nan")
+    UI_TOTAL_LOAD_MS.set(value)
 
 
 def _resolve_log_path() -> Path:
@@ -614,6 +632,8 @@ def record_stage(
         "perf_entry": entry,
     }
     LOGGER.info(message, extra=log_extra)
+    if label == "ui_total_load":
+        update_ui_total_load_metric(total_ms)
 
 
 def track_performance(label: str):
@@ -641,10 +661,12 @@ __all__ = [
     "PerformanceEntry",
     "PROMETHEUS_REGISTRY",
     "PROMETHEUS_ENABLED",
+    "UI_TOTAL_LOAD_MS",
     "performance_timer",
     "record_stage",
     "read_recent_entries",
     "track_performance",
+    "update_ui_total_load_metric",
     "QUOTES_SWR_SERVED_TOTAL",
     "QUOTES_BATCH_LATENCY_SECONDS",
 ]

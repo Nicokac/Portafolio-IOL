@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import traceback
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Final
 
@@ -50,7 +52,23 @@ def log_startup_exception(exc: Exception) -> None:
     logger.error("Traceback:\n%s", traceback.format_exc())
 
 
+def log_ui_total_load_metric(total_ms: float | int | None, *, timestamp: datetime | None = None) -> None:
+    """Record the total UI load metric with contextual metadata."""
+
+    logger = _ensure_logger_configured()
+    ts = timestamp or datetime.now(timezone.utc)
+    ts_utc = ts.astimezone(timezone.utc)
+    payload = {
+        "metric": "ui_total_load",
+        "value_ms": None if total_ms is None else float(total_ms),
+        "version": __version__,
+        "timestamp": ts_utc.replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+    logger.info(json.dumps(payload, ensure_ascii=False))
+
+
 __all__ = [
     "log_startup_event",
     "log_startup_exception",
+    "log_ui_total_load_metric",
 ]

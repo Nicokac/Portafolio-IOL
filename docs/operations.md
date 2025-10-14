@@ -27,6 +27,28 @@ la barra lateral. El panel muestra las latencias promedio, posibles
 degradaciones y un resumen del caché y las claves Fernet. El archivo de log
 permite auditar los ciclos históricos o integrarlo a pipelines externos.
 
+### Métrica `ui_total_load_ms` (v0.6.6-patch10b)
+
+La versión `v0.6.6-patch10b` alinea la visibilidad del tiempo total de carga de
+la UI en los tres canales operativos principales:
+
+* **Panel de Streamlit:** la tabla de *Métricas instrumentadas* muestra
+  `total_load_ms`, alimentada directamente por `st.session_state`. Útil para
+  validar mejoras sin abandonar la vista de diagnóstico.
+* **Endpoint `/metrics`:** el backend expone un gauge `ui_total_load_ms` dentro
+  del registro Prometheus compartido. El valor se actualiza al finalizar cada
+  render exitoso y publica `NaN` en ejecuciones headless donde la sesión de UI no
+  existe.
+* **logs/app_startup.log:** se agrega una línea JSON con los campos
+  `{metric, value_ms, version, timestamp}` al completarse la primera renderización.
+  Esto permite correlacionar startups lentos con despliegues o migraciones.
+
+Objetivos de operación sugeridos:
+
+* **< 10 000 ms:** escenario nominal.
+* **10 000–15 000 ms:** advertencia, revisar latencias de dependencias.
+* **> 15 000 ms:** crítico, disparar alerta y escalar al equipo de backend.
+
 ## Panel de estado
 
 La UI de Streamlit ofrece un panel dedicado con las siguientes secciones:

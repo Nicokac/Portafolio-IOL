@@ -1,10 +1,17 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-__version__ = "v0.6.6-patch9b2"
-__codename__ = "Optimization Nexus"
-__release_date__ = "2025-10-13"
-__changelog_ref__ = "Reduced predictive and quotes latency under 10s total render time"
+VERSION = "v0.6.6-patch10b"
+RELEASE_NAME = "UI Total Load Metrics Export"
+BUILD_DATE = "2025-10-13"
+CHANGELOG_REF = (
+    "Unified UI total load observability across diagnostics, Prometheus and startup logs"
+)
+
+__version__ = VERSION
+__codename__ = RELEASE_NAME
+__release_date__ = BUILD_DATE
+__changelog_ref__ = CHANGELOG_REF
 __stability__ = "stable"
 # Keep in sync with ``pyproject.toml``'s ``project.version``.
 DEFAULT_VERSION = __version__
@@ -23,6 +30,10 @@ def get_version_info() -> dict[str, str]:
 
 
 __all__ = [
+    "VERSION",
+    "RELEASE_NAME",
+    "BUILD_DATE",
+    "CHANGELOG_REF",
     "__version__",
     "__codename__",
     "__release_date__",
