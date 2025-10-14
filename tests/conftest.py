@@ -72,14 +72,12 @@ class _DummySidebar:
         self,
         data: Any,
         *,
-        use_container_width: bool | None = None,
         height: int | None = None,
-        width: int | None = None,
+        width: object | None = None,
     ) -> None:
         record = {
             "type": "line_chart",
             "data": data,
-            "use_container_width": use_container_width,
             "height": height,
             "width": width,
         }
@@ -89,14 +87,12 @@ class _DummySidebar:
         self,
         data: Any,
         *,
-        use_container_width: bool | None = None,
         height: int | None = None,
-        width: int | None = None,
+        width: object | None = None,
     ) -> None:
         record = {
             "type": "area_chart",
             "data": data,
-            "use_container_width": use_container_width,
             "height": height,
             "width": width,
         }
@@ -293,14 +289,12 @@ class _DummyStreamlitCore:
         self,
         data: Any,
         *,
-        use_container_width: bool | None = None,
         height: int | None = None,
-        width: int | None = None,
+        width: object | None = None,
     ) -> None:
         self._record(
             "line_chart",
             data=data,
-            use_container_width=use_container_width,
             height=height,
             width=width,
         )
@@ -309,14 +303,12 @@ class _DummyStreamlitCore:
         self,
         data: Any,
         *,
-        use_container_width: bool | None = None,
         height: int | None = None,
-        width: int | None = None,
+        width: object | None = None,
     ) -> None:
         self._record(
             "area_chart",
             data=data,
-            use_container_width=use_container_width,
             height=height,
             width=width,
         )
@@ -578,7 +570,6 @@ class _DummyStreamlitCore:
         self,
         data: Any,
         *,
-        use_container_width: bool | None = None,
         column_config=None,
         column_order=None,
         hide_index: bool | None = None,
@@ -587,7 +578,6 @@ class _DummyStreamlitCore:
         self._record(
             "dataframe",
             data=data,
-            use_container_width=use_container_width,
             column_config=column_config,
             column_order=column_order,
             hide_index=hide_index,
@@ -616,14 +606,12 @@ class _DummyStreamlitCore:
         self,
         chart: Any,
         *,
-        use_container_width: bool | None = None,
         key: str | None = None,
         width: object | None = None,
     ) -> None:
         self._record(
             "altair_chart",
             chart=chart,
-            use_container_width=use_container_width,
             key=key,
             width=width,
         )

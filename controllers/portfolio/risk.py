@@ -1135,7 +1135,7 @@ def render_risk_analysis(
 
                 if betas:
                     fig_betas = plot_factor_betas(betas, r_squared)
-                    st.plotly_chart(fig_betas, use_container_width=True, config=PLOTLY_CONFIG)
+                    st.plotly_chart(fig_betas, width="stretch", config=PLOTLY_CONFIG)
                     if pd.notna(r_squared):
                         st.caption(f"R² del modelo: {r_squared:.2%}")
                 else:
