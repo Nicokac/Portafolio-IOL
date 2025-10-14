@@ -44,7 +44,11 @@ from services.startup_logger import (
     log_startup_exception,
     log_ui_total_load_metric,
 )
-from services.preload_worker import start_preload_worker
+from services.preload_worker import (
+    is_preload_complete,
+    resume_preload_worker,
+    start_preload_worker,
+)
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -67,6 +71,7 @@ from ui.footer import render_footer
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 from services.health import get_health_metrics, record_dependency_status
+from ui.helpers.preload import ensure_scientific_preload_ready
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +85,8 @@ _POST_LAZY_LOGGED_KEY = "_startup_logged_post_lazy"
 _UI_STARTUP_METRIC_KEY = "ui_startup_load_ms"
 _UI_STARTUP_LOGGED_KEY = "_ui_startup_logged"
 _UI_STARTUP_REPORTED_KEY = "_ui_startup_metric_reported"
+_SCIENTIFIC_PRELOAD_READY_KEY = "scientific_preload_ready"
+_SCIENTIFIC_PRELOAD_RESUMED_KEY = "_scientific_preload_resumed"
 
 
 @lru_cache(maxsize=None)
@@ -112,6 +119,24 @@ def _maybe_log_pre_login_checkpoint() -> None:
         st.session_state["startup_load_ms_before_lazy"] = elapsed
     except Exception:  # pragma: no cover - defensive guard
         logger.debug("No se pudo persistir startup_load_ms_before_lazy", exc_info=True)
+
+
+def _mark_scientific_preload_pending() -> None:
+    try:
+        st.session_state[_SCIENTIFIC_PRELOAD_READY_KEY] = False
+    except Exception:  # pragma: no cover - session state may be read-only in tests
+        logger.debug("No se pudo marcar scientific_preload_ready", exc_info=True)
+
+
+def _render_login_phase() -> None:
+    _maybe_log_pre_login_checkpoint()
+    _mark_scientific_preload_pending()
+    start_preload_worker(paused=True)
+    try:
+        render_login_page()
+    finally:
+        _record_ui_startup_metric()
+    st.stop()
 
 
 def _record_post_lazy_checkpoint(total_ms: float) -> None:
@@ -168,6 +193,21 @@ def _update_ui_startup_metric_lazy(total_ms: float | int | None) -> None:
         update_metric(total_ms)
     except Exception:
         logger.debug("No se pudo actualizar ui_startup_load_ms", exc_info=True)
+
+
+def _schedule_scientific_preload_resume() -> None:
+    try:
+        if st.session_state.get(_SCIENTIFIC_PRELOAD_RESUMED_KEY):
+            return
+    except Exception:
+        logger.debug("No se pudo verificar _scientific_preload_resumed", exc_info=True)
+    resumed = resume_preload_worker(delay_seconds=0.5)
+    if not resumed and not is_preload_complete():
+        return
+    try:
+        st.session_state[_SCIENTIFIC_PRELOAD_RESUMED_KEY] = True
+    except Exception:
+        logger.debug("No se pudo marcar _scientific_preload_resumed", exc_info=True)
 
 
 def _record_ui_startup_metric() -> None:
@@ -913,22 +953,12 @@ def main(argv: list[str] | None = None):
     _check_critical_dependencies()
 
     if st.session_state.get("force_login"):
-        _maybe_log_pre_login_checkpoint()
-        start_preload_worker()
-        try:
-            render_login_page()
-        finally:
-            _record_ui_startup_metric()
-        st.stop()
+        _render_login_phase()
 
     if not st.session_state.get("authenticated"):
-        _maybe_log_pre_login_checkpoint()
-        start_preload_worker()
-        try:
-            render_login_page()
-        finally:
-            _record_ui_startup_metric()
-        st.stop()
+        _render_login_phase()
+
+    _schedule_scientific_preload_resume()
 
     _schedule_post_login_initialization()
 
@@ -977,6 +1007,9 @@ def main(argv: list[str] | None = None):
     load_time_placeholder = getattr(st, "empty", lambda: None)()
 
     main_col = st.container()
+
+    if not ensure_scientific_preload_ready(main_col):
+        return
 
     cli = build_iol_client()
 

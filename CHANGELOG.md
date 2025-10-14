@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.6-patch11e-1] — Lazy preload refactor (2025-10-16)
+### Changed
+- Split startup in pre-login and post-login phases: the preload worker now starts paused and resumes ~500 ms after the first authentication, keeping login under 1 s (p95) while warming `pandas`, `plotly`, and `statsmodels` before dashboards render.
+- Added a Streamlit gate (`ui.helpers.preload.ensure_scientific_preload_ready`) that displays a short spinner until the scientific preload finishes, preventing premature imports of heavy controllers.
+- Exposed structured telemetry and Prometheus gauges for `preload_total_ms` plus per-library timings; `/metrics` now shows `preload_pandas_ms`, `preload_plotly_ms`, and `preload_statsmodels_ms`.
+- Introduced a bytecode warm-up step (`scripts/warmup_bytecode.py`) executed from `scripts/start.sh`, along with deployment defaults that enable `.pyc` generation (`PYTHONDONTWRITEBYTECODE=0`).
+
 ## [v0.6.6-patch11d-2] — Lazy startup optimisation (2025-10-16)
 ### Changed
 - Startup optimization: reduced initial render time from 8–12 s to under 2 s through lazy imports and asynchronous preload of heavy dependencies.

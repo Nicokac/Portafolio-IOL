@@ -30,6 +30,33 @@ if (
         "Login render latency in milliseconds before the authenticated UI loads.",
         registry=perf_timer.PROMETHEUS_REGISTRY,
     )
+    perf_timer.PRELOAD_TOTAL_MS = Gauge(
+        "preload_total_ms",
+        "Total time spent importing scientific libraries after authentication in milliseconds.",
+        registry=perf_timer.PROMETHEUS_REGISTRY,
+    )
+    perf_timer.PRELOAD_PANDAS_MS = Gauge(
+        "preload_pandas_ms",
+        "Duration of pandas preload in milliseconds.",
+        registry=perf_timer.PROMETHEUS_REGISTRY,
+    )
+    perf_timer.PRELOAD_PLOTLY_MS = Gauge(
+        "preload_plotly_ms",
+        "Duration of plotly preload in milliseconds.",
+        registry=perf_timer.PROMETHEUS_REGISTRY,
+    )
+    perf_timer.PRELOAD_STATSMODELS_MS = Gauge(
+        "preload_statsmodels_ms",
+        "Duration of statsmodels preload in milliseconds.",
+        registry=perf_timer.PROMETHEUS_REGISTRY,
+    )
+    perf_timer._PRELOAD_LIBRARY_GAUGES.update(  # type: ignore[attr-defined]
+        {
+            "pandas": perf_timer.PRELOAD_PANDAS_MS,
+            "plotly": perf_timer.PRELOAD_PLOTLY_MS,
+            "statsmodels": perf_timer.PRELOAD_STATSMODELS_MS,
+        }
+    )
 
 
 @router.get("/metrics", include_in_schema=False)
