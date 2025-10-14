@@ -5,6 +5,7 @@ import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+import os
 
 import pytest
 
@@ -15,6 +16,8 @@ SPEC = importlib.util.spec_from_file_location("app", MODULE_PATH)
 assert SPEC and SPEC.loader  # pragma: no cover - defensive assertion
 app = importlib.util.module_from_spec(SPEC)
 sys.modules.setdefault("app", app)
+os.environ.setdefault("FASTAPI_TOKENS_KEY", "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=")
+os.environ.setdefault("IOL_TOKENS_KEY", "YmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmI=")
 SPEC.loader.exec_module(app)
 
 
@@ -26,17 +29,16 @@ def test_dependency_check_logs_warning(monkeypatch: pytest.MonkeyPatch, caplog: 
     monkeypatch.setattr(app, "st", stub_streamlit)
     monkeypatch.setattr(health, "st", stub_streamlit)
 
-    original_import = app.importlib.import_module
+    original_find_spec = app.importlib.util.find_spec
 
-    def fake_import(name: str, *args, **kwargs):
+    def fake_find_spec(name: str, *args, **kwargs):
         if name == "plotly":
-            raise ImportError("plotly missing")
+            return None
         if name == "kaleido":
             return SimpleNamespace()
-        return original_import(name, *args, **kwargs)
+        return original_find_spec(name, *args, **kwargs)
 
-    monkeypatch.setattr(app.importlib, "import_module", fake_import)
-    monkeypatch.setattr(app, "_ensure_kaleido_runtime_safe", lambda: None)
+    monkeypatch.setattr(app.importlib.util, "find_spec", fake_find_spec)
 
     caplog.set_level(logging.WARNING, logger="analysis")
 
