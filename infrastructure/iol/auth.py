@@ -7,6 +7,7 @@ import logging
 import json
 import time
 import threading
+import math
 from typing import Dict, Any
 
 import streamlit as st
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN_URL = "https://api.invertironline.com/token"
 REQ_TIMEOUT = 30
+TOKEN_REFRESH_MARGIN = 90  # segundos
 
 FERNET: Fernet | None = None
 _iol_key = (settings.tokens_key or "").strip() if isinstance(settings.tokens_key, str) else ""
@@ -67,7 +69,10 @@ class IOLAuth:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": settings.USER_AGENT})
         self._lock = threading.RLock()
+        self._bootstrap_refresh_required = False
         self.tokens: Dict[str, Any] = self._load_tokens() or {}
+        if self._needs_bootstrap_refresh(self.tokens):
+            self._bootstrap_tokens()
 
     @property
     def tokens_path(self) -> str:
@@ -75,7 +80,16 @@ class IOLAuth:
 
     def _save_tokens(self, data: Dict[str, Any]) -> None:
         """Persist token information to disk atomically."""
-        data["timestamp"] = int(time.time())
+        now = int(time.time())
+        data["timestamp"] = now
+        expires_in = data.get("expires_in")
+        try:
+            if isinstance(expires_in, (int, float)):
+                data["expires_at"] = now + int(math.floor(float(expires_in)))
+            elif isinstance(expires_in, str) and expires_in.isdigit():
+                data["expires_at"] = now + int(expires_in)
+        except (TypeError, ValueError):  # pragma: no cover - defensive
+            data.pop("expires_at", None)
         try:
             tmp = self.tokens_file.with_suffix(self.tokens_file.suffix + ".tmp")
             content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -100,15 +114,79 @@ class IOLAuth:
             else:
                 ts = data.get("timestamp")
                 ttl_days = getattr(settings, "tokens_ttl_days", 30)
-                if ts is None or (ttl_days > 0 and time.time() - ts > ttl_days * 86400):
+                if ts is None:
+                    self._bootstrap_refresh_required = True
+                elif ttl_days > 0 and time.time() - ts > ttl_days * 86400:
                     logger.info(
-                        "Tokens vencidos; ejecutando login()",
+                        "Tokens vencidos; se intentará refresh()",
                         extra={"tokens_file": self.tokens_path},
                     )
-                    self.clear_tokens()
-                    return self.login()
+                    self._bootstrap_refresh_required = True
                 return data
         return {}
+
+    def _token_timestamp_expired(self, data: Dict[str, Any]) -> bool:
+        ts = data.get("timestamp")
+        if ts is None:
+            return True
+        try:
+            ts_value = float(ts)
+        except (TypeError, ValueError):
+            return True
+        ttl_days = getattr(settings, "tokens_ttl_days", 30)
+        if ttl_days <= 0:
+            return False
+        return (time.time() - ts_value) > ttl_days * 86400
+
+    def _access_token_expired(self, data: Dict[str, Any]) -> bool:
+        expires_at = data.get("expires_at")
+        if expires_at is None:
+            expires_in = data.get("expires_in")
+            try:
+                if isinstance(expires_in, str) and expires_in.isdigit():
+                    expires_at = int(expires_in) + int(data.get("timestamp", 0))
+                elif isinstance(expires_in, (int, float)):
+                    expires_at = int(data.get("timestamp", 0)) + int(expires_in)
+            except (TypeError, ValueError):
+                expires_at = None
+        try:
+            expires_at_value = float(expires_at) if expires_at is not None else None
+        except (TypeError, ValueError):
+            expires_at_value = None
+        if expires_at_value is None:
+            return False
+        return (time.time() + TOKEN_REFRESH_MARGIN) >= expires_at_value
+
+    def _needs_bootstrap_refresh(self, data: Dict[str, Any]) -> bool:
+        if not data:
+            return False
+        if not data.get("refresh_token"):
+            return False
+        if self._bootstrap_refresh_required:
+            return True
+        if not data.get("access_token"):
+            return True
+        if self._token_timestamp_expired(data):
+            return True
+        if self._access_token_expired(data):
+            return True
+        return False
+
+    def _bootstrap_tokens(self) -> None:
+        try:
+            self.refresh(silent=True)
+        except InvalidCredentialsError:
+            logger.info(
+                "Refresh inválido al inicializar tokens; se requerirá login()",
+                extra={"tokens_file": self.tokens_path},
+            )
+            self.clear_tokens()
+        except (TimeoutError, NetworkError) as exc:
+            logger.info(
+                "Refresh inicial falló (%s); se forzará login()", exc,
+                extra={"tokens_file": self.tokens_path},
+            )
+            self.clear_tokens()
 
     def login(self) -> Dict[str, Any]:
         """Realiza el login contra la API de IOL y guarda los tokens."""
@@ -190,7 +268,7 @@ class IOLAuth:
                     logger.exception("No se pudo registrar el diagnóstico de inicio")
             return self.tokens
 
-    def refresh(self) -> Dict[str, Any]:
+    def refresh(self, *, silent: bool = False) -> Dict[str, Any]:
         """Renueva el access_token utilizando el refresh_token."""
         with self._lock:
             if not self.tokens.get("refresh_token"):
@@ -205,14 +283,16 @@ class IOLAuth:
             try:
                 r = self.session.post(TOKEN_URL, data=payload, headers=headers, timeout=REQ_TIMEOUT)
             except (requests.ConnectionError, requests.Timeout) as e:
-                logger.warning(
+                log = logger.debug if silent else logger.warning
+                log(
                     "Refresh falló: %s",
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
                 raise TimeoutError("Fallo de red") from e
             except requests.RequestException as e:
-                logger.warning(
+                log = logger.debug if silent else logger.warning
+                log(
                     "Refresh falló: %s",
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
@@ -220,7 +300,8 @@ class IOLAuth:
                 raise NetworkError(str(e)) from e
 
             if r.status_code in (400, 401):
-                logger.warning(
+                log = logger.info if silent else logger.warning
+                log(
                     f"Auth failed (code={r.status_code})",
                     extra={"tokens_file": self.tokens_path, "result": "error"},
                 )
@@ -230,7 +311,8 @@ class IOLAuth:
                 r.raise_for_status()
                 self.tokens = r.json() or {}
             except requests.RequestException as e:
-                logger.warning(
+                log = logger.debug if silent else logger.warning
+                log(
                     "Refresh falló: %s",
                     e,
                     extra={"tokens_file": self.tokens_path, "result": "error"},
@@ -252,6 +334,7 @@ class IOLAuth:
         """Elimina el archivo de tokens para forzar reautenticación la próxima vez."""
         with self._lock:
             self.tokens = {}
+            self._bootstrap_refresh_required = False
             try:
                 os.remove(self.tokens_file)
                 logger.info("Tokens eliminados: %s", self.tokens_file)

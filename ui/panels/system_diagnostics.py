@@ -69,7 +69,7 @@ def render_system_diagnostics_panel() -> None:
                 }
             )
         frame = pd.DataFrame(rows)
-        st.dataframe(frame, use_container_width=True, hide_index=True)
+        st.dataframe(frame, width="stretch", hide_index=True)
     else:
         st.caption("No hay métricas registradas todavía. Ejecutá flujos para generar datos.")
 
@@ -99,7 +99,7 @@ def render_system_diagnostics_panel() -> None:
                 "Detalle": key.detail or ("Clave con baja entropía" if key.is_weak else "—"),
             }
         )
-    st.dataframe(pd.DataFrame(key_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(key_rows), width="stretch", hide_index=True)
 
     env = snapshot.environment
     st.markdown(

@@ -612,8 +612,21 @@ class _DummyStreamlitCore:
             key=key,
         )
 
-    def altair_chart(self, chart: Any, *, use_container_width: bool | None = None, key: str | None = None) -> None:
-        self._record("altair_chart", chart=chart, use_container_width=use_container_width, key=key)
+    def altair_chart(
+        self,
+        chart: Any,
+        *,
+        use_container_width: bool | None = None,
+        key: str | None = None,
+        width: object | None = None,
+    ) -> None:
+        self._record(
+            "altair_chart",
+            chart=chart,
+            use_container_width=use_container_width,
+            key=key,
+            width=width,
+        )
 
     def cache_resource(self, func=None, **kwargs):
         if func is None:

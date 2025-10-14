@@ -88,7 +88,7 @@ def _render_metrics_table(entries: list[tuple[str, float]]) -> None:
         st.caption("No hay métricas registradas para esta categoría.")
         return
     frame = pd.DataFrame(entries, columns=["Métrica", "Valor"])
-    st.dataframe(frame, use_container_width=True, hide_index=True)
+    st.dataframe(frame, width="stretch", hide_index=True)
 
 
 def _render_token_status(token: TokenSnapshot) -> None:

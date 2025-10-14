@@ -31,6 +31,36 @@ load_dotenv()
 
 DEFAULT_LOG_RETENTION_DAYS = 7
 
+
+class _PatternLevelOverrideFilter(logging.Filter):
+    """Filter que re-nivela mensajes que matchean un patrón dado."""
+
+    def __init__(self, pattern: re.Pattern[str], level: int) -> None:
+        super().__init__()
+        self._pattern = pattern
+        self._level = level
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple guard
+        try:
+            message = record.getMessage()
+        except Exception:
+            message = str(record.msg)
+        if self._pattern.search(str(message)):
+            record.levelno = self._level
+            record.levelname = logging.getLevelName(self._level)
+        return True
+
+
+def _downgrade_logger_patterns(
+    logger_name: str, patterns: Iterable[str], *, level: int = logging.DEBUG
+) -> None:
+    compiled = [p for p in (re.compile(pattern) for pattern in patterns) if p]
+    if not compiled:
+        return
+    logger = logging.getLogger(logger_name)
+    for pattern in compiled:
+        logger.addFilter(_PatternLevelOverrideFilter(pattern, level))
+
 def _load_cfg() -> Dict[str, Any]:
     """
     Carga (opcional) config.json desde la raíz del proyecto (o cwd). Si no existe, {}.
@@ -692,6 +722,14 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
     root.addHandler(file_handler)
 
     logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
+
+    for target in (
+        "yfinance",
+        "yfinance.scrapers",
+        "yfinance.ticker",
+        "yfinance.data",
+    ):
+        _downgrade_logger_patterns(target, (r"(?i)404", r"(?i)not found"))
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:

@@ -189,4 +189,4 @@ def _render_correlation_tab(payload: Mapping[str, object] | None) -> None:
     if isinstance(steps, pd.DataFrame) and not steps.empty:
         preview = steps.copy().sort_values("timestamp", ascending=False).head(6)
         preview["timestamp"] = pd.to_datetime(preview["timestamp"], errors="coerce").dt.strftime("%Y-%m-%d")
-        st.dataframe(preview, use_container_width=True, hide_index=True)
+        st.dataframe(preview, width="stretch", hide_index=True)

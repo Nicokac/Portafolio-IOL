@@ -81,7 +81,7 @@ def render_diagnostics_panel() -> None:
     if timing_rows:
         st.subheader("🧭 Última renderización del portafolio")
         timings_frame = pd.DataFrame(timing_rows)
-        st.dataframe(timings_frame, use_container_width=True, hide_index=True)
+        st.dataframe(timings_frame, width="stretch", hide_index=True)
 
     if isinstance(fingerprint_stats, dict) and fingerprint_stats:
         hits = int(fingerprint_stats.get("hits", 0) or 0)
@@ -141,12 +141,12 @@ def render_diagnostics_panel() -> None:
 
     if portfolio_frame is not None and not portfolio_frame.empty:
         st.subheader("⏱️ Portfolio UI (subcomponentes)")
-        st.dataframe(portfolio_frame, use_container_width=True, hide_index=True)
+        st.dataframe(portfolio_frame, width="stretch", hide_index=True)
 
     if remaining_metrics:
         st.subheader("📈 Métricas instrumentadas")
         frame = _metrics_to_dataframe(remaining_metrics)
-        st.dataframe(frame, use_container_width=True, hide_index=True)
+        st.dataframe(frame, width="stretch", hide_index=True)
     if not metrics:
         st.caption(
             "Aún no hay mediciones registradas. Ejecutá una simulación o predicción para generar datos."
