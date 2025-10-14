@@ -1,11 +1,11 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch11d-2"
-RELEASE_NAME = "Lazy startup optimisation"
+VERSION = "v0.6.6-patch11e-1"
+RELEASE_NAME = "Lazy preload refactor"
 BUILD_DATE = "2025-10-16"
 CHANGELOG_REF = (
-    "Startup optimization: reduced initial render time from 8–12 s to under 2 s through lazy imports and asynchronous preload of heavy dependencies"
+    "Split login/bootstrap into paused/resumed preload phases, exported preload_* metrics, and added bytecode warm-up"
 )
 
 __version__ = VERSION

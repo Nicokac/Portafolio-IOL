@@ -55,23 +55,39 @@ El arranque inicial sigue un orden estricto para maximizar el *time-to*
 *interactive* del login:
 
 1. **Validación de seguridad:** `shared.security_env_validator.validate_security_environment`
-   corre una única vez, marca `_security_validated` en `st.session_state` y detiene la
-   ejecución ante claves inválidas.
-2. **Preload asincrónico:** `services.preload_worker.start_preload_worker` inicia un
-   hilo *daemon* que importa `pandas`, `plotly` y `statsmodels` mientras la UI sigue
-   respondiendo.
-3. **Login interactivo:** `ui.login.render_login_page` renderiza la pantalla y
-   persiste `ui_startup_load_ms` con el tiempo transcurrido desde `_TOTAL_LOAD_START`.
-4. **Inicialización post-auth:** una vez autenticado el usuario, `app._schedule_post_login_initialization`
+   corre una única vez, marca `_security_validated` y aborta si faltan secretos.
+2. **Preload pausado:** `_render_login_phase()` arranca
+   `start_preload_worker(paused=True)`, marca `scientific_preload_ready=False` y
+   muestra la pantalla de login sin dependencias pesadas.
+3. **Login interactivo:** `ui.login.render_login_page` registra
+   `ui_startup_load_ms` al quedar visible la pantalla.
+4. **Reanudación científica:** `_schedule_scientific_preload_resume()` activa
+   `resume_preload_worker(delay_seconds=0.5)` tras la primera autenticación.
+   Las vistas de análisis llaman a
+   `ui.helpers.preload.ensure_scientific_preload_ready`, que muestra un *spinner*
+   corto hasta que el worker termina.
+5. **Inicialización post-auth:** `app._schedule_post_login_initialization`
    prepara métricas, mantenimiento SQLite y diagnósticos en segundo plano.
 
 El valor de `ui_startup_load_ms` queda visible en el panel **"🔎 Diagnóstico del sistema"**
 junto a `ui_total_load_ms`, y se publica en Prometheus como gauge homónimo.
 Para consultarlo manualmente:
 
-* **Prometheus:** solicitá `/metrics` y buscá la línea `ui_startup_load_ms <valor>`.
+* **Prometheus:** solicitá `/metrics` y buscá `ui_startup_load_ms`,
+  `preload_total_ms` y las métricas por librería
+  (`preload_pandas_ms`, `preload_plotly_ms`, `preload_statsmodels_ms`).
 * **UI:** abrí la sección "🕒 Tiempos de arranque" dentro del panel de diagnóstico para ver
-  el último registro en milisegundos.
+ el último registro en milisegundos junto al estado de la precarga.
+
+**Configurar la lista científica:** el worker lee `APP_PRELOAD_LIBS` (coma
+separada) si se necesita ampliar o acotar la precarga; de lo contrario usa el
+trío `pandas`, `plotly`, `statsmodels`. Evitá añadir `application.predictive_service`
+o `controllers.portfolio.charts`, que continúan importándose bajo demanda vía
+`importlib.import_module`.
+
+**Snapshot de bytecode:** durante el arranque `scripts/start.sh` ejecuta
+`scripts/warmup_bytecode.py` (controlado por `ENABLE_BYTECODE_WARMUP`, habilitado
+por defecto) para generar `.pyc` y reducir los costos de importación en frío.
 
 ## Panel de estado
 

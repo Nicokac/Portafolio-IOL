@@ -126,34 +126,36 @@ Additional instrumented metrics continue to appear in a separate
 `services.performance_metrics.get_recent_metrics` and can be exported as CSV for
 offline analysis.
 
-## Optimización del arranque inicial (v0.6.6-patch11d-2)
+## Optimización del arranque inicial (v0.6.6-patch11e-1)
 
-El *patch* `11d-1` introdujo importaciones diferidas para evitar que la pantalla
-de login bloquee al cargar dependencias pesadas. Antes del cambio, el módulo
-principal de `app.py` importaba `performance_timer`, `market_data_cache` y las
-tablas del portafolio apenas se iniciaba Streamlit, por lo que el usuario veía
-un lienzo en blanco durante 8–12 segundos mientras se resolvían `pandas`,
-`plotly` y otros paquetes de visualización. Además, el tiempo total de arranque
-no se registraba hasta después de autenticarse, lo que dificultaba comparar
-iteraciones.
+`patch11e-1` refina el flujo en **dos fases sincronizadas** para mantener la
+pantalla de login por debajo de 1 s sin perder el calentamiento de librerías
+científicas:
 
-Desde `patch11d-1` el flujo se divide en tres etapas bien delimitadas:
+1. **Fase A — Pre-login mínimo.** `app.py` inicializa configuración, logging y
+   UI liviana, lanza `start_preload_worker(paused=True)` y persiste
+   `scientific_preload_ready=False` en `st.session_state`. No se importan
+   dependencias pesadas hasta que el usuario se autentica.
+2. **Fase B — Reanudación post-login.** Una vez validado el primer usuario,
+   `_schedule_scientific_preload_resume()` despierta al worker tras ~500 ms
+   (`resume_preload_worker(delay_seconds=0.5)`). Las vistas que dependen de
+   `pandas`, `plotly` o `statsmodels` invocan
+   `ui.helpers.preload.ensure_scientific_preload_ready` antes de importar los
+   controladores, mostrando un *spinner* breve hasta que el worker completa la
+   precarga.
 
-1. **Validación de entorno seguro:** `validate_security_environment` corre una
-   sola vez y persiste la bandera `_security_validated` en `st.session_state`.
-2. **Preload asincrónico:** `services.preload_worker.start_preload_worker`
-   ejecuta un hilo *daemon* que importa `pandas`, `plotly` y `statsmodels` en
-   segundo plano mientras se muestra el login.
-3. **Render del login:** la UI carga componentes livianos (`ui.header`, enlaces
-   a paneles) y registra `ui_startup_load_ms` cuando la página queda lista.
+El hilo `preload_worker` sigue siendo el único responsable de las importaciones
+pesadas. Cada módulo emite `preload | library=<lib> | status=<ok|error> |
+duration_ms=<ms>` en `logs/app_startup.log`, y al finalizar se registra el total
+con `preload | status=completed | total_ms=<ms>`. Las nuevas métricas
+`preload_total_ms`, `preload_pandas_ms`, `preload_plotly_ms` y
+`preload_statsmodels_ms` se exponen en Prometheus y en el panel de diagnóstico.
 
-El *preload* procesa una lista configurable de librerías. Cada importación se
-cronometra y se emiten eventos `preload | library=<lib> | status=<ok|error> |
-duration_ms=<ms>` en `logs/app_startup.log`. En entornos de laboratorio, la
-importación diferida reduce el *time-to-interactive* del login a ~1.3 segundos
-en promedio, con picos de 1.8 segundos en hardware modesto (≈6× más rápido que
-el escenario previo). El valor queda expuesto como `ui_startup_load_ms` tanto en
-la sesión de Streamlit como en Prometheus.
+En pruebas controladas el login cae consistentemente por debajo de 1 000 ms
+(p95), mientras que la precarga científica finaliza antes del segundo p95
+requerido. Además, ningún `import application.predictive_service` ni
+`controllers.portfolio.charts` ocurre antes de autenticarse, evitando penalizar
+la primera interacción.
 
 ## Total load indicator (v0.6.6-patch10a)
 
