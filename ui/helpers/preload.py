@@ -8,17 +8,36 @@ from contextlib import nullcontext
 from types import ModuleType
 from typing import Any, Callable, ContextManager
 
-import streamlit as st
+try:  # pragma: no cover - defensive guard for optional dependency
+    import streamlit as st
+except ModuleNotFoundError as exc:  # pragma: no cover - requires Streamlit runtime
+    raise RuntimeError(
+        "Streamlit no está instalado. Verificá que el entorno tenga el paquete "
+        "`streamlit` declarado en requirements.txt antes de iniciar la app."
+    ) from exc
+
+
+def _resolve_streamlit_api_exception() -> type[Exception]:
+    """Return the Streamlit API exception class available in the runtime."""
+
+    try:  # pragma: no cover - depends on Streamlit internals
+        from streamlit.errors import StreamlitAPIException as _StreamlitAPIException
+    except ImportError:  # pragma: no cover - compatibility with older Streamlit
+        try:
+            from streamlit.runtime.scriptrunner.script_runner import (
+                StreamlitAPIException as _StreamlitAPIException,
+            )
+        except Exception:  # pragma: no cover - fallback when the symbol is missing
+            return Exception
+    return _StreamlitAPIException
+
+
+StreamlitAPIException = _resolve_streamlit_api_exception()
 
 _SESSION_KEY = "scientific_preload_ready"
 _WORKER_MODULE = "services.preload_worker"
 _LOGGER = logging.getLogger(__name__)
 _MISSING = object()
-
-try:  # pragma: no cover - depends on Streamlit internals
-    from streamlit.errors import StreamlitAPIException
-except Exception:  # pragma: no cover - fallback when the symbol is unavailable
-    StreamlitAPIException = Exception  # type: ignore[assignment]
 
 
 def _resolve_placeholder(container: Any):
