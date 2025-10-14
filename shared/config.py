@@ -723,6 +723,20 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
 
     logging.getLogger("matplotlib.font_manager").setLevel(logging.WARNING)
 
+    kaleido_noise_levels: Mapping[str, int] = {
+        "kaleido": logging.WARNING,
+        "kaleido.scopes": logging.WARNING,
+        "kaleido.scopes.base": logging.ERROR,
+        "kaleido.scopes.plotly": logging.WARNING,
+        "plotly.io._base_renderers": logging.WARNING,
+        "plotly.io._kaleido": logging.WARNING,
+        "Choreographer": logging.ERROR,
+        "choreographer": logging.ERROR,
+    }
+
+    for logger_name, forced_level in kaleido_noise_levels.items():
+        logging.getLogger(logger_name).setLevel(forced_level)
+
     for target in (
         "yfinance",
         "yfinance.scrapers",
