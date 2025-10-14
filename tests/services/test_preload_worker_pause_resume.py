@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import sys
+import time
 import types
 
 import pytest
@@ -83,3 +86,40 @@ def test_wait_for_completion_returns_false_when_timeout(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(preload, "_FINISHED_EVENT", BlockingEvent(), raising=False)
     assert preload.wait_for_preload_completion(timeout=0.01) is False
+
+
+def test_preload_worker_import_is_lightweight(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_name = "services.preload_worker"
+    sys.modules.pop(module_name, None)
+
+    heavy_libs = ("pandas", "plotly", "statsmodels")
+    saved_heavy = {name: sys.modules.get(name) for name in heavy_libs}
+    for name in heavy_libs:
+        sys.modules.pop(name, None)
+
+    original_import_module = importlib.import_module
+    imported: list[str] = []
+
+    def tracking_import(name: str, package: str | None = None):
+        imported.append(name)
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", tracking_import)
+
+    module = None
+    start = time.perf_counter()
+    try:
+        module = importlib.import_module(module_name)
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        assert elapsed_ms <= 50.0
+        for name in heavy_libs:
+            assert name not in imported
+            assert name not in sys.modules
+    finally:
+        if module is not None:
+            module.reset_worker_for_tests()
+        for name, original in saved_heavy.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original

@@ -251,3 +251,42 @@ def test_main_schedules_preload_resume_after_auth(
     assert resume_calls
     assert resume_calls[0]["delay_seconds"] == pytest.approx(0.5, rel=0.1)
     assert ensure_calls  # preload gate invoked post-login
+
+
+def test_app_import_guard_handles_preload_failure(
+    main_app, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    importlib.invalidate_caches()
+    original_app = main_app
+    original_preload = sys.modules.get("services.preload_worker")
+    sys.modules.pop("app", None)
+    if "services.preload_worker" in sys.modules:
+        sys.modules.pop("services.preload_worker")
+
+    original_import_module = importlib.import_module
+
+    def failing_import(name: str, package: str | None = None):
+        if name == "services.preload_worker":
+            raise ImportError("forced preload failure")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", failing_import)
+
+    with caplog.at_level("WARNING"):
+        guarded_app = importlib.import_module("app")
+
+    try:
+        assert getattr(guarded_app, "_PRELOAD_WORKER", None) is None
+        assert guarded_app.start_preload_worker(paused=True) is False
+        assert guarded_app.resume_preload_worker(delay_seconds=0.1) is False
+        assert guarded_app.is_preload_complete() is False
+        assert any(
+            "Lazy preload skipped on startup" in record.message
+            for record in caplog.records
+        )
+    finally:
+        sys.modules["app"] = original_app
+        if original_preload is None:
+            sys.modules.pop("services.preload_worker", None)
+        else:
+            sys.modules["services.preload_worker"] = original_preload

@@ -11,13 +11,60 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from functools import lru_cache
 from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
+
+try:
+    _PRELOAD_WORKER = importlib.import_module("services.preload_worker")
+except Exception as preload_exc:  # pragma: no cover - defensive guard
+    logger.warning("Lazy preload skipped on startup: %s", preload_exc)
+    _PRELOAD_WORKER = None
+
+
+def start_preload_worker(
+    *, paused: bool = False, libraries: Iterable[str] | None = None
+) -> bool:
+    if _PRELOAD_WORKER is None:
+        return False
+    try:
+        return _PRELOAD_WORKER.start_preload_worker(
+            libraries=libraries, paused=paused
+        )
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo iniciar el preload worker", exc_info=True)
+        return False
+
+
+def resume_preload_worker(
+    *, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None
+) -> bool:
+    if _PRELOAD_WORKER is None:
+        return False
+    try:
+        return _PRELOAD_WORKER.resume_preload_worker(
+            delay_seconds=delay_seconds, libraries=libraries
+        )
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo reanudar el preload worker", exc_info=True)
+        return False
+
+
+def is_preload_complete() -> bool:
+    if _PRELOAD_WORKER is None:
+        return False
+    try:
+        return bool(_PRELOAD_WORKER.is_preload_complete())
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo consultar el estado del preload", exc_info=True)
+        return False
+
 
 _TOTAL_LOAD_START = time.perf_counter()
 
@@ -44,12 +91,6 @@ from services.startup_logger import (
     log_startup_exception,
     log_ui_total_load_metric,
 )
-from services.preload_worker import (
-    is_preload_complete,
-    resume_preload_worker,
-    start_preload_worker,
-)
-
 log_startup_event("Streamlit app bootstrap initiated")
 
 from shared.config import configure_logging, ensure_tokens_key
@@ -74,7 +115,6 @@ from services.health import get_health_metrics, record_dependency_status
 from ui.helpers.preload import ensure_scientific_preload_ready
 
 
-logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
 
