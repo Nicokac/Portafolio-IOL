@@ -1,12 +1,20 @@
+import importlib
 import logging
+from functools import lru_cache
+
 import streamlit as st
 
 from infrastructure.iol.client import IIOLProvider
 from application.auth_service import get_auth_provider
 from infrastructure.iol.auth import InvalidCredentialsError
-from services.performance_timer import performance_timer
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _get_performance_timer():
+    module = importlib.import_module("services.performance_timer")
+    return getattr(module, "performance_timer")
 
 
 def _mask_username(value: str | None) -> str:
@@ -27,7 +35,7 @@ def build_iol_client() -> IIOLProvider | None:
     session_user = st.session_state.get("IOL_USERNAME")
     if session_user:
         telemetry["user"] = _mask_username(str(session_user))
-    with performance_timer("token_refresh", extra=telemetry):
+    with _get_performance_timer()("token_refresh", extra=telemetry):
         try:
             cli, error = provider.build_client()
         except Exception:

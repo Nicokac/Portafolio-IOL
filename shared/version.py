@@ -1,7 +1,7 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch11c"
+VERSION = "v0.6.6-patch11d"
 RELEASE_NAME = "UI tests alignment & risk stub fixes"
 BUILD_DATE = "2025-10-16"
 CHANGELOG_REF = (

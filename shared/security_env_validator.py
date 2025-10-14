@@ -9,6 +9,11 @@ import os
 from dataclasses import dataclass
 from typing import Iterable, Mapping, MutableMapping
 
+try:  # pragma: no cover - import guarded for lightweight runtimes
+    import streamlit as st  # type: ignore
+except Exception:  # pragma: no cover - streamlit not available during some tests
+    st = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,8 +69,33 @@ def _log_warnings(app_env: str | None, warnings: Iterable[str]) -> None:
 EnvMapping = Mapping[str, str] | MutableMapping[str, str]
 
 
-def validate_security_environment(environ: EnvMapping | None = None) -> None:
-    """Validate mandatory secrets before the application starts."""
+def _get_session_state(
+    explicit_state: MutableMapping[str, object] | None = None,
+):
+    if explicit_state is not None:
+        return explicit_state
+    if st is None:
+        return None
+    try:
+        return st.session_state
+    except Exception:  # pragma: no cover - depends on Streamlit runtime
+        return None
+
+
+def validate_security_environment(
+    environ: EnvMapping | None = None,
+    *,
+    session_state: MutableMapping[str, object] | None = None,
+) -> None:
+    """Validate mandatory secrets before the application starts once per session."""
+
+    state = _get_session_state(session_state)
+    if state is not None:
+        try:
+            if state.get("_security_validated"):
+                return
+        except Exception:  # pragma: no cover - custom state implementations
+            pass
 
     env = environ or os.environ
     app_env = env.get("APP_ENV")
@@ -116,6 +146,12 @@ def validate_security_environment(environ: EnvMapping | None = None) -> None:
         )
 
     _log_warnings(app_env, warnings)
+
+    if state is not None:
+        try:
+            state["_security_validated"] = True
+        except Exception:  # pragma: no cover - custom state implementations
+            pass
 
 
 def main() -> None:

@@ -8,8 +8,10 @@ import html
 import importlib
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable, Sequence
+from functools import lru_cache
 from contextlib import nullcontext
 from pathlib import Path
 from uuid import uuid4
@@ -41,13 +43,7 @@ from services.startup_logger import (
     log_startup_exception,
     log_ui_total_load_metric,
 )
-from services.system_diagnostics import (
-    SystemDiagnosticsConfiguration,
-    configure_system_diagnostics,
-    ensure_system_diagnostics_started,
-)
-
-from services.performance_timer import record_stage
+from services.preload_worker import start_preload_worker
 
 log_startup_event("Streamlit app bootstrap initiated")
 
@@ -60,16 +56,6 @@ from shared.settings import (
     sqlite_maintenance_interval_hours,
     sqlite_maintenance_size_threshold_mb,
 )
-try:
-    from services.maintenance import (
-        SQLiteMaintenanceConfiguration,
-        configure_sqlite_maintenance,
-        ensure_sqlite_maintenance_started,
-    )
-except Exception as exc:  # pragma: no cover - exercised via dedicated test
-    log_startup_exception(exc)
-    print("⚠️ Error capturado, revisar logs/app_startup.log")
-    raise
 from shared.time_provider import TimeProvider
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.header import render_header
@@ -77,21 +63,172 @@ from ui.actions import render_action_menu
 from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.login import render_login_page
 from ui.footer import render_footer
-#from controllers.fx import render_fx_section
-from controllers.portfolio.portfolio import (
-    default_notifications_service_factory,
-    default_view_model_service_factory,
-)
 from services.cache import get_fx_rates_cached
 from controllers.auth import build_iol_client
 from services.health import get_health_metrics, record_dependency_status
-from ui.tabs.recommendations import render_recommendations_tab
-from ui.controllers.portfolio_ui import render_portfolio_ui
 
 
 logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent / "analysis.log"
+
+_POST_LOGIN_INIT_STARTED = False
+_POST_LOGIN_INIT_LOCK = threading.Lock()
+_PRE_LAZY_LOGGED_KEY = "_startup_logged_pre_lazy"
+_POST_LAZY_LOGGED_KEY = "_startup_logged_post_lazy"
+
+
+@lru_cache(maxsize=None)
+def _lazy_module(name: str):
+    return importlib.import_module(name)
+
+
+@lru_cache(maxsize=None)
+def _lazy_attr(module: str, attr: str):
+    return getattr(_lazy_module(module), attr)
+
+
+def _record_startup_checkpoint(label: str) -> float:
+    elapsed = max((time.perf_counter() - _TOTAL_LOAD_START) * 1000.0, 0.0)
+    log_startup_event(
+        f"startup_checkpoint | label={label} | startup_load_ms={elapsed:.2f}"
+    )
+    return elapsed
+
+
+def _maybe_log_pre_login_checkpoint() -> None:
+    try:
+        if st.session_state.get(_PRE_LAZY_LOGGED_KEY):
+            return
+    except Exception:  # pragma: no cover - defensive guard
+        return
+    elapsed = _record_startup_checkpoint("before_lazy_imports")
+    try:
+        st.session_state[_PRE_LAZY_LOGGED_KEY] = True
+        st.session_state["startup_load_ms_before_lazy"] = elapsed
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo persistir startup_load_ms_before_lazy", exc_info=True)
+
+
+def _record_post_lazy_checkpoint(total_ms: float) -> None:
+    try:
+        if st.session_state.get(_POST_LAZY_LOGGED_KEY):
+            return
+    except Exception:
+        pass
+    log_startup_event(
+        f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}"
+    )
+    try:
+        st.session_state[_POST_LAZY_LOGGED_KEY] = True
+        st.session_state["startup_load_ms_after_lazy"] = float(total_ms)
+    except Exception:
+        logger.debug("No se pudo persistir startup_load_ms_after_lazy", exc_info=True)
+
+
+def _record_stage_lazy(*args, **kwargs) -> None:
+    try:
+        record_stage = _lazy_attr("services.performance_timer", "record_stage")
+    except Exception:
+        logger.debug("No se pudo importar record_stage", exc_info=True)
+        return
+    try:
+        record_stage(*args, **kwargs)
+    except Exception:
+        logger.debug("No se pudo registrar ui_total_load", exc_info=True)
+
+
+def _update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
+    try:
+        update_metric = _lazy_attr(
+            "services.performance_timer", "update_ui_total_load_metric"
+        )
+    except Exception:
+        logger.debug("No se pudo importar update_ui_total_load_metric", exc_info=True)
+        return
+    try:
+        update_metric(total_ms)
+    except Exception:
+        logger.debug("No se pudo actualizar ui_startup_load_ms", exc_info=True)
+
+
+def _run_initialization_stage(label: str, action: Callable[[], None]) -> None:
+    start = time.perf_counter()
+    try:
+        action()
+    except Exception as exc:
+        log_startup_event(
+            f"post_login_init | stage={label} | status=error | error={exc!r}"
+        )
+        logger.debug("Post login init stage %s failed", label, exc_info=True)
+    else:
+        elapsed = (time.perf_counter() - start) * 1000.0
+        log_startup_event(
+            f"post_login_init | stage={label} | status=success | duration_ms={elapsed:.2f}"
+        )
+
+
+def _post_login_initialization_worker() -> None:
+    log_startup_event("post_login_init | status=started")
+
+    def _init_sqlite_maintenance() -> None:
+        module = _lazy_module("services.maintenance")
+        config_cls = getattr(module, "SQLiteMaintenanceConfiguration")
+        configure = getattr(module, "configure_sqlite_maintenance")
+        ensure = getattr(module, "ensure_sqlite_maintenance_started")
+        configure(
+            config_cls(
+                interval_hours=sqlite_maintenance_interval_hours,
+                size_threshold_mb=sqlite_maintenance_size_threshold_mb,
+                performance_store_ttl_days=performance_store_ttl_days,
+                enable_prometheus=enable_prometheus,
+            )
+        )
+        ensure()
+
+    def _init_system_diagnostics() -> None:
+        module = _lazy_module("services.system_diagnostics")
+        config_cls = getattr(module, "SystemDiagnosticsConfiguration")
+        configure = getattr(module, "configure_system_diagnostics")
+        ensure = getattr(module, "ensure_system_diagnostics_started")
+        configure(config_cls())
+        ensure()
+
+    def _init_performance_metrics() -> None:
+        module = _lazy_module("services.performance_timer")
+        init_metrics = getattr(module, "init_metrics", None)
+        if callable(init_metrics):
+            init_metrics()
+
+    _run_initialization_stage("sqlite_maintenance", _init_sqlite_maintenance)
+    _run_initialization_stage("system_diagnostics", _init_system_diagnostics)
+    _run_initialization_stage("performance_metrics", _init_performance_metrics)
+
+    log_startup_event("post_login_init | status=completed")
+
+
+def _schedule_post_login_initialization() -> None:
+    global _POST_LOGIN_INIT_STARTED
+    if _POST_LOGIN_INIT_STARTED:
+        return
+    with _POST_LOGIN_INIT_LOCK:
+        if _POST_LOGIN_INIT_STARTED:
+            return
+        thread = threading.Thread(
+            target=_post_login_initialization_worker,
+            name="post-login-init",
+            daemon=True,
+        )
+        try:
+            thread.start()
+        except Exception:
+            logger.debug("No se pudo iniciar la inicialización post-login", exc_info=True)
+            return
+        _POST_LOGIN_INIT_STARTED = True
+        try:
+            st.session_state["_post_login_init_started"] = True
+        except Exception:
+            logger.debug("No se pudo marcar _post_login_init_started", exc_info=True)
 
 
 def _format_total_load_value(total_ms: int) -> str:
@@ -138,10 +275,8 @@ def _render_total_load_indicator(placeholder) -> None:
     except Exception:
         logger.debug("No se pudo renderizar el indicador de tiempo total", exc_info=True)
 
-    try:
-        record_stage("ui_total_load", total_ms=elapsed_ms, status="success")
-    except Exception:
-        logger.debug("No se pudo registrar ui_total_load en performance_timer", exc_info=True)
+    _record_stage_lazy("ui_total_load", total_ms=elapsed_ms, status="success")
+    _update_ui_total_load_metric_lazy(elapsed_ms)
     try:
         log_ui_total_load_metric(elapsed_ms)
     except Exception:
@@ -149,21 +284,11 @@ def _render_total_load_indicator(placeholder) -> None:
             "No se pudo registrar ui_total_load en el startup logger",
             exc_info=True,
         )
+    _record_post_lazy_checkpoint(elapsed_ms)
 
 # Configuración de UI centralizada (tema y layout)
 validate_security_environment()
 init_ui()
-configure_sqlite_maintenance(
-    SQLiteMaintenanceConfiguration(
-        interval_hours=sqlite_maintenance_interval_hours,
-        size_threshold_mb=sqlite_maintenance_size_threshold_mb,
-        performance_store_ttl_days=performance_store_ttl_days,
-        enable_prometheus=enable_prometheus,
-    )
-)
-ensure_sqlite_maintenance_started()
-configure_system_diagnostics(SystemDiagnosticsConfiguration())
-ensure_system_diagnostics_started()
 
 st.markdown(
     """
@@ -706,12 +831,18 @@ def main(argv: list[str] | None = None):
     _check_critical_dependencies()
 
     if st.session_state.get("force_login"):
+        _maybe_log_pre_login_checkpoint()
+        start_preload_worker()
         render_login_page()
         st.stop()
 
     if not st.session_state.get("authenticated"):
+        _maybe_log_pre_login_checkpoint()
+        start_preload_worker()
         render_login_page()
         st.stop()
+
+    _schedule_post_login_initialization()
 
     fx_rates, fx_error = get_fx_rates_cached()
     if fx_error:
@@ -762,6 +893,20 @@ def main(argv: list[str] | None = None):
     cli = build_iol_client()
 
     can_render_opportunities = FEATURE_OPPORTUNITIES_TAB and hasattr(st, "tabs")
+
+    portfolio_module = _lazy_module("controllers.portfolio.portfolio")
+    default_view_model_service_factory = getattr(
+        portfolio_module, "default_view_model_service_factory"
+    )
+    default_notifications_service_factory = getattr(
+        portfolio_module, "default_notifications_service_factory"
+    )
+    render_portfolio_ui = _lazy_attr(
+        "ui.controllers.portfolio_ui", "render_portfolio_ui"
+    )
+    render_recommendations_tab = _lazy_attr(
+        "ui.tabs.recommendations", "render_recommendations_tab"
+    )
 
     portfolio_section_kwargs = {
         "view_model_service_factory": default_view_model_service_factory,

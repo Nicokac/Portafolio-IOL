@@ -1,14 +1,24 @@
-from __future__ import annotations
-
 """Streamlit-facing controller helpers for the portfolio dashboard."""
 
+import importlib
+from functools import lru_cache
 from typing import Any, Callable
 
 import streamlit as st
 
-from controllers.portfolio.portfolio import render_portfolio_section
-from services.performance_timer import performance_timer
 from services.performance_metrics import measure_execution
+
+
+@lru_cache(maxsize=1)
+def _get_portfolio_section():
+    module = importlib.import_module("controllers.portfolio.portfolio")
+    return getattr(module, "render_portfolio_section")
+
+
+@lru_cache(maxsize=1)
+def _get_performance_timer():
+    module = importlib.import_module("services.performance_timer")
+    return getattr(module, "performance_timer")
 
 
 def render_portfolio_ui(
@@ -29,10 +39,13 @@ def render_portfolio_ui(
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab
     stage_timings: dict[str, float] = {}
+    portfolio_section = _get_portfolio_section()
+    performance_timer = _get_performance_timer()
+
     with performance_timer("render_portfolio_ui", extra=telemetry):
         try:
             with measure_execution("portfolio_ui.total"):
-                refresh_secs = render_portfolio_section(
+                refresh_secs = portfolio_section(
                     container,
                     cli,
                     fx_rates,
