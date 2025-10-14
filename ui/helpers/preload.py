@@ -25,7 +25,12 @@ def ensure_scientific_preload_ready(
 
     worker = importlib.import_module("services.preload_worker")
 
-    is_complete = getattr(worker, "is_preload_complete", None)
+    try:
+        is_complete = getattr(worker, "is_preload_complete")
+    except AttributeError:
+        is_complete = None
+    except Exception:  # pragma: no cover - defensive for unexpected import issues
+        is_complete = None
     if is_complete is None:
         # Fallback for environments running an older preload worker implementation
         # where the readiness check is not available. In that scenario we assume
