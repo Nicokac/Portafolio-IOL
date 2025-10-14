@@ -56,6 +56,7 @@ def render_diagnostics_panel() -> None:
     st.header("🩺 Diagnóstico de rendimiento")
 
     stage_timings = st.session_state.get("portfolio_stage_timings")
+    fingerprint_stats = st.session_state.get("portfolio_fingerprint_cache_stats")
     total_load_ms = st.session_state.get("total_load_ms")
     timing_rows: list[dict[str, object]] = []
     if isinstance(stage_timings, dict) and stage_timings:
@@ -81,6 +82,20 @@ def render_diagnostics_panel() -> None:
         st.subheader("🧭 Última renderización del portafolio")
         timings_frame = pd.DataFrame(timing_rows)
         st.dataframe(timings_frame, use_container_width=True, hide_index=True)
+        if isinstance(fingerprint_stats, dict) and fingerprint_stats:
+            hits = int(fingerprint_stats.get("hits", 0) or 0)
+            misses = int(fingerprint_stats.get("misses", 0) or 0)
+            ratio = float(fingerprint_stats.get("hit_ratio", 0.0) or 0.0) * 100.0
+            last_status = str(fingerprint_stats.get("last_status") or "").strip().title()
+            last_latency = float(fingerprint_stats.get("last_latency_ms", 0.0) or 0.0)
+            cols = st.columns(3)
+            cols[0].metric("Hits", hits)
+            cols[1].metric("Misses", misses)
+            cols[2].metric("Hit ratio", f"{ratio:.1f}%")
+            if last_status:
+                st.caption(
+                    f"Fingerprint cache · Último acceso: {last_status} · {last_latency:.2f} ms"
+                )
 
     metrics = get_recent_metrics()
     portfolio_metrics = [m for m in metrics if m.name.startswith("portfolio_ui.")]

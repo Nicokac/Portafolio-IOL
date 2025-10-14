@@ -76,6 +76,24 @@ UI.
   registran tiempos parciales que ahora se exponen en el panel de diagnósticos
   sin depender del backend histórico.
 
+## Memoización de fingerprints del portafolio (v0.6.6-patch11b)
+
+`patch11b` elimina el cálculo redundante de `_portfolio_dataset_key` entre
+componentes. El hash del dataset se almacena en un caché LRU residente en
+`st.session_state` utilizando la combinación `snapshot_id + dataset_filters` como
+clave. El resultado es compartido por `render_tab.*`, el resumen, la tabla y los
+gráficos, evitando recorrer el DataFrame tres veces en cada render.
+
+- Los hits/misses del memoizador quedan registrados vía
+  `performance_timer.record_stage("portfolio_ui.fingerprint_cache", …)` y se
+  exponen en el panel de diagnósticos junto a las métricas de `render_tab.*`.
+- En datasets sin snapshot persistido, la memoización se acota al ciclo de
+  render actual usando el identificador de objeto del DataFrame; con snapshots,
+  la fingerprint se reutiliza entre renders hasta que cambian los filtros.
+- El ahorro típico en portafolios de 10 000 filas ronda los 20–40 ms por
+  interacción, contribuyendo a bajar el `p95` de `render_portfolio_ui` por
+  debajo de los 33 segundos y estabilizando `ui_total_load_ms` en torno a 8 s.
+
 ## Actualización de cotizaciones con Stale-While-Revalidate (v0.6.6-patch9b2)
 
 La canalización `quotes_refresh` ahora divide los símbolos del portafolio en
