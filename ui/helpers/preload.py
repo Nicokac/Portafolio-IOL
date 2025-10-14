@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import importlib
 import logging
+from contextlib import nullcontext
 from types import ModuleType
-from typing import Any, Callable
+from typing import Any, Callable, ContextManager
 
 import streamlit as st
 
@@ -14,16 +15,80 @@ _WORKER_MODULE = "services.preload_worker"
 _LOGGER = logging.getLogger(__name__)
 _MISSING = object()
 
+try:  # pragma: no cover - depends on Streamlit internals
+    from streamlit.errors import StreamlitAPIException
+except Exception:  # pragma: no cover - fallback when the symbol is unavailable
+    StreamlitAPIException = Exception  # type: ignore[assignment]
+
 
 def _resolve_placeholder(container: Any):
     if hasattr(container, "empty"):
-        return container.empty()
-    return st.empty()
+        try:
+            return container.empty()
+        except StreamlitAPIException:  # pragma: no cover - requires missing context
+            _LOGGER.debug(
+                "[preload] No se pudo obtener placeholder del contenedor", exc_info=True
+            )
+        except Exception:  # pragma: no cover - defensive guard
+            _LOGGER.debug(
+                "[preload] Error inesperado al obtener placeholder del contenedor",
+                exc_info=True,
+            )
+    try:
+        return st.empty()
+    except StreamlitAPIException:  # pragma: no cover - requires missing context
+        _LOGGER.debug("[preload] st.empty() indisponible, se omite placeholder", exc_info=True)
+        return None
+    except Exception:  # pragma: no cover - defensive guard
+        _LOGGER.debug(
+            "[preload] Error inesperado al crear placeholder global", exc_info=True
+        )
+        return None
+
+
+def _resolve_placeholder_cm(placeholder: Any) -> ContextManager[Any]:
+    if placeholder is None:
+        return nullcontext()
+    container_method = getattr(placeholder, "container", None)
+    if callable(container_method):
+        try:
+            return container_method()
+        except StreamlitAPIException:  # pragma: no cover - requires missing context
+            _LOGGER.debug(
+                "[preload] Placeholder.container() falló, se omite el contexto",
+                exc_info=True,
+            )
+        except Exception:  # pragma: no cover - defensive guard
+            _LOGGER.debug(
+                "[preload] Error inesperado al construir el contexto del placeholder",
+                exc_info=True,
+            )
+    return nullcontext()
+
+
+def _resolve_spinner(message: str) -> ContextManager[Any]:
+    spinner = getattr(st, "spinner", None)
+    if callable(spinner):
+        try:
+            return spinner(message)
+        except StreamlitAPIException:  # pragma: no cover - requires missing context
+            _LOGGER.debug(
+                "[preload] Spinner de Streamlit indisponible, se omite", exc_info=True
+            )
+        except Exception:  # pragma: no cover - defensive guard
+            _LOGGER.debug(
+                "[preload] Error inesperado al crear spinner", exc_info=True
+            )
+    return nullcontext()
 
 
 def _set_session_ready(value: bool) -> None:
     try:
         st.session_state[_SESSION_KEY] = value
+    except StreamlitAPIException:  # pragma: no cover - requires missing context
+        _LOGGER.debug(
+            "[preload] session_state no disponible, se omite bandera", exc_info=True
+        )
     except Exception:  # pragma: no cover - safety when Streamlit state unavailable
         pass
 
@@ -111,9 +176,11 @@ def ensure_scientific_preload_ready(
         return False
 
     placeholder = _resolve_placeholder(container)
+    placeholder_cm = _resolve_placeholder_cm(placeholder)
+    spinner_cm = _resolve_spinner(message)
     try:
-        with placeholder.container():
-            with st.spinner(message):
+        with placeholder_cm:
+            with spinner_cm:
                 try:
                     wait_for_completion(None)
                 except TypeError:
@@ -134,7 +201,8 @@ def ensure_scientific_preload_ready(
                     return False
     finally:
         try:
-            placeholder.empty()
+            if placeholder is not None:
+                placeholder.empty()
         except Exception:  # pragma: no cover - placeholder without empty method
             pass
 
