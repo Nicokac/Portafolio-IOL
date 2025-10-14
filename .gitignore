@@ -26,6 +26,7 @@ Thumbs.db
 *.env
 tokens_iol.json
 tokens/
+.streamlit/secrets.toml
 
 # --- Datos locales (ajusta según uses)
 data/
