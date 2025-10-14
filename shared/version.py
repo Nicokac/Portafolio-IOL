@@ -1,11 +1,11 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch11b"
-RELEASE_NAME = "Portfolio fingerprint memoization"
+VERSION = "v0.6.6-patch11c"
+RELEASE_NAME = "UI tests alignment & risk stub fixes"
 BUILD_DATE = "2025-10-16"
 CHANGELOG_REF = (
-    "Memoised portfolio dataset fingerprints, surfaced cache hit/miss telemetry and expanded diagnostics"
+    "Aligned deferred portfolio UI tests, surfaced fingerprint cache stats consistently and hardened risk analysis stubs"
 )
 
 __version__ = VERSION
