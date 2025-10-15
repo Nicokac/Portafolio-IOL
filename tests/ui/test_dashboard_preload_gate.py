@@ -6,6 +6,47 @@ from types import ModuleType
 
 import pytest
 
+
+def _install_ui_stubs() -> None:
+    dummy_modules: dict[str, dict[str, object]] = {
+        "header": {"render_header": lambda *args, **kwargs: None},
+        "tables": {
+            "render_totals": lambda *args, **kwargs: None,
+            "render_table": lambda *args, **kwargs: None,
+        },
+        "fx_panels": {
+            "render_spreads": lambda *args, **kwargs: None,
+            "render_fx_history": lambda *args, **kwargs: None,
+        },
+        "sidebar_controls": {"render_sidebar": lambda *args, **kwargs: None},
+        "fundamentals": {
+            "render_fundamental_data": lambda *args, **kwargs: None,
+            "render_fundamental_ranking": lambda *args, **kwargs: None,
+            "render_sector_comparison": lambda *args, **kwargs: None,
+        },
+        "ui_settings": {
+            "init_ui": lambda *args, **kwargs: None,
+            "render_ui_controls": lambda *args, **kwargs: None,
+            "UISettings": object,
+        },
+        "actions": {"render_action_menu": lambda *args, **kwargs: None},
+        "palette": {
+            "get_palette": lambda *args, **kwargs: None,
+            "get_active_palette": lambda *args, **kwargs: None,
+        },
+        "footer": {"render_footer": lambda *args, **kwargs: None},
+    }
+
+    for name, attrs in dummy_modules.items():
+        module_name = f"ui.{name}"
+        module = ModuleType(module_name)
+        for attr_name, value in attrs.items():
+            setattr(module, attr_name, value)
+        sys.modules[module_name] = module
+
+
+_install_ui_stubs()
+
 import ui.helpers.preload as preload_helper
 import services.preload_worker as preload
 
@@ -96,3 +137,29 @@ def test_ensure_scientific_preload_ready_handles_stub_module(
     assert preload_helper.st.session_state["scientific_preload_ready"] is False
     assert "[preload]" in caplog.text
     assert container.calls == 0
+
+
+def test_ensure_scientific_preload_ready_times_out(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    state = preload_helper.st.session_state
+    state.clear()
+
+    monkeypatch.setattr(preload, "is_preload_complete", lambda: False)
+
+    def fake_wait(timeout: float | None = None) -> bool:
+        return False
+
+    monkeypatch.setattr(preload, "wait_for_preload_completion", fake_wait)
+    monkeypatch.setattr(preload_helper.st, "spinner", lambda message: _dummy_spinner(message))
+
+    container = _Container()
+    with caplog.at_level("WARNING"):
+        result = preload_helper.ensure_scientific_preload_ready(
+            container, timeout_seconds=0.1
+        )
+
+    assert result is False
+    assert preload_helper.st.session_state["scientific_preload_ready"] is False
+    assert container.calls == 1
+    assert "La precarga científica no finalizó" in caplog.text
