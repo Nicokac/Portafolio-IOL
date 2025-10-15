@@ -16,6 +16,7 @@ from application.predictive_core import (
 from application.predictive_service import build_adaptive_history
 from services.cache import CacheService
 from services.performance_metrics import track_function
+from services.performance_timer import ProfileBlockResult, profile_block
 from shared.settings import ADAPTIVE_TTL_HOURS
 
 from predictive_engine import __version__ as ENGINE_VERSION
@@ -37,6 +38,21 @@ _CACHE = CacheService(
     ttl_override=ADAPTIVE_TTL_HOURS * 3600.0,
 )
 _CACHE_STATE = PredictiveCacheState()
+
+_LOCK_PROLONGED_THRESHOLD_S = 120.0
+
+
+def _warn_prolonged_lock(profile: ProfileBlockResult | None, *, operation: str) -> None:
+    if not isinstance(profile, ProfileBlockResult):
+        return
+    duration = float(profile.duration_s or 0.0)
+    if duration <= _LOCK_PROLONGED_THRESHOLD_S:
+        return
+    LOGGER.warning(
+        "Retención prolongada del lock adaptativo en %s: %.2fs",
+        operation,
+        duration,
+    )
 
 
 def _cache_last_updated(cache: CacheService) -> str | None:
@@ -79,32 +95,44 @@ def update_model(
         ema_span,
         persist,
     )
+    lock_profile: ProfileBlockResult | None = None
     with adaptive_cache_lock:
         LOGGER.debug(
             "Lock adaptativo adquirido para update_model (ema_span=%s)",
             ema_span,
         )
-        engine_result = run_adaptive_forecast(
-            predictions=predictions,
-            actuals=actuals,
-            cache=active_cache,
-            ema_span=ema_span,
-            ttl_hours=effective_ttl_hours,
-            max_history_rows=_MAX_HISTORY_ROWS,
-            persist_state=persist,
-            persist_history=persist,
-            history_path=_HISTORY_PATH,
-            warm_start=True,
-            state_key=_STATE_KEY,
-            correlation_key=_CORR_KEY,
-            timestamp=timestamp,
-            performance_prefix="adaptive",
-        )
+        with profile_block(
+            "adaptive_predictive.lock_scope.update",
+            extra={
+                "operation": "update_model",
+                "ema_span": str(ema_span),
+            },
+            module=__name__,
+            threshold_s=_LOCK_PROLONGED_THRESHOLD_S,
+        ) as lock_profile_ctx:
+            lock_profile = lock_profile_ctx
+            engine_result = run_adaptive_forecast(
+                predictions=predictions,
+                actuals=actuals,
+                cache=active_cache,
+                ema_span=ema_span,
+                ttl_hours=effective_ttl_hours,
+                max_history_rows=_MAX_HISTORY_ROWS,
+                persist_state=persist,
+                persist_history=persist,
+                history_path=_HISTORY_PATH,
+                warm_start=True,
+                state_key=_STATE_KEY,
+                correlation_key=_CORR_KEY,
+                timestamp=timestamp,
+                performance_prefix="predictive",
+            )
     LOGGER.debug(
         "Lock adaptativo liberado tras update_model (ema_span=%s, persist=%s)",
         ema_span,
         persist,
     )
+    _warn_prolonged_lock(lock_profile, operation="update_model")
 
     update_result = engine_result.get("update")
     cache_hit = bool(engine_result.get("cache_hit"))
@@ -200,31 +228,44 @@ def simulate_adaptive_forecast(
         ema_span,
         persist,
     )
+    lock_profile: ProfileBlockResult | None = None
     with adaptive_cache_lock:
         LOGGER.debug(
             "Lock adaptativo adquirido para simulate_adaptive_forecast (ema_span=%s)",
             ema_span,
         )
-        engine_result = run_adaptive_forecast(
-            history=frame,
-            cache=working_cache,
-            ema_span=ema_span,
-            rolling_window=rolling_window,
-            ttl_hours=effective_ttl_hours,
-            max_history_rows=_MAX_HISTORY_ROWS,
-            persist_state=persist,
-            persist_history=persist,
-            history_path=_HISTORY_PATH,
-            warm_start=True,
-            state_key=_STATE_KEY,
-            correlation_key=_CORR_KEY,
-            performance_prefix="adaptive",
-        )
+        with profile_block(
+            "adaptive_predictive.lock_scope.forecast",
+            extra={
+                "operation": "simulate_adaptive_forecast",
+                "ema_span": str(ema_span),
+                "persist": str(bool(persist)),
+            },
+            module=__name__,
+            threshold_s=_LOCK_PROLONGED_THRESHOLD_S,
+        ) as lock_profile_ctx:
+            lock_profile = lock_profile_ctx
+            engine_result = run_adaptive_forecast(
+                history=frame,
+                cache=working_cache,
+                ema_span=ema_span,
+                rolling_window=rolling_window,
+                ttl_hours=effective_ttl_hours,
+                max_history_rows=_MAX_HISTORY_ROWS,
+                persist_state=persist,
+                persist_history=persist,
+                history_path=_HISTORY_PATH,
+                warm_start=True,
+                state_key=_STATE_KEY,
+                correlation_key=_CORR_KEY,
+                performance_prefix="predictive",
+            )
     LOGGER.debug(
         "Lock adaptativo liberado tras simulate_adaptive_forecast (ema_span=%s, persist=%s)",
         ema_span,
         persist,
     )
+    _warn_prolonged_lock(lock_profile, operation="simulate_adaptive_forecast")
 
     forecast_result = engine_result.get("forecast")
     cache_metadata = engine_result.get("cache_metadata") or {}
