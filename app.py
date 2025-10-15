@@ -94,6 +94,7 @@ from services.startup_logger import (
 log_startup_event("Streamlit app bootstrap initiated")
 
 from shared.config import configure_logging, ensure_tokens_key
+from shared.favorite_symbols import FavoriteSymbols
 from shared.security_env_validator import validate_security_environment
 from shared.settings import (
     FEATURE_OPPORTUNITIES_TAB,
@@ -1001,6 +1002,9 @@ def main(argv: list[str] | None = None):
     _schedule_scientific_preload_resume()
 
     _schedule_post_login_initialization()
+
+    if FavoriteSymbols.STATE_KEY not in st.session_state:
+        st.session_state[FavoriteSymbols.STATE_KEY] = set()
 
     fx_rates, fx_error = get_fx_rates_cached()
     if fx_error:

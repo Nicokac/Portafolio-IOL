@@ -1,4 +1,5 @@
 import json
+import logging
 
 from shared.favorite_symbols import FavoriteSymbols, JSONFavoriteStorage
 
@@ -6,7 +7,7 @@ from shared.favorite_symbols import FavoriteSymbols, JSONFavoriteStorage
 def test_initializes_state_when_missing():
     state: dict[str, object] = {}
     fav = FavoriteSymbols(state)
-    assert state[FavoriteSymbols.STATE_KEY] == []
+    assert state[FavoriteSymbols.STATE_KEY] == set()
     assert fav.list() == []
 
 
@@ -16,7 +17,9 @@ def test_add_remove_and_toggle_symbols():
     fav.add("ggal")
     fav.add(" GGAL ")
     fav.add("APBR")
-    assert fav.list() == ["GGAL", "APBR"]
+    favorites = fav.list()
+    assert set(favorites) == {"GGAL", "APBR"}
+    assert len(favorites) == 2
 
     fav.remove("GGAL")
     assert fav.list() == ["APBR"]
@@ -30,8 +33,9 @@ def test_add_remove_and_toggle_symbols():
 def test_replace_and_helpers():
     state: dict[str, object] = {}
     fav = FavoriteSymbols(state)
-    fav.replace(["apbr", "GGAL", "ggal"])
-    assert fav.list() == ["APBR", "GGAL"]
+    replaced = fav.replace(["apbr", "GGAL", "ggal"])
+    assert set(replaced) == {"APBR", "GGAL"}
+    assert len(replaced) == 2
     assert fav.format_symbol("apbr") == "⭐ APBR"
     assert fav.format_symbol("pamp") == "PAMP"
 
@@ -50,6 +54,19 @@ def test_is_favorite_handles_none():
     assert fav.toggle(None) is False
 
 
+def test_is_favorite_initializes_missing_state(caplog):
+    state: dict[str, object] = {}
+    fav = FavoriteSymbols(state)
+    state.pop(FavoriteSymbols.STATE_KEY)
+
+    caplog.set_level(logging.WARNING, logger="shared.favorite_symbols")
+
+    assert fav.is_favorite("GGAL") is False
+    assert FavoriteSymbols.STATE_KEY in state
+    assert state[FavoriteSymbols.STATE_KEY] == set()
+    assert "favorite_symbols no estaba inicializado" in caplog.text
+
+
 def test_loads_from_storage_when_available(tmp_path):
     storage_path = tmp_path / "favorites.json"
     storage_path.write_text(json.dumps(["ggal", "PAMP", "GGAL"]))
@@ -58,7 +75,9 @@ def test_loads_from_storage_when_available(tmp_path):
     state: dict[str, object] = {}
     fav = FavoriteSymbols(state, storage=storage)
 
-    assert fav.list() == ["GGAL", "PAMP"]
+    favorites = fav.list()
+    assert set(favorites) == {"GGAL", "PAMP"}
+    assert len(favorites) == 2
     assert state[FavoriteSymbols.LOADED_FLAG_KEY] is True
     assert fav.last_error is None
 
@@ -71,7 +90,8 @@ def test_persists_changes_to_storage(tmp_path):
     fav.add("pamp")
 
     data = json.loads((storage.path).read_text())
-    assert data == ["GGAL", "PAMP"]
+    assert set(data) == {"GGAL", "PAMP"}
+    assert len(data) == 2
 
     fav.remove("GGAL")
     data = json.loads(storage.path.read_text())
