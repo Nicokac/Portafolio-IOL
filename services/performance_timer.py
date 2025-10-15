@@ -9,6 +9,7 @@ import os
 import queue
 import re
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -498,6 +499,7 @@ class ProfileBlockResult:
     module: str = __name__
     success: bool = True
     extras: Dict[str, str] = field(default_factory=dict)
+    is_outlier: bool = False
 
     @property
     def duration_ms(self) -> float:
@@ -672,13 +674,42 @@ def _log_performance(
     extra: Dict[str, Any] | None,
     success: bool,
     module: str,
+    log_level: int = logging.INFO,
+    is_outlier: bool = False,
+    thread_name: str | None = None,
+    threshold: float | None = None,
 ) -> PerformanceEntry:
     sanitized = _sanitize_extra(extra)
+    lock_state: bool | None = None
+    if extra:
+        if "lock_active" in extra:
+            try:
+                lock_state = bool(extra["lock_active"])
+            except Exception:
+                lock_state = None
+        elif "lock" in extra:
+            try:
+                lock_state = bool(extra["lock"])
+            except Exception:
+                lock_state = None
+    if lock_state is not None:
+        sanitized["lock_active"] = "true" if lock_state else "false"
     if cpu_pct is not None:
         sanitized.setdefault("cpu", f"{cpu_pct:.1f}%")
     if ram_pct is not None:
         sanitized.setdefault("ram", f"{ram_pct:.1f}%")
     sanitized.setdefault("status", "ok" if success else "error")
+    if threshold is not None and is_outlier:
+        try:
+            sanitized["threshold_s"] = f"{float(threshold):.2f}"
+        except Exception:
+            sanitized["threshold_s"] = str(threshold)
+    if thread_name:
+        sanitized.setdefault("thread", str(thread_name))
+    if is_outlier:
+        sanitized["outlier"] = "true"
+    elif "outlier" not in sanitized:
+        sanitized["outlier"] = "false"
     log_details = dict(sanitized)
     log_details.setdefault("module", module)
     message = _format_message(label, duration, log_details)
@@ -700,8 +731,13 @@ def _log_performance(
         "perf_meta": dict(sanitized) if sanitized else {},
         "perf_module": module,
         "perf_entry": entry,
+        "perf_is_outlier": is_outlier,
+        "perf_thread_name": thread_name,
+        "perf_threshold_s": threshold,
     }
-    LOGGER.info(message, extra=log_extra)
+    if lock_state is not None:
+        log_extra["perf_lock_active"] = lock_state
+    LOGGER.log(log_level, message, extra=log_extra)
     return entry
 
 
@@ -715,7 +751,10 @@ def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Ite
 
 @contextmanager
 def profile_block(
-    label: str, *, extra: Dict[str, Any] | None = None
+    label: str,
+    *,
+    extra: Dict[str, Any] | None = None,
+    threshold_s: float = 300.0,
 ) -> Iterator[ProfileBlockResult]:
     """Profile a code block capturing duration, CPU and memory usage."""
 
@@ -733,6 +772,17 @@ def profile_block(
     finally:
         elapsed = max(time.perf_counter() - start_time, 0.0)
         cpu_pct, ram_pct = _collect_resource_metrics(cpu_start, elapsed)
+        current_thread = threading.current_thread()
+        thread_name = getattr(current_thread, "name", None)
+        threshold_value: float | None
+        try:
+            threshold_value = float(threshold_s)
+        except Exception:
+            threshold_value = None
+        is_outlier = False
+        if threshold_value is not None and elapsed > threshold_value:
+            is_outlier = True
+        result.is_outlier = is_outlier
         result.duration_s = elapsed
         result.cpu_percent = cpu_pct
         result.ram_percent = ram_pct
@@ -746,6 +796,10 @@ def profile_block(
             extra=extra,
             success=success,
             module=module,
+            log_level=logging.WARNING if is_outlier else logging.INFO,
+            is_outlier=is_outlier,
+            thread_name=thread_name,
+            threshold=threshold_value,
         )
         result.extras = dict(entry.extras)
 
@@ -775,6 +829,8 @@ def record_stage(
     normalized_status = status_value.strip().lower()
     success = normalized_status not in {"error", "failed", "failure"}
     module = _resolve_module_name()
+    current_thread = threading.current_thread()
+    thread_name = getattr(current_thread, "name", None)
     _log_performance(
         label=label,
         duration=duration_s,
@@ -783,6 +839,7 @@ def record_stage(
         extra=metadata,
         success=success,
         module=module,
+        thread_name=thread_name,
     )
     if label == "ui_total_load":
         update_ui_total_load_metric(total_ms)

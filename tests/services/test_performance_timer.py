@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import importlib
 import sys
 import time
 from pathlib import Path
@@ -97,6 +96,37 @@ def test_profile_block_exposes_module_and_metrics(
     assert profile.module.endswith("test_performance_timer")
     assert profile.duration_s >= 0.0
     assert isinstance(profile.extras, dict)
+    assert profile.is_outlier is False
+    assert profile.extras.get("outlier") == "false"
+    assert profile.extras.get("thread")
 
     content = log_path.read_text(encoding="utf-8")
     assert "module=test_performance_timer" in content
+
+
+def test_profile_block_marks_outlier_and_logs_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timer, log_path = _reload_timer(tmp_path, monkeypatch)
+
+    perf_values = iter([10.0, 12.5])
+    monkeypatch.setattr(timer.time, "perf_counter", lambda: next(perf_values))
+
+    with timer.profile_block("slow_block", threshold_s=1.0) as profile:
+        pass
+
+    timer._shutdown_listener()
+
+    assert profile.is_outlier is True
+    content = log_path.read_text(encoding="utf-8")
+    warning_lines = [line for line in content.splitlines() if "slow_block" in line]
+    assert warning_lines
+    assert any("[WARNING]" in line for line in warning_lines)
+
+    entries = timer.read_recent_entries()
+    assert entries
+    last = entries[-1]
+    assert last.label == "slow_block"
+    assert last.extras.get("outlier") == "true"
+    assert last.extras.get("threshold_s") == "1.00"
+    assert last.extras.get("thread")
