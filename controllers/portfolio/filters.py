@@ -1,8 +1,8 @@
-import time
 import logging
 import pandas as pd
 import streamlit as st
 
+from domain.adaptive_cache_lock import run_in_background
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
 from services.performance_timer import (
@@ -13,6 +13,95 @@ from services.performance_timer import (
 from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
+
+
+def _background_analytics_job(df_view: pd.DataFrame) -> None:
+    if df_view.empty:
+        return
+    try:
+        numeric_cols = [
+            col for col in ("valor_actual", "costo", "pl", "pl_d") if col in df_view.columns
+        ]
+        if not numeric_cols:
+            return
+        summary = df_view.loc[:, numeric_cols].sum().to_dict()
+        logger.debug(
+            "Resumen analítico preparado en background", extra={"portfolio_metrics": summary}
+        )
+    except Exception:
+        logger.debug("No se pudo calcular el resumen analítico en background", exc_info=True)
+
+
+def _background_predictions_job() -> None:
+    try:
+        from application.predictive_service import update_cache_metrics
+    except Exception:
+        logger.debug("No se pudo importar predictive_service para refrescar métricas", exc_info=True)
+        return
+    try:
+        update_cache_metrics()
+    except Exception:
+        logger.debug("No se pudieron refrescar las métricas predictivas", exc_info=True)
+
+
+def _background_export_job(df_view: pd.DataFrame) -> None:
+    if df_view.empty:
+        return
+    try:
+        from shared.portfolio_export import PortfolioSnapshotExport, create_csv_bundle
+    except Exception:
+        logger.debug("No se pudieron importar los helpers de exportación", exc_info=True)
+        return
+
+    payload = {
+        "positions": df_view.reset_index(drop=True),
+        "totals": {},
+        "history": [],
+        "contributions": {},
+        "name": "apply_filters",
+    }
+    try:
+        snapshot = PortfolioSnapshotExport.from_payload(payload, name="apply_filters")
+        create_csv_bundle(
+            snapshot,
+            metric_keys=[],
+            include_rankings=False,
+            include_history=False,
+            limit=5,
+        )
+    except Exception:
+        logger.debug("No se pudo preparar el paquete de exportación", exc_info=True)
+
+
+def _schedule_background_jobs(df_view: pd.DataFrame, telemetry: dict[str, object]) -> None:
+    if df_view.empty:
+        return
+    enabled = bool(getattr(settings, "portfolio_background_jobs", True))
+    if not enabled:
+        return
+
+    jobs = [
+        ("analytics", _background_analytics_job, (df_view.copy(deep=False),)),
+        ("predictions", _background_predictions_job, ()),
+        ("export", _background_export_job, (df_view.copy(deep=False),)),
+    ]
+    scheduled: list[str] = []
+    for label, func, args in jobs:
+        try:
+            thread = run_in_background(
+                func,
+                *args,
+                name=f"apply_filters-{label}",
+            )
+        except Exception:
+            logger.debug("No se pudo delegar la tarea %s en background", label, exc_info=True)
+            continue
+        scheduled.append(label)
+        logger.debug(
+            "Tarea pesada '%s' delegada al hilo %s", label, getattr(thread, "name", "unknown")
+        )
+    if scheduled:
+        telemetry["background_jobs"] = scheduled
 
 
 def apply_filters(df_pos, controls, cli, psvc):
@@ -179,5 +268,7 @@ def apply_filters(df_pos, controls, cli, psvc):
                 st.session_state["apply_filters_profiles"] = stage_profiles
             except Exception:
                 pass
+
+        _schedule_background_jobs(df_view, telemetry)
 
         return df_view
