@@ -283,23 +283,6 @@ def test_monte_carlo_simulation_large_sample_stability(batch_size: int | None) -
 
     grouped = result.to_numpy().reshape(10, -1).mean(axis=1)
     assert grouped.std(ddof=0) < 6e-3
-
-
-def test_apply_stress_combines_weights_and_shocks() -> None:
-    """`apply_stress` should align indexes and apply percentage shocks."""
-
-    prices = pd.Series({"AL30": 120.0, "GGAL": 80.0, "PAMP": 55.0})
-    weights = pd.Series({"AL30": 0.5, "GGAL": 0.3, "PAMP": 0.2})
-    shocks = {"AL30": -0.1, "GGAL": 0.05, "DLR": 0.2}
-
-    stressed_prices = prices * pd.Series(shocks).reindex(prices.index).fillna(0.0).add(1)
-    expected_value = float((stressed_prices * weights).sum())
-
-    result = rs.apply_stress(prices, weights, shocks)
-
-    assert result == pytest.approx(expected_value)
-
-
 def test_markowitz_optimize_degrades_on_singular_covariance(caplog: pytest.LogCaptureFixture) -> None:
     """Singular covariance matrices should yield NaN weights instead of crashing."""
 

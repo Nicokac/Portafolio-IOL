@@ -3,7 +3,6 @@ import pandas as pd
 
 from application.risk_service import (
     annualized_volatility,
-    apply_stress,
     beta,
     compute_returns,
     historical_var,
@@ -78,10 +77,3 @@ def test_monte_carlo_simulation_empty_df():
     assert result.empty
 
 
-def test_apply_stress_partial_shocks():
-    prices = pd.Series({"AAA": 100, "BBB": 200})
-    weights = pd.Series({"AAA": 0.6, "BBB": 0.4})
-    shocks = {"AAA": -0.1}
-    result = apply_stress(prices, weights, shocks)
-    expected = (100 * 0.9 * 0.6) + (200 * 1.0 * 0.4)
-    assert result == expected

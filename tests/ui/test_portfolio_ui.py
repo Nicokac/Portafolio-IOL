@@ -677,7 +677,6 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         radio_sequence=[],
         selectbox_defaults={
             "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
-            "Escenario": "Leve",
             "Ventana para correlaciones móviles": "3 meses (63)",
             "Nivel de confianza para VaR/CVaR": "95%",
             "Tipo de activo a incluir": "ACCION",
@@ -756,7 +755,6 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         "monte_carlo_simulation",
         lambda *a, **k: pd.DataFrame({"sim": [1.0, 1.02, 1.05]}),
     )
-    monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.02)
     monkeypatch.setattr(
         risk_mod,
         "benchmark_analysis",
@@ -848,7 +846,6 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
         radio_sequence=[],
         selectbox_defaults={
             "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
-            "Escenario": "Leve",
             "Nivel de confianza para VaR/CVaR": "95%",
             "Tipo de activo a incluir": "Todos",
         },
