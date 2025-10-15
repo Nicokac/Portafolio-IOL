@@ -1,0 +1,4 @@
+metric,value,notes
+predictive_fetch_s,0.00,"Instrumentación profile_block para fetch/modelado/persistencia"
+predictive_compute_s,0.00,"profile_block en cálculo (calculate_adaptive_forecast)"
+predictive_total_s,0.00,"Duración total registrada con profile_block lock_scope"

@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Mapping, Tuple
 import pandas as pd
 
 from services.performance_metrics import measure_execution
+from services.performance_timer import profile_block
 
 from predictive_engine.base import calculate_adaptive_forecast, update_adaptive_state
 from predictive_engine.models import AdaptiveState, AdaptiveForecastResult, AdaptiveUpdateResult, empty_history_frame
@@ -95,17 +96,36 @@ def update_model_with_cache(
     context: EngineUpdateContext,
     ema_span: int,
     timestamp: pd.Timestamp | None,
+    performance_prefix: str = "adaptive",
 ) -> Tuple[AdaptiveUpdateResult, bool]:
-    state, cache_hit = context.resolve_state()
-    result = update_adaptive_state(
-        predictions,
-        actuals,
-        state=state,
-        ema_span=max(int(ema_span), 1),
-        timestamp=timestamp,
-        max_history_rows=context.max_history_rows,
-    )
-    context.persist_state(result)
+    fetch_label = f"{performance_prefix}.fetch"
+    model_label = f"{performance_prefix}.modeling"
+    persist_label = f"{performance_prefix}.persistence"
+    with profile_block(
+        fetch_label,
+        extra={"stage": "fetch"},
+        module=__name__,
+    ):
+        state, cache_hit = context.resolve_state()
+    with profile_block(
+        model_label,
+        extra={"stage": "modeling"},
+        module=__name__,
+    ):
+        result = update_adaptive_state(
+            predictions,
+            actuals,
+            state=state,
+            ema_span=max(int(ema_span), 1),
+            timestamp=timestamp,
+            max_history_rows=context.max_history_rows,
+        )
+    with profile_block(
+        persist_label,
+        extra={"stage": "persistence", "cache_hit": str(bool(cache_hit))},
+        module=__name__,
+    ):
+        context.persist_state(result)
     return result, cache_hit
 
 
@@ -113,6 +133,7 @@ def build_adaptive_updater(
     *,
     context: EngineUpdateContext,
     ema_span: int,
+    performance_prefix: str = "adaptive",
 ) -> Callable[[pd.DataFrame, pd.DataFrame, pd.Timestamp], AdaptiveUpdateResult]:
     def _updater(predictions: pd.DataFrame, actuals: pd.DataFrame, timestamp: pd.Timestamp) -> AdaptiveUpdateResult:
         result, _ = update_model_with_cache(
@@ -121,6 +142,7 @@ def build_adaptive_updater(
             context=context,
             ema_span=ema_span,
             timestamp=timestamp,
+            performance_prefix=performance_prefix,
         )
         return result
 
@@ -219,6 +241,7 @@ def run_adaptive_forecast(
                 context=context,
                 ema_span=ema_span,
                 timestamp=timestamp,
+                performance_prefix=performance_prefix,
             )
         return {
             "update": result,
@@ -236,11 +259,16 @@ def run_adaptive_forecast(
             context=context,
             ema_span=ema_span,
             timestamp=ts,
+            performance_prefix=performance_prefix,
         )
         cache_hit_flag = cache_hit_flag or hit
         return result
 
-    with measure_execution(f"{performance_prefix}.forecast"):
+    with profile_block(
+        f"{performance_prefix}.calculation",
+        extra={"stage": "calculation"},
+        module=__name__,
+    ):
         forecast_result: AdaptiveForecastResult = calculate_adaptive_forecast(
             history if has_history else pd.DataFrame(),
             ema_span=ema_span,
