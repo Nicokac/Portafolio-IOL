@@ -189,6 +189,7 @@ def ensure_scientific_preload_ready(
     container: Any,
     *,
     message: str = "Cargando librerías científicas…",
+    timeout_seconds: float | int | None = 10.0,
 ) -> bool:
     """Block the UI with a spinner until the preload worker finishes."""
 
@@ -215,18 +216,30 @@ def ensure_scientific_preload_ready(
     if wait_for_completion is None:
         return False
 
+    wait_timeout: float | None
+    try:
+        wait_timeout = float(timeout_seconds) if timeout_seconds is not None else None
+        if wait_timeout is not None and wait_timeout < 0:
+            wait_timeout = 0.0
+    except (TypeError, ValueError):
+        wait_timeout = None
+
     placeholder = _resolve_placeholder(container)
     placeholder_cm = _resolve_placeholder_cm(placeholder)
     spinner_cm = _resolve_spinner(message)
+    completed = False
     try:
         with placeholder_cm:
             with spinner_cm:
                 try:
-                    wait_for_completion(None)
+                    if wait_timeout is None:
+                        completed = bool(wait_for_completion(None))
+                    else:
+                        completed = bool(wait_for_completion(wait_timeout))
                 except TypeError:
                     # Some implementations may not accept the timeout parameter.
                     try:
-                        wait_for_completion()
+                        completed = bool(wait_for_completion())
                     except Exception:
                         _LOGGER.warning(
                             "[preload] Error al esperar la precarga científica",
@@ -247,6 +260,12 @@ def ensure_scientific_preload_ready(
             pass
 
     ready = _call_is_complete(is_complete)
+    if not ready and wait_timeout is not None and not completed:
+        _LOGGER.warning(
+            "[preload] La precarga científica no finalizó tras %.2f segundos; "
+            "se continúa sin bloquear la interfaz.",
+            wait_timeout,
+        )
     _set_session_ready(ready)
     return ready
 
