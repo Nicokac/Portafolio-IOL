@@ -22,7 +22,6 @@ from application.risk_service import (
     rolling_correlations,
     markowitz_optimize,
     monte_carlo_simulation,
-    apply_stress,
     asset_risk_breakdown,
     max_drawdown,
     drawdown_series,
@@ -1160,17 +1159,6 @@ def render_risk_analysis(
                         st.caption(
                             "Simula muchos escenarios posibles para estimar cómo podría variar el valor de la cartera en el futuro."
                         )
-
-                with st.expander("Aplicar shocks"):
-                    templates = {"Leve": 0.03, "Moderado": 0.07, "Fuerte": 0.12}
-                    tmpl = st.selectbox("Escenario", list(templates), index=0)
-                    shocks = {sym: -templates[tmpl] for sym in returns_df.columns}
-                    st.caption(
-                        f"Aplicando un shock uniforme de {templates[tmpl]:.0%} a todos los activos."
-                    )
-                base_prices = pd.Series(1.0, index=weights.index)
-                stressed_val = apply_stress(base_prices, weights, shocks)
-                st.write(f"Retorno con shocks: {stressed_val - 1:.2%}")
 
                 st.subheader("Análisis de Factores y Benchmark")
 

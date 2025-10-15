@@ -613,7 +613,6 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     monkeypatch.setattr(
         risk_mod, "monte_carlo_simulation", lambda *a, **k: pd.Series([1, 2])
     )
-    monkeypatch.setattr(risk_mod, "apply_stress", lambda *a, **k: 1.05)
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "markdown", lambda *a, **k: None)
@@ -626,7 +625,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
     select_values = iter(
-        [["A", "B"], "1y", "3 meses (63)", "S&P 500 (^GSPC)", "95%", "Leve"]
+        [["A", "B"], "1y", "3 meses (63)", "S&P 500 (^GSPC)", "95%"]
     )
 
     def fake_selectbox(label, options, index=0, **kwargs):
@@ -668,7 +667,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     vol_col.plotly_chart.assert_called_once()
     draw_col.plotly_chart.assert_called_once()
     scatter_col.plotly_chart.assert_called_once()
-    assert len(expander_calls) == 6
+    assert len(expander_calls) == 5
 
 
 def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
@@ -727,7 +726,7 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
     monkeypatch.setattr(risk_mod.px, "bar", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "markdown", lambda *a, **k: None)
 
-    select_values = iter([["A"], "1y", "S&P 500 (^GSPC)", "95%", "Leve"])
+    select_values = iter([["A"], "1y", "S&P 500 (^GSPC)", "95%"])
     monkeypatch.setattr(
         risk_mod.st,
         "selectbox",

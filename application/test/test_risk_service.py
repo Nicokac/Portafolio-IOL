@@ -46,9 +46,3 @@ def test_monte_carlo_length():
     assert len(sims) == 10
 
 
-def test_apply_stress_returns_float():
-    prices = _make_prices().iloc[-1]
-    weights = pd.Series([0.5, 0.5], index=prices.index)
-    shocks = {"AAA": -0.1, "BBB": 0.2}
-    val = rs.apply_stress(prices, weights, shocks)
-    assert isinstance(val, float)

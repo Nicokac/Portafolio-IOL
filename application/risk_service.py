@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from itertools import combinations
 import logging
-from typing import Dict
 
 import numpy as np
 from numpy.random import SeedSequence
@@ -27,7 +26,6 @@ __all__ = [
     "rolling_correlations",
     "markowitz_optimize",
     "monte_carlo_simulation",
-    "apply_stress",
     "asset_risk_breakdown",
 ]
 
@@ -315,17 +313,3 @@ def monte_carlo_simulation(
         return pd.Series(np.nan)
     port_paths = np.prod(1 + sims @ w, axis=1) - 1
     return pd.Series(port_paths)
-
-
-def apply_stress(
-    prices: pd.Series,
-    weights: pd.Series,
-    shocks: Dict[str, float],
-) -> float:
-    """Aplica shocks porcentuales a precios y calcula valor de la cartera."""
-    if prices is None or len(prices) == 0:
-        return 0.0
-    w = weights.reindex(prices.index).fillna(0.0)
-    s = pd.Series(shocks).reindex(prices.index).fillna(0.0)
-    stressed = prices * (1 + s)
-    return float((stressed * w).sum())
