@@ -22,6 +22,7 @@ from application.recommendation_service import RecommendationService
 from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
 from controllers import recommendations_controller
+from services.performance_timer import profile_block
 from services.portfolio_view import compute_symbol_risk_metrics
 from shared.logging_utils import silence_streamlit_warnings
 from shared.version import __version__
@@ -636,9 +637,7 @@ def _render_recommendations_visuals(
         )
 
 
-def render_recommendations_tab() -> None:
-    """Render the recommendations tab inside the main dashboard."""
-
+def _render_recommendations_tab_impl() -> None:
     positions = _get_portfolio_positions()
     st.header("🔮 Recomendaciones personalizadas")
     st.caption(
@@ -884,6 +883,16 @@ def render_recommendations_tab() -> None:
         _render_correlation_tab(adaptive_payload)
 
     st.caption(f"Versión: v{__version__}")
+
+
+def render_recommendations_tab() -> None:
+    """Render the recommendations tab inside the main dashboard."""
+
+    with profile_block(
+        "recommendations",
+        module="ui.tabs.recommendations",
+    ):
+        _render_recommendations_tab_impl()
 
 
 def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:

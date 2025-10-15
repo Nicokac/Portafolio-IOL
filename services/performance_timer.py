@@ -755,11 +755,12 @@ def profile_block(
     *,
     extra: Dict[str, Any] | None = None,
     threshold_s: float = 300.0,
+    module: str | None = None,
 ) -> Iterator[ProfileBlockResult]:
     """Profile a code block capturing duration, CPU and memory usage."""
 
-    module = _resolve_module_name()
-    result = ProfileBlockResult(label=label, module=module)
+    module_name = str(module) if module else _resolve_module_name()
+    result = ProfileBlockResult(label=label, module=module_name)
     start_time = time.perf_counter()
     cpu_start = _capture_cpu_snapshot()
     success = True
@@ -786,7 +787,7 @@ def profile_block(
         result.duration_s = elapsed
         result.cpu_percent = cpu_pct
         result.ram_percent = ram_pct
-        result.module = module
+        result.module = module_name
         result.success = success
         entry = _log_performance(
             label=label,
@@ -795,7 +796,7 @@ def profile_block(
             ram_pct=ram_pct,
             extra=extra,
             success=success,
-            module=module,
+            module=module_name,
             log_level=logging.WARNING if is_outlier else logging.INFO,
             is_outlier=is_outlier,
             thread_name=thread_name,

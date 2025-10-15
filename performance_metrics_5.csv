@@ -1,0 +1,5 @@
+stage,duration_seconds,notes
+ui_total_load,83.0,"Baseline completo login+render (19:42:40-19:45:43)"
+quotes_refresh,7.1,"Cuello principal: refresh de cotizaciones"
+portfolio_view.render,7.5,"Segundo cuello: render de vista de portafolio"
+recommendations.render,0.10,"Nuevo profile_block (ui.tabs.recommendations) con datos precargados"
