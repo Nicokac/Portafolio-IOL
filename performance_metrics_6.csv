@@ -1,0 +1,5 @@
+stage,duration_seconds,notes
+ui_total_load,127.0,"Post-optimización login+preload (20:05:49-20:07:56)"
+quotes_refresh,6.68,"ThreadPoolExecutor concurrente con sublotes de 5-8 símbolos"
+portfolio_view.render,7.21,"Memoización por símbolo para compute_symbol_risk_metrics"
+recommendations.render,0.10,"Sin cambios perceptibles tras los ajustes"

@@ -1,5 +1,6 @@
 import importlib
 import logging
+import time
 from functools import lru_cache
 
 import streamlit as st
@@ -9,6 +10,8 @@ from application.auth_service import get_auth_provider
 from infrastructure.iol.auth import InvalidCredentialsError
 
 logger = logging.getLogger(__name__)
+
+LOGIN_AUTH_TIMESTAMP_KEY = "_login_authenticated_at"
 
 
 @lru_cache(maxsize=1)
@@ -53,5 +56,12 @@ def build_iol_client() -> IIOLProvider | None:
         st.rerun()
         return None
     st.session_state["authenticated"] = True
+    try:
+        st.session_state[LOGIN_AUTH_TIMESTAMP_KEY] = time.perf_counter()
+    except Exception:  # pragma: no cover - session_state may be read-only in tests
+        logger.debug("No se pudo registrar el timestamp de autenticación", exc_info=True)
     return cli
+
+
+__all__ = ["build_iol_client", "LOGIN_AUTH_TIMESTAMP_KEY"]
 

@@ -24,6 +24,37 @@ from application.risk_service import (
 
 logger = logging.getLogger(__name__)
 
+_SYMBOL_RISK_CACHE: dict[tuple[str, str, str], tuple[dict[str, Any], str, float]] = {}
+_SYMBOL_RISK_CACHE_MAX = 512
+
+
+def _series_signature(series: pd.Series | None) -> str:
+    if series is None or series.empty:
+        return "empty"
+    try:
+        hashed = pd.util.hash_pandas_object(series, index=True, categorize=False)
+        return hashlib.sha1(hashed.values.tobytes()).hexdigest()
+    except Exception:
+        try:
+            values = np.asarray(series.to_numpy(copy=False))
+            return hashlib.sha1(values.tobytes()).hexdigest()
+        except Exception:
+            tail_value = series.iloc[-1] if len(series) else None
+            return f"len:{len(series)}|tail:{tail_value}"
+
+
+def _prune_symbol_risk_cache() -> None:
+    if len(_SYMBOL_RISK_CACHE) <= _SYMBOL_RISK_CACHE_MAX:
+        return
+    surplus = len(_SYMBOL_RISK_CACHE) - _SYMBOL_RISK_CACHE_MAX
+    if surplus <= 0:
+        return
+    ordered_keys = sorted(
+        _SYMBOL_RISK_CACHE.items(), key=lambda item: item[1][2]
+    )
+    for key, _ in ordered_keys[:surplus]:
+        _SYMBOL_RISK_CACHE.pop(key, None)
+
 def compute_symbol_risk_metrics(
     tasvc,
     symbols: list[str],
@@ -79,9 +110,28 @@ def compute_symbol_risk_metrics(
     if bench_returns is None:
         bench_returns = pd.Series(dtype=float)
 
+    benchmark_key = str(benchmark or "").strip().upper()
+    period_key = str(period or "").strip()
+    bench_signature = _series_signature(prices.get(benchmark))
+
     for sym in prices.columns:
         sym_returns = returns.get(sym)
         if sym_returns is None or sym_returns.empty:
+            continue
+
+        norm_symbol = str(sym or "").strip().upper()
+        cache_key = (norm_symbol, benchmark_key, period_key)
+        sym_signature = _series_signature(prices.get(sym))
+        combined_signature = f"{sym_signature}|{bench_signature}"
+        cached_entry = _SYMBOL_RISK_CACHE.get(cache_key)
+        if cached_entry and cached_entry[1] == combined_signature:
+            payload = dict(cached_entry[0])
+            metrics.append(payload)
+            _SYMBOL_RISK_CACHE[cache_key] = (
+                dict(payload),
+                combined_signature,
+                time.time(),
+            )
             continue
 
         vol = annualized_volatility(sym_returns)
@@ -98,15 +148,21 @@ def compute_symbol_risk_metrics(
             )
             sym_beta = beta(aligned_sym, aligned_bench)
 
-        metrics.append(
-            {
-                "simbolo": sym,
-                "volatilidad": vol,
-                "drawdown": dd,
-                "beta": sym_beta,
-                "es_benchmark": is_benchmark,
-            }
+        record = {
+            "simbolo": sym,
+            "volatilidad": vol,
+            "drawdown": dd,
+            "beta": sym_beta,
+            "es_benchmark": is_benchmark,
+        }
+        metrics.append(record)
+        _SYMBOL_RISK_CACHE[cache_key] = (
+            dict(record),
+            combined_signature,
+            time.time(),
         )
+
+    _prune_symbol_risk_cache()
 
     if not metrics:
         return pd.DataFrame()

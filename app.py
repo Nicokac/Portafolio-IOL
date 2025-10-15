@@ -68,6 +68,9 @@ def is_preload_complete() -> bool:
 
 _TOTAL_LOAD_START = time.perf_counter()
 
+_LOGIN_PHASE_START_KEY = "_login_phase_started_at"
+_LOGIN_PRELOAD_RECORDED_KEY = "_login_preload_recorded"
+
 if not hasattr(st, "stop"):
     st.stop = lambda: None  # type: ignore[attr-defined]
 
@@ -111,7 +114,7 @@ from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.login import render_login_page
 from ui.footer import render_footer
 from services.cache import get_fx_rates_cached
-from controllers.auth import build_iol_client
+from controllers.auth import LOGIN_AUTH_TIMESTAMP_KEY, build_iol_client
 from services.health import get_health_metrics, record_dependency_status
 from ui.helpers.preload import ensure_scientific_preload_ready
 
@@ -172,6 +175,11 @@ def _mark_scientific_preload_pending() -> None:
 def _render_login_phase() -> None:
     _maybe_log_pre_login_checkpoint()
     _mark_scientific_preload_pending()
+    try:
+        st.session_state.setdefault(_LOGIN_PHASE_START_KEY, time.perf_counter())
+        st.session_state.pop(_LOGIN_PRELOAD_RECORDED_KEY, None)
+    except Exception:  # pragma: no cover - session state may be read-only in tests
+        logger.debug("No se pudo inicializar el seguimiento de login", exc_info=True)
     start_preload_worker(paused=True)
     try:
         render_login_page()
@@ -206,6 +214,60 @@ def _record_stage_lazy(*args, **kwargs) -> None:
         record_stage(*args, **kwargs)
     except Exception:
         logger.debug("No se pudo registrar ui_total_load", exc_info=True)
+
+
+def _record_login_preload_timings(preload_ready: bool) -> None:
+    """Measure login + scientific preload durations once per authentication."""
+
+    try:
+        if st.session_state.get(_LOGIN_PRELOAD_RECORDED_KEY):
+            return
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo leer el estado de métricas de login", exc_info=True)
+        return
+
+    try:
+        start_value = st.session_state.get(_LOGIN_PHASE_START_KEY)
+    except Exception:
+        logger.debug("No se pudo acceder al inicio de sesión", exc_info=True)
+        return
+
+    if not isinstance(start_value, (int, float)):
+        return
+
+    end = time.perf_counter()
+    total_ms = max((end - float(start_value)) * 1000.0, 0.0)
+    auth_ts = st.session_state.get(LOGIN_AUTH_TIMESTAMP_KEY)
+    login_ms: float | None = None
+    if isinstance(auth_ts, (int, float)) and auth_ts >= start_value:
+        login_ms = max((float(auth_ts) - float(start_value)) * 1000.0, 0.0)
+
+    extra: dict[str, object] = {"preload_ready": bool(preload_ready)}
+    if login_ms is not None:
+        extra["login_ms"] = f"{login_ms:.2f}"
+
+    _record_stage_lazy(
+        "login_preload_total",
+        total_ms=total_ms,
+        status="success",
+        extra=extra,
+    )
+
+    if login_ms is not None:
+        _record_stage_lazy("login_phase", total_ms=login_ms, status="success")
+        preload_ms = max(total_ms - login_ms, 0.0)
+        _record_stage_lazy(
+            "scientific_preload",
+            total_ms=preload_ms,
+            status="success",
+        )
+
+    try:
+        st.session_state[_LOGIN_PRELOAD_RECORDED_KEY] = True
+        st.session_state.pop(_LOGIN_PHASE_START_KEY, None)
+        st.session_state.pop(LOGIN_AUTH_TIMESTAMP_KEY, None)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo limpiar el estado de métricas de login", exc_info=True)
 
 
 def _update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
@@ -1053,6 +1115,7 @@ def main(argv: list[str] | None = None):
     main_col = st.container()
 
     preload_ready = ensure_scientific_preload_ready(main_col)
+    _record_login_preload_timings(preload_ready)
     if not preload_ready:
         st.warning(
             "No se pudieron precargar las librerías científicas. "
