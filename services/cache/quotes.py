@@ -41,6 +41,10 @@ _QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
 
 _MAX_RATE_LIMIT_RETRIES = 2
 
+_THREADPOOL_SUBLOT_TARGET = 6
+_THREADPOOL_SUBLOT_MIN = 5
+_THREADPOOL_SUBLOT_MAX = 8
+
 
 class QuoteBatchStats:
     """Aggregate information about a batch of quotes."""
@@ -838,31 +842,79 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             raise NetworkError("Error de red al obtener cotizaciones") from e
 
         telemetry["mode"] = "threadpool"
-        out: dict[tuple[str, str], dict] = {}
         ttl = cache_ttl_quotes
         max_workers = max_quote_workers
-        with ThreadPoolExecutor(max_workers=min(max_workers, len(normalized) or 1)) as ex:
-            futs = {
-                ex.submit(
-                    _get_quote_cached, _cli, market, symbol, panel, ttl, batch_stats
-                ): (market, symbol)
-                for market, symbol, panel in normalized
-            }
-            for fut in as_completed(futs):
-                key = futs[fut]
+
+        def _resolve_chunk_size() -> int:
+            if not normalized:
+                return _THREADPOOL_SUBLOT_MIN
+            baseline = max(len(normalized) // max(1, max_workers), _THREADPOOL_SUBLOT_TARGET)
+            bounded = max(_THREADPOOL_SUBLOT_MIN, min(_THREADPOOL_SUBLOT_MAX, baseline))
+            return max(1, min(bounded, len(normalized)))
+
+        chunk_size = _resolve_chunk_size()
+        telemetry["sublot_size"] = chunk_size
+        sublots = [
+            normalized[idx : idx + chunk_size]
+            for idx in range(0, len(normalized), chunk_size)
+        ] if normalized else []
+
+        def _fetch_sublot(entries: list[tuple[str, str, str | None]]):
+            results: dict[tuple[str, str], dict] = {}
+            errors: list[tuple[str, str, Exception]] = []
+            for market, symbol, panel in entries:
                 try:
-                    quote = fut.result()
-                except Exception as e:
+                    quote = _get_quote_cached(
+                        _cli, market, symbol, panel, ttl, batch_stats
+                    )
+                except Exception as exc:  # pragma: no cover - network dependent
+                    errors.append((market, symbol, exc))
+                    quote = {
+                        "last": None,
+                        "chg_pct": None,
+                        "asof": None,
+                        "provider": "error",
+                    }
+                    batch_stats.record_payload(quote)
+                else:
+                    if isinstance(quote, dict):
+                        logger.debug("quote %s:%s -> %s", market, symbol, quote)
+                results[(market, symbol)] = quote
+            return results, errors
+
+        out: dict[tuple[str, str], dict] = {}
+        worker_count = min(max_workers, len(sublots) or 1)
+        with ThreadPoolExecutor(max_workers=worker_count) as ex:
+            futures = {ex.submit(_fetch_sublot, sublot): sublot for sublot in sublots}
+            for fut in as_completed(futures):
+                sublot = futures[fut]
+                try:
+                    chunk_result, chunk_errors = fut.result()
+                except Exception as exc:  # pragma: no cover - defensive safeguard
+                    telemetry.setdefault("errors", 0)
+                    telemetry["errors"] = int(telemetry["errors"]) + len(sublot)
+                    logger.exception(
+                        "get_quote failed for sublote %s -> %s",
+                        [(m, s) for m, s, _ in sublot],
+                        exc,
+                    )
+                    for market, symbol, _panel in sublot:
+                        quote = {
+                            "last": None,
+                            "chg_pct": None,
+                            "asof": None,
+                            "provider": "error",
+                        }
+                        out[(market, symbol)] = quote
+                        batch_stats.record_payload(quote)
+                    continue
+                out.update(chunk_result)
+                for market, symbol, err in chunk_errors:
                     telemetry.setdefault("errors", 0)
                     telemetry["errors"] = int(telemetry["errors"]) + 1
                     logger.exception(
-                        "get_quote failed for %s:%s -> %s", key[0], key[1], e
+                        "get_quote failed for %s:%s -> %s", market, symbol, err
                     )
-                    quote = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
-                    batch_stats.record_payload(quote)
-                if isinstance(quote, dict):
-                    logger.debug("quote %s:%s -> %s", key[0], key[1], quote)
-                out[key] = quote
         elapsed_seconds = time.time() - start
         elapsed_ms = elapsed_seconds * 1000.0
         summary = batch_stats.summary(elapsed_seconds)
