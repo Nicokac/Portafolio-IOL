@@ -478,9 +478,62 @@ def _resolve_module_name() -> str:
     try:
         frame = sys._getframe(2)
     except (AttributeError, ValueError):  # pragma: no cover - interpreter limitations
-        return "unknown"
-    module = frame.f_globals.get("__name__", "unknown")
-    return str(module or "unknown")
+        return __name__
+    while frame is not None:
+        module = frame.f_globals.get("__name__")
+        if module and module != __name__ and not module.startswith("contextlib"):
+            return str(module)
+        frame = frame.f_back
+    return __name__
+
+
+@dataclass
+class ProfileBlockResult:
+    """Aggregated metrics for an instrumented code block."""
+
+    label: str
+    duration_s: float = 0.0
+    cpu_percent: float | None = None
+    ram_percent: float | None = None
+    module: str = __name__
+    success: bool = True
+    extras: Dict[str, str] = field(default_factory=dict)
+
+    @property
+    def duration_ms(self) -> float:
+        return self.duration_s * 1000.0
+
+
+def _capture_cpu_snapshot():
+    if not _PSUTIL_AVAILABLE or PROCESS is None:
+        return None
+    try:
+        return PROCESS.cpu_times()
+    except Exception:
+        return None
+
+
+def _collect_resource_metrics(cpu_start, elapsed: float) -> tuple[float | None, float | None]:
+    cpu_pct: float | None = None
+    ram_pct: float | None = None
+    if _PSUTIL_AVAILABLE and PROCESS is not None:
+        cpu_end = None
+        try:
+            cpu_end = PROCESS.cpu_times()
+        except Exception:
+            cpu_end = None
+        if cpu_start is not None and cpu_end is not None and elapsed > 0:
+            cpu_delta = (cpu_end.user - cpu_start.user) + (cpu_end.system - cpu_start.system)
+            if CPU_COUNT:
+                cpu_pct = max(
+                    0.0,
+                    (cpu_delta / elapsed) * 100.0 / max(float(CPU_COUNT), 0.0001),
+                )
+        try:
+            ram_pct = PROCESS.memory_percent()
+        except Exception:
+            ram_pct = None
+    return cpu_pct, ram_pct
 
 
 @dataclass(frozen=True)
@@ -549,6 +602,10 @@ def _parse_log_line(line: str) -> PerformanceEntry | None:
     ram = _parse_percent(metrics.pop("ram", None))
     status = metrics.get("status")
     success = status.lower() != "error" if isinstance(status, str) else True
+    module_name = metrics.pop("module", None)
+    if isinstance(module_name, str):
+        module_name = module_name.strip() or None
+    module_value = module_name or "unknown"
     return PerformanceEntry(
         timestamp=timestamp,
         label=label.strip(),
@@ -556,7 +613,7 @@ def _parse_log_line(line: str) -> PerformanceEntry | None:
         cpu_percent=cpu,
         ram_percent=ram,
         extras=metrics,
-        module="unknown",
+        module=module_value,
         success=success,
         raw=line.strip(),
     )
@@ -606,70 +663,91 @@ def _build_entry(
     )
 
 
+def _log_performance(
+    *,
+    label: str,
+    duration: float,
+    cpu_pct: float | None,
+    ram_pct: float | None,
+    extra: Dict[str, Any] | None,
+    success: bool,
+    module: str,
+) -> PerformanceEntry:
+    sanitized = _sanitize_extra(extra)
+    if cpu_pct is not None:
+        sanitized.setdefault("cpu", f"{cpu_pct:.1f}%")
+    if ram_pct is not None:
+        sanitized.setdefault("ram", f"{ram_pct:.1f}%")
+    sanitized.setdefault("status", "ok" if success else "error")
+    log_details = dict(sanitized)
+    log_details.setdefault("module", module)
+    message = _format_message(label, duration, log_details)
+    entry = _build_entry(
+        label=label,
+        duration=duration,
+        cpu_pct=cpu_pct,
+        ram_pct=ram_pct,
+        details=sanitized,
+        module=module,
+        success=success,
+        raw_message=message,
+    )
+    log_extra = {
+        "perf_label": label,
+        "perf_duration": duration,
+        "perf_cpu_percent": cpu_pct,
+        "perf_ram_percent": ram_pct,
+        "perf_meta": dict(sanitized) if sanitized else {},
+        "perf_module": module,
+        "perf_entry": entry,
+    }
+    LOGGER.info(message, extra=log_extra)
+    return entry
+
+
 @contextmanager
 def performance_timer(label: str, *, extra: Dict[str, Any] | None = None) -> Iterator[None]:
     """Measure a code block, logging duration (and CPU/RAM when available)."""
 
-    start_time = time.perf_counter()
-    cpu_start = None
-    success = True
-    if _PSUTIL_AVAILABLE and PROCESS is not None:
-        try:
-            cpu_start = PROCESS.cpu_times()
-        except Exception:
-            cpu_start = None
-    try:
+    with profile_block(label, extra=extra):
         yield
+
+
+@contextmanager
+def profile_block(
+    label: str, *, extra: Dict[str, Any] | None = None
+) -> Iterator[ProfileBlockResult]:
+    """Profile a code block capturing duration, CPU and memory usage."""
+
+    module = _resolve_module_name()
+    result = ProfileBlockResult(label=label, module=module)
+    start_time = time.perf_counter()
+    cpu_start = _capture_cpu_snapshot()
+    success = True
+    try:
+        yield result
     except Exception:
         success = False
+        result.success = False
         raise
     finally:
-        elapsed = time.perf_counter() - start_time
-        cpu_pct: float | None = None
-        ram_pct: float | None = None
-        if _PSUTIL_AVAILABLE and PROCESS is not None:
-            try:
-                cpu_end = PROCESS.cpu_times()
-            except Exception:
-                cpu_end = None
-            if cpu_start is not None and cpu_end is not None and elapsed > 0:
-                cpu_delta = (cpu_end.user - cpu_start.user) + (cpu_end.system - cpu_start.system)
-                if CPU_COUNT:
-                    cpu_pct = max(
-                        0.0,
-                        (cpu_delta / elapsed) * 100.0 / max(float(CPU_COUNT), 0.0001),
-                    )
-            try:
-                ram_pct = PROCESS.memory_percent()
-            except Exception:
-                ram_pct = None
-        details = _sanitize_extra(extra)
-        if cpu_pct is not None:
-            details.setdefault("cpu", f"{cpu_pct:.1f}%")
-        if ram_pct is not None:
-            details.setdefault("ram", f"{ram_pct:.1f}%")
-        details.setdefault("status", "ok" if success else "error")
-        module = _resolve_module_name()
-        message = _format_message(label, elapsed, details)
-        entry = _build_entry(
+        elapsed = max(time.perf_counter() - start_time, 0.0)
+        cpu_pct, ram_pct = _collect_resource_metrics(cpu_start, elapsed)
+        result.duration_s = elapsed
+        result.cpu_percent = cpu_pct
+        result.ram_percent = ram_pct
+        result.module = module
+        result.success = success
+        entry = _log_performance(
             label=label,
             duration=elapsed,
             cpu_pct=cpu_pct,
             ram_pct=ram_pct,
-            details=details,
-            module=module,
+            extra=extra,
             success=success,
-            raw_message=message,
+            module=module,
         )
-        log_extra = {
-            "perf_label": label,
-            "perf_duration": elapsed,
-            "perf_cpu_percent": cpu_pct,
-            "perf_ram_percent": ram_pct,
-            "perf_meta": dict(details) if details else {},
-            "perf_entry": entry,
-        }
-        LOGGER.info(message, extra=log_extra)
+        result.extras = dict(entry.extras)
 
 
 def record_stage(
@@ -689,32 +767,23 @@ def record_stage(
     if extra:
         metadata.update(extra)
     metadata.setdefault("status", status)
-    metadata.setdefault("total_ms", f"{float(total_ms):.2f}")
-    sanitized = _sanitize_extra(metadata)
+    try:
+        metadata.setdefault("total_ms", f"{float(total_ms):.2f}")
+    except Exception:
+        metadata.setdefault("total_ms", str(total_ms))
     status_value = str(metadata.get("status", ""))
     normalized_status = status_value.strip().lower()
     success = normalized_status not in {"error", "failed", "failure"}
     module = _resolve_module_name()
-    message = _format_message(label, duration_s, sanitized)
-    entry = _build_entry(
+    _log_performance(
         label=label,
         duration=duration_s,
         cpu_pct=None,
         ram_pct=None,
-        details=sanitized,
-        module=module,
+        extra=metadata,
         success=success,
-        raw_message=message,
+        module=module,
     )
-    log_extra = {
-        "perf_label": label,
-        "perf_duration": duration_s,
-        "perf_cpu_percent": None,
-        "perf_ram_percent": None,
-        "perf_meta": dict(sanitized) if sanitized else {},
-        "perf_entry": entry,
-    }
-    LOGGER.info(message, extra=log_extra)
     if label == "ui_total_load":
         update_ui_total_load_metric(total_ms)
 
@@ -742,6 +811,7 @@ __all__ = [
     "LOG_PATH",
     "STRUCTURED_LOG_PATH",
     "PerformanceEntry",
+    "ProfileBlockResult",
     "PROMETHEUS_REGISTRY",
     "PROMETHEUS_ENABLED",
     "UI_TOTAL_LOAD_MS",
@@ -750,6 +820,7 @@ __all__ = [
     "PRELOAD_PANDAS_MS",
     "PRELOAD_PLOTLY_MS",
     "PRELOAD_STATSMODELS_MS",
+    "profile_block",
     "performance_timer",
     "record_stage",
     "read_recent_entries",

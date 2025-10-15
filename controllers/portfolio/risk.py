@@ -36,6 +36,7 @@ from ui.export import PLOTLY_CONFIG
 from ui.notifications import render_risk_badge
 from shared.errors import AppError
 from services.health import record_tab_latency
+from services.performance_timer import ProfileBlockResult, profile_block
 
 
 logger = logging.getLogger(__name__)
@@ -387,6 +388,29 @@ def render_risk_analysis(
     available_types: Sequence[str] | None = None,
 ):
     """Render correlation and risk analysis for the portfolio."""
+    stage_profiles: dict[str, dict[str, float | None]] = {}
+
+    def _record_stage(name: str, stage: ProfileBlockResult) -> None:
+        stage_profiles[name] = {
+            "ms": round(stage.duration_ms, 3),
+            "cpu": None if stage.cpu_percent is None else round(stage.cpu_percent, 2),
+            "mem": None if stage.ram_percent is None else round(stage.ram_percent, 2),
+        }
+
+    def _profile_stage(name: str, **extra: object):
+        payload: dict[str, object] = {"stage": name}
+        if extra:
+            payload.update(extra)
+        return profile_block(f"portfolio_risk.{name}", extra=payload)
+
+    def _finalize(value=None):
+        if stage_profiles:
+            try:
+                st.session_state["risk_stage_profiles"] = stage_profiles
+            except Exception:
+                pass
+        return value
+
     favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis de Correlación del Portafolio")
     symbols = (
@@ -455,7 +479,7 @@ def render_risk_analysis(
         st.info("Ajustá los filtros de tipo de activo para ver correlaciones y métricas de riesgo.")
         st.subheader("Análisis de Riesgo")
         st.info("No hay símbolos en el portafolio para analizar.")
-        return
+        return _finalize()
 
     corr_period = st.selectbox(
         "Calcular correlación sobre el último período:",
@@ -499,11 +523,17 @@ def render_risk_analysis(
             start_time = time.perf_counter()
             try:
                 unique_symbols = sorted(set(portfolio_symbols))
-                hist_df, skipped = _fetch_history_resilient(
-                    tasvc,
-                    unique_symbols,
+                with _profile_stage(
+                    "fetch_history_corr",
+                    symbols=len(unique_symbols),
                     period=corr_period,
-                )
+                ) as stage_corr_fetch:
+                    hist_df, skipped = _fetch_history_resilient(
+                        tasvc,
+                        unique_symbols,
+                        period=corr_period,
+                    )
+                _record_stage("fetch_history_corr", stage_corr_fetch)
                 if skipped:
                     omitted_symbols.update(skipped)
                     data_warning_placeholder.caption("⚠️ Datos incompletos")
@@ -515,7 +545,7 @@ def render_risk_analysis(
                 corr_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", corr_latency, status="error")
                 st.error(str(err))
-                return
+                return _finalize()
             except Exception:
                 logger.exception(
                     "Error al obtener históricos para correlación",
@@ -525,10 +555,14 @@ def render_risk_analysis(
                 st.error(
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
-                return
+                return _finalize()
             corr_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", corr_latency, status="success")
-        returns_for_corr = compute_returns(hist_df)
+        with _profile_stage(
+            "compute_returns_corr", columns=hist_df.shape[1]
+        ) as stage_returns_corr:
+            returns_for_corr = compute_returns(hist_df)
+        _record_stage("compute_returns_corr", stage_returns_corr)
         # Map each historical symbol to its canonical type so tabs remain aligned
         symbol_groups: dict[str, list[str]] = {}
         df_symbols_upper = pd.Series(dtype="object")
@@ -669,7 +703,11 @@ def render_risk_analysis(
                 key="rolling_corr_window",
             )
             selected_window = window_options[selected_window_label]
-            rolling_df = rolling_correlations(returns_for_corr, selected_window)
+            with _profile_stage(
+                "rolling_correlations", window=selected_window
+            ) as stage_rolling:
+                rolling_df = rolling_correlations(returns_for_corr, selected_window)
+            _record_stage("rolling_correlations", stage_rolling)
             if not rolling_df.empty:
                 roll_fig = px.line(
                     rolling_df,
@@ -720,11 +758,15 @@ def render_risk_analysis(
         with st.spinner("Descargando históricos…"):
             start_time = time.perf_counter()
             try:
-                prices_df, skipped = _fetch_history_resilient(
-                    tasvc,
-                    portfolio_symbols,
-                    period="1y",
-                )
+                with _profile_stage(
+                    "fetch_history_risk", symbols=len(portfolio_symbols)
+                ) as stage_risk_fetch:
+                    prices_df, skipped = _fetch_history_resilient(
+                        tasvc,
+                        portfolio_symbols,
+                        period="1y",
+                    )
+                _record_stage("fetch_history_risk", stage_risk_fetch)
                 if skipped:
                     omitted_symbols.update(skipped)
                     data_warning_placeholder.caption("⚠️ Datos incompletos")
@@ -736,7 +778,7 @@ def render_risk_analysis(
                 risk_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", risk_latency, status="error")
                 st.error(str(err))
-                return
+                return _finalize()
             except Exception:
                 logger.exception(
                     "Error al obtener históricos para análisis de riesgo",
@@ -746,7 +788,7 @@ def render_risk_analysis(
                 st.error(
                     "No se pudieron obtener datos históricos, intente nuevamente más tarde",
                 )
-                return
+                return _finalize()
             risk_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", risk_latency, status="success")
         if prices_df.empty:
@@ -754,7 +796,11 @@ def render_risk_analysis(
                 "No se pudieron obtener datos históricos para calcular métricas de riesgo."
             )
         else:
-            returns_df = compute_returns(prices_df)
+            with _profile_stage(
+                "compute_returns_risk", columns=prices_df.shape[1]
+            ) as stage_returns_risk:
+                returns_df = compute_returns(prices_df)
+            _record_stage("compute_returns_risk", stage_returns_risk)
             weights = (
                 filtered_df.set_index("simbolo")["valor_actual"].astype(float)
                 .reindex(returns_df.columns)
@@ -781,22 +827,26 @@ def render_risk_analysis(
                 benchmark_symbol = benchmark_labels[benchmark_choice]
 
                 try:
-                    bench_df, skipped_bench = _fetch_history_resilient(
-                        tasvc,
-                        [benchmark_symbol],
-                        period="1y",
-                        benchmark=benchmark_symbol,
-                    )
+                    with _profile_stage(
+                        "fetch_history_benchmark", symbols=1, benchmark=benchmark_symbol
+                    ) as stage_bench_fetch:
+                        bench_df, skipped_bench = _fetch_history_resilient(
+                            tasvc,
+                            [benchmark_symbol],
+                            period="1y",
+                            benchmark=benchmark_symbol,
+                        )
+                    _record_stage("fetch_history_benchmark", stage_bench_fetch)
                     if skipped_bench:
                         omitted_symbols.update(skipped_bench)
                         data_warning_placeholder.caption("⚠️ Datos incompletos")
                         st.warning(
                             "Sin datos históricos suficientes para el benchmark seleccionado."
                         )
-                        return
+                        return _finalize()
                 except AppError as err:
                     st.error(str(err))
-                    return
+                    return _finalize()
                 except Exception:
                     logger.exception(
                         "Error al obtener benchmark para análisis de riesgo",
@@ -804,26 +854,35 @@ def render_risk_analysis(
                     st.error(
                         "No se pudieron obtener datos históricos para el benchmark seleccionado.",
                     )
-                    return
+                    return _finalize()
 
-                bench_ret = compute_returns(bench_df).squeeze()
+                with _profile_stage("compute_returns_benchmark", symbols=1) as stage_bench_ret:
+                    bench_ret = compute_returns(bench_df).squeeze()
+                _record_stage("compute_returns_benchmark", stage_bench_ret)
                 if bench_ret.empty:
                     st.info(
                         "El benchmark seleccionado no tiene datos suficientes para calcular beta."
                     )
-                    return
+                    return _finalize()
 
                 factors_df = None
                 factor_fetcher = getattr(tasvc, "factor_history", None)
                 if callable(factor_fetcher):
                     try:
-                        try:
-                            factors_df = factor_fetcher(benchmark=benchmark_symbol, period="1y")
-                        except TypeError:
+                        with _profile_stage(
+                            "factor_history",
+                            benchmark=benchmark_symbol,
+                        ) as stage_factor:
                             try:
-                                factors_df = factor_fetcher(period="1y")
+                                factors_df = factor_fetcher(
+                                    benchmark=benchmark_symbol, period="1y"
+                                )
                             except TypeError:
-                                factors_df = factor_fetcher()
+                                try:
+                                    factors_df = factor_fetcher(period="1y")
+                                except TypeError:
+                                    factors_df = factor_fetcher()
+                        _record_stage("factor_history", stage_factor)
                     except AppError as err:
                         st.warning(
                             f"⚠️ No se pudieron obtener factores para el benchmark seleccionado: {err}"
@@ -843,24 +902,34 @@ def render_risk_analysis(
                 )
                 var_confidence = confidence_options[selected_conf_label]
 
-                (
-                    vol,
-                    b,
-                    var_value,
-                    cvar_value,
-                    opt_w,
-                    port_ret,
-                    asset_vols,
-                    asset_drawdowns,
-                    port_drawdown,
-                ) = compute_risk_metrics(
-                    returns_df,
-                    bench_ret,
-                    weights,
-                    var_confidence=var_confidence,
-                )
+                with _profile_stage(
+                    "compute_risk_metrics",
+                    assets=len(weights),
+                    confidence=var_confidence,
+                ) as stage_risk_metrics:
+                    (
+                        vol,
+                        b,
+                        var_value,
+                        cvar_value,
+                        opt_w,
+                        port_ret,
+                        asset_vols,
+                        asset_drawdowns,
+                        port_drawdown,
+                    ) = compute_risk_metrics(
+                        returns_df,
+                        bench_ret,
+                        weights,
+                        var_confidence=var_confidence,
+                    )
+                _record_stage("compute_risk_metrics", stage_risk_metrics)
 
-                factor_results = benchmark_analysis(port_ret, bench_ret, factors_df=factors_df)
+                with _profile_stage("benchmark_analysis", benchmark=benchmark_symbol) as stage_benchmark:
+                    factor_results = benchmark_analysis(
+                        port_ret, bench_ret, factors_df=factors_df
+                    )
+                _record_stage("benchmark_analysis", stage_benchmark)
 
                 c1, c2, c3, c4, c5 = st.columns(5)
                 c1.metric(
@@ -1193,3 +1262,4 @@ def render_risk_analysis(
                 )
     else:
         st.info("No hay símbolos en el portafolio para analizar.")
+    return _finalize()

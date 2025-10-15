@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import importlib
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -79,3 +80,23 @@ def test_read_recent_entries_returns_structured_data(tmp_path: Path, monkeypatch
     assert any(entry.label == "structured_block" for entry in entries)
     target = [entry for entry in entries if entry.label == "structured_block"][0]
     assert target.extras.get("status") == "ok"
+    assert target.module != "unknown"
+
+
+def test_profile_block_exposes_module_and_metrics(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timer, log_path = _reload_timer(tmp_path, monkeypatch)
+
+    with timer.profile_block("unit_profile", extra={"detail": "unit"}) as profile:
+        time.sleep(0.01)
+
+    timer._shutdown_listener()
+
+    assert profile.label == "unit_profile"
+    assert profile.module.endswith("test_performance_timer")
+    assert profile.duration_s >= 0.0
+    assert isinstance(profile.extras, dict)
+
+    content = log_path.read_text(encoding="utf-8")
+    assert "module=test_performance_timer" in content
