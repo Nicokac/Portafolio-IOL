@@ -1,11 +1,15 @@
 """Utilities to manage favorite symbols persisted in Streamlit session state."""
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import json
 from typing import Iterable, MutableMapping, Protocol, Sequence
 
 import streamlit as st
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_STORAGE_PATH = Path.home() / ".portafolio_iol" / "favorites.json"
@@ -89,8 +93,7 @@ class FavoriteSymbols:
         storage: FavoriteStorage | None = None,
     ) -> None:
         self._state = state if state is not None else st.session_state
-        if self.STATE_KEY not in self._state:
-            self._state[self.STATE_KEY] = []
+        self._ensure_state_container()
         self._storage = storage
         if storage is not None:
             self._load_from_storage()
@@ -111,6 +114,32 @@ class FavoriteSymbols:
                 normalized.append(sym)
         return normalized
 
+    def _ensure_state_container(self, *, log_on_create: bool = False) -> set[str]:
+        favorites = self._state.get(self.STATE_KEY)
+        if isinstance(favorites, set):
+            return favorites
+        if favorites is None:
+            favorites = set()
+            self._state[self.STATE_KEY] = favorites
+            if log_on_create:
+                logger.warning(
+                    "favorite_symbols no estaba inicializado en session_state; "
+                    "se crea automáticamente con un set vacío",
+                )
+            return favorites
+        if isinstance(favorites, (list, tuple, set)):
+            normalized = set(self._normalize_many(favorites))
+            favorites_set: set[str] = set(normalized)
+            self._state[self.STATE_KEY] = favorites_set
+            return favorites_set
+        logger.warning(
+            "favorite_symbols tenía un tipo inesperado (%s); se re-inicializa",
+            type(favorites).__name__,
+        )
+        favorites_set = set()
+        self._state[self.STATE_KEY] = favorites_set
+        return favorites_set
+
     def _sync_error_state(self) -> None:
         if not self._storage:
             return
@@ -125,19 +154,22 @@ class FavoriteSymbols:
             return
         if self._state.get(self.LOADED_FLAG_KEY):
             return
-        existing = self._state.get(self.STATE_KEY)
-        if existing:
+        favorites = self._ensure_state_container()
+        if favorites:
             self._state[self.LOADED_FLAG_KEY] = True
             return
         stored = self._storage.load()
         self._sync_error_state()
-        self._state[self.STATE_KEY] = self._normalize_many(stored)
+        favorites.clear()
+        favorites.update(self._normalize_many(stored))
+        self._state[self.STATE_KEY] = favorites
         self._state[self.LOADED_FLAG_KEY] = True
 
     def _persist(self) -> None:
         if not self._storage:
             return
-        self._storage.save(self._state[self.STATE_KEY])
+        favorites = self._ensure_state_container()
+        self._storage.save(sorted(favorites))
         self._sync_error_state()
 
     def normalize(self, symbol: str | None) -> str:
@@ -148,7 +180,8 @@ class FavoriteSymbols:
     # CRUD operations
     def list(self) -> list[str]:
         """Return the current list of favorite symbols."""
-        return list(self._state.get(self.STATE_KEY, []))
+        favorites = self._ensure_state_container()
+        return sorted(favorites)
 
     @property
     def last_error(self) -> str | None:
@@ -162,16 +195,17 @@ class FavoriteSymbols:
         sym = self._normalize(symbol)
         if not sym:
             return False
-        return sym in self._state[self.STATE_KEY]
+        favorites = self._ensure_state_container(log_on_create=True)
+        return sym in favorites
 
     def add(self, symbol: str | None) -> None:
         """Add a symbol to the favorites list."""
         sym = self._normalize(symbol)
         if not sym:
             return
-        favorites = self._state[self.STATE_KEY]
+        favorites = self._ensure_state_container()
         if sym not in favorites:
-            favorites.append(sym)
+            favorites.add(sym)
             self._persist()
 
     def remove(self, symbol: str | None) -> None:
@@ -179,21 +213,24 @@ class FavoriteSymbols:
         sym = self._normalize(symbol)
         if not sym:
             return
-        favorites = self._state[self.STATE_KEY]
+        favorites = self._ensure_state_container()
         if sym in favorites:
             favorites.remove(sym)
             self._persist()
 
     def replace(self, symbols: Iterable[str]) -> list[str]:
         """Replace the favorites list with the given iterable of symbols."""
-        normalized: list[str] = []
+        normalized: set[str] = set()
         for symbol in symbols:
             sym = self._normalize(symbol)
-            if sym and sym not in normalized:
-                normalized.append(sym)
-        self._state[self.STATE_KEY] = normalized
+            if sym:
+                normalized.add(sym)
+        favorites = self._ensure_state_container()
+        favorites.clear()
+        favorites.update(normalized)
+        self._state[self.STATE_KEY] = favorites
         self._persist()
-        return normalized
+        return sorted(favorites)
 
     def toggle(self, symbol: str | None, *, value: bool | None = None) -> bool:
         """Toggle the favorite state for ``symbol``.
@@ -242,7 +279,7 @@ class FavoriteSymbols:
 
     def default_index(self, options: Sequence[str]) -> int:
         """Return the default index prioritising the first favorite in ``options``."""
-        favorites = self.list()
+        favorites = sorted(self.list())
         normalized_options = [self._normalize(opt) for opt in options]
         for favorite in favorites:
             if favorite in normalized_options:
