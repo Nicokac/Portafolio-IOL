@@ -1,11 +1,11 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "v0.6.6-patch11e-1"
-RELEASE_NAME = "Lazy preload refactor"
-BUILD_DATE = "2025-10-16"
+VERSION = "0.6.8"
+RELEASE_NAME = "Streamlit 1.50 + Predictive optimization"
+BUILD_DATE = "2025-10-17"
 CHANGELOG_REF = (
-    "Split login/bootstrap into paused/resumed preload phases, exported preload_* metrics, and added bytecode warm-up"
+    "Streamlit 1.50 sparklines, adaptive predictive batching with lock timeouts, and dashboard/stability improvements"
 )
 
 __version__ = VERSION
