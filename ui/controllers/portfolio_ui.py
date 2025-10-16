@@ -38,6 +38,10 @@ def render_portfolio_ui(
     active_tab = st.session_state.get("active_tab")
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab
+    tab_loaded = st.session_state.get("tab_loaded")
+    if not isinstance(tab_loaded, dict):
+        tab_loaded = {}
+        st.session_state["tab_loaded"] = tab_loaded
     stage_timings: dict[str, float] = {}
     portfolio_section = _get_portfolio_section()
     performance_timer = _get_performance_timer()
