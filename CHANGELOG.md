@@ -15,6 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## [v0.6.8] — Streamlit 1.50 + Predictive optimization (2025-10-17)
+### Added
+- Compatibilidad con Streamlit 1.50 adoptando `st.metric` con `chart_data` para renderizar sparklines de CPU, RAM y duración en tiempo real.
+- Exportación dedicada `performance_sparkline.csv` con los datos de las métricas recientes para análisis fuera de la app.
+- Registro de métricas `performance_metrics_7.csv` y `performance_metrics_8.csv` con nuevas series `predictive_runtime_s` y `batch_success_rate`.
+- Cobertura de interfaz y stubs actualizados para validar los parámetros extendidos y el flujo histórico/promedio del dashboard de performance.
+
+### Changed
+- Gradiente dinámico verde/rojo en las métricas según tendencia y toggle persistente en `st.session_state` para alternar entre “Última ejecución” y “Promedio histórico”.
+- Servicio `adaptive_predictive_service` instrumentado con `profile_block()` por fase, procesamiento en sub-batches concurrentes (~10 tickers) y liberaciones parciales del lock con `lock_timeout_s=60`.
+- Reducción de la retención del lock adaptativo (<30s en escenarios normales) y manejo de reintentos más seguro durante fetch/persist.
+- Orden descendente en el gráfico de asignaciones de Markowitz aprovechando el nuevo parámetro `sort="descending"`.
+- Consolidación de logs al modo Streamlit-only y supresión de advertencias de Kaleido.
+- Modernización de la suite de pruebas (`pytest` actualizado sin coverage) para evitar bloqueos en CI.
+
+### Testing
+- `pytest -q tests/ui/test_performance_dashboard.py`
+- `pytest -q tests/application/test_adaptive_predictive_service.py`
+- `pytest -q tests/domain/test_adaptive_cache_lock.py`
+- `streamlit run app.py --server.headless true --server.port 8501`
+
 ## [v0.6.6-patch11e-1] — Lazy preload refactor (2025-10-16)
 ### Changed
 - Split startup in pre-login and post-login phases: the preload worker now starts paused and resumes ~500 ms after the first authentication, keeping login under 1 s (p95) while warming `pandas`, `plotly`, and `statsmodels` before dashboards render.
