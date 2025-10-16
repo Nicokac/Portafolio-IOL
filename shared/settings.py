@@ -85,11 +85,6 @@ YAHOO_QUOTES_TTL: int = yahoo_quotes_ttl
 MIN_SCORE_THRESHOLD: int = min_score_threshold
 MAX_RESULTS: int = max_results
 
-# Feature flags
-FEATURE_OPPORTUNITIES_TAB: bool = bool(
-    getattr(settings, "FEATURE_OPPORTUNITIES_TAB", False)
-)
-
 # Macro data provider configuration
 macro_api_provider: str = getattr(settings, "MACRO_API_PROVIDER", "fred")
 fred_api_key: str | None = getattr(settings, "FRED_API_KEY", None)
@@ -182,7 +177,6 @@ __all__ = [
     "risk_badge_threshold",
     "technical_signal_threshold",
     "earnings_upcoming_days",
-    "FEATURE_OPPORTUNITIES_TAB",
     "macro_api_provider",
     "fred_api_key",
     "fred_api_base_url",

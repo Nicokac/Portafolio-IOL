@@ -120,7 +120,6 @@ def main_app(monkeypatch: pytest.MonkeyPatch):
     install_stub("services.notifications", build_notification_badges=lambda *a, **k: None)
     install_stub(
         "shared.settings",
-        FEATURE_OPPORTUNITIES_TAB=False,
         enable_prometheus=False,
         performance_store_ttl_days=7,
         sqlite_maintenance_interval_hours=24,
@@ -202,7 +201,6 @@ def test_main_schedules_preload_resume_after_auth(
     )
     monkeypatch.setattr(main_app, "render_health_monitor_tab", lambda *a, **k: None)
     monkeypatch.setattr(main_app, "_lazy_attr", lambda *a, **k: lambda *args, **kwargs: None)
-    monkeypatch.setattr(main_app, "FEATURE_OPPORTUNITIES_TAB", False, raising=False)
 
     ensure_calls: list[object] = []
     monkeypatch.setattr(

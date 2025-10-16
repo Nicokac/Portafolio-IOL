@@ -152,9 +152,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - El backend y el broker IOL exigen claves Fernet distintas y abortan el arranque si coinciden.
 - `allow_plain_tokens` registra advertencias explícitas y se bloquea automáticamente en `APP_ENV=prod`.
 
-## v0.6.4-patch3b — Opportunities UI & maintainability refresh.
 ### Added
-- Fixture `docs/fixtures/base_opportunities.csv` para el universo determinista del screener, cargado on-demand con `pandas.read_csv` y con logs que detallan cantidad de filas y timestamp de carga.
 - Visualizaciones Altair en la pestaña de oportunidades: barra de score promedio por sector y línea temporal de indicadores macro reutilizando el caché del backend.
 - Indicador de “preset activo” con recuento de filtros aplicados y selector interactivo de vista (`Sector` ↔ `Tiempo`) en el resumen del screening.
 
@@ -165,16 +163,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - El fallback de enlaces en tablas ahora valida `NaN`/`NA` antes de generar la URL, previniendo vínculos inválidos cuando faltan símbolos.
 
-## v0.6.4-patch3a — Opportunities screener performance and caching overhaul.
 ### Added
 - Ejecución concurrente del screener de oportunidades mediante `ThreadPoolExecutor` (8 workers) con métricas por símbolo y respetando `YAHOO_REQUEST_DELAY`.
 - Prevalidación `_precheck_symbols` que descarta símbolos con `market_cap`, `pe_ratio` o `revenue_growth` fuera de umbrales antes de solicitar históricos.
-- Cache persistente configurable (SQLite/Redis) para resultados de Yahoo (`fundamentals`, `dividends`, `shares`, `prices`) y reportes generados en `controllers.opportunities` con TTL predeterminado de 6 horas.
-- Nuevos tests para validar paralelismo, prevalidación y persistencia (`tests/application/test_opportunities_screener.py`, `tests/services/test_market_data_cache.py`, `tests/infrastructure/test_yahoo_client.py`).
 
 ### Changed
 - El resumen del screener incluye tiempos promedio por símbolo, ratio de descarte de precheck y detalle de errores por ticker para telemetría.
-- `record_opportunities_report` recibe métricas extendidas provenientes del resumen y las expone en el panel de diagnóstico.
 
 ### Fixed
 - Se rehízo la capa de caché de `YahooFinanceClient` para evitar dependencias en decoradores in-memory y compartir resultados entre instancias.
@@ -1005,11 +999,9 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
 - Cliente dedicado para FRED con autenticación, gestión de rate limiting y normalización de observaciones para enriquecer el screener de oportunidades con contexto macro/sectorial. ([`infrastructure/macro/fred_client.py`](infrastructure/macro/fred_client.py))
 - Métrica de salud que expone el estado de la nueva dependencia externa (`macro_api`), ampliando la observabilidad del sistema. ([`services/health.py`](services/health.py))
 ### Changed
-- El controlador de oportunidades combina la información sectorial proveniente de FRED (o del fallback configurado) con los resultados del screening, agregando la columna `macro_outlook` y notas contextuales. ([`controllers/opportunities.py`](controllers/opportunities.py))
 ### Documentation
 - README actualizado con los pasos para habilitar la integración macro, variables de entorno requeridas y consideraciones de failover. ([`README.md`](README.md#datos-macro-y-sectoriales-fred--fallback))
 ### Tests
-- Cobertura específica para los flujos de fallback del controlador frente a la dependencia macro, asegurando la continuidad del screener. ([`controllers/test/test_opportunities_macro.py`](controllers/test/test_opportunities_macro.py))
 
 ## [0.3.22] - 2025-10-06
 ### Changed
@@ -1025,7 +1017,6 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
   claras y tooltips que explican la metodología de medición. ([`ui/health_sidebar.py`](ui/health_sidebar.py))
 ### Added
 - Telemetría histórica del screener que persiste los tiempos de ejecución previos y permite graficar tendencias directamente
-  desde el panel de salud. ([`services/health.py`](services/health.py), [`controllers/opportunities.py`](controllers/opportunities.py))
 ### Documentation
 - Se incorporó documentación multimedia (capturas y clips) que guía la interpretación del mini-dashboard y la navegación por la
   nueva telemetría histórica. ([`README.md`](README.md#caché-del-screener-de-oportunidades))
@@ -1033,13 +1024,11 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
 ## [0.3.20] - 2025-10-04
 ### Added
 - Mini-dashboard en el healthcheck que expone la duración previa y cacheada de los screenings de oportunidades, permitiendo
-  comparar tiempos desde la UI. ([`controllers/opportunities.py`](controllers/opportunities.py), [`services/health.py`](services/health.py),
   [`ui/health_sidebar.py`](ui/health_sidebar.py))
 ### Changed
 - Telemetría extendida para registrar aciertos de caché y variaciones de filtros del screener, dejando trazabilidad directa en el
   panel de salud. ([`services/health.py`](services/health.py), [`ui/health_sidebar.py`](ui/health_sidebar.py))
 ### Tests
-- Casos que validan *cache hits* e invalidaciones al cambiar filtros del screener de oportunidades. ([`tests/controllers/test_opportunities_controller.py`](tests/controllers/test_opportunities_controller.py))
 ### Documentation
 - Limpieza de referencias legacy y actualización de la estrategia de cacheo documentada para reflejar el nuevo dashboard y la
   telemetría extendida. ([`README.md`](README.md#caché-del-screener-de-oportunidades))
@@ -1068,7 +1057,6 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
 ### Added
 - La estrategia Andy fue promovida a release estable tras validar los filtros financieros activos, el score normalizado y la telemetría espejo entre Yahoo y el stub, dejando documentada la cobertura manual que respalda el corte.
 ### Changed
-- El stub de oportunidades ahora genera notas de telemetría con severidades `ℹ️/⚠️` según el tiempo de ejecución y deja trazabilidad de los descartes aplicados para facilitar la observabilidad durante los failovers. ([`application/screener/opportunities.py`](application/screener/opportunities.py))
 - La UI y el backend leen la versión desde `pyproject.toml` mediante `shared.version.__version__`, evitando desfasajes entre las superficies y simplificando la sincronización de releases. ([`shared/version.py`](shared/version.py), [`ui/footer.py`](ui/footer.py))
 ### Documentation
 - Se incorporó una guía de interpretación para la telemetría del barrido, con ejemplos de severidades y métricas monitoreadas tanto en el stub como en Yahoo. ([`README.md`](README.md#telemetría-del-barrido))
@@ -1106,7 +1094,6 @@ La versión 0.3.4.0 representa una evolución estética y funcional del dashboar
 
 ## [0.3.14]
 ### Added
-- Universo automático de oportunidades generado con `list_symbols_by_markets` y la configuración `OPPORTUNITIES_TARGET_MARKETS` para alinear los emisores con los mercados habilitados en cada sesión.
 - Nuevos filtros en el screener: `min_eps_growth`, `min_buyback`, selector de sectores y un toggle para indicadores técnicos, que permiten ajustar dinámicamente la priorización de emisores.
 - Caption de fuente visible en la UI de oportunidades para dejar claro el origen de los datos mostrados.
 

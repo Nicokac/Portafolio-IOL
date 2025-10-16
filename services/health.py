@@ -14,9 +14,6 @@ from shared.settings import cache_ttl_fx
 
 
 _HEALTH_KEY = "health_metrics"
-_OPPORTUNITIES_HISTORY_KEY = "opportunities_history"
-_OPPORTUNITIES_STATS_KEY = "opportunities_stats"
-_OPPORTUNITIES_HISTORY_LIMIT = 5
 _MARKET_DATA_INCIDENTS_KEY = "market_data_incidents"
 _MARKET_DATA_INCIDENT_LIMIT = 20
 _LATENCY_FAST_THRESHOLD_MS = 250.0
@@ -2606,150 +2603,6 @@ def _aggregate_provider_overall(providers: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def record_opportunities_report(
-    *,
-    mode: str,
-    elapsed_ms: Optional[float],
-    cached_elapsed_ms: Optional[float],
-    universe_initial: Optional[Any] = None,
-    universe_final: Optional[Any] = None,
-    discard_ratio: Optional[Any] = None,
-    highlighted_sectors: Optional[Any] = None,
-    counts_by_origin: Optional[Any] = None,
-    **extra_metrics: Any,
-) -> None:
-    """Persist cache usage metrics for the opportunities screening."""
-
-    store = _store()
-    entry: Dict[str, Any] = {
-        "mode": mode,
-        "elapsed_ms": float(elapsed_ms) if elapsed_ms is not None else None,
-        "cached_elapsed_ms": (
-            float(cached_elapsed_ms) if cached_elapsed_ms is not None else None
-        ),
-        "ts": time.time(),
-    }
-
-    initial = _as_optional_int(universe_initial)
-    final = _as_optional_int(universe_final)
-    if initial is not None:
-        entry["universe_initial"] = initial
-    if final is not None:
-        entry["universe_final"] = final
-
-    ratio = _as_optional_float(discard_ratio)
-    if ratio is not None:
-        entry["discard_ratio"] = ratio
-
-    sectors = _normalize_sectors(highlighted_sectors)
-    if sectors is not None:
-        entry["highlighted_sectors"] = sectors
-
-    origins = _normalize_origin_counts(counts_by_origin)
-    if origins is not None:
-        entry["counts_by_origin"] = origins
-
-    if extra_metrics:
-        extras: Dict[str, Any] = {}
-        for key, value in extra_metrics.items():
-            normalized_key = str(key)
-            # ``None`` values offer no insight and would just clutter the payload.
-            if value is None:
-                continue
-            if isinstance(value, (list, tuple, set, frozenset)):
-                extras[normalized_key] = [
-                    item for item in value if item is not None
-                ]
-            elif isinstance(value, dict):
-                extras[normalized_key] = {
-                    str(sub_key): sub_value
-                    for sub_key, sub_value in value.items()
-                    if sub_value is not None
-                }
-            else:
-                extras[normalized_key] = value
-        if extras:
-            entry.setdefault("extra_metrics", {}).update(extras)
-
-    store["opportunities"] = entry
-
-    stats = store.get(_OPPORTUNITIES_STATS_KEY)
-    if not isinstance(stats, dict):
-        stats = {
-            "modes": {},
-            "elapsed_sum": 0.0,
-            "elapsed_sum_sq": 0.0,
-            "elapsed_count": 0,
-            "cached_sum": 0.0,
-            "cached_sum_sq": 0.0,
-            "cached_count": 0,
-            "improvement_count": 0,
-            "improvement_wins": 0,
-            "improvement_losses": 0,
-            "improvement_ties": 0,
-            "improvement_delta_sum": 0.0,
-        }
-
-    stats["invocation_count"] = int(stats.get("invocation_count", 0) or 0) + 1
-
-    modes: Dict[str, int] = stats.setdefault("modes", {})
-    modes[mode] = int(modes.get(mode, 0)) + 1
-
-    elapsed_value = _as_optional_float(elapsed_ms)
-    if elapsed_value is not None:
-        stats["elapsed_count"] = int(stats.get("elapsed_count", 0)) + 1
-        stats["elapsed_sum"] = float(stats.get("elapsed_sum", 0.0)) + elapsed_value
-        stats["elapsed_sum_sq"] = (
-            float(stats.get("elapsed_sum_sq", 0.0)) + elapsed_value * elapsed_value
-        )
-        _increment_latency_bucket(stats, "elapsed", elapsed_value)
-    else:
-        _increment_latency_bucket(stats, "elapsed", None)
-
-    cached_value = _as_optional_float(cached_elapsed_ms)
-    if cached_value is not None:
-        stats["cached_count"] = int(stats.get("cached_count", 0)) + 1
-        stats["cached_sum"] = float(stats.get("cached_sum", 0.0)) + cached_value
-        stats["cached_sum_sq"] = (
-            float(stats.get("cached_sum_sq", 0.0)) + cached_value * cached_value
-        )
-        _increment_latency_bucket(stats, "cached", cached_value)
-    else:
-        _increment_latency_bucket(stats, "cached", None)
-
-    if elapsed_value is not None and cached_value is not None:
-        stats["improvement_count"] = int(stats.get("improvement_count", 0)) + 1
-        diff = cached_value - elapsed_value
-        stats["improvement_delta_sum"] = float(
-            stats.get("improvement_delta_sum", 0.0)
-        ) + diff
-        if diff > 0:
-            stats["improvement_wins"] = int(stats.get("improvement_wins", 0)) + 1
-        elif diff < 0:
-            stats["improvement_losses"] = int(stats.get("improvement_losses", 0)) + 1
-        else:
-            stats["improvement_ties"] = int(stats.get("improvement_ties", 0)) + 1
-
-    if str(mode or "").casefold() in {"error", "failure"}:
-        stats["error_count"] = int(stats.get("error_count", 0) or 0) + 1
-        by_mode = stats.setdefault("error_by_mode", {})
-        by_mode[mode] = int(by_mode.get(mode, 0) or 0) + 1
-
-    store[_OPPORTUNITIES_STATS_KEY] = stats
-
-    raw_history = store.get(_OPPORTUNITIES_HISTORY_KEY)
-    history: Deque[Dict[str, Any]]
-    if isinstance(raw_history, deque):
-        history = raw_history
-    elif isinstance(raw_history, list):
-        history = deque(raw_history, maxlen=_OPPORTUNITIES_HISTORY_LIMIT)
-    else:
-        history = deque(maxlen=_OPPORTUNITIES_HISTORY_LIMIT)
-
-    history.append(entry)
-    store[_OPPORTUNITIES_HISTORY_KEY] = history
-
-
 def get_health_metrics() -> Dict[str, Any]:
     """Return a shallow copy of the tracked metrics for UI consumption."""
     store = _store()
@@ -3624,9 +3477,6 @@ def get_health_metrics() -> Dict[str, Any]:
         "quote_providers": _summarize_quote_providers(
             store.get("quote_providers"), store.get(_QUOTE_RATE_LIMIT_KEY)
         ),
-        "opportunities": store.get("opportunities"),
-        "opportunities_history": list(store.get(_OPPORTUNITIES_HISTORY_KEY, [])),
-        "opportunities_stats": _summarize_stats(store.get(_OPPORTUNITIES_STATS_KEY)),
         "tab_latencies": _summarize_tab_latencies(store.get(_TAB_LATENCIES_KEY)),
         "adapter_fallbacks": _summarize_adapter_fallbacks(store.get(_ADAPTER_FALLBACK_KEY)),
         "dependencies": _summarize_dependencies(store.get(_DEPENDENCIES_KEY)),
@@ -3652,7 +3502,6 @@ __all__ = [
     "record_quote_rate_limit_wait",
     "record_snapshot_event",
     "record_diagnostics_snapshot",
-    "record_opportunities_report",
     "record_market_data_incident",
     "record_risk_incident",
     "record_yfinance_usage",

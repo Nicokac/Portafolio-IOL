@@ -146,33 +146,6 @@ class Settings:
             os.getenv("FMP_TIMEOUT", cfg.get("FMP_TIMEOUT", 5.0))
         )
 
-        default_markets = ["NASDAQ", "NYSE", "AMEX"]
-        sentinel = object()
-        raw_markets: Any = os.getenv("OPPORTUNITIES_TARGET_MARKETS", sentinel)
-        if raw_markets is sentinel:
-            raw_markets = cfg.get("OPPORTUNITIES_TARGET_MARKETS", default_markets)
-
-        parsed_candidates: Any = raw_markets
-        if isinstance(parsed_candidates, str):
-            try:
-                parsed_candidates = json.loads(parsed_candidates)
-            except json.JSONDecodeError:
-                parsed_candidates = [part.strip() for part in parsed_candidates.split(",")]
-
-        markets: list[str] = []
-        if isinstance(parsed_candidates, (list, tuple, set)):
-            for candidate in parsed_candidates:
-                text = str(candidate or "").strip()
-                if text:
-                    markets.append(text.upper())
-        elif isinstance(parsed_candidates, str):
-            text = parsed_candidates.strip()
-            if text:
-                markets.append(text.upper())
-
-        self.OPPORTUNITIES_TARGET_MARKETS: list[str] = markets or [item.upper() for item in default_markets]
-
-
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
@@ -358,15 +331,6 @@ class Settings:
         self.POLYGON_BASE_URL: str = os.getenv(
             "POLYGON_BASE_URL", cfg.get("POLYGON_BASE_URL", "https://api.polygon.io")
         )
-
-        flag_value = os.getenv(
-            "FEATURE_OPPORTUNITIES_TAB",
-            cfg.get("FEATURE_OPPORTUNITIES_TAB", "true"),
-        )
-        if isinstance(flag_value, bool):
-            self.FEATURE_OPPORTUNITIES_TAB = flag_value
-        else:
-            self.FEATURE_OPPORTUNITIES_TAB = str(flag_value).lower() in {"1", "true", "yes", "on"}
 
         # --- Archivo de tokens (IOLAuth) ---
         # Por defecto lo guardamos en la raíz junto a app.py (compat con tu tokens_iol.json existente)

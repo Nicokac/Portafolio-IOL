@@ -109,6 +109,5 @@ Gracias a esta infraestructura, las suites pueden ejecutarse en entornos mínimo
 
 Para acotar la ejecución a subconjuntos específicos, podés lanzar `pytest` con rutas o filtros frecuentes:
 
-- `pytest controllers/test/test_opportunities_controller.py`
 - `pytest tests/ui/test_portfolio_ui.py -k risk`
 - `pytest --override-ini addopts='' tests/controllers/test_risk_filtering.py`

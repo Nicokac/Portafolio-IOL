@@ -541,9 +541,6 @@ en ``~/.portafolio_iol/favorites.json`` con la siguiente estructura:
 1. Exporta `RUN_LIVE_YF=0` para garantizar el uso de stubs deterministas.
 2. Ejecuta `pytest tests/integration/` completo; la suite valida degradaciones `primario → secundario`
    y escenarios con snapshots persistidos, incluyendo las nuevas verificaciones Markowitz.
-3. Si necesitás reproducir un fallo específico, lanza `pytest tests/integration/test_opportunities_flow.py`
-   para confirmar la secuencia multi-proveedor y revisar los artefactos generados en `tmp_path`.
-
 ## Documentación
 
 - [Guía de troubleshooting](docs/troubleshooting.md)
@@ -574,34 +571,6 @@ Ambos métodos apuntan al mismo reloj centralizado, por lo que los valores son i
 `datetime` para cálculos adicionales.
 
 Desde Streamlit 1.30 se reemplazó el parámetro `use_container_width` y se realizaron ajustes mínimos de diseño.
-
-### Empresas con oportunidad (disponible de forma estable)
-
-La pestaña ya se encuentra disponible de forma estable y en cada sesión combina:
-
-- Tickers provistos manualmente por el usuario en la interfaz cuando existen; si no hay input manual, se utiliza `YahooFinanceClient.list_symbols_by_markets` parametrizada mediante la variable de entorno `OPPORTUNITIES_TARGET_MARKETS`.
-- Un conjunto determinista de respaldo basado en el stub local (`run_screener_stub`) para garantizar resultados cuando no hay configuración externa ni datos remotos, o cuando Yahoo Finance no está disponible.
-
-El stub local expone un universo determinista de 37 emisores que cubre múltiples sectores (Technology, Healthcare, Industrials, Financial Services, Consumer Defensive, Consumer Cyclical, Consumer, Financials, Utilities, Energy, Real Estate, Communication Services y Materials) con métricas fundamentales completas. Cada sector crítico —Technology, Energy, Industrials, Consumer, Healthcare, Financials, Utilities y Materials— cuenta con al menos tres emisores para ejercitar filtros exigentes sin perder diversidad. Las cifras se calibraron para que los filtros de payout, racha, CAGR, EPS, buybacks y fundamentals críticos dispongan siempre de datos consistentes y se puedan ejercitar escenarios complejos de QA aun cuando Yahoo Finance no esté disponible, incluso en esta fase estable.
-
-El universo determinista vive ahora en el fixture `docs/fixtures/base_opportunities.csv`. El screener lo carga bajo demanda mediante `pandas.read_csv`, registrando en los logs la cantidad de filas y la marca temporal de la carga para auditar cambios. Para actualizarlo solo es necesario editar el CSV y enviar el ajuste en un PR: no hay que tocar constantes Python ni recompilar la aplicación.
-
-La columna `Yahoo Finance Link` documenta el origen de cada símbolo con la URL `https://finance.yahoo.com/quote/<ticker>`. En universos dinámicos descargados de Yahoo la columna reutiliza directamente el *slug* oficial (por ejemplo, `AAPL`), mientras que el stub determinista sintetiza enlaces equivalentes para sus 37 emisores (`UTLX`, `FNCL1`, etc.) manteniendo el mismo formato. Esto permite a QA y a los integradores validar rápidamente la procedencia sin importar si el listado proviene de datos live o del fallback. A partir de la release actual, el listado añade la columna `Score` para dejar a la vista el puntaje compuesto que define el orden del ranking y, cuando corresponde, explicita el preset o filtro destacado que disparó la selección.
-
-| Ticker | Sector | Payout % | Racha (años) | CAGR % | EPS trailing | EPS forward | Buyback % | Market cap (M USD) | P/E | Revenue % | Score | Filtro destacado | Yahoo Finance Link |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| AAPL | Technology | 18.5 | 12 | 14.2 | 6.1 | 6.6 | 1.8 | 2,800,000 | 30.2 | 7.4 | 88 | Crecimiento balanceado ≥85 | [Ver ficha](https://finance.yahoo.com/quote/AAPL) |
-| MSFT | Technology | 28.3 | 20 | 11.7 | 9.2 | 9.8 | 1.1 | 2,450,000 | 33.5 | 14.8 | 90 | Growth + buybacks ≥80 | [Ver ficha](https://finance.yahoo.com/quote/MSFT) |
-| KO | Consumer Defensive | 73.0 | 61 | 7.5 | 2.3 | 2.4 | 0.3 | 260,000 | 24.7 | 4.3 | 84 | Dividendos defensivos ≥80 | [Ver ficha](https://finance.yahoo.com/quote/KO) |
-| NEE | Utilities | 56.2 | 28 | 10.8 | 3.1 | 3.5 | 0.0 | 160,000 | 25.7 | 7.1 | 82 | Dividendos defensivos ≥80 | [Ver ficha](https://finance.yahoo.com/quote/NEE) |
-| UTLX | Utilities | 61.5 | 19 | 6.7 | 3.1 | 3.3 | 0.0 | 58,600 | 19.2 | 4.6 | 86 | Stub estable ≥80 | [Ver ficha](https://finance.yahoo.com/quote/UTLX) |
-| ENRGX | Energy | 38.7 | 18 | 5.6 | 5.5 | 5.8 | 1.9 | 95,000 | 13.6 | 8.9 | 83 | Recompras agresivas ≥80 | [Ver ficha](https://finance.yahoo.com/quote/ENRGX) |
-
-El muestreo superior refleja la combinación live + fallback que hoy ve la UI: los símbolos clásicos (`AAPL`, `MSFT`, `KO`, `NEE`) provienen de Yahoo, mientras que `UTLX` y `ENRGX` pertenecen al stub determinista y conservan las mismas métricas que en la versión estable anterior para garantizar reproducibilidad en QA.
-
-El botón **"Descargar resultados (.csv)"** replica esta grilla y genera un archivo con las mismas columnas visibles en la UI (incluidos `score_compuesto`, el filtro aplicado y el enlace a Yahoo). Así se asegura paridad total entre lo que se analiza en pantalla y lo que se comparte para backtesting o QA, sin importar si la sesión proviene del origen `yahoo` o `stub`.
-
-El resumen del screening incorpora visualizaciones avanzadas con Altair: un gráfico de barras que resume el score promedio por sector y una línea temporal que reutiliza las series macro cacheadas por el backend. Un selector (`Sector` ↔ `Tiempo`) permite alternar rápidamente entre ambas perspectivas sin salir de la pestaña.
 
 ## Exportación de análisis enriquecido
 
@@ -671,102 +640,6 @@ Durante los failovers la UI etiqueta el origen como `stub` y conserva las notas 
 3. **Proveedor no soportado.** Cuando `MACRO_API_PROVIDER` apunta a valores fuera del set `fred/worldbank`, el controlador descarta la integración live y aplica el fallback estático si existe. El health sidebar deja el estado `disabled` con el detalle "proveedor no soportado" y dispara un toast de advertencia.
 4. **Errores de API o rate limiting.** Ante un `MacroAPIError` (incluye timeouts y límites de FRED o del World Bank), la telemetría conserva la latencia que disparó el problema, agrega el código de error y los contadores globales incrementan tanto el `error` como el `fallback` resultante para visibilizar la resiliencia aplicada.
 5. **Series faltantes u observaciones inválidas.** Cuando un proveedor responde sin datos válidos o no hay series configuradas para un sector activo, la nota lista los sectores faltantes (`macro_missing_series`), el fallback estático aporta el valor definitivo y el monitor etiqueta el evento como `partial_recovery`.
-
-#### Telemetría del barrido
-
-El panel muestra una nota de telemetría por cada barrido, tanto si la corrida proviene de Yahoo Finance como del stub local. El helper `shared.ui.notes.format_note` arma el texto en base a los campos reportados por cada origen y selecciona la severidad adecuada (`ℹ️` o `⚠️`) según los umbrales vigentes.
-
-#### Caché del screening de oportunidades
-
-- `controllers.opportunities.generate_opportunities_report` cachea cada combinación de filtros tanto en memoria como en un backend persistente (SQLite por defecto, Redis opcional) con un TTL de 6 horas. Las respuestas se rehidratan tras reinicios y evitan recalcular el screener completo en búsquedas repetidas.
-- Un *cache hit* queda registrado en el bloque "🔎 Screening de oportunidades" del healthcheck lateral, que ahora expone la duración de la corrida base, la lectura cacheada, el tiempo promedio por ticker, el ratio de descarte del precheck y los tickers con advertencias para comparar la reducción de latencia y diagnosticar anomalías.
-- Cualquier cambio en los filtros —por ejemplo, alternar el toggle de indicadores técnicos, ajustar umbrales numéricos o modificar el universo manual— invalida automáticamente la entrada tanto en memoria como en el backend persistente, garantizando que las corridas posteriores utilicen los parámetros más recientes. El precheck previo a la descarga descarta símbolos con `market_cap` bajo, `pe_ratio` alto o `revenue_growth` negativo, y su ratio queda reflejado en la telemetría.
-
-**Campos reportados**
-
-- **Runtime (`elapsed` / `elapsed time`)**: segundos invertidos en la corrida completa, medidos desde la descarga hasta el post-procesamiento. Es el primer indicador para detectar degradaciones.
-- **Universo inicial (`universe initial`)**: cantidad de símbolos recibidos antes de aplicar filtros; Yahoo lo informa con el universo crudo según los mercados solicitados, mientras que el stub siempre expone 37 emisores determinísticos.
-- **Universo final (`universe` / `universe size`)**: tickers que sobreviven al filtrado; permite visualizar el recorte efectivo.
-- **Ratios de descarte (`discarded`)**: descomposición porcentual entre descartes por fundamentals y por técnicos, útil para saber qué bloque necesita ajustes.
-- **Fuente (`origin`)**: etiqueta visible (`yahoo` / `stub`) que coincide con el caption del listado para asegurar trazabilidad.
-- **Score medio (`score_avg`)**: promedio del `score_compuesto` tras aplicar filtros; ayuda a detectar si el preset activo está elevando o relajando el umbral configurado.
-
-**Ejemplos actualizados**
-
-```
-ℹ️ Yahoo • runtime: 5.8 s • universe initial: 142 • universe final: 128 • discarded: 8% fundamentals / 2% técnicos • score_avg: 86
-ℹ️ Stub • runtime: 2.4 s • universe initial: 37 • universe final: 37 • discarded: 18% fundamentals / 10% técnicos • score_avg: 84
-⚠️ Yahoo • runtime: 11.6 s • universe initial: 142 • universe final: 9 • discarded: 54% fundamentals / 34% técnicos • score_avg: 79
-⚠️ Stub • runtime: 6.1 s • universe initial: 37 • universe final: 12 • discarded: 51% fundamentals / 17% técnicos • score_avg: 76
-```
-
-En condiciones saludables la nota se mantiene en severidad `ℹ️`. Cuando el runtime supera los límites esperados (≈3 s para el stub, 8–9 s para Yahoo), el universo final cae por debajo del umbral mínimo configurado o los ratios de descarte exceden el 35 % de manera sostenida, la severidad escala automáticamente a `⚠️` y se resalta en la UI.
-
-**Guía rápida para QA y usuarios**
-
-| Señal | Qué revisar | Acción sugerida |
-| --- | --- | --- |
-| `runtime > 3 s` (stub) o `> 9 s` (Yahoo) | Posibles problemas de IO, throttling o jobs en segundo plano. | Revisar logs y latencias externas antes de reintentar. |
-| `universe final < 10` | Filtros demasiado agresivos o caída de datos en la fuente. | Relajar filtros temporalmente y validar la disponibilidad de Yahoo/stub. |
-| `discarded fundamentals > 35 %` | Fundamentales incompletos para gran parte del universo. | Revisar los símbolos afectados; puede requerir recalibrar la caché o invalidar datos corruptos. |
-| `discarded técnicos > 35 %` | Indicadores técnicos no disponibles. | Confirmar que el toggle de indicadores esté activo y que las series históricas se descarguen correctamente. |
-| `score_avg < 80` (en presets exigentes) | Preset demasiado permisivo para la estrategia elegida. | Ajustar el slider de score o cambiar el preset recomendado. |
-
-Las notas siempre incluyen los porcentajes de descarte fundamental y técnico. Cuando alguno de los dos no aplica, el stub reporta explícitamente `0%` para preservar la consistencia del formato y evitar falsos positivos en los tests automatizados. Los equipos de QA pueden apoyarse en estos indicadores para automatizar aserciones: por ejemplo, validar que en modo stub el universo final se mantenga en 37 con severidad `ℹ️` o que en pruebas de resiliencia la degradación quede marcada con `⚠️`.
-
-Adicionalmente, las guías de QA asumen que tanto los 37 tickers deterministas del stub como los universos dinámicos de Yahoo exponen la columna `Yahoo Finance Link` con el patrón `https://finance.yahoo.com/quote/<ticker>`. Cualquier verificación de UI o fixtures debe asegurar que la URL se construya con el mismo formato sin importar el origen para conservar paridad funcional entre ambientes.
-
-El ranking final pondera dividendos, valuación, crecimiento y cobertura geográfica para sostener la consistencia del score compuesto.
-
-Cada oportunidad obtiene un **score normalizado en escala 0-100** que promedia aportes de payout, racha de dividendos, CAGR, recompras, RSI y MACD. Esta normalización permite comparar emisores de distintas fuentes con un criterio homogéneo. Los resultados que queden por debajo del umbral configurado se descartan automáticamente para reducir ruido.
-
-Los controles disponibles en la UI permiten ajustar esos filtros sin modificar código, y la interfaz incluye un glosario interactivo [¿Qué significa cada métrica?](#qué-significa-cada-métrica) con ejemplos numéricos para alinear la interpretación de payout, EPS, CAGR, buybacks y score entre la documentación y la aplicación:
-
-- Multiselect de sectores para recortar el universo devuelto por la búsqueda.
-- Checkbox **Incluir indicadores técnicos** para agregar RSI y medias móviles al resultado.
-- Inputs dedicados a crecimiento mínimo de EPS y porcentaje mínimo de recompras (`buybacks`).
-- Sliders y number inputs para capitalización, payout, P/E, crecimiento de ingresos, racha/CAGR de dividendos e inclusión de Latinoamérica.
-- Slider de score mínimo para ajustar `score_compuesto` sin salir de la UI.
-- Selector **Perfil recomendado** para aplicar presets preconfigurados según el tipo de oportunidad que se quiera priorizar:
-  - **Dividendos defensivos**: favorece emisores consolidados con payout moderado, más de 10 años de dividendos, crecimiento estable y foco en sectores defensivos (``Consumer Defensive`` y ``Utilities``).
-  - **Crecimiento balanceado**: combina expansión de ingresos/EPS de dos dígitos con payout controlado y sesgo hacia ``Technology`` y ``Healthcare`` para captar historias de crecimiento rentable.
-  - **Recompras agresivas**: apunta a compañías con recompras netas relevantes, valuaciones razonables e inclusión de indicadores técnicos para reforzar el timing, con foco en ``Financial Services``, ``Technology`` e ``Industrials``.
-
-El umbral mínimo de score y el recorte del **top N** de oportunidades son parametrizables mediante las variables `MIN_SCORE_THRESHOLD` (valor por defecto: `80`) y `MAX_RESULTS` (valor por defecto: `20`). La interfaz utiliza ese valor centralizado como punto de partida en el selector "Máximo de resultados" para reflejar cualquier override definido en la configuración. Puedes redefinirlos desde `.env`, `secrets.toml` o `config.json` para adaptar la severidad del filtro o ampliar/restringir el listado mostrado en la UI. La cabecera del listado muestra notas contextuales cuando se aplican estos recortes y sigue diferenciando la procedencia de los datos con un caption que alterna entre `yahoo` y `stub`, manteniendo la trazabilidad de la fuente durante los failovers.
-
-Los ejemplos documentados (tabla, presets y telemetría) reflejan la release vigente, donde la UI muestra `score_compuesto` en la grilla principal y conserva el caption `yahoo`/`stub` para todas las variantes de origen.
-
-
-#### ¿Qué significa cada métrica?
-
-- **Payout:** porcentaje de las ganancias que se reparte como dividendo. Ejemplo: con un payout del 60 %, una empresa distribuye US$0,60 por cada dólar de utilidad.
-- **EPS (Earnings Per Share):** ganancias por acción. Si una firma genera US$5 millones y tiene 1 millón de acciones, su EPS es US$5.
-- **Crecimiento de ingresos:** variación interanual de ventas. Un aumento de US$100 a US$112 implica un crecimiento del 12 %.
-- **Racha de dividendos:** cantidad de años consecutivos pagando dividendos. Una racha de 7 significa pagos sin interrupciones durante siete ejercicios.
-- **CAGR de dividendos:** crecimiento anual compuesto del dividendo. Pasar de US$1 a US$1,50 en cinco años implica un CAGR cercano al 8 %.
-- **Buybacks:** recompras netas que reducen el flotante. Un buyback del 2 % indica que la empresa retiró 2 de cada 100 acciones en circulación.
-- **Score compuesto:** puntaje de 0 a 100 que combina valuación, crecimiento, dividendos y técnicos; por ejemplo, un score de 85 señala atributos superiores al umbral típico de 80.
-
-
-### Notas del listado y severidades
-
-Las notas del listado utilizan una clasificación estandarizada para transmitir la severidad del mensaje. Cada nivel comparte prefijos visibles en el texto bruto (útiles en pruebas o fixtures) y un icono renderizado al pasar por `shared.ui.notes.format_note`:
-
-| Severidad | Prefijos esperados | Icono renderizado | Uso típico |
-| --- | --- | --- | --- |
-| `warning` | `⚠️` | `:warning:` | Avisar que los datos provienen de un stub, que el universo está recortado o que hubo fallbacks. |
-| `info` | `ℹ️` | `:information_source:` | Recordatorios operativos o mensajes neutrales relacionados con disponibilidad de datos. |
-| `success` | `✅` | `:white_check_mark:` | Confirmar procesos completados o resultados satisfactorios. |
-| `error` | `❌` | `:x:` | Indicar fallas irrecuperables que el usuario debe revisar. |
-
-Siempre que sea posible prefija el contenido con el emoji correspondiente para que el helper lo clasifique correctamente. El siguiente ejemplo mínimo muestra cómo centralizar el formato en la UI:
-
-```python
-from shared.ui.notes import format_note
-
-format_note("⚠️ Solo se encontraron 3 tickers con datos recientes.")
-# ":warning: **Solo se encontraron 3 tickers con datos recientes.**"
-```
 
 ## Integración con Yahoo Finance
 

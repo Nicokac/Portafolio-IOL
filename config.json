@@ -8,7 +8,6 @@
 "LEGACY_LOGIN_BACKOFF_BASE": 0.5,
 "SNAPSHOT_BACKEND": "json",
 "SNAPSHOT_STORAGE_PATH": "data/portfolio_snapshots.json",
-"OPPORTUNITIES_TARGET_MARKETS": ["NASDAQ", "NYSE", "AMEX", "BCBA"],
 "cedear_to_us": {
   "AAPL": "AAPL",
   "AMZN": "AMZN",

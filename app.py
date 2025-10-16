@@ -100,7 +100,6 @@ from shared.config import configure_logging, ensure_tokens_key
 from shared.favorite_symbols import FavoriteSymbols
 from shared.security_env_validator import validate_security_environment
 from shared.settings import (
-    FEATURE_OPPORTUNITIES_TAB,
     enable_prometheus,
     performance_store_ttl_days,
     sqlite_maintenance_interval_hours,
@@ -1124,8 +1123,6 @@ def main(argv: list[str] | None = None):
 
     cli = build_iol_client()
 
-    can_render_opportunities = FEATURE_OPPORTUNITIES_TAB and hasattr(st, "tabs")
-
     portfolio_module = _lazy_module("controllers.portfolio.portfolio")
     default_view_model_service_factory = getattr(
         portfolio_module, "default_view_model_service_factory"
@@ -1147,61 +1144,31 @@ def main(argv: list[str] | None = None):
 
     monitoring_label = "Monitoreo"
 
-    if can_render_opportunities and hasattr(st, "tabs"):
+    if hasattr(st, "tabs"):
         with main_col:
-            tab_labels = [
-                "Portafolio",
-                "Recomendaciones",
-                "Empresas con oportunidad",
-                monitoring_label,
-            ]
-            (
-                portfolio_tab,
-                recommendations_tab,
-                opportunities_tab,
-                monitoring_tab,
-            ) = st.tabs(tab_labels)
+            tab_labels = ["Portafolio", "Recomendaciones", monitoring_label]
+            portfolio_tab, recommendations_tab, monitoring_tab = st.tabs(tab_labels)
             _inject_tab_animation_support()
-        refresh_secs = render_portfolio_ui(
-            portfolio_tab,
-            cli,
-            fx_rates,
-            **portfolio_section_kwargs,
-        )
+    else:
+        portfolio_tab = main_col
+        recommendations_tab = main_col
+        monitoring_tab = main_col
+
+    refresh_secs = render_portfolio_ui(
+        portfolio_tab,
+        cli,
+        fx_rates,
+        **portfolio_section_kwargs,
+    )
+
+    if hasattr(st, "tabs"):
         with recommendations_tab:
             render_recommendations_tab()
-        with opportunities_tab:
-            from ui.tabs.opportunities import render_opportunities_tab
-
-            render_opportunities_tab()
         with monitoring_tab:
             render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
     else:
-        if hasattr(st, "tabs"):
-            with main_col:
-                tab_labels = ["Portafolio", "Recomendaciones", monitoring_label]
-                portfolio_tab, recommendations_tab, monitoring_tab = st.tabs(tab_labels)
-                _inject_tab_animation_support()
-        else:
-            portfolio_tab = main_col
-            recommendations_tab = main_col
-            monitoring_tab = main_col
-        refresh_secs = render_portfolio_ui(
-            portfolio_tab,
-            cli,
-            fx_rates,
-            **portfolio_section_kwargs,
-        )
-        if FEATURE_OPPORTUNITIES_TAB and not hasattr(st, "tabs"):
-            logger.debug("Streamlit stub sin soporte para tabs; se omite pestaña de oportunidades")
-        if hasattr(st, "tabs"):
-            with recommendations_tab:
-                render_recommendations_tab()
-            with monitoring_tab:
-                render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
-        else:
-            render_recommendations_tab()
-            render_health_monitor_tab(main_col, metrics=health_metrics)
+        render_recommendations_tab()
+        render_health_monitor_tab(main_col, metrics=health_metrics)
 
     config_panel = st.sidebar.expander("⚙️ Configuración general", expanded=False)
     with config_panel:
