@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 import json
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import pandas as pd
 import streamlit as st
@@ -12,6 +12,14 @@ from services.performance_timer import LOG_PATH, read_recent_entries
 _ALERT_DURATION_SECONDS = 5.0
 _ALERT_CPU_PERCENT = 80.0
 _ALERT_MEM_PERCENT = 70.0
+
+_VIEW_MODE_STATE_KEY = "performance_dashboard_view_mode"
+_VIEW_MODE_TOGGLE_KEY = "performance_dashboard_view_mode_toggle"
+_SPARKLINE_FILENAME = "performance_sparkline.csv"
+
+_GRADIENT_POSITIVE = ("#22c55e", "#15803d")
+_GRADIENT_NEGATIVE = ("#ef4444", "#b91c1c")
+_GRADIENT_NEUTRAL = ("#9ca3af", "#4b5563")
 
 
 def _extras_to_text(extras: dict[str, str]) -> str:
@@ -98,6 +106,7 @@ def _render_sparkline_metric(
     decimals: int = 2,
     chart_type: str = "line",
     help_text: str | None = None,
+    chart_gradient: Sequence[str] | None = None,
 ) -> None:
     cleaned = pd.to_numeric(series, errors="coerce").dropna()
     if cleaned.empty:
@@ -109,15 +118,30 @@ def _render_sparkline_metric(
     if previous is not None:
         delta_value = latest - previous
         delta_text = f"{delta_value:+.{decimals}f}{unit}"
-    column.metric(
-        label,
-        formatted_value,
-        delta=delta_text,
-        help=help_text,
-        border=True,
-        chart_data=cleaned.reset_index(drop=True),
-        chart_type=chart_type,
-    )
+    metric_kwargs = {
+        "label": label,
+        "value": formatted_value,
+        "delta": delta_text,
+        "help": help_text,
+        "border": True,
+        "chart_data": cleaned.reset_index(drop=True),
+        "chart_type": chart_type,
+    }
+    if chart_gradient:
+        metric_kwargs["chart_color"] = list(chart_gradient)
+    column.metric(**metric_kwargs)
+
+
+def _compute_duration_gradient(series: pd.Series) -> Sequence[str] | None:
+    cleaned = pd.to_numeric(series, errors="coerce").dropna()
+    if len(cleaned) < 2:
+        return None
+    trend = cleaned.iloc[-1] - cleaned.iloc[0]
+    if trend < 0:
+        return _GRADIENT_POSITIVE
+    if trend > 0:
+        return _GRADIENT_NEGATIVE
+    return _GRADIENT_NEUTRAL
 
 
 def _prepare_display(df: pd.DataFrame) -> pd.DataFrame:
@@ -164,6 +188,18 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
         return
 
     df = _entries_to_dataframe(entries)
+
+    current_mode = st.session_state.get(_VIEW_MODE_STATE_KEY, "latest")
+    show_historical_default = current_mode == "historical"
+    show_historical = st.toggle(
+        "Promedio histórico",
+        key=_VIEW_MODE_TOGGLE_KEY,
+        value=show_historical_default,
+        help="Alterná entre la última ejecución y el promedio histórico para los indicadores.",
+    )
+    current_mode = "historical" if show_historical else "latest"
+    st.session_state[_VIEW_MODE_STATE_KEY] = current_mode
+    st.caption(f"Modo seleccionado: {'Promedio histórico' if show_historical else 'Última ejecución'}")
 
     labels = sorted(df["label"].dropna().unique())
     if labels:
@@ -214,44 +250,85 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
         st.subheader("Percentiles de duración por bloque")
         st.dataframe(percentiles, width="stretch")
 
+    sparkline_export_df = pd.DataFrame()
     timeline = df.dropna(subset=["timestamp"]).sort_values("timestamp")
     if not timeline.empty:
-        recent = timeline.tail(20)
-        metric_cols = st.columns(3)
-        _render_sparkline_metric(
-            metric_cols[0],
-            "Duración última (s)",
-            recent["duration_s"],
-            unit="s",
-            decimals=2,
-            chart_type="area",
-            help_text="Tiempo del último bloque instrumentado.",
-        )
-        _render_sparkline_metric(
-            metric_cols[1],
-            "CPU última (%)",
-            recent["cpu_percent"],
-            unit="%",
-            decimals=1,
-            chart_type="line",
-            help_text="Uso de CPU reportado por la medición más reciente.",
-        )
-        _render_sparkline_metric(
-            metric_cols[2],
-            "RAM última (%)",
-            recent["mem_percent"],
-            unit="%",
-            decimals=1,
-            chart_type="line",
-            help_text="Uso de RAM reportado por la medición más reciente.",
-        )
-        series = timeline.set_index("timestamp")["duration_s"].rename("Duración (s)")
-        st.line_chart(series)
-        cpu_mem = timeline.set_index("timestamp")[
-            ["cpu_percent", "mem_percent"]
-        ].rename(columns={"cpu_percent": "CPU (%)", "mem_percent": "RAM (%)"})
-        if not cpu_mem.dropna(how="all").empty:
-            st.line_chart(cpu_mem)
+        metrics_frame = timeline.set_index("timestamp")[
+            ["duration_s", "cpu_percent", "mem_percent"]
+        ]
+        if current_mode == "historical":
+            metrics_frame = metrics_frame.expanding().mean()
+        metrics_frame = metrics_frame.dropna(how="all")
+        if not metrics_frame.empty:
+            recent = metrics_frame.tail(20)
+            sparkline_export_df = recent.reset_index().rename(
+                columns={
+                    "timestamp": "timestamp",
+                    "duration_s": "duration_s",
+                    "cpu_percent": "cpu_percent",
+                    "mem_percent": "mem_percent",
+                }
+            )
+            sparkline_export_df.insert(1, "view_mode", current_mode)
+
+            metric_cols = st.columns(3)
+            duration_label = (
+                "Duración promedio (s)" if current_mode == "historical" else "Duración última (s)"
+            )
+            duration_help = (
+                "Promedio acumulado de la duración histórica de los bloques instrumentados."
+                if current_mode == "historical"
+                else "Tiempo del último bloque instrumentado."
+            )
+            _render_sparkline_metric(
+                metric_cols[0],
+                duration_label,
+                recent["duration_s"],
+                unit="s",
+                decimals=2,
+                chart_type="area",
+                help_text=duration_help,
+                chart_gradient=_compute_duration_gradient(recent["duration_s"]),
+            )
+            cpu_label = "CPU promedio (%)" if current_mode == "historical" else "CPU última (%)"
+            cpu_help = (
+                "Promedio acumulado de uso de CPU reportado históricamente."
+                if current_mode == "historical"
+                else "Uso de CPU reportado por la medición más reciente."
+            )
+            _render_sparkline_metric(
+                metric_cols[1],
+                cpu_label,
+                recent["cpu_percent"],
+                unit="%",
+                decimals=1,
+                chart_type="line",
+                help_text=cpu_help,
+            )
+            ram_label = "RAM promedio (%)" if current_mode == "historical" else "RAM última (%)"
+            ram_help = (
+                "Promedio acumulado de uso de RAM reportado históricamente."
+                if current_mode == "historical"
+                else "Uso de RAM reportado por la medición más reciente."
+            )
+            _render_sparkline_metric(
+                metric_cols[2],
+                ram_label,
+                recent["mem_percent"],
+                unit="%",
+                decimals=1,
+                chart_type="line",
+                help_text=ram_help,
+            )
+
+            duration_series = metrics_frame["duration_s"].dropna().rename("Duración (s)")
+            if not duration_series.empty:
+                st.line_chart(duration_series)
+            cpu_mem = metrics_frame[["cpu_percent", "mem_percent"]].rename(
+                columns={"cpu_percent": "CPU (%)", "mem_percent": "RAM (%)"}
+            )
+            if not cpu_mem.dropna(how="all").empty:
+                st.line_chart(cpu_mem)
 
     export_records = _export_payload(df)
     if export_records:
@@ -272,6 +349,15 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
                 file_name="performance_metrics.json",
                 mime="application/json",
             )
+            if not sparkline_export_df.empty:
+                sparkline_csv = io.StringIO()
+                sparkline_export_df.to_csv(sparkline_csv, index=False)
+                st.download_button(
+                    "⬇️ Sparkline CSV",
+                    data=sparkline_csv.getvalue().encode("utf-8"),
+                    file_name=_SPARKLINE_FILENAME,
+                    mime="text/csv",
+                )
 
     st.caption(f"Archivo de log: {LOG_PATH}")
 
