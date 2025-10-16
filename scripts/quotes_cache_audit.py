@@ -73,6 +73,48 @@ class AuditReport:
         return modes
 
 
+@dataclass
+class PortfolioCacheSnapshot:
+    render_total_s: float
+    hit_ratio: float
+    miss_count: int
+    hits: int
+    render_invocations: int
+    fingerprint_invalidations: dict[str, int]
+    cache_miss_reasons: dict[str, int]
+    recent_misses: list[dict]
+    recent_invalidations: list[dict]
+
+    def total_invalidations(self) -> int:
+        return sum(self.fingerprint_invalidations.values())
+
+    def invalidation_breakdown(self) -> str:
+        if not self.fingerprint_invalidations:
+            return "Sin invalidaciones registradas"
+        return ", ".join(
+            f"{reason}={count}"
+            for reason, count in sorted(self.fingerprint_invalidations.items())
+        )
+
+    def miss_breakdown(self) -> str:
+        if not self.cache_miss_reasons:
+            return "Sin misses registrados"
+        return ", ".join(
+            f"{reason}={count}"
+            for reason, count in sorted(self.cache_miss_reasons.items())
+        )
+
+    def unnecessary_misses(self) -> int:
+        return int(self.cache_miss_reasons.get("unchanged_fingerprint", 0) or 0)
+
+    def recent_unnecessary_misses(self) -> list[dict]:
+        return [
+            miss
+            for miss in self.recent_misses
+            if miss.get("reason") == "unchanged_fingerprint"
+        ]
+
+
 def _load_events(path: Path) -> list[dict]:
     events: list[dict] = []
     with path.open("r", encoding="utf-8") as fh:
@@ -143,24 +185,65 @@ def load_report(path: Path) -> AuditReport:
     return AuditReport(summary=summary, batches=batches)
 
 
-def export_metrics(report: AuditReport, output: Path) -> None:
-    output.write_text(
-        "metric,value,notes\n"
-        f"quotes_refresh_total_s,{report.quotes_refresh_total_s():.2f},"
-        "Duración total de quotes_refresh según telemetría\n"
-        f"avg_batch_time_ms,{report.avg_batch_time_ms():.1f},"
-        "Promedio de duración por sublote (ms)\n"
-        f"max_batch_time_ms,{report.max_batch_time_ms():.1f},"
-        "Sub-lote más lento observado (ms)\n"
-        f"quotes_hit_ratio,{report.quotes_hit_ratio():.2f},"
-        "Porcentaje de respuestas fresh sobre el total\n"
-        f"stale_ratio,{report.stale_ratio():.2f},"
-        "Porcentaje de respuestas servidas en modo stale\n",
-        encoding="utf-8",
+def load_portfolio_metrics(path: Path) -> PortfolioCacheSnapshot:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    invalidations_raw = data.get("fingerprint_invalidations") or {}
+    miss_reasons_raw = data.get("cache_miss_reasons") or {}
+    recent_misses = list(data.get("recent_misses") or [])
+    recent_invalidations = list(data.get("recent_invalidations") or [])
+    return PortfolioCacheSnapshot(
+        render_total_s=float(data.get("portfolio_view_render_s", 0.0) or 0.0),
+        hit_ratio=float(data.get("portfolio_cache_hit_ratio", 0.0) or 0.0),
+        miss_count=int(data.get("portfolio_cache_miss_count", 0) or 0),
+        hits=int(data.get("hits", 0) or 0),
+        render_invocations=int(data.get("render_invocations", 0) or 0),
+        fingerprint_invalidations={
+            str(reason): int(count)
+            for reason, count in invalidations_raw.items()
+            if count is not None
+        },
+        cache_miss_reasons={
+            str(reason): int(count)
+            for reason, count in miss_reasons_raw.items()
+            if count is not None
+        },
+        recent_misses=[
+            miss for miss in recent_misses if isinstance(miss, dict)
+        ],
+        recent_invalidations=[
+            entry for entry in recent_invalidations if isinstance(entry, dict)
+        ],
     )
 
 
-def render_cli(report: AuditReport) -> str:
+def export_metrics(
+    report: AuditReport, portfolio: PortfolioCacheSnapshot, output: Path
+) -> None:
+    lines = [
+        "metric,value,notes\n",
+        f"quotes_refresh_total_s,{report.quotes_refresh_total_s():.2f},",
+        "Duración total de quotes_refresh según telemetría\n",
+        f"avg_batch_time_ms,{report.avg_batch_time_ms():.1f},",
+        "Promedio de duración por sublote (ms)\n",
+        f"max_batch_time_ms,{report.max_batch_time_ms():.1f},",
+        "Sub-lote más lento observado (ms)\n",
+        f"quotes_hit_ratio,{report.quotes_hit_ratio():.2f},",
+        "Porcentaje de respuestas fresh sobre el total\n",
+        f"stale_ratio,{report.stale_ratio():.2f},",
+        "Porcentaje de respuestas servidas en modo stale\n",
+        f"portfolio_view_render_s,{portfolio.render_total_s:.2f},",
+        "Tiempo total invertido en portfolio_view.render (s)\n",
+        f"portfolio_cache_hit_ratio,{portfolio.hit_ratio:.2f},",
+        "Porcentaje de hits del memoizador del portafolio\n",
+        f"portfolio_cache_miss_count,{portfolio.miss_count},",
+        "Cantidad de recomputos del snapshot en el muestreo\n",
+        f"fingerprint_invalidations,{portfolio.total_invalidations()},",
+        f"Detalle: {portfolio.invalidation_breakdown()}\n",
+    ]
+    output.write_text("".join(lines), encoding="utf-8")
+
+
+def render_quotes_cli(report: AuditReport) -> str:
     modes = report.served_modes()
     anomalous = report.anomalous_batches()
     lines = [
@@ -183,6 +266,34 @@ def render_cli(report: AuditReport) -> str:
     return "\n".join(lines)
 
 
+def render_portfolio_cli(metrics: PortfolioCacheSnapshot) -> str:
+    lines = [
+        "Resumen portfolio_view.render:",
+        f"- Tiempo total: {metrics.render_total_s:.2f} s",
+        f"- Invocaciones: {metrics.render_invocations} (hits={metrics.hits}, misses={metrics.miss_count})",
+        f"- Hit ratio: {metrics.hit_ratio:.2f}%",
+        f"- Razones de miss: {metrics.miss_breakdown()}",
+        f"- Invalidaciones: {metrics.invalidation_breakdown()}",
+    ]
+    unnecessary = metrics.unnecessary_misses()
+    if unnecessary:
+        lines.append(
+            f"Misses sin cambios de fingerprint detectados: {unnecessary}"
+        )
+        recent = metrics.recent_unnecessary_misses()
+        if recent:
+            lines.append("Últimos misses sin cambios registrados:")
+            for miss in recent[:5]:
+                apply_ms = float(miss.get("apply_elapsed") or 0.0)
+                totals_ms = float(miss.get("totals_elapsed") or 0.0)
+                render_ms = float(miss.get("render_elapsed") or 0.0)
+                lines.append(
+                    "  * "
+                    f"apply={apply_ms:.3f}s totals={totals_ms:.3f}s render={render_ms:.3f}s"
+                )
+    return "\n".join(lines)
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Audita logs de quotes_refresh")
     parser.add_argument(
@@ -190,6 +301,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         type=Path,
         default=Path("docs/fixtures/telemetry/quotes_refresh_logs.jsonl"),
         help="Archivo JSONL con los eventos instrumentados",
+    )
+    parser.add_argument(
+        "--portfolio-input",
+        type=Path,
+        default=Path("docs/fixtures/telemetry/portfolio_view_cache.json"),
+        help="Archivo JSON con métricas de portfolio_view_cache",
     )
     parser.add_argument(
         "--output",
@@ -200,8 +317,11 @@ def main(argv: Iterable[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     report = load_report(args.input)
-    export_metrics(report, args.output)
-    print(render_cli(report))
+    portfolio_metrics = load_portfolio_metrics(args.portfolio_input)
+    export_metrics(report, portfolio_metrics, args.output)
+    print(render_quotes_cli(report))
+    print()
+    print(render_portfolio_cli(portfolio_metrics))
     return 0
 
 

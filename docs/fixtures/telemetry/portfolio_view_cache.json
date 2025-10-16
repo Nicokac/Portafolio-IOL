@@ -1,0 +1,62 @@
+{
+  "portfolio_view_render_s": 21.38,
+  "portfolio_cache_hit_ratio": 55.56,
+  "portfolio_cache_miss_count": 4,
+  "render_invocations": 9,
+  "hits": 5,
+  "misses": 4,
+  "fingerprint_invalidations": {
+    "dataset_changed": 3,
+    "filters_changed": 1
+  },
+  "cache_miss_reasons": {
+    "dataset_changed": 2,
+    "filters_changed": 1,
+    "dataset_and_filters": 1,
+    "unchanged_fingerprint": 0
+  },
+  "recent_misses": [
+    {
+      "ts": 1714672100.12,
+      "reason": "dataset_changed",
+      "dataset_changed": true,
+      "filters_changed": false,
+      "apply_elapsed": 3.12,
+      "totals_elapsed": 1.04,
+      "render_elapsed": 4.22
+    },
+    {
+      "ts": 1714672110.58,
+      "reason": "filters_changed",
+      "dataset_changed": false,
+      "filters_changed": true,
+      "apply_elapsed": 2.64,
+      "totals_elapsed": 0.88,
+      "render_elapsed": 3.73
+    },
+    {
+      "ts": 1714672125.91,
+      "reason": "dataset_and_filters",
+      "dataset_changed": true,
+      "filters_changed": true,
+      "apply_elapsed": 3.85,
+      "totals_elapsed": 1.12,
+      "render_elapsed": 5.11
+    },
+    {
+      "ts": 1714672142.35,
+      "reason": "filters_changed",
+      "dataset_changed": false,
+      "filters_changed": true,
+      "apply_elapsed": 2.48,
+      "totals_elapsed": 0.92,
+      "render_elapsed": 3.51
+    }
+  ],
+  "recent_invalidations": [
+    {"ts": 1714672098.4, "reason": "dataset_changed", "detail": "1a2b3c"},
+    {"ts": 1714672110.0, "reason": "filters_changed", "detail": "{\"selected_syms\": [\"GGAL\"]}"},
+    {"ts": 1714672123.7, "reason": "dataset_changed", "detail": "7f8e9d"},
+    {"ts": 1714672140.9, "reason": "dataset_changed", "detail": "5c6d7e"}
+  ]
+}
