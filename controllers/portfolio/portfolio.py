@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import logging
@@ -5,8 +6,9 @@ import re
 import time
 import unicodedata
 from collections import OrderedDict
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 
 import streamlit as st
@@ -30,7 +32,7 @@ from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
-from services.performance_timer import record_stage as log_performance_stage
+from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
 
 from .load_data import load_portfolio_data
@@ -69,6 +71,45 @@ _DATASET_STATS_FALLBACK: dict[str, Any] = {
     "last_latency_ms": 0.0,
     "last_key": None,
 }
+
+_TAB_METRICS_PATH = Path("performance_metrics_11.csv")
+_TAB_METRICS_FIELDS = (
+    "tab_name",
+    "render_start_s",
+    "render_end_s",
+    "render_duration_s",
+)
+
+
+def _append_tab_metric(tab_name: str, start_s: float, end_s: float) -> None:
+    """Append a telemetry row for ``tab_name`` to the CSV metrics file."""
+
+    try:
+        duration = max(float(end_s) - float(start_s), 0.0)
+    except Exception:
+        duration = 0.0
+    payload = {
+        "tab_name": str(tab_name),
+        "render_start_s": f"{float(start_s):.6f}",
+        "render_end_s": f"{float(end_s):.6f}",
+        "render_duration_s": f"{duration:.6f}",
+    }
+    try:
+        _TAB_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_exists = _TAB_METRICS_PATH.exists()
+        with _TAB_METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=_TAB_METRICS_FIELDS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(payload)
+    except Exception:  # pragma: no cover - best effort logging
+        logger.debug(
+            "No se pudo actualizar %s con la métrica de la pestaña %s",
+            _TAB_METRICS_PATH,
+            tab_name,
+            exc_info=True,
+        )
+
 
 def _get_service_registry() -> dict[str, Any]:
     """Return the per-session registry that stores portfolio services."""
@@ -1153,8 +1194,13 @@ def render_portfolio_section(
         render_cache = _ensure_render_cache()
         cache_entry = _ensure_tab_cache(render_cache, tab_slug)
         tab_signature = _tab_signature(viewmodel, df_view, tab_slug)
+        tab_loaded = st.session_state.get("tab_loaded")
+        if not isinstance(tab_loaded, dict):
+            tab_loaded = {}
+            st.session_state["tab_loaded"] = tab_loaded
 
         with _record_stage(f"render_tab.{tab_slug}", timings):
+            first_visit = not bool(tab_loaded.get(tab_slug))
             should_render = cache_entry.get("signature") != tab_signature or not cache_entry.get(
                 "rendered"
             )
@@ -1165,25 +1211,32 @@ def render_portfolio_section(
                     source = "hot"
                 body_placeholder = cache_entry["body_placeholder"]
                 body_placeholder.empty()
-                spinner_message = _loading_message(base_label)
-                start = time.perf_counter()
+                perf_start = time.perf_counter()
+                wall_start = time.time()
                 with body_placeholder.container():
-                    with st.spinner(spinner_message):
-                        _render_selected_tab(
-                            tab_idx,
-                            df_view,
-                            tasvc,
-                            favorites,
-                            notifications,
-                            available_types,
-                            all_symbols,
-                            viewmodel,
-                            snapshot,
-                            tab_slug=tab_slug,
-                            tab_cache=cache_entry,
-                            timings=timings,
-                        )
-                latency_ms = (time.perf_counter() - start) * 1000.0
+                    if first_visit:
+                        spinner_cm = st.spinner("Cargando pestaña...")
+                    else:
+                        spinner_cm = nullcontext()
+                    with spinner_cm:
+                        with profile_block(f"render_tab.{tab_slug}"):
+                            _render_selected_tab(
+                                tab_idx,
+                                df_view,
+                                tasvc,
+                                favorites,
+                                notifications,
+                                available_types,
+                                all_symbols,
+                                viewmodel,
+                                snapshot,
+                                tab_slug=tab_slug,
+                                tab_cache=cache_entry,
+                                timings=timings,
+                            )
+                wall_end = time.time()
+                latency_ms = (time.perf_counter() - perf_start) * 1000.0
+                _append_tab_metric(tab_slug, wall_start, wall_end)
                 cache_entry["signature"] = tab_signature
                 cache_entry["rendered"] = True
                 cache_entry["latency_ms"] = latency_ms
@@ -1198,6 +1251,7 @@ def render_portfolio_section(
                 latency_ms,
                 source,
             )
+            tab_loaded[tab_slug] = True
 
         return refresh_secs
 @contextmanager
@@ -1309,16 +1363,6 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
         symbol_query,
         hide_cash,
     )
-
-
-def _loading_message(base_label: str) -> str:
-    """Return a user-friendly loading message for ``base_label``."""
-
-    label = re.sub(r"^[^\w]+", "", base_label).strip()
-    if not label:
-        label = base_label.strip()
-    label = label or "sección"
-    return f"Cargando {label.lower()}…"
 
 
 def _render_selected_tab(
