@@ -33,6 +33,7 @@ data/
 *.csv
 !docs/fixtures/default/*.csv
 !infrastructure/cache/ta_fallback.csv
+!performance_metrics_10.csv
 *.parquet
 *.xlsx
 

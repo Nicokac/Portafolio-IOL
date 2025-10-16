@@ -42,8 +42,70 @@ _QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
 _MAX_RATE_LIMIT_RETRIES = 2
 
 _THREADPOOL_SUBLOT_TARGET = 6
-_THREADPOOL_SUBLOT_MIN = 5
-_THREADPOOL_SUBLOT_MAX = 8
+_THREADPOOL_SUBLOT_MIN = 4
+_THREADPOOL_SUBLOT_MAX = 10
+
+
+class AdaptiveBatchController:
+    """Simple heuristic to adjust quote refresh batch sizes based on latency."""
+
+    def __init__(
+        self,
+        *,
+        default_size: int,
+        min_size: int,
+        max_size: int,
+        slow_threshold_ms: float = 700.0,
+        fast_threshold_ms: float = 400.0,
+        slow_target: int = 5,
+        fast_target: int = 9,
+    ) -> None:
+        self._lock = Lock()
+        self._size = int(default_size)
+        self._avg_ms: float | None = None
+        self._min = int(min_size)
+        self._max = int(max_size)
+        self._slow_threshold = float(slow_threshold_ms)
+        self._fast_threshold = float(fast_threshold_ms)
+        self._slow_target = int(slow_target)
+        self._fast_target = int(fast_target)
+
+    def current(self, population: int) -> int:
+        """Return the batch size that should be used for the current refresh."""
+
+        with self._lock:
+            size = max(self._min, min(self._max, self._size))
+        return max(1, min(size, population if population > 0 else size))
+
+    def observe(self, avg_batch_time_ms: float | None, population: int) -> int:
+        """Record the average duration for the executed refresh and adapt."""
+
+        with self._lock:
+            self._avg_ms = avg_batch_time_ms if avg_batch_time_ms is not None else None
+            if avg_batch_time_ms is None:
+                return max(self._min, min(self._max, self._size))
+
+            if avg_batch_time_ms > self._slow_threshold:
+                target = min(self._slow_target, self._max)
+                self._size = max(self._min, target)
+            elif avg_batch_time_ms < self._fast_threshold:
+                target = max(self._fast_target, self._min)
+                self._size = min(self._max, target)
+            else:
+                self._size = max(self._min, min(self._max, self._size))
+
+            return max(1, min(self._size, population if population > 0 else self._size))
+
+    def last_observed_avg(self) -> float | None:
+        with self._lock:
+            return self._avg_ms
+
+
+_ADAPTIVE_BATCH_CONTROLLER = AdaptiveBatchController(
+    default_size=_THREADPOOL_SUBLOT_TARGET,
+    min_size=_THREADPOOL_SUBLOT_MIN,
+    max_size=_THREADPOOL_SUBLOT_MAX,
+)
 
 
 class QuoteBatchStats:
@@ -848,18 +910,19 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         def _resolve_chunk_size() -> int:
             if not normalized:
                 return _THREADPOOL_SUBLOT_MIN
-            baseline = max(len(normalized) // max(1, max_workers), _THREADPOOL_SUBLOT_TARGET)
-            bounded = max(_THREADPOOL_SUBLOT_MIN, min(_THREADPOOL_SUBLOT_MAX, baseline))
-            return max(1, min(bounded, len(normalized)))
+            adaptive_size = _ADAPTIVE_BATCH_CONTROLLER.current(len(normalized))
+            return max(1, min(adaptive_size, len(normalized)))
 
         chunk_size = _resolve_chunk_size()
         telemetry["sublot_size"] = chunk_size
+        telemetry["adaptive_batch_size"] = chunk_size
         sublots = [
             normalized[idx : idx + chunk_size]
             for idx in range(0, len(normalized), chunk_size)
         ] if normalized else []
 
         def _fetch_sublot(entries: list[tuple[str, str, str | None]]):
+            started = time.perf_counter()
             results: dict[tuple[str, str], dict] = {}
             errors: list[tuple[str, str, Exception]] = []
             for market, symbol, panel in entries:
@@ -879,17 +942,19 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 else:
                     if isinstance(quote, dict):
                         logger.debug("quote %s:%s -> %s", market, symbol, quote)
-                results[(market, symbol)] = quote
-            return results, errors
+            results[(market, symbol)] = quote
+            duration = time.perf_counter() - started
+            return results, errors, duration
 
         out: dict[tuple[str, str], dict] = {}
         worker_count = min(max_workers, len(sublots) or 1)
+        batch_durations: list[float] = []
         with ThreadPoolExecutor(max_workers=worker_count) as ex:
             futures = {ex.submit(_fetch_sublot, sublot): sublot for sublot in sublots}
             for fut in as_completed(futures):
                 sublot = futures[fut]
                 try:
-                    chunk_result, chunk_errors = fut.result()
+                    chunk_result, chunk_errors, duration = fut.result()
                 except Exception as exc:  # pragma: no cover - defensive safeguard
                     telemetry.setdefault("errors", 0)
                     telemetry["errors"] = int(telemetry["errors"]) + len(sublot)
@@ -908,6 +973,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                         out[(market, symbol)] = quote
                         batch_stats.record_payload(quote)
                     continue
+                batch_durations.append(duration)
                 out.update(chunk_result)
                 for market, symbol, err in chunk_errors:
                     telemetry.setdefault("errors", 0)
@@ -919,6 +985,19 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         elapsed_ms = elapsed_seconds * 1000.0
         summary = batch_stats.summary(elapsed_seconds)
         telemetry["processed"] = int(summary.get("count", 0))
+        if batch_durations:
+            avg_batch_time_ms = sum(batch_durations) / len(batch_durations) * 1000.0
+            telemetry["avg_batch_time_ms"] = avg_batch_time_ms
+            next_size = _ADAPTIVE_BATCH_CONTROLLER.observe(avg_batch_time_ms, len(normalized))
+            telemetry["next_adaptive_batch_size"] = next_size
+            logger.info(
+                "quotes_refresh adaptive batch -> current=%s next=%s avg=%.2fms",
+                chunk_size,
+                next_size,
+                avg_batch_time_ms,
+            )
+        else:
+            _ADAPTIVE_BATCH_CONTROLLER.observe(None, len(normalized))
         message = (
             "✅ {count} quotes processed "
             "(fresh={fresh}, stale={stale}, errors={errors}, "
