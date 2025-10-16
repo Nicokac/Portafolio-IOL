@@ -67,6 +67,17 @@ def _entries_to_dataframe(entries: Iterable) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def _extract_numeric_extra(series: pd.Series, key: str) -> pd.Series:
+    if series.empty:
+        return pd.Series(dtype="float64")
+    return pd.to_numeric(
+        series.map(
+            lambda extras: extras.get(key) if isinstance(extras, dict) else None
+        ),
+        errors="coerce",
+    )
+
+
 def _build_percentile_summary(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame(columns=["P50 (s)", "P95 (s)", "P99 (s)"])
@@ -142,6 +153,31 @@ def _compute_duration_gradient(series: pd.Series) -> Sequence[str] | None:
     if trend > 0:
         return _GRADIENT_NEGATIVE
     return _GRADIENT_NEUTRAL
+
+
+def _build_ui_overhead_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+    ui_entries = df[df["label"] == "ui_total_load"].copy()
+    if ui_entries.empty:
+        return pd.DataFrame()
+    ui_entries = ui_entries.reset_index(drop=True)
+    total_series = _extract_numeric_extra(ui_entries["extras"], "total_ms").to_numpy()
+    logic_series = _extract_numeric_extra(
+        ui_entries["extras"], "profile_block_total_ms"
+    ).to_numpy()
+    overhead_series = _extract_numeric_extra(
+        ui_entries["extras"], "streamlit_overhead_ms"
+    ).to_numpy()
+    frame = pd.DataFrame(
+        {
+            "ui_total_load_ms": total_series,
+            "profile_block_total_ms": logic_series,
+            "streamlit_overhead_ms": overhead_series,
+        },
+        index=ui_entries["timestamp"],
+    )
+    return frame.dropna(how="all")
 
 
 def _prepare_display(df: pd.DataFrame) -> pd.DataFrame:
@@ -253,6 +289,56 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
     sparkline_export_df = pd.DataFrame()
     timeline = df.dropna(subset=["timestamp"]).sort_values("timestamp")
     if not timeline.empty:
+        ui_overhead_frame = _build_ui_overhead_frame(timeline)
+        if not ui_overhead_frame.empty:
+            st.subheader("Desglose de carga de la UI")
+            ui_recent = ui_overhead_frame.tail(20)
+            ui_columns = st.columns(3)
+            _render_sparkline_metric(
+                ui_columns[0],
+                "Total carga UI",
+                ui_recent["ui_total_load_ms"],
+                unit=" ms",
+                decimals=0,
+                chart_type="area",
+                help_text="Tiempo total registrado por `ui_total_load_ms`.",
+                chart_gradient=_compute_duration_gradient(ui_recent["ui_total_load_ms"]),
+            )
+            _render_sparkline_metric(
+                ui_columns[1],
+                "Lógica instrumentada",
+                ui_recent["profile_block_total_ms"],
+                unit=" ms",
+                decimals=0,
+                chart_type="line",
+                help_text="Suma de los bloques instrumentados reportados en la sesión.",
+                chart_gradient=_compute_duration_gradient(
+                    ui_recent["profile_block_total_ms"]
+                ),
+            )
+            _render_sparkline_metric(
+                ui_columns[2],
+                "Overhead Streamlit",
+                ui_recent["streamlit_overhead_ms"],
+                unit=" ms",
+                decimals=0,
+                chart_type="line",
+                help_text=(
+                    "Latencia atribuida al layout: ui_total_load_ms menos la lógica instrumentada."
+                ),
+                chart_gradient=_compute_duration_gradient(
+                    ui_recent["streamlit_overhead_ms"]
+                ),
+            )
+            st.markdown(
+                """
+**Sugerencias para optimizar el layout:**
+- Reducir markdown dinámico innecesario en el render.
+- Consolidar múltiples `st.write` en bloques estructurados.
+- Usar `staticPlot=True` en gráficos sin interactividad.
+- Mejorar el caching de componentes UI costosos.
+"""
+            )
         metrics_frame = timeline.set_index("timestamp")[
             ["duration_s", "cpu_percent", "mem_percent"]
         ]

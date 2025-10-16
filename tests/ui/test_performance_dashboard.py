@@ -81,6 +81,19 @@ def _sample_entries() -> List[DummyEntry]:
             extras={"note": "spike"},
             success=False,
         ),
+        DummyEntry(
+            timestamp="2024-01-01 09:55:00",
+            label="ui_total_load",
+            duration_s=8.0,
+            cpu_percent=None,
+            ram_percent=None,
+            extras={
+                "total_ms": "8000",
+                "profile_block_total_ms": "6200",
+                "streamlit_overhead_ms": "1800",
+            },
+            success=True,
+        ),
     ]
 
 
@@ -110,7 +123,7 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     main_table = dataframes[0]["data"]
     assert isinstance(main_table, pd.DataFrame)
     assert "Bloque" in main_table.columns
-    assert set(main_table["Bloque"]) == {"load_portfolio", "predict"}
+    assert set(main_table["Bloque"]) == {"load_portfolio", "predict", "ui_total_load"}
 
     warnings = [entry["text"] for entry in streamlit_stub.get_records("warning")]
     assert any("duración prolongada" in text for text in warnings)
@@ -133,6 +146,18 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     )
     assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_POSITIVE)
 
+    ui_total_metric = next(
+        (record for record in metric_records if record["label"] == "Total carga UI"),
+        None,
+    )
+    assert ui_total_metric is not None
+    overhead_metric = next(
+        (record for record in metric_records if record["label"] == "Overhead Streamlit"),
+        None,
+    )
+    assert overhead_metric is not None
+    assert str(overhead_metric.get("value", "")).endswith(" ms")
+
     percentiles_table = None
     for record in dataframes:
         df = record["data"]
@@ -144,6 +169,9 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     captions = [entry["text"] for entry in streamlit_stub.get_records("caption")]
     assert any("Archivo de log" in text for text in captions)
     assert any("Modo seleccionado" in text for text in captions)
+
+    markdowns = [entry["text"] for entry in streamlit_stub.get_records("markdown")]
+    assert any("staticPlot=True" in text for text in markdowns)
 
 
 def test_performance_dashboard_historical_mode(
@@ -165,7 +193,7 @@ def test_performance_dashboard_historical_mode(
     duration_metric = next(
         record for record in metric_records if record["label"] == "Duración promedio (s)"
     )
-    assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_NEGATIVE)
+    assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_POSITIVE)
 
     sparkline_download = next(
         record

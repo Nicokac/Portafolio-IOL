@@ -476,6 +476,35 @@ def _render_total_load_indicator(placeholder) -> None:
     except Exception:
         logger.debug("No se pudo extender portfolio_stage_timings con total_ms", exc_info=True)
 
+    profile_block_durations: list[float] = []
+    try:
+        stage_timings = st.session_state.get("portfolio_stage_timings")
+    except Exception:
+        logger.debug("No se pudo acceder a portfolio_stage_timings", exc_info=True)
+        stage_timings = None
+
+    if isinstance(stage_timings, dict):
+        for key, value in stage_timings.items():
+            if key == "total_ms":
+                continue
+            if value is None:
+                continue
+            try:
+                duration = float(value)
+            except (TypeError, ValueError):
+                continue
+            if duration < 0:
+                continue
+            profile_block_durations.append(duration)
+
+    logic_total_ms: float | None = None
+    if profile_block_durations:
+        logic_total_ms = float(sum(profile_block_durations))
+
+    overhead_ms: float | None = None
+    if logic_total_ms is not None:
+        overhead_ms = max(float(elapsed_ms) - logic_total_ms, 0.0)
+
     try:
         startup_ms = st.session_state.get(_UI_STARTUP_METRIC_KEY)
     except Exception:
@@ -498,7 +527,20 @@ def _render_total_load_indicator(placeholder) -> None:
     except Exception:
         logger.debug("No se pudo renderizar el indicador de tiempo total", exc_info=True)
 
-    _record_stage_lazy("ui_total_load", total_ms=elapsed_ms, status="success")
+    extra_payload: dict[str, object] | None = None
+    if logic_total_ms is not None:
+        extra_payload = {
+            "profile_block_total_ms": round(logic_total_ms, 2),
+            "profile_block_count": len(profile_block_durations),
+        }
+        if overhead_ms is not None:
+            extra_payload["streamlit_overhead_ms"] = round(overhead_ms, 2)
+
+    record_kwargs = {"total_ms": elapsed_ms, "status": "success"}
+    if extra_payload:
+        record_kwargs["extra"] = extra_payload
+
+    _record_stage_lazy("ui_total_load", **record_kwargs)
     _update_ui_total_load_metric_lazy(elapsed_ms)
     try:
         log_ui_total_load_metric(elapsed_ms)
