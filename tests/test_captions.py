@@ -31,7 +31,7 @@ def test_render_basic_section_captions(monkeypatch):
     monkeypatch.setattr(
         charts_mod,
         "generate_basic_charts",
-        lambda df, top_n: {k: object() for k in ["pl_topn", "donut_tipo", "dist_tipo", "pl_diario"]},
+        lambda df, top_n: {k: object() for k in ["pl_topn", "donut_tipo", "pl_diario"]},
     )
     monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: None, raising=False)
@@ -48,7 +48,6 @@ def test_render_basic_section_captions(monkeypatch):
     expected = [
         "Barras que muestran qué activos ganan o pierden más. Las más altas son las que más afectan tu resultado.",
         "Indica qué porcentaje de tu inversión está en cada tipo de activo para ver si estás diversificando bien.",
-        "Compara cuánto dinero tenés en cada categoría de activos. Ayuda a detectar concentraciones.",
         "Muestra las ganancias o pérdidas del día para los activos con mayor movimiento.",
     ]
     for text in expected:

@@ -163,7 +163,7 @@ def test_render_basic_section_plots_all_charts(
     )
 
     keys = {call["kwargs"].get("key") for call in fake_streamlit.plot_calls}
-    assert {"pl_topn", "donut_tipo", "dist_tipo", "pl_diario"}.issubset(keys)
+    assert {"pl_topn", "donut_tipo", "pl_diario"}.issubset(keys)
     assert fake_streamlit.selectboxes, "Expected favorites selectbox to be rendered"
 
 

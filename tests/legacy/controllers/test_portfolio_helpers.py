@@ -240,14 +240,12 @@ def test_generate_basic_charts(monkeypatch):
     })
     monkeypatch.setattr(charts_mod, "plot_pl_topn", lambda df, n: "topn")
     monkeypatch.setattr(charts_mod, "plot_donut_tipo", lambda df: "donut")
-    monkeypatch.setattr(charts_mod, "plot_dist_por_tipo", lambda df: "dist")
     monkeypatch.setattr(charts_mod, "plot_pl_daily_topn", lambda df, n: "daily")
 
     charts = pm.generate_basic_charts(df, top_n=5)
     assert charts == {
         "pl_topn": "topn",
         "donut_tipo": "donut",
-        "dist_tipo": "dist",
         "pl_diario": "daily",
     }
 
@@ -258,7 +256,6 @@ def test_generate_basic_charts_missing_columns():
     assert charts == {
         "pl_topn": None,
         "donut_tipo": None,
-        "dist_tipo": None,
         "pl_diario": None,
     }
 
@@ -333,7 +330,6 @@ def test_render_basic_section_with_data(monkeypatch):
         lambda df, top_n: {
             "pl_topn": fig,
             "donut_tipo": fig,
-            "dist_tipo": fig,
             "pl_diario": fig,
         },
     )
@@ -347,7 +343,7 @@ def test_render_basic_section_with_data(monkeypatch):
     pm.render_basic_section(df, Controls(), None, favorites=FavoriteSymbols({}))
 
     mock_totals.assert_called_once()
-    assert plot_mock.call_count == 4
+    assert plot_mock.call_count == 3
 
 
 def test_render_advanced_analysis_no_columns(monkeypatch):
