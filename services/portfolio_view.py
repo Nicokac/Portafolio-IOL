@@ -666,7 +666,6 @@ class PortfolioViewSnapshot:
     historical_total: pd.DataFrame
     contribution_metrics: PortfolioContributionMetrics
     storage_id: str | None = None
-    comparison: "SnapshotComparison" | None = None
 
 
 @dataclass(frozen=True)
@@ -683,17 +682,6 @@ class IncrementalComputationResult:
     reused_blocks: tuple[str, ...]
     recomputed_blocks: tuple[str, ...]
     duration: float
-
-
-@dataclass(frozen=True)
-class SnapshotComparison:
-    """Resumen de la comparación contra un snapshot histórico."""
-
-    reference_id: str
-    reference_timestamp: float
-    deltas: Mapping[str, float]
-    reference_totals: Mapping[str, float]
-    metadata: Mapping[str, Any]
 
 
 class PortfolioViewModelService:
@@ -826,12 +814,11 @@ class PortfolioViewModelService:
         generated_at: float,
         contribution_metrics: PortfolioContributionMetrics,
         historical_total: pd.DataFrame,
-    ) -> tuple[str | None, SnapshotComparison | None, pd.DataFrame | None]:
+    ) -> tuple[str | None, pd.DataFrame | None]:
         backend = getattr(self._snapshot_storage, "save_snapshot", None)
         list_fn = getattr(self._snapshot_storage, "list_snapshots", None)
-        compare_fn = getattr(self._snapshot_storage, "compare_snapshots", None)
         if not callable(backend):
-            return None, None, None
+            return None, None
 
         payload = _serialize_snapshot_payload(
             df_view=df_view,
@@ -855,7 +842,7 @@ class PortfolioViewModelService:
                 status="error",
                 detail=str(exc),
             )
-            return None, None, None
+            return None, None
 
         storage_id = saved.get("id") if isinstance(saved, Mapping) else None
         self._record_snapshot_event(
@@ -863,28 +850,6 @@ class PortfolioViewModelService:
             status="saved",
             storage_id=str(storage_id) if storage_id else None,
         )
-        comparison: SnapshotComparison | None = None
-
-        if callable(compare_fn) and storage_id:
-            try:
-                history = list_fn(self._snapshot_kind, limit=2, order="desc") if callable(list_fn) else []
-                previous = next(
-                    (row for row in history if row.get("id") != storage_id),
-                    None,
-                )
-                if previous and previous.get("id"):
-                    cmp = compare_fn(storage_id, previous["id"])
-                    if isinstance(cmp, Mapping):
-                        comparison = SnapshotComparison(
-                            reference_id=str(previous.get("id")),
-                            reference_timestamp=float(previous.get("created_at") or 0.0),
-                            deltas=_as_mapping(cmp.get("delta")),
-                            reference_totals=_as_mapping(cmp.get("totals_b")),
-                            metadata=_as_mapping(cmp.get("metadata_b")),
-                        )
-            except Exception:
-                logger.exception("No se pudo calcular la comparación del snapshot")
-
         persisted_history: pd.DataFrame | None = None
         if callable(list_fn):
             try:
@@ -895,7 +860,7 @@ class PortfolioViewModelService:
             except Exception:
                 logger.exception("No se pudo construir la historia persistida del portafolio")
 
-        return storage_id, comparison, persisted_history
+        return storage_id, persisted_history
 
     def invalidate_positions(self, dataset_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambia el dataset base."""
@@ -1020,7 +985,7 @@ class PortfolioViewModelService:
         history_df = incremental.historical_total
 
         generated_ts = time.time()
-        storage_id, comparison, persisted_history = self._persist_snapshot(
+        storage_id, persisted_history = self._persist_snapshot(
             df_view=df_view,
             totals=totals,
             controls=controls,
@@ -1043,7 +1008,6 @@ class PortfolioViewModelService:
             historical_total=history_df,
             contribution_metrics=contribution_metrics,
             storage_id=storage_id,
-            comparison=comparison,
         )
 
         self._snapshot = snapshot

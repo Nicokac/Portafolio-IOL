@@ -25,7 +25,7 @@ def portfolio_service(monkeypatch) -> PortfolioViewModelService:
     monkeypatch.setattr(
         PortfolioViewModelService,
         "_persist_snapshot",
-        lambda self, **kwargs: (None, None, None),
+        lambda self, **kwargs: (None, None),
     )
     return PortfolioViewModelService()
 

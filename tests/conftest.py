@@ -37,8 +37,14 @@ class _DummySecrets(dict):
 
 
 class _DummySidebar:
-    def __init__(self) -> None:
+    def __init__(self, core: "_DummyStreamlitCore | None" = None) -> None:
+        self._core = core
         self.reset()
+
+    def _context(self, entry: dict[str, Any]) -> _DummyContext:
+        if self._core is None:
+            return _DummyContext(_streamlit_core, entry, host=self)
+        return _DummyContext(self._core, entry, host=self)
 
     def reset(self) -> None:
         self.headers: list[str] = []
@@ -67,6 +73,11 @@ class _DummySidebar:
         value = str(text)
         self.markdowns.append(value)
         self.elements.append({"type": "markdown", "text": value})
+
+    def container(self, *_, border: bool | None = None, **__) -> _DummyContext:
+        entry = {"type": "container", "border": bool(border), "children": []}
+        self.elements.append(entry)
+        return self._context(entry)
 
     def line_chart(
         self,
@@ -120,17 +131,31 @@ class _DummySidebar:
 
 
 class _DummyContext:
-    def __init__(self, core: "_DummyStreamlitCore", entry: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        core: "_DummyStreamlitCore",
+        entry: dict[str, Any],
+        *,
+        host: "_DummySidebar | None" = None,
+    ) -> None:
         self._core = core
         self._entry = entry
+        self._host = host
 
     def __enter__(self) -> "_DummyContext":
         self._core._context_stack.append(self._entry.setdefault("children", []))
+        if self._host is not None:
+            self._core._host_stack.append(self._host)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self._core._context_stack.pop()
+        if self._host is not None and self._core._host_stack:
+            self._core._host_stack.pop()
         return False
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._core, name)
 
 
 class _DummyColumn:
@@ -208,13 +233,14 @@ class _DummyColumnConfig:
 
 class _DummyStreamlitCore:
     def __init__(self) -> None:
-        self.sidebar = _DummySidebar()
+        self.sidebar = _DummySidebar(core=self)
         self.session_state: dict[str, Any] = {}
         self._secrets_obj: _DummySecrets | None = None
         self.secrets = _DummySecrets(core=self)
         self._calls: list[dict[str, Any]] = []
         self._all_records: list[dict[str, Any]] = []
         self._context_stack: list[list[dict[str, Any]]] = [self._calls]
+        self._host_stack: list[Any] = []
         self._button_returns: dict[str, bool] = {}
         self._checkbox_returns: dict[str, bool] = {}
         self._toggle_returns: dict[str, bool] = {}
@@ -223,6 +249,7 @@ class _DummyStreamlitCore:
 
     # Public helpers -----------------------------------------------------
     def reset(self) -> None:
+        self.sidebar._core = self
         self.sidebar.reset()
         self.session_state.clear()
         if isinstance(self.secrets, _DummySecrets):
@@ -233,6 +260,7 @@ class _DummyStreamlitCore:
         self._calls.clear()
         self._all_records.clear()
         self._context_stack = [self._calls]
+        self._host_stack.clear()
         self._button_returns.clear()
         self._checkbox_returns.clear()
         self._toggle_returns.clear()
@@ -267,6 +295,13 @@ class _DummyStreamlitCore:
         entry = {"type": kind, **payload, "children": []}
         self._context_stack[-1].append(entry)
         self._all_records.append(entry)
+        host = self._host_stack[-1] if self._host_stack else None
+        if isinstance(host, _DummySidebar) and kind == "markdown":
+            text = payload.get("text")
+            if text is not None:
+                value = str(text)
+                host.markdowns.append(value)
+                host.elements.append({"type": "markdown", "text": value})
         return entry
 
     # Streamlit API subset ----------------------------------------------

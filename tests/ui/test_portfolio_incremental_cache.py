@@ -118,7 +118,6 @@ def test_table_filters_only_rerender_table(monkeypatch):
         chart_calls.append((args, kwargs))
 
     monkeypatch.setattr(portfolio, "st", SimpleNamespace(empty=lambda: _Placeholder(), caption=lambda *_: None))
-    monkeypatch.setattr(portfolio, "_render_snapshot_comparison_controls", lambda *_: None)
     monkeypatch.setattr(portfolio, "render_summary_section", _summary_stub)
     monkeypatch.setattr(portfolio, "render_table_section", _table_stub)
     monkeypatch.setattr(portfolio, "render_charts_section", _charts_stub)
