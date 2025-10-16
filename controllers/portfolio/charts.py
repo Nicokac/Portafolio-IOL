@@ -15,7 +15,6 @@ from ui.charts import (
     plot_pl_daily_topn,
     plot_bubble_pl_vs_costo,
     plot_heat_pl_pct,
-    plot_portfolio_timeline,
     plot_contribution_heatmap,
 )
 
@@ -28,13 +27,6 @@ def _cached_basic_charts(df_view, top_n):
     """Cache generation of the basic charts to avoid recomputation."""
 
     return generate_basic_charts(df_view, top_n)
-
-
-@st.cache_data(show_spinner=False)
-def _cached_portfolio_timeline(historical_total):
-    """Cache the portfolio timeline chart as it is expensive to build."""
-
-    return plot_portfolio_timeline(historical_total)
 
 
 @st.cache_data(show_spinner=False)
@@ -134,7 +126,6 @@ def render_charts(
     ccl_rate,
     *,
     totals=None,
-    historical_total=None,
     contribution_metrics=None,
     snapshot=None,
 ):
@@ -190,44 +181,6 @@ def render_charts(
         )
     else:
         st.info("Aún no hay datos de P/L diario.")
-
-    st.subheader("Evolución histórica del portafolio")
-    timeline_rows = (
-        len(historical_total)
-        if isinstance(historical_total, pd.DataFrame)
-        else 0
-    )
-    timeline_ready_key = "portfolio_timeline_ready"
-    requires_lazy_timeline = timeline_rows > _HEAVY_DATA_THRESHOLD
-    timeline_ready = not requires_lazy_timeline or st.session_state.get(
-        timeline_ready_key, False
-    )
-    if requires_lazy_timeline and not timeline_ready and timeline_rows:
-        if st.button(
-            "Generar evolución histórica",
-            key="portfolio_generate_timeline",
-        ):
-            st.session_state[timeline_ready_key] = True
-            timeline_ready = True
-        else:
-            st.info(
-                "El gráfico se genera bajo demanda para evitar demoras cuando hay muchos datos."
-            )
-    if timeline_ready:
-        with st.spinner("Generando análisis avanzado…"):
-            timeline_fig = _cached_portfolio_timeline(historical_total)
-        if timeline_fig is not None:
-            st.plotly_chart(
-                timeline_fig,
-                width="stretch",
-                key="portfolio_timeline",
-                config=PLOTLY_CONFIG,
-            )
-            st.caption(
-                "Sigue cómo varían tus totales (valor, costo y P/L) con el tiempo para detectar tendencias y cambios relevantes."
-            )
-        else:
-            st.info("Aún no hay suficientes datos históricos del portafolio.")
 
     st.subheader("Contribución por símbolo y tipo")
     by_symbol = getattr(contribution_metrics, "by_symbol", None)
@@ -347,7 +300,6 @@ def render_basic_section(
         controls,
         ccl_rate,
         totals=totals,
-        historical_total=historical_total,
         contribution_metrics=contribution_metrics,
         snapshot=snapshot,
     )

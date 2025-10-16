@@ -72,27 +72,42 @@ _DATASET_STATS_FALLBACK: dict[str, Any] = {
     "last_key": None,
 }
 
-_TAB_METRICS_PATH = Path("performance_metrics_11.csv")
+_TAB_METRICS_PATH = Path("performance_metrics_14.csv")
 _TAB_METRICS_FIELDS = (
     "tab_name",
-    "render_start_s",
-    "render_end_s",
-    "render_duration_s",
+    "portfolio_tab_render_s",
+    "streamlit_overhead_ms",
+    "profile_block_total_ms",
 )
 
 
-def _append_tab_metric(tab_name: str, start_s: float, end_s: float) -> None:
+def _append_tab_metric(
+    tab_name: str,
+    duration_s: float,
+    *,
+    profile_ms: float | None = None,
+    overhead_ms: float | None = None,
+) -> None:
     """Append a telemetry row for ``tab_name`` to the CSV metrics file."""
 
     try:
-        duration = max(float(end_s) - float(start_s), 0.0)
+        safe_duration = max(float(duration_s), 0.0)
     except Exception:
-        duration = 0.0
+        safe_duration = 0.0
+
+    def _format_ms(value: float | None) -> str:
+        if value is None:
+            return ""
+        try:
+            return f"{max(float(value), 0.0):.2f}"
+        except Exception:
+            return ""
+
     payload = {
         "tab_name": str(tab_name),
-        "render_start_s": f"{float(start_s):.6f}",
-        "render_end_s": f"{float(end_s):.6f}",
-        "render_duration_s": f"{duration:.6f}",
+        "portfolio_tab_render_s": f"{safe_duration:.6f}",
+        "streamlit_overhead_ms": _format_ms(overhead_ms),
+        "profile_block_total_ms": _format_ms(profile_ms),
     }
     try:
         _TAB_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -743,7 +758,6 @@ def render_basic_tab(
                     controls,
                     ccl_rate,
                     totals=totals,
-                    historical_total=historical_total,
                     contribution_metrics=contributions,
                     snapshot=snapshot,
                 )
@@ -1140,13 +1154,13 @@ def render_portfolio_section(
             )
             source = "fresh" if not cache_entry.get("rendered") else "cache"
             latency_ms: float | None = cache_entry.get("latency_ms")
+            rendered = False
             if should_render:
                 if cache_entry.get("rendered"):
                     source = "hot"
                 body_placeholder = cache_entry["body_placeholder"]
                 body_placeholder.empty()
                 perf_start = time.perf_counter()
-                wall_start = time.time()
                 with body_placeholder.container():
                     if first_visit:
                         spinner_cm = st.spinner("Cargando pestaña...")
@@ -1168,9 +1182,8 @@ def render_portfolio_section(
                                 tab_cache=cache_entry,
                                 timings=timings,
                             )
-                wall_end = time.time()
                 latency_ms = (time.perf_counter() - perf_start) * 1000.0
-                _append_tab_metric(tab_slug, wall_start, wall_end)
+                rendered = True
                 cache_entry["signature"] = tab_signature
                 cache_entry["rendered"] = True
                 cache_entry["latency_ms"] = latency_ms
@@ -1186,6 +1199,25 @@ def render_portfolio_section(
                 source,
             )
             tab_loaded[tab_slug] = True
+
+        if rendered and latency_ms is not None:
+            profile_ms: float | None = None
+            overhead_ms: float | None = None
+            if isinstance(timings, dict):
+                stage_key = f"render_tab.{tab_slug}"
+                stage_value = timings.get(stage_key)
+                try:
+                    profile_ms = float(stage_value) if stage_value is not None else None
+                except (TypeError, ValueError):
+                    profile_ms = None
+            if profile_ms is not None:
+                overhead_ms = max(latency_ms - profile_ms, 0.0)
+            _append_tab_metric(
+                tab_slug,
+                latency_ms / 1000.0,
+                profile_ms=profile_ms,
+                overhead_ms=overhead_ms,
+            )
 
         return refresh_secs
 @contextmanager

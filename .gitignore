@@ -36,6 +36,7 @@ data/
 !performance_metrics_10.csv
 !performance_metrics_11.csv
 !performance_metrics_13.csv
+!performance_metrics_14.csv
 *.parquet
 *.xlsx
 
