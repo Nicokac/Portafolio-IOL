@@ -107,6 +107,10 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     line_charts = streamlit_stub.get_records("line_chart")
     assert len(line_charts) >= 1
 
+    metric_records = streamlit_stub.get_records("metric")
+    assert metric_records
+    assert any(record["label"] == "Duración última (s)" for record in metric_records)
+
     percentiles_table = None
     for record in dataframes:
         df = record["data"]

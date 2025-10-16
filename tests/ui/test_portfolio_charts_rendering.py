@@ -42,7 +42,7 @@ class _FakeStreamlit:
         self.captions: list[str] = []
         self.plot_calls: list[dict[str, object]] = []
         self.selectboxes: list[dict[str, object]] = []
-        self.metrics: list[tuple[str, object, object | None]] = []
+        self.metrics: list[tuple[str, object, object | None, dict[str, object]]] = []
         self.text_inputs: list[dict[str, object]] = []
 
     def subheader(self, text: str) -> None:
@@ -69,8 +69,14 @@ class _FakeStreamlit:
     def dataframe(self, data, **_: object) -> None:  # noqa: ANN001 - mimic streamlit signature
         self.table = data
 
-    def metric(self, label: str, value: object, delta: object | None = None) -> None:
-        self.metrics.append((label, value, delta))
+    def metric(
+        self,
+        label: str,
+        value: object,
+        delta: object | None = None,
+        **kwargs: object,
+    ) -> None:
+        self.metrics.append((label, value, delta, kwargs))
 
     def columns(self, spec):  # noqa: ANN001 - mimic streamlit signature
         if isinstance(spec, int):

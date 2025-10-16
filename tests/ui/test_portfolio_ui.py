@@ -128,7 +128,7 @@ class FakeStreamlit:
         self.plot_calls: list[dict[str, Any]] = []
         self.line_charts: list[pd.DataFrame] = []
         self.bar_charts: list[dict[str, Any]] = []
-        self.metrics: list[tuple[Any, Any, Any]] = []
+        self.metrics: list[tuple[Any, Any, Any, dict[str, Any]]] = []
         self.markdowns: list[dict[str, Any]] = []
         self.captions: list[str] = []
         self.checkbox_calls: list[dict[str, Any]] = []
@@ -300,8 +300,14 @@ class FakeStreamlit:
     def write(self, *_: Any, **__: Any) -> None:
         return None
 
-    def metric(self, label: str, value: Any, delta: Any | None = None) -> None:
-        self.metrics.append((label, value, delta))
+    def metric(
+        self,
+        label: str,
+        value: Any,
+        delta: Any | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self.metrics.append((label, value, delta, kwargs))
 
     def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
         self.markdowns.append({"body": body, "unsafe": unsafe_allow_html})

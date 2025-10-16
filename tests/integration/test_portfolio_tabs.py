@@ -75,7 +75,7 @@ class _FakeStreamlit:
         self.captions: list[str] = []
         self.plot_calls: list[dict[str, object]] = []
         self.line_charts: list[pd.DataFrame] = []
-        self.metrics: list[tuple[str, object, object | None]] = []
+        self.metrics: list[tuple[str, object, object | None, object | None, dict[str, object]]] = []
         self.spinner_messages: list[str] = []
         self.text_inputs: list[dict[str, object]] = []
         self.bar_charts: list[pd.DataFrame] = []
@@ -190,8 +190,9 @@ class _FakeStreamlit:
         delta: object | None = None,
         *,
         help: object | None = None,
+        **kwargs: object,
     ) -> None:
-        self.metrics.append((label, value, delta, help))
+        self.metrics.append((label, value, delta, help, kwargs))
 
     def text_input(self, label: str, value: str = "", **_: object) -> str:
         self.text_inputs.append({"label": label, "value": value})

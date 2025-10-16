@@ -89,6 +89,37 @@ def _build_alert_rows(df: pd.DataFrame) -> pd.DataFrame:
     return alerts
 
 
+def _render_sparkline_metric(
+    column,
+    label: str,
+    series: pd.Series,
+    *,
+    unit: str = "",
+    decimals: int = 2,
+    chart_type: str = "line",
+    help_text: str | None = None,
+) -> None:
+    cleaned = pd.to_numeric(series, errors="coerce").dropna()
+    if cleaned.empty:
+        return
+    latest = float(cleaned.iloc[-1])
+    previous = float(cleaned.iloc[-2]) if len(cleaned) > 1 else None
+    formatted_value = f"{latest:.{decimals}f}{unit}"
+    delta_text: str | None = None
+    if previous is not None:
+        delta_value = latest - previous
+        delta_text = f"{delta_value:+.{decimals}f}{unit}"
+    column.metric(
+        label,
+        formatted_value,
+        delta=delta_text,
+        help=help_text,
+        border=True,
+        chart_data=cleaned.reset_index(drop=True),
+        chart_type=chart_type,
+    )
+
+
 def _prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -185,6 +216,35 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
 
     timeline = df.dropna(subset=["timestamp"]).sort_values("timestamp")
     if not timeline.empty:
+        recent = timeline.tail(20)
+        metric_cols = st.columns(3)
+        _render_sparkline_metric(
+            metric_cols[0],
+            "Duración última (s)",
+            recent["duration_s"],
+            unit="s",
+            decimals=2,
+            chart_type="area",
+            help_text="Tiempo del último bloque instrumentado.",
+        )
+        _render_sparkline_metric(
+            metric_cols[1],
+            "CPU última (%)",
+            recent["cpu_percent"],
+            unit="%",
+            decimals=1,
+            chart_type="line",
+            help_text="Uso de CPU reportado por la medición más reciente.",
+        )
+        _render_sparkline_metric(
+            metric_cols[2],
+            "RAM última (%)",
+            recent["mem_percent"],
+            unit="%",
+            decimals=1,
+            chart_type="line",
+            help_text="Uso de RAM reportado por la medición más reciente.",
+        )
         series = timeline.set_index("timestamp")["duration_s"].rename("Duración (s)")
         st.line_chart(series)
         cpu_mem = timeline.set_index("timestamp")[

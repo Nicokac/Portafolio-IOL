@@ -285,6 +285,24 @@ class _DummyStreamlitCore:
     def plotly_chart(self, fig: object, **kwargs: Any) -> None:
         self._record("plotly_chart", fig=fig, kwargs=kwargs)
 
+    def metric(
+        self,
+        label: object,
+        value: object,
+        delta: object | None = None,
+        *,
+        help: object | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._record(
+            "metric",
+            label=str(label),
+            value=value,
+            delta=delta,
+            help=help,
+            kwargs=dict(kwargs),
+        )
+
     def line_chart(
         self,
         data: Any,
@@ -641,6 +659,7 @@ for _name in (
     "subheader",
     "caption",
     "markdown",
+    "metric",
     "write",
     "info",
     "warning",
