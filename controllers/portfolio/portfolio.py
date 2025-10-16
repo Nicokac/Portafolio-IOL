@@ -294,71 +294,6 @@ def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[s
     return updated
 
 
-def _render_snapshot_comparison_controls(viewmodel) -> None:
-    snapshot_id = getattr(viewmodel, "snapshot_id", None)
-    catalog = getattr(viewmodel, "snapshot_catalog", {}) or {}
-    if not snapshot_id or not isinstance(catalog, Mapping):
-        return
-
-    options = list(catalog.get("portfolio", ()))
-    options = [opt for opt in options if getattr(opt, "id", None) and opt.id != snapshot_id]
-    if not options:
-        return
-
-    default_index = 0
-    baseline_id = getattr(getattr(viewmodel, "comparison", None), "reference_id", None)
-    if baseline_id:
-        for idx, opt in enumerate(options):
-            if opt.id == baseline_id:
-                default_index = idx
-                break
-
-    labels = [getattr(opt, "label", str(idx)) for idx, opt in enumerate(options)]
-    selected_idx = st.selectbox(
-        "Comparar portafolio con",
-        options=range(len(options)),
-        format_func=lambda i: labels[i],
-        index=min(default_index, len(options) - 1),
-        key="portfolio_snapshot_compare",
-    )
-
-    try:
-        selected = options[selected_idx]
-    except (IndexError, TypeError):
-        return
-
-    comparison = snapshot_service.compare_snapshots(snapshot_id, getattr(selected, "id", None))
-    if not comparison:
-        st.info("No hay datos comparativos disponibles para esta selección.")
-        return
-
-    _render_snapshot_metrics(comparison, getattr(selected, "label", "Snapshot"))
-
-
-def _render_snapshot_metrics(comparison: Mapping[str, Any], label: str) -> None:
-    totals_a = comparison.get("totals_a") if isinstance(comparison, Mapping) else {}
-    totals_b = comparison.get("totals_b") if isinstance(comparison, Mapping) else {}
-    delta = comparison.get("delta") if isinstance(comparison, Mapping) else {}
-
-    st.caption(f"Evolución frente a {label}")
-    metrics = (
-        ("Valorizado actual", "total_value"),
-        ("Costo actual", "total_cost"),
-        ("P/L actual", "total_pl"),
-    )
-    cols = st.columns(len(metrics))
-    for col, (title, key) in zip(cols, metrics):
-        current_val = _as_float_or_none((totals_a or {}).get(key))
-        baseline_val = _as_float_or_none((totals_b or {}).get(key))
-        delta_val = _as_float_or_none((delta or {}).get(key))
-        if current_val is None:
-            continue
-        delta_text = None if delta_val is None else format_money(delta_val)
-        col.metric(title, format_money(current_val), delta=delta_text)
-        if baseline_val is not None:
-            col.caption(f"Referencia: {format_money(baseline_val)}")
-
-
 def _hash_dataframe(df: Any) -> str:
     """Return a stable hash for the provided DataFrame-like object."""
 
@@ -730,7 +665,6 @@ def render_basic_tab(
             placeholder = summary_entry["placeholder"]
             placeholder.empty()
             with placeholder.container():
-                _render_snapshot_comparison_controls(viewmodel)
                 has_positions = bool(
                     render_summary_section(
                         df_view,

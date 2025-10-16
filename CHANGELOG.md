@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+### Removed
+- `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
+
 ## 🧩 Portafolio IOL v0.6.10 — Optimización de rendimiento y diagnóstico avanzado (Octubre 2025)
 
 ### 🧠 Rendimiento y Telemetría

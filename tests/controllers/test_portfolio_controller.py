@@ -98,7 +98,7 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
     snapshot = object()
     favorites = SimpleNamespace()
 
-    calls: dict[str, int] = {"snapshot": 0, "summary": 0, "table": 0, "charts": 0}
+    calls: dict[str, int] = {"summary": 0, "table": 0, "charts": 0}
 
     class _Placeholder:
         def empty(self):
@@ -106,10 +106,6 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
 
         def container(self):
             return nullcontext()
-
-    def fake_snapshot(vm):
-        calls["snapshot"] += 1
-        assert vm is viewmodel
 
     def fake_summary(*args, **kwargs):
         calls["summary"] += 1
@@ -124,8 +120,6 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(portfolio, "st", SimpleNamespace(empty=lambda: _Placeholder(), caption=lambda *_: None, spinner=nullcontext))
     monkeypatch.setattr(portfolio, "_ensure_component_store", lambda cache: {})
     monkeypatch.setattr(portfolio, "_ensure_component_entry", lambda store, name: {"placeholder": _Placeholder()})
-
-    monkeypatch.setattr(portfolio, "_render_snapshot_comparison_controls", fake_snapshot)
     monkeypatch.setattr(portfolio, "render_summary_section", fake_summary)
     monkeypatch.setattr(portfolio, "render_table_section", fake_table)
     monkeypatch.setattr(portfolio, "render_charts_section", fake_charts)
@@ -133,7 +127,7 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
 
     portfolio.render_basic_tab(viewmodel, favorites, snapshot)
 
-    assert calls == {"snapshot": 1, "summary": 1, "table": 1, "charts": 1}
+    assert calls == {"summary": 1, "table": 1, "charts": 1}
 
 
 def test_render_notifications_panel_renders_badges(monkeypatch: pytest.MonkeyPatch) -> None:

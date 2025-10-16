@@ -13,7 +13,6 @@ from domain.models import Controls
 from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
-    SnapshotComparison,
 )
 from services import snapshots as snapshot_service
 
@@ -52,7 +51,6 @@ class PortfolioViewModel:
     historical_total: pd.DataFrame
     contributions: PortfolioContributionMetrics
     snapshot_id: str | None = None
-    comparison: SnapshotComparison | None = None
     snapshot_catalog: Mapping[str, tuple["SnapshotSummary", ...]] = field(default_factory=dict)
 
 
@@ -94,7 +92,6 @@ def build_portfolio_viewmodel(
         )
         contributions = PortfolioContributionMetrics.empty()
         snapshot_id = None
-        comparison = None
     else:
         df_view = snapshot.df_view if isinstance(snapshot.df_view, pd.DataFrame) else pd.DataFrame()
         totals = snapshot.totals if isinstance(snapshot.totals, PortfolioTotals) else calculate_totals(df_view)
@@ -109,7 +106,6 @@ def build_portfolio_viewmodel(
             else PortfolioContributionMetrics.empty()
         )
         snapshot_id = getattr(snapshot, "storage_id", None)
-        comparison = snapshot.comparison if isinstance(snapshot.comparison, SnapshotComparison) else None
 
     ccl_rate = None
     if fx_rates:
@@ -131,7 +127,6 @@ def build_portfolio_viewmodel(
         historical_total=historical_total,
         contributions=contributions,
         snapshot_id=snapshot_id,
-        comparison=comparison,
         snapshot_catalog=snapshot_catalog,
     )
 
