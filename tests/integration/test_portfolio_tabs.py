@@ -437,7 +437,7 @@ def _run_for_tab(
 def test_portfolio_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = _run_for_tab(0, monkeypatch)
     keys = {call["kwargs"].get("key") for call in fake_st.plot_calls}
-    assert {"pl_topn", "donut_tipo", "dist_tipo", "pl_diario"}.issubset(keys)
+    assert {"pl_topn", "donut_tipo", "pl_diario"}.issubset(keys)
 
 
 def test_advanced_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:

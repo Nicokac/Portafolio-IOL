@@ -12,7 +12,6 @@ from ui.charts import (
     _apply_layout,
     plot_pl_topn,
     plot_donut_tipo,
-    plot_dist_por_tipo,
     plot_pl_daily_topn,
     plot_bubble_pl_vs_costo,
     plot_heat_pl_pct,
@@ -50,7 +49,6 @@ def generate_basic_charts(df_view, top_n):
     return {
         "pl_topn": plot_pl_topn(df_view, n=top_n),
         "donut_tipo": plot_donut_tipo(df_view),
-        "dist_tipo": plot_dist_por_tipo(df_view),
         "pl_diario": plot_pl_daily_topn(df_view, n=top_n),
     }
 
@@ -177,21 +175,6 @@ def render_charts(
             )
         else:
             st.info("No hay datos para el donut por tipo.")
-
-    st.subheader("Distribución por tipo (Valorizado)")
-    fig = charts["dist_tipo"]
-    if fig is not None:
-        st.plotly_chart(
-            fig,
-            width="stretch",
-            key="dist_tipo",
-            config=PLOTLY_CONFIG,
-        )
-        st.caption(
-            "Compara cuánto dinero tenés en cada categoría de activos. Ayuda a detectar concentraciones."
-        )
-    else:
-        st.info("No hay datos para la distribución por tipo.")
 
     st.subheader("P/L diario por símbolo (Top N)")
     fig = charts["pl_diario"]

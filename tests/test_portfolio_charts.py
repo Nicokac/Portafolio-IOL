@@ -42,7 +42,7 @@ def test_generate_basic_charts_produces_figures():
 
     charts = generate_basic_charts(df, top_n=2)
 
-    assert set(charts.keys()) == {"pl_topn", "donut_tipo", "dist_tipo", "pl_diario"}
+    assert set(charts.keys()) == {"pl_topn", "donut_tipo", "pl_diario"}
     for name, fig in charts.items():
         assert isinstance(fig, go.Figure), f"Expected {name} to be a Plotly figure"
 
