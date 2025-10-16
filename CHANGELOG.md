@@ -15,6 +15,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## 🧩 Portafolio IOL v0.6.9 — Simplificación estructural
+
+**Fecha:** 15 de octubre de 2025  
+**Tipo:** Refactor / Cleanup
+
+### 🚀 Cambios principales
+- Eliminado el módulo **“Empresas con oportunidad”**, incluyendo sus controladores, servicios y pestañas de UI.  
+- Simplificado el layout principal de Streamlit: ahora solo se muestran **Portafolio**, **Recomendaciones** y **Monitoreo**.  
+- Removidas dependencias obsoletas y referencias en `services/health.py`, `ui/health_sidebar.py` y `controllers/opportunities.py`.  
+- Eliminados más de **700 líneas de código** y **10 archivos de prueba** relacionados con el screener de oportunidades.  
+- Reducción del tiempo de arranque y carga de dependencias en modo Streamlit-only.  
+
+### 🧪 Tests
+```bash
+pytest tests/test_health_sidebar_rendering.py
+pytest tests/ui/test_layout_components.py
+pytest tests/ui/test_login_startup_subsecond.py
+pytest tests/integration/test_snapshot_export_flow.py
+```
+
+### 🗂️ Archivos modificados
+- app.py
+- ui/health_sidebar.py
+- controllers/__init__.py
+- ui/tabs/recommendations/__init__.py
+- services/health.py
+- shared/config.py
+- pyproject.toml
+- shared/version.py
+
+### 🗑️ Archivos eliminados
+- application/screener/*
+- ui/tabs/opportunities.py
+- controllers/opportunities.py
+- tests/application/test_opportunities_*.py
+- tests/controllers/test_opportunities_*.py
+- tests/ui/test_opportunities_ui.py
+
 ## [v0.6.8] — Streamlit 1.50 + Predictive optimization (2025-10-17)
 ### Added
 - Compatibilidad con Streamlit 1.50 adoptando `st.metric` con `chart_data` para renderizar sparklines de CPU, RAM y duración en tiempo real.
