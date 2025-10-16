@@ -3,6 +3,7 @@ quotes_refresh_total_s,6.94,Duración total de quotes_refresh según telemetría
 avg_batch_time_ms,715.6,Promedio de duración por sublote (ms)
 max_batch_time_ms,1320.0,Sub-lote más lento observado (ms)
 quotes_hit_ratio,82.50,Porcentaje de respuestas fresh sobre el total
+streamlit_overhead_ms,1800.00,Diferencia estimada entre ui_total_load_ms y la lógica instrumentada
 stale_ratio,13.33,Porcentaje de respuestas servidas en modo stale
 portfolio_view_render_s,21.38,Tiempo total invertido en portfolio_view.render (s)
 portfolio_cache_hit_ratio,55.56,Porcentaje de hits del memoizador del portafolio
