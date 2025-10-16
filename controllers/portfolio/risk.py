@@ -1113,7 +1113,13 @@ def render_risk_analysis(
 
                 with st.expander("Optimización de portafolio (Markowitz)"):
                     opt_df = pd.DataFrame({"ticker": opt_w.index, "weight": opt_w.values})
-                    st.bar_chart(opt_df, x="ticker", y="weight")
+                    st.bar_chart(
+                        opt_df,
+                        x="ticker",
+                        y="weight",
+                        sort="descending",
+                        use_container_width=True,
+                    )
                     st.caption(
                         "Barras con la proporción que el modelo recomienda invertir en cada activo para equilibrar riesgo y retorno."
                     )
