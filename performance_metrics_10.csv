@@ -1,0 +1,4 @@
+metric,value,notes
+avg_batch_time_ms,596.3,Promedio estimado tras aplicar sublotes adaptativos
+adaptive_batch_size,5,Tamaño objetivo aplicado luego del ajuste por latencia
+quotes_refresh_total_s,5.78,Duración total proyectada con el nuevo esquema de sublotes
