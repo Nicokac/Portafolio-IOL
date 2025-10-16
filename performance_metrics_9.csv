@@ -1,0 +1,6 @@
+metric,value,notes
+quotes_refresh_total_s,6.94,Duración total de quotes_refresh según telemetría
+avg_batch_time_ms,715.6,Promedio de duración por sublote (ms)
+max_batch_time_ms,1320.0,Sub-lote más lento observado (ms)
+quotes_hit_ratio,82.50,Porcentaje de respuestas fresh sobre el total
+stale_ratio,13.33,Porcentaje de respuestas servidas en modo stale
