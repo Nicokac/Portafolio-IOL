@@ -52,20 +52,27 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         self._released_early = False
 
     # ------------------------------------------------------------------
-    # Context manager protocol
+    # Internal acquisition helpers
     # ------------------------------------------------------------------
-    def __enter__(self) -> "AdaptiveCacheLock":
+    def _acquire(self, *, timeout: float | None) -> bool:
         thread_id = threading.get_ident()
         if self._owner == thread_id:
-            # Re-entrant acquisition from the same thread; increase depth only.
             self._depth += 1
-            return self
+            return True
 
         caller_module = _resolve_caller_module()
         current_thread = threading.current_thread()
         thread_name = getattr(current_thread, "name", None)
         self._wait_started = time.monotonic()
-        self._lock.acquire()
+
+        if timeout is None:
+            acquired = self._lock.acquire()
+        else:
+            acquired = self._lock.acquire(timeout=max(timeout, 0.0))
+        if not acquired:
+            self._wait_started = None
+            return False
+
         acquired_at = time.monotonic()
         self._owner = thread_id
         self._owner_name = thread_name
@@ -97,6 +104,13 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
                     reason="wait",
                 )
 
+        return True
+
+    # ------------------------------------------------------------------
+    # Context manager protocol
+    # ------------------------------------------------------------------
+    def __enter__(self) -> "AdaptiveCacheLock":
+        self._acquire(timeout=None)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -156,6 +170,20 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
             reason="hold",
         )
         return None
+
+    # ------------------------------------------------------------------
+    # Public helpers
+    # ------------------------------------------------------------------
+    def acquire_with_timeout(self, timeout: float) -> bool:
+        """Attempt to acquire the lock within ``timeout`` seconds."""
+
+        timeout = max(float(timeout), 0.0)
+        return self._acquire(timeout=timeout)
+
+    def release(self) -> None:
+        """Explicitly release the lock when acquired via :meth:`acquire_with_timeout`."""
+
+        self.__exit__(None, None, None)
 
     # ------------------------------------------------------------------
     # Helpers

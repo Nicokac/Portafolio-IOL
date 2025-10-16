@@ -1,0 +1,3 @@
+metric,value,notes
+recommendations.predictive_runtime_s,0.2278,"Duración total del procesamiento adaptativo"
+recommendations.batch_success_rate_pct,100.00,"Porcentaje de sub-batches procesados con éxito"
