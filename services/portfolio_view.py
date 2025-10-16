@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import threading
 import time
+from collections import Counter, deque
 from dataclasses import dataclass, asdict
-from typing import Any, Dict, Mapping, Sequence
+from typing import Any, Deque, Dict, Mapping, Sequence
 
 import numpy as np
 
@@ -23,6 +25,149 @@ from application.risk_service import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PortfolioCacheMetricsSnapshot:
+    """Resumen inmutable del estado del memoizador del portafolio."""
+
+    portfolio_view_render_s: float
+    portfolio_cache_hit_ratio: float
+    portfolio_cache_miss_count: int
+    hits: int
+    misses: int
+    render_invocations: int
+    fingerprint_invalidations: Dict[str, int]
+    cache_miss_reasons: Dict[str, int]
+    recent_misses: tuple[Dict[str, Any], ...]
+    recent_invalidations: tuple[Dict[str, Any], ...]
+
+    def total_invalidations(self) -> int:
+        return sum(self.fingerprint_invalidations.values())
+
+    def unnecessary_misses(self) -> int:
+        return int(self.cache_miss_reasons.get("unchanged_fingerprint", 0) or 0)
+
+
+class _PortfolioCacheTelemetry:
+    """Recolecta métricas de uso del memoizador del portafolio."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._recent_misses: Deque[Dict[str, Any]] = deque(maxlen=25)
+        self._recent_invalidations: Deque[Dict[str, Any]] = deque(maxlen=25)
+        self._reset_locked()
+
+    def _reset_locked(self) -> None:
+        self._render_total = 0.0
+        self._render_invocations = 0
+        self._hits = 0
+        self._misses = 0
+        self._invalidations: Counter[str] = Counter()
+        self._miss_reasons: Counter[str] = Counter()
+        self._recent_misses.clear()
+        self._recent_invalidations.clear()
+
+    def reset(self) -> None:
+        with self._lock:
+            self._reset_locked()
+
+    @staticmethod
+    def _categorize_reason(dataset_changed: bool, filters_changed: bool) -> str:
+        if dataset_changed and filters_changed:
+            return "dataset_and_filters"
+        if dataset_changed:
+            return "dataset_changed"
+        if filters_changed:
+            return "filters_changed"
+        return "unchanged_fingerprint"
+
+    def record_hit(
+        self,
+        *,
+        elapsed_s: float,
+        dataset_changed: bool,
+        filters_changed: bool,
+    ) -> None:
+        del dataset_changed, filters_changed
+        with self._lock:
+            self._render_total += max(float(elapsed_s), 0.0)
+            self._render_invocations += 1
+            self._hits += 1
+
+    def record_miss(
+        self,
+        *,
+        elapsed_s: float,
+        dataset_changed: bool,
+        filters_changed: bool,
+        apply_elapsed: float,
+        totals_elapsed: float,
+    ) -> None:
+        reason = self._categorize_reason(dataset_changed, filters_changed)
+        event = {
+            "ts": time.time(),
+            "reason": reason,
+            "dataset_changed": bool(dataset_changed),
+            "filters_changed": bool(filters_changed),
+            "apply_elapsed": max(float(apply_elapsed), 0.0),
+            "totals_elapsed": max(float(totals_elapsed), 0.0),
+            "render_elapsed": max(float(elapsed_s), 0.0),
+        }
+        with self._lock:
+            self._render_total += max(float(elapsed_s), 0.0)
+            self._render_invocations += 1
+            self._misses += 1
+            self._miss_reasons[reason] += 1
+            self._recent_misses.append(event)
+
+    def record_invalidation(self, reason: str, *, detail: str | None = None) -> None:
+        reason_key = str(reason or "unknown").strip() or "unknown"
+        detail_text = None
+        if detail is not None:
+            detail_text = str(detail).strip()
+            if len(detail_text) > 120:
+                detail_text = detail_text[:117] + "..."
+        event = {"ts": time.time(), "reason": reason_key}
+        if detail_text:
+            event["detail"] = detail_text
+        with self._lock:
+            self._invalidations[reason_key] += 1
+            self._recent_invalidations.append(event)
+
+    def snapshot(self) -> PortfolioCacheMetricsSnapshot:
+        with self._lock:
+            total = self._hits + self._misses
+            hit_ratio = (self._hits / total) * 100.0 if total else 0.0
+            return PortfolioCacheMetricsSnapshot(
+                portfolio_view_render_s=self._render_total,
+                portfolio_cache_hit_ratio=hit_ratio,
+                portfolio_cache_miss_count=self._misses,
+                hits=self._hits,
+                misses=self._misses,
+                render_invocations=self._render_invocations,
+                fingerprint_invalidations=dict(self._invalidations),
+                cache_miss_reasons=dict(self._miss_reasons),
+                recent_misses=tuple(dict(item) for item in self._recent_misses),
+                recent_invalidations=tuple(
+                    dict(item) for item in self._recent_invalidations
+                ),
+            )
+
+
+_PORTFOLIO_CACHE_TELEMETRY = _PortfolioCacheTelemetry()
+
+
+def reset_portfolio_cache_metrics() -> None:
+    """Reinicia las métricas recopiladas del memoizador del portafolio."""
+
+    _PORTFOLIO_CACHE_TELEMETRY.reset()
+
+
+def get_portfolio_cache_metrics_snapshot() -> PortfolioCacheMetricsSnapshot:
+    """Devuelve un snapshot del estado actual del memoizador."""
+
+    return _PORTFOLIO_CACHE_TELEMETRY.snapshot()
 
 _SYMBOL_RISK_CACHE: dict[tuple[str, str, str], tuple[dict[str, Any], str, float]] = {}
 _SYMBOL_RISK_CACHE_MAX = 512
@@ -442,6 +587,9 @@ class PortfolioViewModelService:
         self._dataset_key = dataset_key
         self._filters_key = None
         self._history_records = []
+        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
+            "dataset_changed", detail=dataset_key
+        )
         logger.info(
             "portfolio_view cache invalidated (positions) dataset=%s", dataset_key
         )
@@ -451,6 +599,9 @@ class PortfolioViewModelService:
 
         self._snapshot = None
         self._filters_key = filters_key
+        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
+            "filters_changed", detail=filters_key
+        )
         logger.info(
             "portfolio_view cache invalidated (filters) filters=%s", filters_key
         )
@@ -463,6 +614,8 @@ class PortfolioViewModelService:
 
         dataset_changed = dataset_key != self._dataset_key
         filters_changed = filters_key != self._filters_key
+
+        render_start = time.perf_counter()
 
         if dataset_changed:
             self.invalidate_positions(dataset_key)
@@ -486,6 +639,12 @@ class PortfolioViewModelService:
                 filters_changed,
                 snapshot.apply_elapsed,
                 snapshot.totals_elapsed,
+            )
+            elapsed = time.perf_counter() - render_start
+            _PORTFOLIO_CACHE_TELEMETRY.record_hit(
+                elapsed_s=elapsed,
+                dataset_changed=dataset_changed,
+                filters_changed=filters_changed,
             )
             return snapshot
 
@@ -537,6 +696,14 @@ class PortfolioViewModelService:
             filters_changed,
             apply_elapsed,
             totals_elapsed,
+        )
+        total_elapsed = time.perf_counter() - render_start
+        _PORTFOLIO_CACHE_TELEMETRY.record_miss(
+            elapsed_s=total_elapsed,
+            dataset_changed=dataset_changed,
+            filters_changed=filters_changed,
+            apply_elapsed=apply_elapsed,
+            totals_elapsed=totals_elapsed,
         )
         return snapshot
 
