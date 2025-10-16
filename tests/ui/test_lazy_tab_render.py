@@ -7,7 +7,7 @@ from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfoli
 
 
 def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
-    metrics_path = Path("performance_metrics_11.csv")
+    metrics_path = Path("performance_metrics_14.csv")
     if metrics_path.exists():
         metrics_path.unlink()
 
@@ -60,7 +60,10 @@ def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
         rows = list(csv.DictReader(handle))
 
     assert rows and rows[0]["tab_name"] == "portafolio"
-    assert float(rows[0]["render_duration_s"]) >= 0.0
+    assert float(rows[0]["portfolio_tab_render_s"]) >= 0.0
+    assert rows[0]["profile_block_total_ms"] == "" or float(
+        rows[0]["profile_block_total_ms"]
+    ) >= 0.0
 
     try:
         metrics_path.unlink()

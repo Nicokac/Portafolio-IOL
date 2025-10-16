@@ -985,7 +985,7 @@ def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPat
     assert "Período de métricas" in labels
     assert "Métrica de riesgo" in labels
     assert "Benchmark" in labels
-def test_render_basic_section_renders_timeline_and_heatmap(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_basic_section_renders_heatmap_without_timeline(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
 
     import controllers.portfolio.charts as charts_mod
@@ -1064,7 +1064,8 @@ def test_render_basic_section_renders_timeline_and_heatmap(monkeypatch: pytest.M
     )
 
     plotted_keys = {call["kwargs"].get("key") for call in fake_st.plot_calls}
-    assert {"portfolio_timeline", "portfolio_contribution_heatmap", "portfolio_contribution_table"}.issubset(
+    assert "portfolio_timeline" not in plotted_keys
+    assert {"portfolio_contribution_heatmap", "portfolio_contribution_table"}.issubset(
         plotted_keys
     )
     assert not any("históricos" in msg for msg in fake_st.warnings)

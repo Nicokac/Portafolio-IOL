@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.12 — Render del portafolio sin histórico pesado (Noviembre 2025)
+
+### 🚀 Cambios principales
+- Eliminado el gráfico "Evolución histórica del portafolio" y la lógica asociada para priorizar métricas en vivo.
+- Simplificada la sección principal del portafolio dejando solo resumen, métricas consolidadas y P/L diario.
+- Actualizada la telemetría a `performance_metrics_14.csv` con campos `portfolio_tab_render_s`, `streamlit_overhead_ms` y `profile_block_total_ms`.
+
+### 🛠 Internals
+- Ajustado el caché incremental de pestañas para almacenar la nueva métrica de render sin depender de `portfolio_history`.
+- Se generó el encabezado inicial de `performance_metrics_14.csv` para habilitar la nueva telemetría.
+
+### 🧪 Tests
+```bash
+pytest -q tests/ui/test_portfolio_ui.py
+pytest -q tests/controllers/test_portfolio_filters.py
+pytest -q tests/ui/test_portfolio_charts_rendering.py  # opcional, marcada como lenta
+```
+
 ## 🧩 Portafolio IOL v0.6.10 — Optimización de rendimiento y diagnóstico avanzado (Octubre 2025)
 
 ### 🧠 Rendimiento y Telemetría
