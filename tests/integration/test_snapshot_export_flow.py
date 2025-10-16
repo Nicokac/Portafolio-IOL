@@ -181,16 +181,6 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
             "detail": "missing series",
         },
     )
-    health_service.record_opportunities_report(
-        mode="hit",
-        elapsed_ms=180.0,
-        cached_elapsed_ms=240.0,
-        universe_initial=120,
-        universe_final=60,
-        discard_ratio=0.5,
-        highlighted_sectors=["Energy", "Utilities"],
-        counts_by_origin={"nyse": 30, "bcs": 30},
-    )
     health_service.record_portfolio_load(123.0, source="api", detail="fresh")
     health_service.record_quote_load(345.0, source="fallback", count=9)
 
@@ -203,9 +193,6 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     overall = macro.get("overall", {})
     assert overall.get("fallback_count") == 1
     assert "latency_buckets" in overall
-
-    opportunities_stats = metrics.get("opportunities_stats") or {}
-    assert opportunities_stats.get("hit_ratio") == pytest.approx(1.0)
 
     portfolio_stats = metrics.get("portfolio", {}).get("stats", {})
     assert portfolio_stats.get("invocations") == 1

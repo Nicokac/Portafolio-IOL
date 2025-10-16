@@ -156,14 +156,6 @@ Si la interfaz muestra desalineaciones o badges incorrectos tras actualizar, for
     2. Ajusta el preset para diversificar pesos antes de exportar o recalcula la optimización desde la UI.
     3. En CI, ejecuta `pytest tests/integration/` completo para regenerar snapshots con datos válidos y revisar el health sidebar en busca del estado de validación Markowitz.
 
-- **El screening devuelve menos de 10 resultados o la tabla queda vacía.**
-  - **Síntomas:** La telemetría del barrido muestra `universe final < 10` con severidad `⚠️`.
-  - **Diagnóstico rápido:** Revisa los filtros activos, presets aplicados y disponibilidad de datos en Yahoo/stub.
-  - **Resolución:**
-    1. Relaja temporalmente el `score` mínimo (`MIN_SCORE_THRESHOLD`) o reduce filtros técnicos exigentes.
-    2. Valida que las variables de entorno `OPPORTUNITIES_TARGET_MARKETS` y presets personalizados no estén recortando en exceso el universo.
-    3. Si los datos provienen del stub, confirma que no se hayan alterado los archivos deterministas (`run_screener_stub`, `ta_fallback.csv`).
-
 ## Plataforma técnica y despliegue
 
 - ### Modo degradado de caché
@@ -249,7 +241,7 @@ Si la interfaz muestra desalineaciones o badges incorrectos tras actualizar, for
   - **Resolución:**
     1. Crea el directorio de destino (`mkdir -p exports`) o usa una ruta absoluta accesible.
     2. Verifica que `pandas` esté instalado en el entorno (`pip install -r requirements.txt`).
-    3. Revisa que `analysis.zip`, `analysis.xlsx`, `summary.csv` y los CSV (`kpis.csv`, `positions.csv`, etc.) se generen dentro del subdirectorio del snapshot; si falta alguna columna en el resultado, confirma que `run_screener_stub` siga intacto y que no se hayan modificado los nombres esperados.
+    3. Revisa que `analysis.zip`, `analysis.xlsx`, `summary.csv` y los CSV (`kpis.csv`, `positions.csv`, etc.) se generen dentro del subdirectorio del snapshot con las columnas esperadas.
 
 - **Los tests con Yahoo (`pytest -m live_yahoo`) fallan por rate limiting.**
   - **Síntomas:** `pytest` reporta `HTTPError` o `Timeout` al consultar Yahoo Finance.

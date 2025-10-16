@@ -18,7 +18,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from shared.time_provider import TIME_FORMAT, TimeProvider, TimeSnapshot
 from shared.version import __version__
-from shared.ui import notes as shared_notes
 
 
 @pytest.fixture
@@ -45,7 +44,6 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
             "fx_cache": None,
             "portfolio": None,
             "quotes": None,
-            "opportunities": None,
         },
     )
 
@@ -66,8 +64,6 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
         "#### 💱 FX",
         "_Sin llamadas a la API FX._",
         "_Sin uso de caché registrado._",
-        "#### 🔎 Screening de oportunidades",
-        "_Sin screenings recientes._",
         "#### 🧩 Dependencias críticas",
         "_Sin registros de dependencias._",
         "#### ⏱️ Latencias",
@@ -91,7 +87,7 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
 def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_sidebar_module) -> None:
     timezone = ZoneInfo("America/Argentina/Buenos_Aires")
     base = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone)
-    timestamps = [base.timestamp() + offset for offset in range(7)]
+    timestamps = [base.timestamp() + offset for offset in range(6)]
 
     class StubTimeProvider:
         def __init__(self) -> None:
@@ -131,29 +127,18 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
             "age": 45.6,
             "ts": timestamps[3],
         },
-        "opportunities": {
-            "mode": "hit",
-            "elapsed_ms": 12.3,
-            "cached_elapsed_ms": 45.6,
-            "universe_initial": 150,
-            "universe_final": 90,
-            "discard_ratio": 0.4,
-            "highlighted_sectors": ["Energy", "Utilities"],
-            "counts_by_origin": {"nyse": 45, "nasdaq": 45},
-            "ts": timestamps[4],
-        },
         "portfolio": {
             "elapsed_ms": 456.7,
             "source": "api",
             "detail": "fresh",
-            "ts": timestamps[5],
+            "ts": timestamps[4],
         },
         "quotes": {
             "elapsed_ms": 789.1,
             "source": "yfinance",
             "count": 12,
             "detail": "with gaps",
-            "ts": timestamps[6],
+            "ts": timestamps[5],
         },
     }
 
@@ -166,11 +151,6 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
         "#### 🔐 Conexión IOL",
         "#### 📈 Yahoo Finance",
         "#### 💱 FX",
-        "#### 🔎 Screening de oportunidades",
-        shared_notes.format_note(
-            "✅ Cache reutilizada • "
-            f"{formatted[4]} (12 ms • previo 46 ms) — universo 150→90 | descartes 40% | sectores: Energy, Utilities | origen: nyse=45, nasdaq=45"
-        ),
         "#### 🧩 Dependencias críticas",
         "_Sin registros de dependencias._",
         "#### ⏱️ Latencias",
@@ -198,10 +178,10 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
         "Uso de caché" in text and formatted[3] in text for text in markdown
     ), "Expected FX cache summary"
     assert any(
-        "Portafolio: 457 ms" in text and formatted[5] in text for text in markdown
+        "Portafolio: 457 ms" in text and formatted[4] in text for text in markdown
     ), "Expected portfolio latency entry"
     assert any(
-        "Cotizaciones: 789 ms" in text and formatted[6] in text for text in markdown
+        "Cotizaciones: 789 ms" in text and formatted[5] in text for text in markdown
     ), "Expected quotes latency entry"
     assert len(provider_stub.calls) == len(timestamps)
     for call, expected in zip(provider_stub.calls, timestamps):

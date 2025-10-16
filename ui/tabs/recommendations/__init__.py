@@ -19,7 +19,6 @@ from application.benchmark_service import (
 )
 from application.profile_service import DEFAULT_PROFILE, ProfileService
 from application.recommendation_service import RecommendationService
-from application.screener.opportunities import run_screener_stub
 from application.ta_service import TAService
 from controllers import recommendations_controller
 from services.performance_timer import profile_block
@@ -732,18 +731,12 @@ def _render_recommendations_tab_impl() -> None:
         )
 
     if submitted:
-        with st.spinner("Analizando portafolio y oportunidades..."):
+        with st.spinner("Analizando portafolio..."):
             fundamentals = _load_portfolio_fundamentals(symbols)
             risk_metrics = _load_risk_metrics(symbols)
             if not isinstance(risk_metrics, pd.DataFrame):
                 risk_metrics = pd.DataFrame()
-            screener_result = run_screener_stub(include_technicals=False)
-            if isinstance(screener_result, tuple):
-                opportunities = screener_result[0]
-            else:
-                opportunities = screener_result
-            if not isinstance(opportunities, pd.DataFrame):
-                opportunities = pd.DataFrame()
+            opportunities = pd.DataFrame()
             svc = RecommendationService(
                 portfolio_df=positions,
                 opportunities_df=opportunities,
