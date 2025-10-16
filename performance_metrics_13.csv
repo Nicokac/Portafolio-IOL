@@ -1,0 +1,1 @@
+run_timestamp,db_size_before_mb,db_size_after_mb,vacuum_time_s,freed_space_mb,tables_cleaned,was_async

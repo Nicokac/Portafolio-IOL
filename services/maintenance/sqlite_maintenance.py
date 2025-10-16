@@ -2,20 +2,198 @@
 
 from __future__ import annotations
 
+import csv
 import logging
 import os
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 LOGGER = logging.getLogger(__name__)
 _BYTES_PER_MB = 1024.0 * 1024.0
 
+_ASYNC_COOLDOWN_SECONDS = 6 * 3600.0
+_LOG_FILE_PATH = Path("services/maintenance/logs/sqlite_maintenance.log")
+_METRICS_FILE_PATH = Path("performance_metrics_13.csv")
+_LOG_HANDLER: logging.Handler | None = None
+
+
+def _ensure_log_handler() -> None:
+    """Attach a file handler to LOGGER to persist maintenance runs."""
+
+    global _LOG_HANDLER
+
+    if _LOG_HANDLER is not None:
+        return
+
+    _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(_LOG_FILE_PATH, encoding="utf-8")
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    LOGGER.addHandler(handler)
+    _LOG_HANDLER = handler
+
+
+def _dynamic_threshold(size_mb: float) -> float:
+    """Compute an adaptive threshold for maintenance triggers."""
+
+    return max(128.0, size_mb * 0.75)
+
 _CACHE_CLEANUP_TOTAL: Any | None = None
 _VACUUM_DURATION_SECONDS: Any | None = None
 _METRICS_INITIALIZED = False
+
+
+def _safe_file_size(path: Path | None) -> float:
+    if path is None:
+        return 0.0
+    try:
+        return float(path.stat().st_size)
+    except OSError:
+        return 0.0
+
+
+def _release_sqlite_locks(path: Path) -> None:
+    """Attempt to release any outstanding SQLite locks on the cache file."""
+
+    try:
+        with sqlite3.connect(path, timeout=5.0) as conn:
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:  # pragma: no cover - best effort cleanup
+        LOGGER.exception("sqlite-maintenance failed to release WAL locks", exc_info=True)
+
+
+def _append_metrics(row: dict[str, Any]) -> None:
+    """Persist maintenance telemetry to ``performance_metrics_13.csv``."""
+
+    _METRICS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = _METRICS_FILE_PATH.exists()
+    with _METRICS_FILE_PATH.open("a", newline="", encoding="utf-8") as handle:
+        fieldnames = [
+            "run_timestamp",
+            "db_size_before_mb",
+            "db_size_after_mb",
+            "vacuum_time_s",
+            "freed_space_mb",
+            "tables_cleaned",
+            "was_async",
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def _log_large_free_space(freed_space_mb: float, path: Path) -> None:
+    if freed_space_mb >= 50.0:
+        LOGGER.info(
+            "sqlite-maintenance freed-space path=%s freed=%.2fMB", path, freed_space_mb
+        )
+
+
+def _execute_cache_maintenance(*, force: bool, asynchronous: bool) -> dict[str, Any] | None:
+    """Execute adaptive maintenance for the persistent cache backend."""
+
+    _ensure_log_handler()
+
+    cache_path = _market_cache_path()
+    if cache_path is None:
+        LOGGER.info("sqlite-maintenance cache database unavailable — skipping run")
+        return None
+
+    size_before_bytes = _safe_file_size(cache_path)
+    size_before_mb = size_before_bytes / _BYTES_PER_MB
+    threshold = _dynamic_threshold(size_before_mb)
+
+    if not force and size_before_mb <= threshold:
+        LOGGER.info(
+            "sqlite-maintenance skip threshold=%.2fMB size=%.2fMB path=%s",
+            threshold,
+            size_before_mb,
+            cache_path,
+        )
+        return None
+
+    _release_sqlite_locks(cache_path)
+
+    start_ts = datetime.now(timezone.utc)
+    now_seconds = time.time()
+    deleted_rows = 0
+    vacuum_time = 0.0
+
+    stats = _market_cache_maintenance(now_seconds, vacuum=False)
+    if not stats:
+        LOGGER.info(
+            "sqlite-maintenance skip-no-stats path=%s threshold=%.2fMB",
+            cache_path,
+            threshold,
+        )
+        return None
+    deleted_rows = int(stats.get("deleted", 0))
+
+    tmp_copy = cache_path.with_suffix(".maintenance.tmp")
+    if tmp_copy.exists():
+        try:
+            tmp_copy.unlink()
+        except OSError:
+            LOGGER.warning("sqlite-maintenance could not remove previous temp file path=%s", tmp_copy)
+
+    try:
+        with sqlite3.connect(cache_path, timeout=5.0, isolation_level=None) as conn:
+            conn.execute("PRAGMA busy_timeout=5000")
+            start_vacuum = time.perf_counter()
+            safe_target = tmp_copy.as_posix().replace("'", "''")
+            conn.execute(f"VACUUM INTO '{safe_target}'")
+            vacuum_time = float(time.perf_counter() - start_vacuum)
+    except sqlite3.Error:
+        LOGGER.exception("sqlite-maintenance vacuum failed path=%s", cache_path)
+        return None
+    else:
+        try:
+            tmp_copy.replace(cache_path)
+        except OSError:
+            LOGGER.exception("sqlite-maintenance failed replacing vacuum output path=%s", cache_path)
+            return None
+
+    size_after_bytes = _safe_file_size(cache_path)
+    size_after_mb = size_after_bytes / _BYTES_PER_MB
+    freed_space_mb = max(size_before_mb - size_after_mb, 0.0)
+    tables_cleaned = 1 if deleted_rows or vacuum_time > 0 else 0
+
+    LOGGER.info(
+        "sqlite-maintenance complete async=%s size_before=%.2fMB size_after=%.2fMB freed=%.2fMB vacuum=%.2fs deleted=%s path=%s",
+        asynchronous,
+        size_before_mb,
+        size_after_mb,
+        freed_space_mb,
+        vacuum_time,
+        deleted_rows,
+        cache_path,
+    )
+
+    _log_large_free_space(freed_space_mb, cache_path)
+
+    if size_before_mb > 512.0 or vacuum_time > 60.0:
+        LOGGER.warning("SQLite maintenance threshold exceeded — consider manual cleanup.")
+
+    row = {
+        "run_timestamp": start_ts.isoformat(),
+        "db_size_before_mb": f"{size_before_mb:.6f}",
+        "db_size_after_mb": f"{size_after_mb:.6f}",
+        "vacuum_time_s": f"{vacuum_time:.6f}",
+        "freed_space_mb": f"{freed_space_mb:.6f}",
+        "tables_cleaned": tables_cleaned,
+        "was_async": asynchronous,
+    }
+    _append_metrics(row)
+
+    return row
 
 
 @dataclass(frozen=True)
@@ -29,6 +207,82 @@ class SQLiteMaintenanceConfiguration:
 
 
 _CONFIGURATION: SQLiteMaintenanceConfiguration | None = None
+
+
+class _AsyncCacheMaintenance:
+    """Background task runner dedicated to market cache maintenance."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._completion: threading.Event | None = None
+        self._cooldown_until = 0.0
+        self._last_result: dict[str, Any] | None = None
+
+    def schedule(self, *, force: bool) -> bool:
+        """Schedule the maintenance run on a background daemon thread."""
+
+        with self._lock:
+            now = time.time()
+            if self._thread and self._thread.is_alive():
+                LOGGER.debug("sqlite-maintenance async run already in progress")
+                return False
+            if not force and now < self._cooldown_until:
+                LOGGER.debug(
+                    "sqlite-maintenance async run skipped due to cooldown remaining=%.2fs",
+                    self._cooldown_until - now,
+                )
+                return False
+            self._completion = threading.Event()
+            self._thread = threading.Thread(
+                target=self._run_worker,
+                args=(force,),
+                name="sqlite-maintenance-async",
+                daemon=True,
+            )
+            self._thread.start()
+            return True
+
+    def run_sync(self, *, force: bool) -> dict[str, Any] | None:
+        result = _execute_cache_maintenance(force=force, asynchronous=False)
+        if result is not None:
+            with self._lock:
+                self._cooldown_until = time.time() + _ASYNC_COOLDOWN_SECONDS
+                self._last_result = result
+        return result
+
+    def wait(self, timeout: float | None = None) -> dict[str, Any] | None:
+        event: threading.Event | None
+        with self._lock:
+            event = self._completion
+        if event is None:
+            return self._last_result
+        event.wait(timeout)
+        with self._lock:
+            return self._last_result
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return bool(self._thread and self._thread.is_alive())
+
+    def reset_for_tests(self) -> None:
+        with self._lock:
+            self._cooldown_until = 0.0
+            self._completion = None
+            self._thread = None
+            self._last_result = None
+
+    def _run_worker(self, force: bool) -> None:
+        try:
+            result = _execute_cache_maintenance(force=force, asynchronous=True)
+            if result is not None:
+                with self._lock:
+                    self._cooldown_until = time.time() + _ASYNC_COOLDOWN_SECONDS
+                    self._last_result = result
+        finally:
+            with self._lock:
+                if self._completion is not None:
+                    self._completion.set()
 
 
 @dataclass(frozen=True)
@@ -116,15 +370,6 @@ def _ensure_metrics_initialized() -> None:
     except Exception:  # pragma: no cover - dependency missing or misconfigured
         _CACHE_CLEANUP_TOTAL = None
         _VACUUM_DURATION_SECONDS = None
-
-
-def _safe_file_size(path: Path | None) -> float:
-    if path is None:
-        return 0.0
-    try:
-        return float(path.stat().st_size)
-    except OSError:
-        return 0.0
 
 
 def _run_targets(
@@ -307,6 +552,7 @@ class _SQLiteMaintenanceScheduler:
 
 
 _SCHEDULER: _SQLiteMaintenanceScheduler | None = None
+_ASYNC_CACHE_TASK = _AsyncCacheMaintenance()
 
 
 def _coerce_float(value: Any, default: float) -> float:
@@ -438,17 +684,45 @@ def ensure_sqlite_maintenance_started() -> bool:
     return _get_scheduler().ensure_running()
 
 
+def run_sqlite_maintenance(*, force: bool = False) -> bool:
+    """Schedule asynchronous maintenance for the SQLite cache backend."""
+
+    return _ASYNC_CACHE_TASK.schedule(force=force)
+
+
+def wait_for_sqlite_maintenance(timeout: float | None = None) -> dict[str, Any] | None:
+    """Block until the last asynchronous maintenance run has finished."""
+
+    return _ASYNC_CACHE_TASK.wait(timeout)
+
+
+def is_sqlite_maintenance_running() -> bool:
+    """Return ``True`` when the async maintenance task is still running."""
+
+    return _ASYNC_CACHE_TASK.is_running()
+
+
 def run_sqlite_maintenance_now(
     *, reason: str = "manual", now: float | None = None, vacuum: bool = True
 ) -> list[dict[str, float | int | str]]:
     """Execute the maintenance cycle immediately and return collected reports."""
 
+    _ASYNC_CACHE_TASK.run_sync(force=True)
     return _get_scheduler().run_once(reason, now=now, vacuum=vacuum)
+
+
+def _reset_async_cache_state_for_tests() -> None:
+    """Reset async cache state (only used within tests)."""
+
+    _ASYNC_CACHE_TASK.reset_for_tests()
 
 
 __all__ = [
     "SQLiteMaintenanceConfiguration",
     "configure_sqlite_maintenance",
     "ensure_sqlite_maintenance_started",
+    "is_sqlite_maintenance_running",
+    "run_sqlite_maintenance",
     "run_sqlite_maintenance_now",
+    "wait_for_sqlite_maintenance",
 ]

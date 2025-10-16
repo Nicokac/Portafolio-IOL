@@ -11,6 +11,14 @@ def ensure_sqlite_maintenance_started() -> bool:
     return _impl()
 
 
+def run_sqlite_maintenance(*, force: bool = False) -> bool:
+    """Schedule asynchronous maintenance through a lazy import."""
+
+    from .sqlite_maintenance import run_sqlite_maintenance as _impl
+
+    return _impl(force=force)
+
+
 def run_sqlite_maintenance_now(
     *, reason: str = "manual", now: float | None = None, vacuum: bool = True
 ):
@@ -33,5 +41,6 @@ __all__ = [
     "SQLiteMaintenanceConfiguration",
     "configure_sqlite_maintenance",
     "ensure_sqlite_maintenance_started",
+    "run_sqlite_maintenance",
     "run_sqlite_maintenance_now",
 ]

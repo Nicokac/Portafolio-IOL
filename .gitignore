@@ -35,6 +35,7 @@ data/
 !infrastructure/cache/ta_fallback.csv
 !performance_metrics_10.csv
 !performance_metrics_11.csv
+!performance_metrics_13.csv
 *.parquet
 *.xlsx
 
