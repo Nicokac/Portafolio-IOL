@@ -1,16 +1,16 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "0.6.8"
-RELEASE_NAME = "Streamlit 1.50 + Predictive optimization"
-BUILD_DATE = "2025-10-17"
+VERSION = "0.6.9"
+RELEASE_NAME = "Portafolio IOL v0.6.9"
+RELEASE_DATE = "2025-10-15"
 CHANGELOG_REF = (
-    "Streamlit 1.50 sparklines, adaptive predictive batching with lock timeouts, and dashboard/stability improvements"
+    "Simplificación de la arquitectura tras retirar 'Empresas con oportunidad' y optimizar el flujo principal de portafolio"
 )
 
 __version__ = VERSION
 __codename__ = RELEASE_NAME
-__release_date__ = BUILD_DATE
+__release_date__ = RELEASE_DATE
 __changelog_ref__ = CHANGELOG_REF
 __stability__ = "stable"
 # Keep in sync with ``pyproject.toml``'s ``project.version``.
@@ -32,7 +32,7 @@ def get_version_info() -> dict[str, str]:
 __all__ = [
     "VERSION",
     "RELEASE_NAME",
-    "BUILD_DATE",
+    "RELEASE_DATE",
     "CHANGELOG_REF",
     "__version__",
     "__codename__",
