@@ -15,9 +15,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `api/main.py` incluye el router de caché y los tests cubren limpieza e invalidación del backend en memoria/persistente.
 - Render diferido por pestaña en el portafolio con caché de contenido y telemetría de latencia por pestaña activa.
 
+## 🧩 Portafolio IOL v0.6.10 — Optimización de rendimiento y diagnóstico avanzado (Octubre 2025)
+
+### 🧠 Rendimiento y Telemetría
+- Implementado auditor de caché de cotizaciones (`scripts/quotes_cache_audit.py`) con métricas de batch y ratio de aciertos (hit ratio 82.5 %, stale 13.3 %).
+- Detectados sublotes lentos en tickers de Bonos/Energía (> 1 s).
+- Añadidas métricas `quotes_refresh_total_s`, `avg_batch_time_ms`, `quotes_hit_ratio`, `stale_ratio` en `performance_metrics_9.csv`.
+
+### 💾 Cache y Renderizado del Portafolio
+- Instrumentado `services.portfolio_view` con métricas de memoización y fingerprints (`portfolio_cache_hit_ratio`, `cache_miss_count`, `fingerprint_invalidations`).
+- Nuevas pruebas de regresión en `tests/services/test_portfolio_view_cache.py` y `tests/controllers/test_portfolio_filters.py`.
+
+### 🎨 Overhead de Streamlit
+- Incorporada métrica `streamlit_overhead_ms` para aislar la latencia del layout.
+- Añadidas visualizaciones de sparklines y consejos automáticos en `ui/tabs/performance_dashboard.py`.
+- Cobertura extendida con `tests/ui/test_performance_dashboard.py`.
+
+### 🧩 Nuevos artefactos
+- `scripts/quotes_cache_audit.py`
+- `docs/fixtures/telemetry/quotes_refresh_logs.jsonl`
+- `docs/fixtures/telemetry/portfolio_view_cache.json`
+- `performance_metrics_9.csv`
+
+### Notas
+- Esta versión completa la etapa de diagnóstico de rendimiento iniciada en v0.6.8 y sienta las bases para el tuning adaptativo planificado en v0.6.11.
+- No se introducen cambios funcionales visibles al usuario final, solo mejoras de rendimiento y observabilidad.
+
 ## 🧩 Portafolio IOL v0.6.9 — Simplificación estructural
 
-**Fecha:** 15 de octubre de 2025  
+**Fecha:** 15 de octubre de 2025
 **Tipo:** Refactor / Cleanup
 
 ### 🚀 Cambios principales
