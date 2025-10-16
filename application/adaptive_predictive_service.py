@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator, Sequence
+import time
 
 import numpy as np
 import pandas as pd
@@ -21,7 +24,8 @@ from shared.settings import ADAPTIVE_TTL_HOURS
 
 from predictive_engine import __version__ as ENGINE_VERSION
 from predictive_engine.adapters import run_adaptive_forecast
-from predictive_engine.models import AdaptiveUpdateResult, empty_history_frame
+from predictive_engine.models import AdaptiveUpdateResult, AdaptiveState, empty_history_frame
+from predictive_engine import utils as engine_utils
 from domain.adaptive_cache_lock import adaptive_cache_lock
 
 LOGGER = logging.getLogger(__name__)
@@ -40,6 +44,22 @@ _CACHE = CacheService(
 _CACHE_STATE = PredictiveCacheState()
 
 _LOCK_PROLONGED_THRESHOLD_S = 120.0
+_DEFAULT_BATCH_SIZE = 10
+_MAX_BATCH_WORKERS = 4
+
+
+def _coerce_adaptive_state(value: Any) -> AdaptiveState:
+    if isinstance(value, AdaptiveState):
+        return value.copy()
+    history = empty_history_frame()
+    last_updated = getattr(value, "last_updated", None)
+    maybe_history = getattr(value, "history", None)
+    if isinstance(value, dict):
+        maybe_history = value.get("history", maybe_history)
+        last_updated = value.get("last_updated", last_updated)
+    if isinstance(maybe_history, pd.DataFrame):
+        history = maybe_history.copy()
+    return AdaptiveState(history=history, last_updated=last_updated)
 
 
 def _warn_prolonged_lock(profile: ProfileBlockResult | None, *, operation: str) -> None:
@@ -65,6 +85,160 @@ def _cache_last_updated(cache: CacheService) -> str | None:
     return str(value)
 
 
+def _resolve_identifier_column(
+    predictions: pd.DataFrame | None, actuals: pd.DataFrame | None
+) -> str | None:
+    candidates = ("ticker", "symbol", "isin", "asset", "sector")
+    for column in candidates:
+        for frame in (predictions, actuals):
+            if isinstance(frame, pd.DataFrame) and column in frame.columns:
+                return column
+    return None
+
+
+def _build_prediction_batches(
+    predictions: pd.DataFrame | None,
+    actuals: pd.DataFrame | None,
+    *,
+    batch_size: int,
+) -> list[tuple[int, pd.DataFrame, pd.DataFrame]]:
+    batch_size = max(int(batch_size), 1)
+    identifier = _resolve_identifier_column(predictions, actuals)
+    pred_frame = predictions.copy() if isinstance(predictions, pd.DataFrame) else pd.DataFrame()
+    act_frame = actuals.copy() if isinstance(actuals, pd.DataFrame) else pd.DataFrame()
+
+    if identifier is None:
+        return [(0, pred_frame, act_frame)]
+
+    seen: set[Any] = set()
+    identifiers: list[Any] = []
+    for frame in (pred_frame, act_frame):
+        if identifier not in frame.columns:
+            continue
+        for value in frame[identifier].tolist():
+            if pd.isna(value) or value in seen:
+                continue
+            seen.add(value)
+            identifiers.append(value)
+
+    if not identifiers:
+        return [(0, pred_frame, act_frame)]
+
+    batches: list[tuple[int, pd.DataFrame, pd.DataFrame]] = []
+    for index, start in enumerate(range(0, len(identifiers), batch_size)):
+        batch_ids = identifiers[start : start + batch_size]
+        preds_batch = (
+            pred_frame[pred_frame[identifier].isin(batch_ids)].copy()
+            if not pred_frame.empty
+            else pd.DataFrame(columns=pred_frame.columns)
+        )
+        acts_batch = (
+            act_frame[act_frame[identifier].isin(batch_ids)].copy()
+            if not act_frame.empty
+            else pd.DataFrame(columns=act_frame.columns)
+        )
+        batches.append((index, preds_batch, acts_batch))
+    return batches
+
+
+def _normalize_batch(
+    predictions: pd.DataFrame,
+    actuals: pd.DataFrame,
+    *,
+    timestamp: pd.Timestamp | None,
+) -> pd.DataFrame:
+    normalized_predictions = engine_utils.normalise_predictions(predictions)
+    normalized_actuals = engine_utils.normalise_actuals(actuals)
+    merged = engine_utils.merge_inputs(
+        normalized_predictions,
+        normalized_actuals,
+        timestamp=timestamp,
+    )
+    return engine_utils.prepare_normalized_frame(merged)
+
+
+def _process_prediction_batches(
+    batches: Sequence[tuple[int, pd.DataFrame, pd.DataFrame]],
+    *,
+    timestamp: pd.Timestamp | None,
+) -> tuple[pd.DataFrame, int]:
+    if not batches:
+        empty = pd.DataFrame(columns=["timestamp", "sector", "normalized_error"])
+        return empty, 0
+
+    workers = max(1, min(_MAX_BATCH_WORKERS, len(batches)))
+    results: list[tuple[int, pd.DataFrame]] = []
+    successes = 0
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(_normalize_batch, preds, acts, timestamp=timestamp): index
+            for index, preds, acts in batches
+        }
+        for future in as_completed(futures):
+            batch_index = futures[future]
+            normalized = future.result()
+            results.append((batch_index, normalized))
+            successes += 1
+
+    results.sort(key=lambda item: item[0])
+    frames = [frame for _, frame in results if isinstance(frame, pd.DataFrame) and not frame.empty]
+    if frames:
+        combined = pd.concat(frames, ignore_index=True)
+    else:
+        combined = pd.DataFrame(columns=["timestamp", "sector", "normalized_error"])
+    return combined, successes
+
+
+@contextmanager
+def _adaptive_lock_scope(
+    operation: str,
+    *,
+    timeout_s: float,
+    extra: dict[str, str] | None = None,
+) -> Iterator[None]:
+    timeout_s = max(float(timeout_s), 0.0)
+    while True:
+        acquired = adaptive_cache_lock.acquire_with_timeout(timeout_s)
+        if not acquired:
+            LOGGER.warning(
+                "Timeout al adquirir lock adaptativo para %s tras %.1fs; reintentando",
+                operation,
+                timeout_s,
+            )
+            time.sleep(min(timeout_s / 4.0 if timeout_s else 0.1, 1.0))
+            continue
+        lock_profile: ProfileBlockResult | None = None
+        try:
+            with profile_block(
+                f"adaptive_predictive.lock_scope.{operation}",
+                extra=extra or {"operation": operation},
+                module=__name__,
+                threshold_s=_LOCK_PROLONGED_THRESHOLD_S,
+            ) as lock_profile_ctx:
+                lock_profile = lock_profile_ctx
+                yield
+            break
+        finally:
+            adaptive_cache_lock.release()
+            _warn_prolonged_lock(lock_profile, operation=operation)
+
+
+def _write_performance_metrics(runtime_s: float, success_pct: float) -> None:
+    metrics_path = Path("performance_metrics_8.csv")
+    lines = [
+        "metric,value,notes",
+        (
+            "recommendations.predictive_runtime_s,"
+            f"{max(runtime_s, 0.0):.4f},\"Duración total del procesamiento adaptativo\""
+        ),
+        (
+            "recommendations.batch_success_rate_pct,"
+            f"{max(success_pct, 0.0):.2f},\"Porcentaje de sub-batches procesados con éxito\""
+        ),
+    ]
+    metrics_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def update_model(
     predictions: pd.DataFrame | None,
     actuals: pd.DataFrame | None,
@@ -74,6 +248,8 @@ def update_model(
     timestamp: pd.Timestamp | None = None,
     persist: bool = True,
     ttl_hours: float | None = None,
+    batch_size: int = _DEFAULT_BATCH_SIZE,
+    lock_timeout_s: float = 60.0,
 ) -> dict[str, Any]:
     """Update the adaptive state using normalized prediction errors."""
 
@@ -85,60 +261,119 @@ def update_model(
         else float(ADAPTIVE_TTL_HOURS)
     )
 
-    active_cache = cache or _CACHE
+    if persist:
+        active_cache = cache or _CACHE
+    else:
+        active_cache = cache or CacheService(namespace=f"{_CACHE_NAMESPACE}_ephemeral")
     ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     if isinstance(active_cache, CacheService):
         active_cache.set_ttl_override(ttl_seconds)
 
+    overall_start = time.perf_counter()
+
+    batches = _build_prediction_batches(
+        predictions,
+        actuals,
+        batch_size=batch_size,
+    )
+    total_batches = len(batches) or 1
+
+    cache_hit = False
+    base_state = AdaptiveState(history=empty_history_frame(), last_updated=None)
+
     LOGGER.debug(
-        "Solicitando lock adaptativo para update_model (ema_span=%s, persist=%s)",
+        "Intentando adquirir lock para fetch adaptativo (ema_span=%s, persist=%s)",
         ema_span,
         persist,
     )
-    lock_profile: ProfileBlockResult | None = None
-    with adaptive_cache_lock:
-        LOGGER.debug(
-            "Lock adaptativo adquirido para update_model (ema_span=%s)",
-            ema_span,
-        )
-        with profile_block(
-            "adaptive_predictive.lock_scope.update",
+    with _adaptive_lock_scope(
+        "update.fetch",
+        timeout_s=lock_timeout_s,
+        extra={
+            "operation": "update_model",
+            "stage": "fetch",
+            "ema_span": str(ema_span),
+        },
+    ):
+        cached_state = active_cache.get(_STATE_KEY)
+        cache_hit = cached_state is not None
+        if cached_state is not None:
+            try:
+                base_state = _coerce_adaptive_state(cached_state)
+            except Exception:  # pragma: no cover - defensive
+                base_state = AdaptiveState(history=empty_history_frame(), last_updated=None)
+
+    normalized_frame, successful_batches = _process_prediction_batches(
+        batches,
+        timestamp=timestamp,
+    )
+
+    history, last_timestamp = engine_utils.append_history(
+        base_state.history,
+        normalized_frame,
+        max_rows=_MAX_HISTORY_ROWS,
+    )
+    pivot = engine_utils.pivot_history(history)
+    correlation_matrix, beta_shift = engine_utils.compute_beta_shift(
+        pivot,
+        ema_span=ema_span,
+    )
+
+    updated_state = AdaptiveState(
+        history=history,
+        last_updated=last_timestamp or base_state.last_updated,
+    )
+    result_timestamp = timestamp or last_timestamp or base_state.last_updated
+    update_result = AdaptiveUpdateResult(
+        state=updated_state,
+        normalized=normalized_frame,
+        correlation_matrix=correlation_matrix.copy(),
+        beta_shift=beta_shift.copy(),
+        timestamp=result_timestamp,
+    )
+
+    LOGGER.debug(
+        "Procesamiento adaptativo finalizado para %s batches (éxitos=%s)",
+        total_batches,
+        successful_batches,
+    )
+
+    cache_last_updated = _cache_last_updated(active_cache)
+
+    if persist:
+        LOGGER.debug("Persistiendo estado adaptativo (ttl=%.2fs)", ttl_seconds)
+        with _adaptive_lock_scope(
+            "update.persist",
+            timeout_s=lock_timeout_s,
             extra={
                 "operation": "update_model",
+                "stage": "persist",
                 "ema_span": str(ema_span),
             },
-            module=__name__,
-            threshold_s=_LOCK_PROLONGED_THRESHOLD_S,
-        ) as lock_profile_ctx:
-            lock_profile = lock_profile_ctx
-            engine_result = run_adaptive_forecast(
-                predictions=predictions,
-                actuals=actuals,
-                cache=active_cache,
-                ema_span=ema_span,
-                ttl_hours=effective_ttl_hours,
-                max_history_rows=_MAX_HISTORY_ROWS,
-                persist_state=persist,
-                persist_history=persist,
-                history_path=_HISTORY_PATH,
-                warm_start=True,
-                state_key=_STATE_KEY,
-                correlation_key=_CORR_KEY,
-                timestamp=timestamp,
-                performance_prefix="predictive",
-            )
-    LOGGER.debug(
-        "Lock adaptativo liberado tras update_model (ema_span=%s, persist=%s)",
-        ema_span,
-        persist,
-    )
-    _warn_prolonged_lock(lock_profile, operation="update_model")
+        ):
+            try:
+                active_cache.set(_STATE_KEY, update_result.state, ttl=ttl_seconds)
+                active_cache.set(
+                    _CORR_KEY,
+                    update_result.correlation_matrix.copy(),
+                    ttl=ttl_seconds,
+                )
+            except Exception:  # pragma: no cover - cache persistence best-effort
+                LOGGER.exception("No se pudo persistir el estado adaptativo en cache")
+            cache_last_updated = _cache_last_updated(active_cache)
 
-    update_result = engine_result.get("update")
-    cache_hit = bool(engine_result.get("cache_hit"))
-    cache_metadata = engine_result.get("cache_metadata") or {}
-    cache_timestamp = _cache_last_updated(active_cache) or cache_metadata.get("last_updated")
+    hit_ratio = 0.0
+    if hasattr(active_cache, "hit_ratio"):
+        try:
+            hit_ratio = float(active_cache.hit_ratio())
+        except Exception:  # pragma: no cover - telemetry guard
+            hit_ratio = 0.0
+    cache_metadata = {
+        "hit_ratio": hit_ratio,
+        "last_updated": cache_last_updated or "-",
+    }
 
+    cache_timestamp = cache_metadata.get("last_updated")
     if cache_hit:
         _CACHE_STATE.record_hit(
             last_updated=cache_timestamp,
@@ -150,11 +385,19 @@ def update_model(
             ttl_hours=effective_ttl_hours,
         )
 
-    payload: dict[str, Any] = {}
-    if isinstance(update_result, AdaptiveUpdateResult):
-        payload = update_result.to_dict()
-    if cache_metadata:
-        payload["cache_metadata"] = cache_metadata
+    runtime_s = time.perf_counter() - overall_start
+    success_pct = (
+        float(successful_batches) / float(total_batches) * 100.0
+        if total_batches
+        else 0.0
+    )
+    try:
+        _write_performance_metrics(runtime_s, success_pct)
+    except Exception:  # pragma: no cover - metrics should not break flow
+        LOGGER.debug("No se pudo actualizar performance_metrics_8.csv", exc_info=True)
+
+    payload = update_result.to_dict()
+    payload["cache_metadata"] = cache_metadata
     return payload
 
 
@@ -197,6 +440,7 @@ def simulate_adaptive_forecast(
     persist: bool = True,
     rolling_window: int = 20,
     ttl_hours: float | None = None,
+    lock_timeout_s: float = 60.0,
 ) -> dict[str, Any]:
     """Run an adaptive backtest and expose error metrics and correlations."""
 
@@ -224,48 +468,34 @@ def simulate_adaptive_forecast(
         frame = frame.sort_values("timestamp")
 
     LOGGER.debug(
-        "Solicitando lock adaptativo para simulate_adaptive_forecast (ema_span=%s, persist=%s)",
+        "Intentando adquirir lock para simulate_adaptive_forecast (ema_span=%s, persist=%s)",
         ema_span,
         persist,
     )
-    lock_profile: ProfileBlockResult | None = None
-    with adaptive_cache_lock:
-        LOGGER.debug(
-            "Lock adaptativo adquirido para simulate_adaptive_forecast (ema_span=%s)",
-            ema_span,
+    with _adaptive_lock_scope(
+        "forecast",
+        timeout_s=lock_timeout_s,
+        extra={
+            "operation": "simulate_adaptive_forecast",
+            "ema_span": str(ema_span),
+            "persist": str(bool(persist)),
+        },
+    ):
+        engine_result = run_adaptive_forecast(
+            history=frame,
+            cache=working_cache,
+            ema_span=ema_span,
+            rolling_window=rolling_window,
+            ttl_hours=effective_ttl_hours,
+            max_history_rows=_MAX_HISTORY_ROWS,
+            persist_state=persist,
+            persist_history=persist,
+            history_path=_HISTORY_PATH,
+            warm_start=True,
+            state_key=_STATE_KEY,
+            correlation_key=_CORR_KEY,
+            performance_prefix="predictive",
         )
-        with profile_block(
-            "adaptive_predictive.lock_scope.forecast",
-            extra={
-                "operation": "simulate_adaptive_forecast",
-                "ema_span": str(ema_span),
-                "persist": str(bool(persist)),
-            },
-            module=__name__,
-            threshold_s=_LOCK_PROLONGED_THRESHOLD_S,
-        ) as lock_profile_ctx:
-            lock_profile = lock_profile_ctx
-            engine_result = run_adaptive_forecast(
-                history=frame,
-                cache=working_cache,
-                ema_span=ema_span,
-                rolling_window=rolling_window,
-                ttl_hours=effective_ttl_hours,
-                max_history_rows=_MAX_HISTORY_ROWS,
-                persist_state=persist,
-                persist_history=persist,
-                history_path=_HISTORY_PATH,
-                warm_start=True,
-                state_key=_STATE_KEY,
-                correlation_key=_CORR_KEY,
-                performance_prefix="predictive",
-            )
-    LOGGER.debug(
-        "Lock adaptativo liberado tras simulate_adaptive_forecast (ema_span=%s, persist=%s)",
-        ema_span,
-        persist,
-    )
-    _warn_prolonged_lock(lock_profile, operation="simulate_adaptive_forecast")
 
     forecast_result = engine_result.get("forecast")
     cache_metadata = engine_result.get("cache_metadata") or {}
