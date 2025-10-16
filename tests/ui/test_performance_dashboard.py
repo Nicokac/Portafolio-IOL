@@ -84,6 +84,20 @@ def _sample_entries() -> List[DummyEntry]:
     ]
 
 
+def _collect_metric_records(streamlit_stub) -> List[dict]:
+    records: List[dict] = []
+    for entry in streamlit_stub.get_records("metric"):
+        records.append(entry)
+    for columns_entry in streamlit_stub.get_records("columns"):
+        for column in columns_entry.get("children", []):
+            if column.get("type") != "column":
+                continue
+            for child in column.get("children", []):
+                if child.get("type") == "metric":
+                    records.append(child)
+    return records
+
+
 def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard) -> None:
     entries = _sample_entries()
     streamlit_stub.reset()
@@ -102,14 +116,22 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     assert any("duración prolongada" in text for text in warnings)
 
     download_files = {entry["file_name"] for entry in streamlit_stub.get_records("download_button")}
-    assert download_files == {"performance_metrics.csv", "performance_metrics.json"}
+    assert download_files == {
+        "performance_metrics.csv",
+        "performance_metrics.json",
+        "performance_sparkline.csv",
+    }
 
     line_charts = streamlit_stub.get_records("line_chart")
     assert len(line_charts) >= 1
 
-    metric_records = streamlit_stub.get_records("metric")
+    metric_records = _collect_metric_records(streamlit_stub)
     assert metric_records
     assert any(record["label"] == "Duración última (s)" for record in metric_records)
+    duration_metric = next(
+        record for record in metric_records if record["label"] == "Duración última (s)"
+    )
+    assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_POSITIVE)
 
     percentiles_table = None
     for record in dataframes:
@@ -121,6 +143,38 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
 
     captions = [entry["text"] for entry in streamlit_stub.get_records("caption")]
     assert any("Archivo de log" in text for text in captions)
+    assert any("Modo seleccionado" in text for text in captions)
+
+
+def test_performance_dashboard_historical_mode(
+    monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard
+) -> None:
+    entries = _sample_entries()
+    streamlit_stub.reset()
+    streamlit_stub._toggle_returns[performance_dashboard._VIEW_MODE_TOGGLE_KEY] = True
+    monkeypatch.setattr(performance_dashboard, "read_recent_entries", lambda limit=200: entries)
+
+    performance_dashboard.render_performance_dashboard_tab(limit=50)
+
+    assert (
+        streamlit_stub.session_state[performance_dashboard._VIEW_MODE_STATE_KEY]
+        == "historical"
+    )
+
+    metric_records = _collect_metric_records(streamlit_stub)
+    duration_metric = next(
+        record for record in metric_records if record["label"] == "Duración promedio (s)"
+    )
+    assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_NEGATIVE)
+
+    sparkline_download = next(
+        record
+        for record in streamlit_stub.get_records("download_button")
+        if record["file_name"] == "performance_sparkline.csv"
+    )
+    csv_payload = sparkline_download["data"].decode("utf-8")
+    assert "view_mode" in csv_payload
+    assert "historical" in csv_payload
 
 
 def test_performance_dashboard_keyword_filter(monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard) -> None:
