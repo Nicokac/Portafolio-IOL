@@ -50,9 +50,9 @@ def test_lazy_components_emit_telemetry(
     assert charts_calls.call_count == 0
     assert telemetry_events == []
 
-    for call in fake_st.button_calls:
+    for call in fake_st.checkbox_calls:
         state_key = str(call["key"]) if call.get("key") is not None else str(call["label"])
-        fake_st._button_clicks[state_key] = [True]
+        fake_st._checkbox_values[state_key] = [True]
 
     render_portfolio(
         _DummyContainer(),

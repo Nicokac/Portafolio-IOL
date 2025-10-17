@@ -13,16 +13,27 @@ _LOGGER = logging.getLogger(__name__)
 _START_KEY = "_ui_skeleton_start"
 _METRIC_KEY = "_ui_skeleton_render_ms"
 _LABEL_KEY = "_ui_skeleton_label"
+_INITIALIZED_KEY = "skeleton_initialized"
 
 _FALLBACK_START = time.perf_counter()
 _FALLBACK_METRIC: float | None = None
 _FALLBACK_LABEL: str | None = None
+_FALLBACK_INITIALIZED = False
 
 
-def initialize(start: float | None = None) -> None:
+def initialize(start: float | None = None) -> bool:
     """Persist the reference start timestamp used for skeleton latency."""
 
-    global _FALLBACK_START
+    global _FALLBACK_START, _FALLBACK_INITIALIZED
+
+    already_initialized = False
+    try:
+        already_initialized = bool(st.session_state.get(_INITIALIZED_KEY))
+    except Exception:  # pragma: no cover - session state may be read-only
+        already_initialized = _FALLBACK_INITIALIZED
+
+    if already_initialized:
+        return False
 
     try:
         if start is None:
@@ -31,11 +42,17 @@ def initialize(start: float | None = None) -> None:
             start = float(start)
     except (TypeError, ValueError):
         start = float(time.perf_counter())
+
     _FALLBACK_START = start
+    _FALLBACK_INITIALIZED = True
+
     try:
         st.session_state.setdefault(_START_KEY, start)
+        st.session_state[_INITIALIZED_KEY] = True
     except Exception:  # pragma: no cover - session state may be read-only
         pass
+
+    return True
 
 
 def _get_start() -> float:

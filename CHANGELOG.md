@@ -18,6 +18,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🩹 Portafolio IOL v0.6.22-patch2 — Fix lazy reruns & Skeleton singleton (Febrero 2026)
+
+### 🚑 Hotfix
+- Los triggers diferidos de tabla y gráficos ahora usan `st.session_state['load_table']` y `st.session_state['load_charts']`, evitando reruns completos de Streamlit y reusando los placeholders existentes.
+- El sistema de skeletons se inicializa una única vez por sesión, registra la primera pintura inmediatamente y muestra un skeleton base antes de iniciar tareas pesadas.
+- La capa de exportación omite totalmente Kaleido en modo `browser`, sin reintentos en segundo plano cuando Chromium no está disponible.
+
+### 🛠 Internals
+- `_prompt_lazy_block` reemplaza `st.button` por controles persistentes (`toggle`/`checkbox`) y sincroniza las banderas con el almacén dataset-aware para mantener una sola telemetría `portfolio.lazy_component` por dataset.
+- `app.py` inserta el skeleton inicial antes de cargar dependencias y conserva `ui_first_paint_ms` en `st.session_state` para métricas de arranque.
+- `shared.skeletons.initialize` devuelve un booleano indicando si la sesión ya estaba inicializada, protegiendo contra logs duplicados.
+
+### 🧪 Tests
+```bash
+pytest -q --override-ini addopts='' tests/ui/test_streamlit_lazy_fix.py
+pytest -q --override-ini addopts='' tests/performance/test_rerun_prevention.py
+```
+
 ## 🧩 Portafolio IOL v0.6.22 — Lazy Charts + Fix rehidratación de tabla (Febrero 2026)
 
 ### 🚀 Cambios principales

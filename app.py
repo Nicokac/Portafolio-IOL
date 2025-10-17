@@ -69,8 +69,8 @@ def is_preload_complete() -> bool:
 
 
 _TOTAL_LOAD_START = time.perf_counter()
-skeletons.initialize(_TOTAL_LOAD_START)
-logger.info("🧩 Skeleton system initialized at %.2f", _TOTAL_LOAD_START)
+if skeletons.initialize(_TOTAL_LOAD_START):
+    logger.info("🧩 Skeleton system initialized at %.2f", _TOTAL_LOAD_START)
 
 _LOGIN_PHASE_START_KEY = "_login_phase_started_at"
 _LOGIN_PRELOAD_RECORDED_KEY = "_login_preload_recorded"
@@ -770,6 +770,34 @@ def main(argv: list[str] | None = None):
     configure_logging(level=args.log_level, json_format=(args.log_format == "json") if args.log_format else None)
     logger.info("requirements.txt es la fuente autorizada de dependencias.")
     ensure_tokens_key()
+
+    first_frame_placeholder = getattr(st, "empty", lambda: None)()
+    shell_container = skeletons.mark_placeholder("app_shell", placeholder=first_frame_placeholder)
+    if shell_container is not None:
+        already_rendered = False
+        try:
+            already_rendered = bool(st.session_state.get("_app_shell_placeholder_rendered"))
+        except Exception:
+            logger.debug("No se pudo comprobar el estado del skeleton inicial", exc_info=True)
+        if not already_rendered:
+            try:
+                shell_container.markdown("⌛ Preparando tu portafolio…")
+            except Exception:
+                logger.debug("No se pudo renderizar el skeleton inicial", exc_info=True)
+            else:
+                try:
+                    st.session_state["_app_shell_placeholder_rendered"] = True
+                except Exception:
+                    logger.debug("No se pudo marcar el skeleton inicial como renderizado", exc_info=True)
+    try:
+        first_paint_metric, _ = skeletons.get_metric()
+    except Exception:
+        first_paint_metric = None
+    if first_paint_metric is not None:
+        try:
+            st.session_state.setdefault("ui_first_paint_ms", float(first_paint_metric))
+        except Exception:
+            logger.debug("No se pudo persistir ui_first_paint_ms", exc_info=True)
     _check_critical_dependencies()
 
     if st.session_state.get("force_login"):

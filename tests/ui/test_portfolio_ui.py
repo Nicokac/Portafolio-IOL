@@ -101,6 +101,12 @@ class _Placeholder:
             {"body": body, "unsafe": False, "placeholder": True, "write": True}
         )
 
+    def checkbox(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.checkbox(*args, **kwargs)
+
+    def toggle(self, *args: Any, **kwargs: Any) -> Any:
+        return self._owner.toggle(*args, **kwargs)
+
 
 class FakeStreamlit:
     """Minimal Streamlit stub capturing the interactions we care about."""
@@ -121,7 +127,13 @@ class FakeStreamlit:
         self._multiselect_responses = {
             key: list(value) for key, value in (multiselect_responses or {}).items()
         }
-        self._checkbox_values = dict(checkbox_values or {})
+        self._checkbox_values: dict[str, list[bool]] = {}
+        for raw_key, value in (checkbox_values or {}).items():
+            key = str(raw_key)
+            if isinstance(value, (list, tuple)):
+                self._checkbox_values[key] = [bool(item) for item in value]
+            else:
+                self._checkbox_values[key] = [bool(value)]
         self._slider_values = dict(slider_values or {})
         self._button_clicks: dict[str, list[bool]] = {}
         for raw_key, value in (button_clicks or {}).items():
@@ -231,10 +243,19 @@ class FakeStreamlit:
         record = {"label": label, "value": value, "key": key}
         self.checkbox_calls.append(record)
         state_key = key or label
-        result = self._checkbox_values.get(state_key, value)
+        queue = self._checkbox_values.get(str(state_key))
+        if queue:
+            result = queue.pop(0)
+            if not queue:
+                self._checkbox_values.pop(str(state_key), None)
+        else:
+            result = value
         if key is not None:
             self.session_state[key] = result
         return result
+
+    def toggle(self, label: str, *, value: bool = False, key: str | None = None) -> bool:
+        return self.checkbox(label, value=value, key=key)
 
     def slider(
         self,
