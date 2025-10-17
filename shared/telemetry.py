@@ -24,6 +24,7 @@ _METRIC_COLUMNS = (
     "portfolio_tab_render_s",
     "streamlit_overhead_ms",
     "profile_block_total_ms",
+    "reused_visual_cache",
 )
 
 
@@ -53,6 +54,7 @@ class TelemetryRow:
             "portfolio_tab_render_s": "",
             "streamlit_overhead_ms": "",
             "profile_block_total_ms": "",
+            "reused_visual_cache": "",
         }
         if self.extra:
             for key, value in self.extra.items():

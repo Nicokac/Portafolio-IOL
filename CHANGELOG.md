@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.17 — Caché visual por hash del dataset (Noviembre 2025)
+
+### 🚀 Cambios principales
+- El portafolio reutiliza el resumen, la tabla y los gráficos cuando el hash del dataset no cambia, evitando repintados completos en Streamlit.
+- Los placeholders de cada sección se persisten en `st.session_state["cached_render"]`, reduciendo la rehidratación del layout.
+
+### 🛠 Internals
+- `render_portfolio_section` calcula y conserva `dataset_hash`, controla el caché visual por dataset y registra la telemetría `portfolio.visual_cache` con `reused_visual_cache`.
+- `shared.telemetry` incorpora la columna `reused_visual_cache` y `portfolio_ui` expone métricas de caché visual en la telemetría del runtime.
+
+### 🧪 Tests
+```bash
+pytest -q tests/ui/test_streamlit_cache_reuse.py
+pytest -q tests/performance/test_optimization_recommendations.py
+```
+
 ## 🧩 Portafolio IOL v0.6.16 — Optimización media: viewmodel diferido y cálculos on-demand
 
 ### 🚀 Cambios principales

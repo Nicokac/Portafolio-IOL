@@ -72,6 +72,19 @@ def render_portfolio_ui(
         render_cache = st.session_state.get("render_cache")
         if isinstance(render_cache, dict):
             telemetry["cached_tabs"] = len(render_cache)
+        try:
+            dataset_hash = st.session_state.get("dataset_hash")
+        except Exception:  # pragma: no cover - defensive safeguard
+            dataset_hash = None
+        if isinstance(dataset_hash, str) and dataset_hash:
+            telemetry["dataset_hash"] = dataset_hash
+        reused_visual_cache = bool(
+            st.session_state.get("__portfolio_visual_cache_reused__")
+        )
+        telemetry["reused_visual_cache"] = reused_visual_cache
+        visual_cache = st.session_state.get("cached_render")
+        if isinstance(visual_cache, dict):
+            telemetry["visual_cache_datasets"] = len(visual_cache)
         mark_portfolio_ui_render_complete()
         return refresh_secs
 
