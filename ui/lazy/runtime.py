@@ -61,11 +61,16 @@ def lazy_fragment(
     """Context manager that isolates reruns for lazy components."""
 
     fragment_factory = _fragment_factory()
-    form_callable = _form_callable()
+    form_callable = None if fragment_factory else _form_callable()
 
-    scope, scope_cm = _resolve_scope(name, fragment_factory, form_callable)
+    if fragment_factory is not None:
+        scope = "fragment"
+    elif form_callable is not None:
+        scope = "form"
+    else:
+        scope = "global"
 
-    with scope_cm:
+    with _enter_scope(name, fragment_factory, form_callable, scope):
         scope_token = _SCOPE.set(scope)
         component_token = _COMPONENT.set(component)
         dataset_token = dataset_token or None
@@ -83,7 +88,7 @@ def _fragment_factory():
     for attr in ("fragment", "experimental_fragment"):
         factory = getattr(st, attr, None)
         if callable(factory):
-            return factory
+            return lambda nm: factory(nm)
     return None
 
 
@@ -92,29 +97,19 @@ def _form_callable():
     return form if callable(form) else None
 
 
-def _resolve_scope(name: str, fragment_factory, form_callable):
-    if fragment_factory is not None:
-        fragment_cm = _safe_fragment_context(fragment_factory, name)
-        if fragment_cm is not None:
-            return "fragment", fragment_cm
-
-    if form_callable is not None:
+@contextmanager
+def _enter_scope(name: str, fragment_factory, form_callable, scope: str):
+    if scope == "fragment" and fragment_factory is not None:
+        with fragment_factory(name):
+            yield
+            return
+    if scope == "form" and form_callable is not None:
         form_key = f"{name}__form"
-        return "form", form_callable(form_key)
-
-    return "global", _container_context()
-
-
-def _safe_fragment_context(fragment_factory, name: str):
-    try:
-        fragment_candidate = fragment_factory(name)
-    except TypeError:
-        return None
-
-    if hasattr(fragment_candidate, "__enter__") and hasattr(fragment_candidate, "__exit__"):
-        return fragment_candidate
-
-    return None
+        with form_callable(form_key):
+            yield
+            return
+    with _container_context():
+        yield
 
 
 def _container_context():
