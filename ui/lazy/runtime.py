@@ -84,12 +84,48 @@ def lazy_fragment(
             _DATASET.reset(dataset_token_var)
 
 
+_FRAGMENT_WARNING_EMITTED = False
+
+
 def _fragment_factory():
     for attr in ("fragment", "experimental_fragment"):
         factory = getattr(st, attr, None)
         if callable(factory):
-            return lambda nm: factory(nm)
+            return lambda nm, _factory=factory: _ensure_context_manager(
+                _factory(nm)
+            )
+
+    _warn_fragment_fallback()
     return None
+
+
+def _ensure_context_manager(candidate):
+    """Normalize Streamlit fragment factories into context managers."""
+
+    if candidate is None:
+        return _container_context()
+
+    if hasattr(candidate, "__enter__") and hasattr(candidate, "__exit__"):
+        return candidate
+
+    if callable(candidate):
+        resolved = candidate()
+        if hasattr(resolved, "__enter__") and hasattr(resolved, "__exit__"):
+            return resolved
+
+    logger.debug(
+        "Streamlit fragment factory produced unexpected value %r; falling back to container",
+        candidate,
+    )
+    return _container_context()
+
+
+def _warn_fragment_fallback() -> None:
+    global _FRAGMENT_WARNING_EMITTED
+    if _FRAGMENT_WARNING_EMITTED:
+        return
+    _FRAGMENT_WARNING_EMITTED = True
+    logger.warning("⚠️ Streamlit fragment factory fallback to container()")
 
 
 def _form_callable():
