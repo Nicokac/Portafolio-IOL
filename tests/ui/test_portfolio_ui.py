@@ -108,6 +108,7 @@ class FakeStreamlit:
         multiselect_responses: dict[str, Sequence[Any]] | None = None,
         checkbox_values: dict[str, bool] | None = None,
         slider_values: dict[str, Any] | None = None,
+        button_clicks: dict[str, Sequence[bool] | bool] | None = None,
     ) -> None:
         self.session_state: dict[str, Any] = {}
         self._radio_iter: Iterator[int] = iter(radio_sequence)
@@ -117,6 +118,13 @@ class FakeStreamlit:
         }
         self._checkbox_values = dict(checkbox_values or {})
         self._slider_values = dict(slider_values or {})
+        self._button_clicks: dict[str, list[bool]] = {}
+        for raw_key, value in (button_clicks or {}).items():
+            key = str(raw_key)
+            if isinstance(value, (list, tuple)):
+                self._button_clicks[key] = [bool(item) for item in value]
+            else:
+                self._button_clicks[key] = [bool(value)]
         self.radio_calls: list[dict[str, Any]] = []
         self.selectbox_calls: list[dict[str, Any]] = []
         self.multiselect_calls: list[dict[str, Any]] = []
@@ -134,6 +142,7 @@ class FakeStreamlit:
         self.checkbox_calls: list[dict[str, Any]] = []
         self.slider_calls: list[dict[str, Any]] = []
         self.download_buttons: list[dict[str, Any]] = []
+        self.button_calls: list[dict[str, Any]] = []
         self._placeholders: list[_Placeholder] = []
 
     # ---- Core widgets -------------------------------------------------
@@ -332,6 +341,19 @@ class FakeStreamlit:
         )
         if key is not None:
             self.session_state[key] = data
+
+    def button(self, label: str, *, key: str | None = None) -> bool:
+        record = {"label": label, "key": key}
+        self.button_calls.append(record)
+        state_key = str(key) if key is not None else str(label)
+        queue = self._button_clicks.get(state_key)
+        if queue:
+            result = queue.pop(0)
+        else:
+            result = False
+        if key is not None:
+            self.session_state[key] = result
+        return result
 
     def columns_context(self, layout: Sequence[Any]) -> None:  # pragma: no cover - helper for compatibility
         return None

@@ -1,4 +1,4 @@
-timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_load_ms,tab_name,portfolio_tab_render_s,streamlit_overhead_ms,profile_block_total_ms
+timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_load_ms,tab_name,portfolio_tab_render_s,streamlit_overhead_ms,profile_block_total_ms,incremental_render,ui_partial_update_ms,reused_visual_cache,visual_cache_cleared,lazy_loaded_component,lazy_load_ms
 2025-10-17T05:18:28.130669+00:00,portfolio_view.apply_basic,0.070362,48e268885df5712079a0f58ec938c2a13fb70468,0.000,,,,,,
 2025-10-17T05:18:28.228484+00:00,portfolio_view.apply_basic,0.057345,48e268885df5712079a0f58ec938c2a13fb70468,0.000,,,,,,
 2025-10-17T05:18:28.258705+00:00,portfolio_view.apply_extended,0.007980,48e268885df5712079a0f58ec938c2a13fb70468,1.000,,,,,,
@@ -42,3 +42,13 @@ timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_lo
 2025-10-17T15:22:43.586340+00:00,portfolio.tab_render,0.022571,,,,,resumen,0.022571,0.00,30.70,,,,
 2025-10-17T15:23:37.533229+00:00,portfolio.tab_render,0.024134,,,,,resumen,0.024134,0.00,31.77,,,,
 2025-10-17T15:26:52.891794+00:00,portfolio.tab_render,0.019989,,,,,resumen,0.019989,0.00,29.30,,,,
+2025-10-17T16:01:45.158612+00:00,portfolio.tab_render,0.022452,,,,,portafolio,0.022452,22.45,,,,,,,
+2025-10-17T16:01:45.245116+00:00,portfolio.tab_render,0.000000,,,,,portafolio,0.000000,0.00,0.00,,,,,,
+2025-10-17T16:04:30.443514+00:00,portfolio.tab_render,0.032645,,,,,portafolio,0.032645,32.65,,,,,,,
+2025-10-17T16:04:30.552063+00:00,portfolio.tab_render,0.000000,,,,,portafolio,0.000000,0.00,0.00,,,,,,
+2025-10-17T16:07:16.949090+00:00,portfolio.tab_render,0.030518,,,,,portafolio,0.030518,30.52,,,,,,,
+2025-10-17T16:07:17.076133+00:00,portfolio.lazy_component,0.004348,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,,,,,,,,
+2025-10-17T16:07:17.097493+00:00,portfolio.lazy_component,0.004900,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,,,,,,,,
+2025-10-17T16:07:17.127236+00:00,portfolio.tab_render,0.075024,,,,,portafolio,0.075024,75.02,,,,,,,
+2025-10-17T16:07:55.283407+00:00,portfolio.tab_render,0.033536,,,,,portafolio,0.033536,33.54,,,,,,,
+2025-10-17T16:07:55.455157+00:00,portfolio.tab_render,0.066014,,,,,portafolio,0.066014,66.01,,,,,,,

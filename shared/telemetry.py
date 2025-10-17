@@ -28,6 +28,8 @@ _METRIC_COLUMNS = (
     "ui_partial_update_ms",
     "reused_visual_cache",
     "visual_cache_cleared",
+    "lazy_loaded_component",
+    "lazy_load_ms",
 )
 
 

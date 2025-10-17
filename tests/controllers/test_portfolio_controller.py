@@ -107,6 +107,9 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
         def container(self):
             return nullcontext()
 
+        def info(self, *_args, **_kwargs):
+            return None
+
     def fake_summary(*args, **kwargs):
         calls["summary"] += 1
         return True
@@ -117,7 +120,17 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
     def fake_charts(*args, **kwargs):
         calls["charts"] += 1
 
-    monkeypatch.setattr(portfolio, "st", SimpleNamespace(empty=lambda: _Placeholder(), caption=lambda *_: None, spinner=nullcontext))
+    monkeypatch.setattr(
+        portfolio,
+        "st",
+        SimpleNamespace(
+            empty=lambda: _Placeholder(),
+            caption=lambda *_: None,
+            spinner=nullcontext,
+            session_state={},
+            button=lambda *a, **k: False,
+        ),
+    )
     monkeypatch.setattr(portfolio, "_ensure_component_store", lambda cache: {})
     monkeypatch.setattr(portfolio, "_ensure_component_entry", lambda store, name: {"placeholder": _Placeholder()})
     monkeypatch.setattr(portfolio, "render_summary_section", fake_summary)
@@ -127,7 +140,7 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
 
     portfolio.render_basic_tab(viewmodel, favorites, snapshot)
 
-    assert calls == {"summary": 1, "table": 1, "charts": 1}
+    assert calls == {"summary": 1, "table": 0, "charts": 0}
 
 
 def test_render_notifications_panel_renders_badges(monkeypatch: pytest.MonkeyPatch) -> None:
