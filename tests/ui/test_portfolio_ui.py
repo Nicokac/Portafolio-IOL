@@ -72,6 +72,9 @@ class _ContextManager:
     def bar_chart(self, *args: Any, **kwargs: Any) -> Any:
         return self._owner.bar_chart(*args, **kwargs)
 
+    def empty(self) -> _Placeholder:
+        return self._owner.empty()
+
 
 class _Placeholder:
     def __init__(self, owner: "FakeStreamlit") -> None:
