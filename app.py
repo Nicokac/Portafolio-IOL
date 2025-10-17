@@ -106,6 +106,7 @@ from shared.settings import (
     sqlite_maintenance_size_threshold_mb,
 )
 from shared.time_provider import TimeProvider
+from shared.telemetry import log_default_telemetry
 from ui.ui_settings import init_ui, render_ui_controls
 from ui.header import render_header
 from ui.actions import render_action_menu
@@ -1256,6 +1257,22 @@ def main(argv: list[str] | None = None):
                     fh.write(json.dumps(analysis_entry, ensure_ascii=False) + "\n")
             except OSError as exc:
                 logger.warning("No se pudo escribir analysis.log: %s", exc)
+            try:
+                dataset_hash = st.session_state.get("portfolio_dataset_hash")
+            except Exception:  # pragma: no cover - defensive safeguard
+                dataset_hash = None
+            try:
+                log_default_telemetry(
+                    phase=event_name,
+                    elapsed_s=elapsed_ms / 1000.0,
+                    dataset_hash=(str(dataset_hash) if dataset_hash else None),
+                    ui_total_load_ms=elapsed_ms,
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar telemetría para startup.render_portfolio_complete",
+                    exc_info=True,
+                )
             st.session_state["iol_startup_metric_logged"] = True
 
     render_footer()

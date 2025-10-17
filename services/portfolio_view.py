@@ -25,6 +25,7 @@ from application.risk_service import (
     compute_returns,
     max_drawdown,
 )
+from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -951,6 +952,18 @@ class PortfolioViewModelService:
                 dataset_changed=dataset_changed,
                 filters_changed=effective_filters_changed,
             )
+            try:
+                log_default_telemetry(
+                    phase="portfolio_view.apply",
+                    elapsed_s=snapshot.apply_elapsed,
+                    dataset_hash=dataset_key,
+                    memo_hit_ratio=1.0,
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar telemetría para portfolio_view.apply (hit)",
+                    exc_info=True,
+                )
             return snapshot
 
         positions_state: dict[str, Any] = {}
@@ -1057,6 +1070,18 @@ class PortfolioViewModelService:
             total_duration=total_elapsed,
             memoization_hit_ratio=hit_ratio,
         )
+        try:
+            log_default_telemetry(
+                phase="portfolio_view.apply",
+                elapsed_s=apply_elapsed,
+                dataset_hash=dataset_key,
+                memo_hit_ratio=hit_ratio,
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo registrar telemetría para portfolio_view.apply",
+                exc_info=True,
+            )
         return snapshot
 
 

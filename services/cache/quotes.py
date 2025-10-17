@@ -23,6 +23,7 @@ from services.quote_rate_limit import quote_rate_limiter
 from shared.cache import cache
 from shared.errors import NetworkError
 from shared.settings import cache_ttl_quotes, max_quote_workers, quotes_ttl_seconds
+from shared.telemetry import log_default_telemetry
 
 from .ui_adapter import _trigger_logout
 
@@ -35,9 +36,26 @@ _QUOTE_CACHE: Dict[Tuple[str, str, str | None], Dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 _QUOTE_PERSIST_LOCK = Lock()
 _QUOTE_PERSIST_CACHE: Dict[str, Any] | None = None
+_QUOTE_WARM_START_APPLIED = False
 
 QUOTE_STALE_TTL_SECONDS = float(quotes_ttl_seconds or 0)
 _QUOTE_PERSIST_PATH = Path("data/quotes_cache.json")
+
+_WARM_START_TTL_SECONDS = 5.0
+_ACTIVE_DATASET_HASH: str | None = None
+
+
+def set_active_dataset_hash(dataset_hash: str | None) -> None:
+    """Expose the dataset hash associated with the current refresh cycle."""
+
+    global _ACTIVE_DATASET_HASH
+    _ACTIVE_DATASET_HASH = dataset_hash
+
+
+def get_active_dataset_hash() -> str | None:
+    """Return the dataset hash associated with the current refresh cycle."""
+
+    return _ACTIVE_DATASET_HASH
 
 _MAX_RATE_LIMIT_RETRIES = 2
 
@@ -368,6 +386,47 @@ def _store_persisted_quotes(cache: Dict[str, Any]) -> None:
             )
         except OSError as exc:  # pragma: no cover - defensive guard
             logger.warning("No se pudo persistir cache de cotizaciones: %s", exc)
+
+
+def _warm_start_from_disk(now: float | None = None) -> tuple[int, float]:
+    """Pre-hydrate the in-memory quote cache from persisted storage."""
+
+    snapshot = _load_persisted_quotes()
+    if not snapshot:
+        return (0, 0.0)
+
+    current_ts = float(now or time.time())
+    ttl = max(min(float(cache_ttl_quotes or _WARM_START_TTL_SECONDS), _WARM_START_TTL_SECONDS), 0.0)
+    if ttl == 0:
+        ttl = _WARM_START_TTL_SECONDS
+
+    loaded = 0
+    total_age = 0.0
+
+    with _QUOTE_LOCK:
+        for cache_key, entry in snapshot.items():
+            if not isinstance(entry, Mapping):
+                continue
+            data = entry.get("data")
+            ts_value = _as_optional_float(entry.get("ts"))
+            if not isinstance(data, dict) or ts_value is None:
+                continue
+            components = _normalize_bulk_key_components(cache_key)
+            if components is None:
+                continue
+            market, symbol, panel_value = components
+            normalized = _normalize_quote(data)
+            record = {
+                "ts": current_ts,
+                "ttl": ttl,
+                "data": normalized,
+            }
+            _QUOTE_CACHE[(market, symbol, panel_value)] = record
+            loaded += 1
+            total_age += max(current_ts - ts_value, 0.0)
+
+    avg_age = total_age / loaded if loaded else 0.0
+    return (loaded, avg_age)
 
 
 def _load_persisted_entry(cache_key: str) -> tuple[dict[str, Any], float] | None:
@@ -751,6 +810,35 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
 
     normalized: list[tuple[str, str, str | None]] = []
 
+    global _QUOTE_WARM_START_APPLIED
+    if not _QUOTE_WARM_START_APPLIED:
+        warmed, avg_age = _warm_start_from_disk(start)
+        _QUOTE_WARM_START_APPLIED = True
+        if warmed:
+            logger.info(
+                "Warm-start applied from persisted cache (%s symbols, avg_age=%.1fs)",
+                warmed,
+                avg_age,
+            )
+            telemetry["warm_start_loaded"] = warmed
+            telemetry["warm_start_avg_age_s"] = avg_age
+
+    def _log_and_return(value, *, elapsed: float | None = None, subbatch_avg: float | None = None):
+        duration = elapsed if elapsed is not None else (time.time() - start)
+        try:
+            log_default_telemetry(
+                phase="quotes_refresh",
+                elapsed_s=duration,
+                dataset_hash=get_active_dataset_hash(),
+                subbatch_avg_s=subbatch_avg,
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo registrar telemetría de quotes_refresh",
+                exc_info=True,
+            )
+        return value
+
     with performance_timer("quotes_refresh", extra=telemetry):
         for raw in items:
             market: str | None = None
@@ -885,7 +973,12 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     source="bulk" if not fallback_mode else "per-symbol",
                     count=len(items),
                 )
-                return data
+                subbatch_avg = summary.get("avg") if isinstance(summary, Mapping) else None
+                try:
+                    subbatch_avg_value = float(subbatch_avg) if subbatch_avg is not None else None
+                except (TypeError, ValueError):
+                    subbatch_avg_value = None
+                return _log_and_return(data, elapsed=elapsed_seconds, subbatch_avg=subbatch_avg_value)
         except InvalidCredentialsError:
             telemetry["status"] = "error"
             telemetry["detail"] = "auth"
@@ -895,12 +988,23 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 pass
             _trigger_logout()
             record_quote_load(None, source="auth-error", count=len(items))
-            return {}
+            return _log_and_return({})
         except requests.RequestException as e:
             telemetry["status"] = "error"
             telemetry["detail"] = "network"
             logger.exception("get_quotes_bulk falló: %s", e)
             record_quote_load(None, source="error", count=len(items))
+            try:
+                log_default_telemetry(
+                    phase="quotes_refresh",
+                    elapsed_s=time.time() - start,
+                    dataset_hash=get_active_dataset_hash(),
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar telemetría de quotes_refresh tras error",
+                    exc_info=True,
+                )
             raise NetworkError("Error de red al obtener cotizaciones") from e
 
         telemetry["mode"] = "threadpool"
@@ -1010,7 +1114,18 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             source="fallback" if fallback_mode else "per-symbol",
             count=len(items),
         )
-        return out
+        subbatch_avg = None
+        if batch_durations:
+            try:
+                subbatch_avg = sum(batch_durations) / len(batch_durations)
+            except ZeroDivisionError:
+                subbatch_avg = None
+        elif isinstance(summary, Mapping):
+            try:
+                subbatch_avg = float(summary.get("avg"))
+            except (TypeError, ValueError):
+                subbatch_avg = None
+        return _log_and_return(out, elapsed=elapsed_seconds, subbatch_avg=subbatch_avg)
 
 
 __all__ = [
@@ -1032,6 +1147,7 @@ __all__ = [
     "_as_optional_int",
     "_load_persisted_quotes",
     "_store_persisted_quotes",
+    "_warm_start_from_disk",
     "_load_persisted_entry",
     "_recover_persisted_quote",
     "_persist_quote",
@@ -1039,5 +1155,7 @@ __all__ = [
     "_normalize_quote",
     "_resolve_auth_ref",
     "_get_quote_cached",
+    "set_active_dataset_hash",
+    "get_active_dataset_hash",
     "fetch_quotes_bulk",
 ]

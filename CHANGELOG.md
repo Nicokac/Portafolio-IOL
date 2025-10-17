@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.15 — Optimización rápida de carga (Noviembre 2025)
+
+### 🚀 Cambios principales
+- Reactivada la escritura de `performance_metrics_14.csv` y `performance_metrics_15.csv` con telemetría normalizada para `quotes_refresh`, `portfolio_view.apply` y `startup.render_portfolio_complete`.
+- El arranque del portafolio registra el tiempo total de login/render en los nuevos CSV y conserva el hash del dataset para correlacionar mejoras.
+
+### 🛠 Internals
+- `services/cache/quotes` precarga el caché en memoria desde disco (_warm-start_) antes del primer refresh, registra telemetría consolidada y expone `set_active_dataset_hash` para correlacionar métricas.
+- `controllers/portfolio/load_data` memoiza `build_quote_batches` por hash de dataset/filtros y sincroniza el dataset hash con la telemetría de `quotes_refresh`.
+- `services/portfolio_view` registra la duración y el ratio de memoización de `portfolio_view.apply` en los CSV de métricas.
+- `shared/telemetry` centraliza la escritura de métricas con cabecera común y logging consistente.
+
+### 🧪 Tests
+```bash
+pytest -q tests/performance/test_quick_optimizations.py
+```
+
 ## 🧩 Portafolio IOL v0.6.13 — Carga diferida de Kaleido (Noviembre 2025)
 
 ### 🚀 Cambios principales

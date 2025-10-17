@@ -1,9 +1,9 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "0.6.13"
-RELEASE_NAME = "Portafolio IOL v0.6.13"
-RELEASE_DATE = "2025-10-29"
+VERSION = "0.6.15"
+RELEASE_NAME = "Portafolio IOL v0.6.15"
+RELEASE_DATE = "2025-11-05"
 CHANGELOG_REF = (
     "Optimización de rendimiento y diagnóstico avanzado con nuevas métricas de caché, telemetría y cobertura de pruebas"
 )
