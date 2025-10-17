@@ -90,6 +90,7 @@ _DATASET_HASH_STATE_KEY = "dataset_hash"
 _DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
 _PORTFOLIO_LAST_USER_STATE_KEY = "__portfolio_last_user_id__"
 _LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
+_LAZY_FLAGS_STATE_KEY = "__portfolio_lazy_flag_tokens__"
 
 
 def _append_tab_metric(
@@ -646,6 +647,65 @@ def _ensure_render_refs() -> dict[str, Any]:
     return refs
 
 
+def _get_lazy_flag_store() -> dict[str, Any]:
+    """Return the dataset map that tracks persisted lazy triggers."""
+
+    try:
+        store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
+    except Exception:  # pragma: no cover - defensive safeguard
+        store = None
+
+    if not isinstance(store, dict):
+        store = {}
+        try:
+            st.session_state[_LAZY_FLAGS_STATE_KEY] = store
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+    return store
+
+
+def _mark_lazy_flag_ready(key: str | None, dataset_token: str) -> None:
+    """Persist that ``key`` has been triggered for ``dataset_token``."""
+
+    if not key:
+        return
+
+    try:
+        st.session_state[key] = True
+    except Exception:  # pragma: no cover - defensive safeguard
+        pass
+
+    store = _get_lazy_flag_store()
+    store[key] = {"dataset": dataset_token, "ts": time.time()}
+
+
+def _lazy_flag_ready(key: str | None, dataset_token: str) -> bool:
+    """Return whether ``key`` should unlock the lazy block for ``dataset_token``."""
+
+    if not key:
+        return False
+
+    try:
+        value = st.session_state.get(key)
+    except Exception:  # pragma: no cover - defensive safeguard
+        value = None
+
+    store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
+    if isinstance(store, dict):
+        record = store.get(key)
+        if isinstance(record, dict):
+            stored_dataset = record.get("dataset")
+            if stored_dataset and stored_dataset != dataset_token:
+                store.pop(key, None)
+                try:
+                    st.session_state.pop(key, None)
+                except Exception:  # pragma: no cover - defensive safeguard
+                    pass
+                return False
+
+    return bool(value)
+
+
 def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
     """Ensure the lazy loading scaffolding exists for the active dataset."""
 
@@ -687,6 +747,8 @@ def _prompt_lazy_block(
     button_label: str,
     info_message: str,
     key: str,
+    dataset_token: str,
+    fallback_key: str | None = None,
 ) -> bool:
     """Render a button and info message for a lazy block, returning readiness."""
 
@@ -709,31 +771,21 @@ def _prompt_lazy_block(
     if clicked:
         block["status"] = "loaded"
         block["triggered_at"] = time.perf_counter()
+        _mark_lazy_flag_ready(key, dataset_token)
+        _mark_lazy_flag_ready(fallback_key, dataset_token)
         return True
 
-    session_ready = False
-    try:
-        session_ready = bool(st.session_state.get(key))
-    except Exception:  # pragma: no cover - defensive safeguard
-        session_ready = False
-
-    fallback_key = None
-    if key.endswith("_load_table"):
-        fallback_key = "load_table"
-    elif key.endswith("_load_charts"):
-        fallback_key = "load_charts"
-
+    session_ready = _lazy_flag_ready(key, dataset_token)
     if fallback_key is not None:
-        try:
-            session_ready = session_ready or bool(st.session_state.get(fallback_key))
-        except Exception:  # pragma: no cover - defensive safeguard
-            pass
+        session_ready = session_ready or _lazy_flag_ready(fallback_key, dataset_token)
 
     if session_ready:
         if block.get("status") != "loaded":
             block["status"] = "loaded"
             if block.get("triggered_at") is None:
                 block["triggered_at"] = time.perf_counter()
+        _mark_lazy_flag_ready(key, dataset_token)
+        _mark_lazy_flag_ready(fallback_key, dataset_token)
         return True
 
     return False
@@ -917,6 +969,8 @@ def render_basic_tab(
         button_label="📊 Cargar tabla del portafolio",
         info_message="La tabla principal se cargará cuando la solicites.",
         key=f"{tab_slug}_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
     )
 
     should_render_table = False
@@ -989,6 +1043,8 @@ def render_basic_tab(
         button_label="📈 Cargar gráficos del portafolio",
         info_message="Los gráficos intradía y el heatmap se cargarán bajo demanda.",
         key=f"{tab_slug}_load_charts",
+        dataset_token=dataset_token,
+        fallback_key="load_charts",
     )
 
     should_render_charts = False
@@ -1043,7 +1099,7 @@ def render_basic_tab(
                     elapsed_ms = (time.perf_counter() - start_trigger) * 1000.0
                     charts_lazy["triggered_at"] = None
                     charts_lazy["loaded_at"] = time.time()
-                    _record_lazy_component_load("charts", elapsed_ms, dataset_token)
+                    _record_lazy_component_load("chart", elapsed_ms, dataset_token)
                 elif not charts_lazy.get("loaded_at"):
                     charts_lazy["loaded_at"] = time.time()
             elif charts_meta is not None:
