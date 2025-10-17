@@ -67,7 +67,7 @@ def test_lazy_components_emit_telemetry(
     assert len(telemetry_events) == 2
 
     components = {event["extra"]["lazy_loaded_component"] for event in telemetry_events}
-    assert components == {"table", "charts"}
+    assert components == {"table", "chart"}
     for event in telemetry_events:
         lazy_ms = event["extra"]["lazy_load_ms"]
         assert isinstance(lazy_ms, (int, float))

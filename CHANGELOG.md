@@ -18,6 +18,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.22 — Lazy Charts + Fix rehidratación de tabla (Febrero 2026)
+
+### 🚀 Cambios principales
+- Estado diferido persistente para tabla y gráficos usando `st.session_state["lazy_blocks"]` y banderas dataset-aware (`load_table`/`load_charts`) que evitan rehidrataciones y placeholders duplicados tras cada `rerun`.
+- Sistema de skeletons estabilizado: los placeholders se marcan una sola vez por sesión y los contenedores se reutilizan sin reinicializar al volver a presionar "Cargar tabla" o "Cargar gráficos".
+- Lazy-load extendido a las visualizaciones del portafolio (líneas, barras y heatmap) con placeholders progresivos y telemetría coherente (`lazy_loaded_component=chart`).
+- Telemetría visual reforzada (`ui_first_paint_ms`, `ui_total_load_ms`, `lazy_load_ms`) con encabezados homogéneos en los CSV y validaciones automáticas bajo 10 s para renders completos.
+- Fallback global para Kaleido cuando Chromium no está disponible, forzando `plotly.renderers.default = "browser"` y registrando el cambio del renderer.
+
+### 🛠 Internals
+- `controllers.portfolio.portfolio` conserva las banderas diferidas por hash de dataset, evita bucles de rehidratación y sincroniza el caché visual con los nuevos placeholders persistentes.
+- `shared.export` detecta la ausencia de Chromium antes de inicializar Kaleido, documenta el switch del renderer y degrada la exportación a imagen de forma segura.
+- `shared.telemetry` añade los campos visuales al header estándar y garantiza que `lazy_loaded_component` y `lazy_load_ms` se serialicen en todos los CSV.
+
+### 🧪 Tests
+```bash
+pytest -q --override-ini addopts='' tests/ui/test_streamlit_lazy_charts.py
+pytest -q --override-ini addopts='' tests/performance/test_visual_stability.py
+```
+
 ## 🩹 Portafolio IOL v0.6.21-patch1 — Skeletons visibles y fallback de Kaleido (Enero 2026)
 
 ### 🚑 Hotfix
