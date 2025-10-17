@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import streamlit as st
 
+from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
 
 
@@ -71,6 +72,7 @@ def render_portfolio_ui(
         render_cache = st.session_state.get("render_cache")
         if isinstance(render_cache, dict):
             telemetry["cached_tabs"] = len(render_cache)
+        mark_portfolio_ui_render_complete()
         return refresh_secs
 
 

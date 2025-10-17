@@ -1,38 +1,33 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import logging
+import shutil
+import threading
 import warnings
 from functools import wraps
-from time import monotonic
+from time import monotonic, perf_counter
 from typing import Any, Callable, Dict, Optional, TypeVar
 
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 
+from services.environment import record_kaleido_lazy_load
+
 logger = logging.getLogger(__name__)
 
-try:
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            category=DeprecationWarning,
-            module=r"plotly\.io",
-        )
-        warnings.filterwarnings(
-            "ignore",
-            category=DeprecationWarning,
-            module=r"kaleido\.scopes",
-        )
-        import kaleido  # noqa: F401  # pragma: no cover - solo verificamos disponibilidad
-        from plotly.io import write_image  # noqa: F401  # pragma: no cover - compatibilidad
-
-    _KALEIDO_AVAILABLE = True
-except Exception as e:  # pragma: no cover - depende del entorno
+try:  # pragma: no cover - detection is lightweight
+    _KALEIDO_AVAILABLE = importlib.util.find_spec("kaleido") is not None
+except Exception:  # pragma: no cover - defensive guard
     _KALEIDO_AVAILABLE = False
-    logger.warning(
-        f"⚠️ Kaleido deshabilitado ({e}) — exportación a imagen omitida"
-    )
+
+if not _KALEIDO_AVAILABLE:
+    logger.warning("⚠️ Dependencia Kaleido no instalada — export a imagen deshabilitado")
+
+_KALEIDO_IMPORTED = False
+_KALEIDO_IMPORT_LOCK = threading.Lock()
 
 try:  # pragma: no cover - streamlit puede no estar disponible en CLI
     import streamlit as st  # type: ignore
@@ -97,6 +92,63 @@ def _mark_runtime_unavailable(exc: Exception | None = None) -> None:
     _KALEIDO_RUNTIME_AVAILABLE = False
 
 
+def _lazy_import_kaleido() -> bool:
+    """Importa Kaleido bajo demanda registrando métricas de latencia."""
+
+    global _KALEIDO_AVAILABLE, _KALEIDO_IMPORTED, _KALEIDO_RUNTIME_AVAILABLE
+
+    if not _KALEIDO_AVAILABLE:
+        _KALEIDO_RUNTIME_AVAILABLE = False
+        return False
+
+    if _KALEIDO_IMPORTED:
+        return True
+
+    with _KALEIDO_IMPORT_LOCK:
+        if _KALEIDO_IMPORTED:
+            return True
+
+        start = perf_counter()
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    category=DeprecationWarning,
+                    module=r"plotly\.io",
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    category=DeprecationWarning,
+                    module=r"kaleido\.scopes",
+                )
+                importlib.import_module("kaleido")
+                plotly_io = importlib.import_module("plotly.io")
+                getattr(plotly_io, "write_image", None)
+        except Exception as exc:  # pragma: no cover - depende del entorno
+            _KALEIDO_AVAILABLE = False
+            _KALEIDO_RUNTIME_AVAILABLE = False
+            _KALEIDO_IMPORTED = False
+            _mark_runtime_unavailable(exc)
+            logger.warning(
+                "⚠️ Kaleido deshabilitado (%s) — exportación a imagen omitida",
+                exc,
+            )
+            return False
+
+        end = perf_counter()
+        duration_ms = (end - start) * 1000.0
+        _KALEIDO_IMPORTED = True
+        _KALEIDO_RUNTIME_AVAILABLE = None
+        record_kaleido_lazy_load(duration_ms, completed_at=end)
+
+    if shutil.which("chromium") is None:
+        logger.warning(
+            "⚠️ Kaleido detectado pero sin Chromium disponible — export limitada"
+        )
+
+    return True
+
+
 @_wrap_with_cache
 def _get_kaleido_scope():
     """Obtiene un alcance de kaleido cacheado para reutilizar el proceso de Chromium."""
@@ -123,8 +175,7 @@ def ensure_kaleido_runtime() -> bool:
 
     global _KALEIDO_RUNTIME_AVAILABLE
 
-    if not _KALEIDO_AVAILABLE:
-        _mark_runtime_unavailable()
+    if not _lazy_import_kaleido():
         return False
 
     if _KALEIDO_RUNTIME_AVAILABLE is not None:
@@ -158,7 +209,7 @@ def ensure_kaleido_runtime() -> bool:
 def fig_to_png_bytes(fig: go.Figure) -> Optional[bytes]:
     """Devuelve la figura renderizada como bytes PNG usando kaleido si está disponible."""
 
-    if not _KALEIDO_AVAILABLE:
+    if not _lazy_import_kaleido():
         logger.warning("⚠️ Exportación no crítica omitida (Kaleido no disponible)")
         return None
 

@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.13 — Carga diferida de Kaleido (Noviembre 2025)
+
+### 🚀 Cambios principales
+- Kaleido se carga de manera diferida tras el render del portafolio, evitando bloquear el arranque de Streamlit.
+- Se registra la métrica `kaleido_load_ms` en `performance_metrics_15.csv` para monitorear la latencia del import.
+
+### 🛠 Internals
+- `shared.export` realiza un import perezoso de Kaleido con instrumentación de métricas y advertencias coherentes.
+- `services.environment` expone `mark_portfolio_ui_render_complete` y persiste el lazy-load en la nueva telemetría.
+
+### 🧪 Tests
+```bash
+pytest -q tests/shared/test_export_lazy_kaleido.py
+pytest -q tests/services/test_environment_imports.py
+# streamlit run app.py --server.headless true --server.port 8501  # opcional manual
+```
+
 ## 🧩 Portafolio IOL v0.6.12 — Render del portafolio sin histórico pesado (Noviembre 2025)
 
 ### 🚀 Cambios principales

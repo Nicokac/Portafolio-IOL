@@ -2,12 +2,15 @@ from __future__ import annotations
 
 """Helpers to capture runtime environment metadata for diagnostics."""
 
+import csv
 import logging
 import os
 import platform
-import shutil
 import sys
+import threading
+import time
 from importlib import import_module
+from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 try:  # pragma: no cover - optional dependency, exercised in integration
@@ -24,18 +27,11 @@ except ImportError:  # pragma: no cover - fallback for very old runtimes
 analysis_logger = logging.getLogger("analysis")
 logger = logging.getLogger(__name__)
 
-_KALEIDO_AVAILABLE = False
-
-try:  # pragma: no cover - optional dependency
-    import kaleido  # type: ignore  # noqa: F401
-except ImportError:  # pragma: no cover - dependency is optional
-    logger.warning("⚠️ Dependencia Kaleido no instalada — export a imagen deshabilitado")
-else:  # pragma: no cover - import side effect only
-    _KALEIDO_AVAILABLE = True
-    logger.info("✅ Dependencia Kaleido disponible")
-
-if shutil.which("chromium") is None and _KALEIDO_AVAILABLE:
-    logger.warning("⚠️ Kaleido detectado pero sin Chromium disponible — export limitada")
+_KALEIDO_METRICS_PATH = Path("performance_metrics_15.csv")
+_KALEIDO_METRICS_FIELDS = ("kaleido_load_ms",)
+_PORTFOLIO_RENDER_COMPLETED_AT: Optional[float] = None
+_KALEIDO_LAZY_RECORDED = False
+_KALEIDO_LOCK = threading.Lock()
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -214,4 +210,70 @@ def capture_environment_snapshot() -> Dict[str, Any]:
     return snapshot
 
 
-__all__ = ["capture_environment_snapshot"]
+def mark_portfolio_ui_render_complete(*, timestamp: Optional[float] = None) -> None:
+    """Record the earliest timestamp when the portfolio UI finished rendering."""
+
+    global _PORTFOLIO_RENDER_COMPLETED_AT
+
+    ts = timestamp if timestamp is not None else time.perf_counter()
+    with _KALEIDO_LOCK:
+        if _PORTFOLIO_RENDER_COMPLETED_AT is None:
+            _PORTFOLIO_RENDER_COMPLETED_AT = ts
+
+
+def _append_kaleido_metric(duration_ms: float) -> None:
+    try:
+        safe_duration = max(float(duration_ms), 0.0)
+    except Exception:
+        safe_duration = 0.0
+
+    payload = {"kaleido_load_ms": f"{safe_duration:.2f}"}
+
+    try:
+        _KALEIDO_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        file_exists = _KALEIDO_METRICS_PATH.exists()
+        with _KALEIDO_METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=_KALEIDO_METRICS_FIELDS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(payload)
+    except Exception:  # pragma: no cover - best effort logging
+        logger.debug(
+            "No se pudo actualizar %s con la métrica de Kaleido",
+            _KALEIDO_METRICS_PATH,
+            exc_info=True,
+        )
+
+
+def record_kaleido_lazy_load(duration_ms: float, *, completed_at: Optional[float] = None) -> None:
+    """Persist telemetry about the Kaleido import once it happens lazily."""
+
+    global _KALEIDO_LAZY_RECORDED
+
+    with _KALEIDO_LOCK:
+        if _KALEIDO_LAZY_RECORDED:
+            return
+        _KALEIDO_LAZY_RECORDED = True
+
+    timestamp = completed_at if completed_at is not None else time.perf_counter()
+    if _PORTFOLIO_RENDER_COMPLETED_AT is not None:
+        delay_ms = max((timestamp - _PORTFOLIO_RENDER_COMPLETED_AT) * 1000.0, 0.0)
+        logger.debug(
+            "Kaleido lazy init triggered %.2f ms después del render del portafolio",
+            delay_ms,
+        )
+
+    _append_kaleido_metric(duration_ms)
+
+    load_seconds = max(float(duration_ms), 0.0) / 1000.0
+    logger.info(
+        "Kaleido initialized lazily after UI render (load=%.1fs)",
+        load_seconds,
+    )
+
+
+__all__ = [
+    "capture_environment_snapshot",
+    "mark_portfolio_ui_render_complete",
+    "record_kaleido_lazy_load",
+]
