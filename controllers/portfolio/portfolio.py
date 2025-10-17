@@ -91,6 +91,8 @@ _DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
 _PORTFOLIO_LAST_USER_STATE_KEY = "__portfolio_last_user_id__"
 _LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
 _LAZY_FLAGS_STATE_KEY = "__portfolio_lazy_flag_tokens__"
+_VISUAL_CACHE_EVENT_STATE_KEY = "__portfolio_visual_cache_event__"
+_UI_PERSIST_STATE_KEY = "portfolio_ui_persist_ms"
 
 
 def _append_tab_metric(
@@ -631,6 +633,33 @@ def _ensure_component_entry(
     if not hasattr(placeholder, "container"):
         placeholder = st.empty()
         entry["placeholder"] = placeholder
+
+    if name in {"table", "charts"}:
+        container = entry.get("container")
+        if not hasattr(container, "empty"):
+            try:
+                container = placeholder.container()
+            except Exception:  # pragma: no cover - defensive safeguard
+                container = st.container()
+            entry["container"] = container
+
+        trigger_placeholder = entry.get("trigger_placeholder")
+        if not hasattr(trigger_placeholder, "container"):
+            try:
+                trigger_placeholder = container.empty()
+            except Exception:  # pragma: no cover - defensive safeguard
+                trigger_placeholder = st.empty()
+            entry["trigger_placeholder"] = trigger_placeholder
+
+        body_placeholder = entry.get("body_placeholder")
+        if not hasattr(body_placeholder, "container"):
+            try:
+                body_placeholder = container.empty()
+            except Exception:  # pragma: no cover - defensive safeguard
+                body_placeholder = st.empty()
+            entry["body_placeholder"] = body_placeholder
+            entry["placeholder"] = body_placeholder
+
     return entry
 
 
@@ -740,6 +769,49 @@ def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
     return lazy_blocks
 
 
+def _record_ui_persist_visibility(block: dict[str, Any], *, visible: bool) -> None:
+    """Track how long lazy UI elements remain visible without flicker."""
+
+    if not isinstance(block, dict):
+        return
+
+    if not visible:
+        block.pop("_ui_persist_start", None)
+        try:
+            st.session_state.pop(_UI_PERSIST_STATE_KEY, None)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo limpiar ui_persist_ms", exc_info=True)
+        return
+
+    now = time.time()
+    loaded_at = block.get("loaded_at")
+    start = None
+    if isinstance(loaded_at, (int, float)):
+        start = float(loaded_at)
+    else:
+        start = block.get("_ui_persist_start")
+        if not isinstance(start, (int, float)):
+            start = now
+            block["_ui_persist_start"] = start
+
+    try:
+        persist_ms = max((now - float(start)) * 1000.0, 0.0)
+    except Exception:  # pragma: no cover - defensive safeguard
+        persist_ms = 0.0
+
+    try:
+        existing = st.session_state.get(_UI_PERSIST_STATE_KEY)
+    except Exception:  # pragma: no cover - defensive safeguard
+        existing = None
+    if isinstance(existing, (int, float)):
+        persist_ms = max(persist_ms, float(existing))
+
+    persist_ms = round(float(persist_ms), 2)
+    try:
+        st.session_state[_UI_PERSIST_STATE_KEY] = persist_ms
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo persistir ui_persist_ms", exc_info=True)
+
 def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | None) -> bool:
     """Render a persistent widget that toggles the lazy loading flag."""
 
@@ -747,10 +819,10 @@ def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | Non
         return False
 
     try:
-        if st.session_state.get(session_key):
-            return True
+        current_value = bool(st.session_state.get(session_key))
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo verificar el estado diferido %s", session_key, exc_info=True)
+        current_value = False
 
     widget_callable = None
     for attr in ("toggle", "checkbox"):
@@ -762,17 +834,21 @@ def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | Non
             widget_callable = getattr(st, attr, None)
             if callable(widget_callable):
                 break
-    result = False
+    result = current_value
     if callable(widget_callable):
         try:
             result = bool(widget_callable(label, key=session_key))
         except TypeError:
             try:
-                result = bool(widget_callable(label, key=session_key, value=False))
+                result = bool(
+                    widget_callable(label, key=session_key, value=current_value)
+                )
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+                result = current_value
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+            result = current_value
     else:
         button_callable = getattr(placeholder, "button", None)
         if not callable(button_callable):
@@ -782,12 +858,21 @@ def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | Non
                 result = bool(button_callable(label, key=session_key))
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug("No se pudo renderizar el botón diferido %s", session_key, exc_info=True)
+                result = current_value
+            else:
+                if result:
+                    try:
+                        st.session_state[session_key] = True
+                    except Exception:  # pragma: no cover - defensive safeguard
+                        logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
 
-    if result:
-        try:
-            st.session_state[session_key] = True
-        except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
+    try:
+        state_value = st.session_state.get(session_key)
+    except Exception:  # pragma: no cover - defensive safeguard
+        state_value = result
+    else:
+        if isinstance(state_value, bool):
+            result = state_value
 
     return bool(result)
 
@@ -804,29 +889,20 @@ def _prompt_lazy_block(
 ) -> bool:
     """Render a persistent lazy trigger returning readiness."""
 
-    if block.get("status") == "loaded":
-        return True
-
     session_key = fallback_key or key
     session_ready = _lazy_flag_ready(key, dataset_token)
     if fallback_key is not None:
         session_ready = session_ready or _lazy_flag_ready(fallback_key, dataset_token)
 
-    if session_ready:
-        if block.get("status") != "loaded":
-            block["status"] = "loaded"
-            if block.get("triggered_at") is None:
-                block["triggered_at"] = time.perf_counter()
-        _mark_lazy_flag_ready(key, dataset_token)
-        _mark_lazy_flag_ready(fallback_key, dataset_token)
-        return True
+    ready = bool(session_ready)
 
-    if info_message and not block.get("prompt_rendered"):
+    if info_message and not ready and not block.get("prompt_rendered"):
         try:
             placeholder.write(info_message)
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo mostrar el mensaje diferido %s", key, exc_info=True)
-        block["prompt_rendered"] = True
+        else:
+            block["prompt_rendered"] = True
 
     if session_key:
         try:
@@ -834,24 +910,24 @@ def _prompt_lazy_block(
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo inicializar la llave diferida %s", session_key, exc_info=True)
 
-    triggered = False
-    if session_key:
-        try:
-            triggered = bool(st.session_state.get(session_key))
-        except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo leer la llave diferida %s", session_key, exc_info=True)
+    trigger_state = _render_lazy_trigger(
+        placeholder, label=button_label, session_key=session_key
+    )
+    ready = ready or trigger_state
 
-    if not triggered:
-        triggered = _render_lazy_trigger(placeholder, label=button_label, session_key=session_key)
-
-    if triggered:
-        block["status"] = "loaded"
-        if block.get("triggered_at") is None:
-            block["triggered_at"] = time.perf_counter()
+    if ready:
+        if block.get("status") != "loaded":
+            block["status"] = "loaded"
+            if block.get("triggered_at") is None:
+                block["triggered_at"] = time.perf_counter()
         _mark_lazy_flag_ready(key, dataset_token)
         _mark_lazy_flag_ready(fallback_key, dataset_token)
+        _record_ui_persist_visibility(block, visible=True)
         return True
 
+    block["status"] = "pending"
+    block["prompt_rendered"] = False
+    _record_ui_persist_visibility(block, visible=False)
     return False
 
 
@@ -941,8 +1017,8 @@ def render_basic_tab(
     lazy_blocks = _ensure_lazy_blocks(dataset_token)
     table_lazy = lazy_blocks["table"]
     charts_lazy = lazy_blocks["charts"]
-    table_lazy["placeholder"] = table_entry["placeholder"]
-    charts_lazy["placeholder"] = charts_entry["placeholder"]
+    table_lazy["placeholder"] = table_entry.get("trigger_placeholder", table_entry.get("placeholder"))
+    charts_lazy["placeholder"] = charts_entry.get("trigger_placeholder", charts_entry.get("placeholder"))
 
     summary_signature = (portfolio_id, summary_filters)
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
@@ -1012,7 +1088,8 @@ def render_basic_tab(
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
     table_entry_hash = table_entry.get("dataset_hash")
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
-    table_placeholder = table_entry["placeholder"]
+    table_placeholder = table_entry.get("body_placeholder") or table_entry["placeholder"]
+    table_trigger_placeholder = table_entry.get("trigger_placeholder") or table_entry["placeholder"]
     previously_rendered_table = bool(table_entry.get("rendered"))
     if not previously_rendered_table and not table_entry.get("skeleton_displayed"):
         skeletons.mark_placeholder("table", placeholder=table_placeholder)
@@ -1029,7 +1106,7 @@ def render_basic_tab(
 
     table_ready = _prompt_lazy_block(
         table_lazy,
-        placeholder=table_entry["placeholder"],
+        placeholder=table_trigger_placeholder,
         button_label="📊 Cargar tabla del portafolio",
         info_message="La tabla principal se cargará cuando la solicites.",
         key=f"{tab_slug}_load_table",
@@ -1045,7 +1122,7 @@ def render_basic_tab(
                 or not table_entry.get("rendered")
             )
             if should_render_table:
-                placeholder = table_entry["placeholder"]
+                placeholder = table_placeholder
                 references = table_refs.get("references")
                 start_trigger = table_lazy.get("triggered_at")
                 updated_refs = update_table_data(
@@ -1084,7 +1161,7 @@ def render_basic_tab(
             elif table_meta is not None:
                 table_entry.setdefault("updated_at", table_meta.get("computed_at"))
                 table_refs.setdefault("dataset_hash", dataset_token)
-                visual_cache_entry.setdefault("table_placeholder", table_entry.get("placeholder"))
+                visual_cache_entry.setdefault("table_placeholder", table_placeholder)
                 visual_cache_entry.setdefault("table_rendered", True)
                 visual_cache_entry.setdefault(
                     "table_timestamp", table_entry.get("updated_at")
@@ -1094,7 +1171,8 @@ def render_basic_tab(
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
     charts_entry_hash = charts_entry.get("dataset_hash")
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
-    charts_placeholder = charts_entry["placeholder"]
+    charts_placeholder = charts_entry.get("body_placeholder") or charts_entry["placeholder"]
+    charts_trigger_placeholder = charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
     charts_refs["placeholder"] = charts_placeholder
     previously_rendered_charts = bool(charts_entry.get("rendered"))
     if charts_lazy.get("status") != "loaded":
@@ -1103,7 +1181,7 @@ def render_basic_tab(
 
     charts_ready = _prompt_lazy_block(
         charts_lazy,
-        placeholder=charts_entry["placeholder"],
+        placeholder=charts_trigger_placeholder,
         button_label="📈 Cargar gráficos del portafolio",
         info_message="Los gráficos intradía y el heatmap se cargarán bajo demanda.",
         key=f"{tab_slug}_load_charts",
@@ -1119,7 +1197,7 @@ def render_basic_tab(
                 or not charts_entry.get("rendered")
             )
             if should_render_charts:
-                placeholder = charts_entry["placeholder"]
+                placeholder = charts_placeholder
                 if not previously_rendered_charts:
                     skeletons.mark_placeholder("charts", placeholder=placeholder)
                     try:
@@ -1808,12 +1886,40 @@ def render_portfolio_section(
         streamlit_overhead = overhead_ms
         if streamlit_overhead is None and reused_visual_cache:
             streamlit_overhead = 0.0
+        try:
+            ui_persist_ms = st.session_state.get(_UI_PERSIST_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            ui_persist_ms = None
+        if isinstance(ui_persist_ms, (int, float)):
+            ui_persist_ms = round(float(ui_persist_ms), 2)
+        else:
+            ui_persist_ms = None
+
+        dataset_cache_key = str(dataset_hash or "none")
+        try:
+            cache_event_state = st.session_state.get(_VISUAL_CACHE_EVENT_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            cache_event_state = None
+        if not isinstance(cache_event_state, dict):
+            cache_event_state = {}
+        if visual_cache_cleared:
+            cache_event_state[dataset_cache_key] = True
+        elif cache_event_state.get(dataset_cache_key):
+            visual_cache_cleared = True
+        else:
+            cache_event_state[dataset_cache_key] = False
+        try:
+            st.session_state[_VISUAL_CACHE_EVENT_STATE_KEY] = cache_event_state
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo persistir el estado de eventos de caché visual", exc_info=True)
+
         telemetry_extra = {
             "reused_visual_cache": reused_visual_cache,
             "streamlit_overhead_ms": streamlit_overhead if streamlit_overhead is not None else "",
             "visual_cache_cleared": visual_cache_cleared,
             "incremental_render": incremental_render,
             "ui_partial_update_ms": partial_update_ms,
+            "ui_persist_ms": ui_persist_ms if ui_persist_ms is not None else "",
         }
         try:
             log_telemetry(
@@ -1967,6 +2073,8 @@ def _clear_visual_cache_state() -> None:
         _DATASET_HASH_STATE_KEY,
         _RENDER_REFS_STATE_KEY,
         _LAZY_BLOCKS_STATE_KEY,
+        _VISUAL_CACHE_EVENT_STATE_KEY,
+        _UI_PERSIST_STATE_KEY,
         "portfolio_incremental_render",
         "portfolio_ui_partial_update_ms",
     ):
