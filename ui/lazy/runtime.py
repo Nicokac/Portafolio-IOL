@@ -88,7 +88,7 @@ def _fragment_factory():
     for attr in ("fragment", "experimental_fragment"):
         factory = getattr(st, attr, None)
         if callable(factory):
-            return factory
+            return lambda nm: factory(nm)
     return None
 
 
