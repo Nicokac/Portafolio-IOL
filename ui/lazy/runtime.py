@@ -88,14 +88,62 @@ _FRAGMENT_WARNING_EMITTED = False
 
 
 def _fragment_factory():
+    factories = []
     for attr in ("fragment", "experimental_fragment"):
         factory = getattr(st, attr, None)
         if callable(factory):
-            return lambda nm, _factory=factory: _ensure_context_manager(
-                _factory(nm)
-            )
+            factories.append(factory)
 
-    _warn_fragment_fallback()
+    if not factories:
+        _warn_fragment_fallback()
+        return None
+
+    def _build(name: str, _factories=factories):
+        for base_factory in _factories:
+            context = _resolve_fragment_context(base_factory, name)
+            if context is not None:
+                return context
+
+        _warn_fragment_fallback()
+        return _container_context()
+
+    return _build
+
+
+def _resolve_fragment_context(factory, name: str):
+    try:
+        candidate = factory()
+    except TypeError:
+        try:
+            candidate = factory(name)
+        except TypeError:
+            logger.debug(
+                "Streamlit fragment factory %r rejected lazy fragment %s", factory, name
+            )
+            return None
+
+    manager = _coerce_fragment_candidate(candidate)
+    if manager is None:
+        logger.debug(
+            "Streamlit fragment factory %r returned unsupported value %r", factory, candidate
+        )
+    return manager
+
+
+def _coerce_fragment_candidate(candidate):
+    if candidate is None:
+        return None
+
+    if hasattr(candidate, "__enter__") and hasattr(candidate, "__exit__"):
+        return candidate
+
+    if callable(candidate):
+        try:
+            resolved = candidate()
+        except TypeError:
+            return None
+        return _coerce_fragment_candidate(resolved)
+
     return None
 
 
