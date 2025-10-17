@@ -223,7 +223,7 @@ def test_table_placeholder_precedes_render(monkeypatch: pytest.MonkeyPatch, lazy
 
     call_order: list[tuple[str, str]] = []
 
-    def fake_mark_placeholder(label: str) -> None:
+    def fake_mark_placeholder(label: str, *, placeholder=None) -> None:  # noqa: ANN001 - test stub
         call_order.append(("skeleton", label))
 
     monkeypatch.setattr(portfolio_mod.skeletons, "mark_placeholder", fake_mark_placeholder)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Tuple
+from typing import Any, Tuple
 
 import streamlit as st
 
@@ -58,24 +58,45 @@ def _is_recorded() -> bool:
     return _FALLBACK_METRIC is not None
 
 
-def mark_placeholder(label: str) -> None:
+def _resolve_placeholder_container(placeholder: Any) -> Any | None:
+    """Return a safe container for the provided placeholder if possible."""
+
+    if placeholder is None:
+        return None
+    container = None
+    try:
+        container_fn = getattr(placeholder, "container", None)
+        if callable(container_fn):
+            container = container_fn()
+    except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+        _LOGGER.debug("No se pudo obtener el contenedor del placeholder", exc_info=True)
+        container = None
+    if container is None:
+        container = placeholder
+    return container
+
+
+def mark_placeholder(label: str, *, placeholder: Any | None = None) -> Any | None:
     """Register the first placeholder render latency if not recorded yet."""
 
     global _FALLBACK_METRIC, _FALLBACK_LABEL
 
-    if _is_recorded():
-        return
-    elapsed = max((time.perf_counter() - _get_start()) * 1000.0, 0.0)
-    try:
-        st.session_state[_METRIC_KEY] = elapsed
-        st.session_state[_LABEL_KEY] = label
-    except Exception:  # pragma: no cover - session state may be read-only
-        _FALLBACK_METRIC = elapsed
-        _FALLBACK_LABEL = label
-    else:
-        _FALLBACK_METRIC = elapsed
-        _FALLBACK_LABEL = label
-    _LOGGER.debug("Skeleton placeholder recorded for %s at %.2f ms", label, elapsed)
+    _LOGGER.info("🧩 Skeleton render called for %s", label)
+
+    if not _is_recorded():
+        elapsed = max((time.perf_counter() - _get_start()) * 1000.0, 0.0)
+        try:
+            st.session_state[_METRIC_KEY] = elapsed
+            st.session_state[_LABEL_KEY] = label
+        except Exception:  # pragma: no cover - session state may be read-only
+            _FALLBACK_METRIC = elapsed
+            _FALLBACK_LABEL = label
+        else:
+            _FALLBACK_METRIC = elapsed
+            _FALLBACK_LABEL = label
+        _LOGGER.debug("Skeleton placeholder recorded for %s at %.2f ms", label, elapsed)
+
+    return _resolve_placeholder_container(placeholder)
 
 
 def get_metric() -> Tuple[float | None, str | None]:

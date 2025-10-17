@@ -18,6 +18,13 @@ from services.environment import record_kaleido_lazy_load
 
 logger = logging.getLogger(__name__)
 
+try:
+    if getattr(pio.renderers, "default", None) != "browser":
+        pio.renderers.default = "browser"
+        logger.info("Plotly renderer fallback set to browser mode")
+except Exception:  # pragma: no cover - defensive guard
+    logger.debug("No se pudo configurar el renderer de Plotly", exc_info=True)
+
 try:  # pragma: no cover - detection is lightweight
     _KALEIDO_AVAILABLE = importlib.util.find_spec("kaleido") is not None
 except Exception:  # pragma: no cover - defensive guard
