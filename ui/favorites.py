@@ -4,32 +4,6 @@ import streamlit as st
 
 from shared.favorite_symbols import FavoriteSymbols
 
-_BADGE_STYLE_KEY = "_favorite_badge_css"
-
-
-def _ensure_badge_styles() -> None:
-    if st.session_state.get(_BADGE_STYLE_KEY):
-        return
-    st.markdown(
-        """
-        <style>
-        .favorite-badges { margin-bottom: 0.5rem; }
-        .favorite-badge {
-            display: inline-block;
-            background-color: rgba(255, 215, 0, 0.15);
-            color: #b8860b;
-            border: 1px solid rgba(184, 134, 11, 0.4);
-            border-radius: 999px;
-            padding: 0.1rem 0.6rem;
-            margin-right: 0.3rem;
-            font-size: 0.85rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.session_state[_BADGE_STYLE_KEY] = True
-
 
 def render_favorite_badges(
     favorites: FavoriteSymbols,
@@ -38,7 +12,6 @@ def render_favorite_badges(
     empty_message: str = "⭐ Aún no marcaste favoritos.",
 ) -> None:
     """Render a badge list with the current favorites."""
-    _ensure_badge_styles()
     favs = favorites.list()
     if not favs:
         st.caption(empty_message)

@@ -1,5 +1,16 @@
 [theme]
 base = "dark"
+primaryColor = "#10a37f"
+backgroundColor = "#0e1117"
+secondaryBackgroundColor = "#111827"
+textColor = "#e2e8f0"
+font = "Inter"
+
+[client]
+toolbarMode = "minimal"
+
+[ui]
+hideTopBar = true
 
 [server]
 fileWatcherType = "poll"
