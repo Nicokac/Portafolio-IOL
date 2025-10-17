@@ -37,3 +37,8 @@ timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_lo
 2025-10-17T05:27:57.097742+00:00,portfolio_view.apply_extended,0.134106,48e268885df5712079a0f58ec938c2a13fb70468,0.500,,,,,,
 2025-10-17T05:27:57.741900+00:00,portfolio.tab_render,0.105625,,,,,portafolio,0.105625,,
 2025-10-17T05:27:57.941929+00:00,portfolio.tab_render,0.050907,,,,,portafolio,0.050907,,
+2025-10-17T15:20:53.409792+00:00,portfolio.tab_render,0.025075,,,,,resumen,0.025075,0.00,33.51,,,,
+2025-10-17T15:21:50.685352+00:00,portfolio.tab_render,0.022095,,,,,resumen,0.022095,0.00,30.01,,,,
+2025-10-17T15:22:43.586340+00:00,portfolio.tab_render,0.022571,,,,,resumen,0.022571,0.00,30.70,,,,
+2025-10-17T15:23:37.533229+00:00,portfolio.tab_render,0.024134,,,,,resumen,0.024134,0.00,31.77,,,,
+2025-10-17T15:26:52.891794+00:00,portfolio.tab_render,0.019989,,,,,resumen,0.019989,0.00,29.30,,,,

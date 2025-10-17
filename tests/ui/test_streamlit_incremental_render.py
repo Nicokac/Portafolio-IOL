@@ -1,0 +1,157 @@
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pandas as pd
+import pytest
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from controllers.portfolio import portfolio as portfolio_mod
+from domain.models import Controls
+
+
+class _NoopContext:
+    def __enter__(self) -> "_NoopContext":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class _Placeholder:
+    def __init__(self, owner: "FakeStreamlit", name: str) -> None:
+        self.owner = owner
+        self.name = name
+        self.container_calls = 0
+
+    def container(self) -> _NoopContext:
+        self.container_calls += 1
+        return _NoopContext()
+
+    def markdown(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def caption(self, *_: Any, **__: Any) -> None:
+        return None
+
+
+class FakeStreamlit:
+    def __init__(self) -> None:
+        self.session_state: dict[str, Any] = {}
+        self.placeholders: list[_Placeholder] = []
+        self.captions: list[str] = []
+
+    def empty(self) -> _Placeholder:
+        placeholder = _Placeholder(self, f"ph{len(self.placeholders)}")
+        self.placeholders.append(placeholder)
+        return placeholder
+
+    def spinner(self, *_: Any, **__: Any) -> _NoopContext:
+        return _NoopContext()
+
+    def caption(self, text: str) -> None:
+        self.captions.append(text)
+
+
+class _FavoritesStub:
+    def sort_options(self, symbols: list[str]) -> list[str]:
+        return list(symbols)
+    def default_index(self, options: list[str]) -> int:
+        return 0
+
+    def format_symbol(self, symbol: str) -> str:
+        return symbol
+
+    def is_favorite(self, symbol: str) -> bool:
+        return False
+
+
+@pytest.fixture(name="fake_streamlit")
+def _fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> FakeStreamlit:
+    fake = FakeStreamlit()
+    monkeypatch.setattr(portfolio_mod, "st", fake)
+    monkeypatch.setattr(portfolio_mod, "measure_execution", lambda *_: _NoopContext())
+    return fake
+
+
+def _patch_render_helpers(monkeypatch: pytest.MonkeyPatch, calls: dict[str, list[int]]) -> None:
+    def _make_updater(key: str):
+        def _update(placeholder: Any, **kwargs: Any) -> dict[str, Any]:
+            calls.setdefault(key, []).append(id(placeholder))
+            refs = kwargs.get("references")
+            if not isinstance(refs, dict):
+                refs = {}
+            refs["has_positions"] = True
+            return refs
+
+        return _update
+
+    monkeypatch.setattr(portfolio_mod, "update_summary_section", _make_updater("summary"))
+    monkeypatch.setattr(portfolio_mod, "update_table_data", _make_updater("table"))
+    monkeypatch.setattr(portfolio_mod, "update_charts", _make_updater("charts"))
+
+
+def _make_viewmodel(df: pd.DataFrame) -> SimpleNamespace:
+    controls = Controls()
+    metrics = SimpleNamespace(ccl_rate=None)
+    return SimpleNamespace(
+        controls=controls,
+        metrics=metrics,
+        positions=df,
+        totals=None,
+        historical_total=None,
+        contributions=None,
+        pending_metrics=(),
+    )
+
+
+def test_incremental_render_reuses_placeholders(monkeypatch: pytest.MonkeyPatch, fake_streamlit: FakeStreamlit) -> None:
+    calls: dict[str, list[int]] = {}
+    _patch_render_helpers(monkeypatch, calls)
+    monkeypatch.setattr(portfolio_mod, "_get_cached_favorites", lambda: _FavoritesStub())
+
+    df = pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [100.0]})
+    viewmodel = _make_viewmodel(df)
+
+    dataset_hash_key = portfolio_mod._DATASET_HASH_STATE_KEY
+    fake_streamlit.session_state[dataset_hash_key] = "hash-1"
+
+    tab_cache: dict[str, Any] = {}
+    portfolio_mod.render_basic_tab(
+        viewmodel,
+        favorites=None,
+        snapshot=SimpleNamespace(),
+        tab_slug="portafolio",
+        tab_cache=tab_cache,
+        timings={},
+        lazy_metrics=False,
+    )
+
+    assert len(calls["summary"]) == 1
+    assert len(calls["table"]) == 1
+    assert len(calls["charts"]) == 1
+
+    render_refs = fake_streamlit.session_state.get(portfolio_mod._RENDER_REFS_STATE_KEY)
+    assert isinstance(render_refs, dict)
+    assert render_refs["incremental_render"] is False
+
+    portfolio_mod.render_basic_tab(
+        viewmodel,
+        favorites=None,
+        snapshot=SimpleNamespace(),
+        tab_slug="portafolio",
+        tab_cache=tab_cache,
+        timings={},
+        lazy_metrics=False,
+    )
+
+    assert len(calls["summary"]) == 1
+    assert len(calls["table"]) == 1
+    assert len(calls["charts"]) == 1
+
+    assert fake_streamlit.session_state.get("portfolio_incremental_render") is True
+    assert portfolio_mod._RENDER_REFS_STATE_KEY in fake_streamlit.session_state
