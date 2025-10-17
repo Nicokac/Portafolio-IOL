@@ -10,14 +10,14 @@ from controllers.portfolio import portfolio as portfolio_mod
 from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
 
 
-def _get_button_key(fake_st: FakeStreamlit, label_prefix: str) -> str:
-    for call in fake_st.button_calls:
+def _get_checkbox_key(fake_st: FakeStreamlit, label_prefix: str) -> str:
+    for call in fake_st.checkbox_calls:
         label = str(call.get("label"))
         if label.startswith(label_prefix):
             key = call.get("key")
             if key:
                 return str(key)
-    raise AssertionError(f"No button rendered with prefix {label_prefix!r}")
+    raise AssertionError(f"No checkbox rendered with prefix {label_prefix!r}")
 
 
 def _patch_renderers(
@@ -87,8 +87,8 @@ def test_lazy_table_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_set
     assert table_calls.call_count == 0
     assert charts_calls.call_count == 0
 
-    table_key = _get_button_key(fake_st, "📊")
-    fake_st._button_clicks[table_key] = [True]
+    table_key = _get_checkbox_key(fake_st, "📊")
+    fake_st._checkbox_values[table_key] = [True]
 
     render_portfolio(
         _DummyContainer(),
@@ -161,8 +161,8 @@ def test_lazy_charts_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_se
     assert summary_calls.call_count == 1
     assert charts_calls.call_count == 0
 
-    chart_key = _get_button_key(fake_st, "📈")
-    fake_st._button_clicks[chart_key] = [True]
+    chart_key = _get_checkbox_key(fake_st, "📈")
+    fake_st._checkbox_values[chart_key] = [True]
 
     render_portfolio(
         _DummyContainer(),

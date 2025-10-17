@@ -740,6 +740,58 @@ def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
     return lazy_blocks
 
 
+def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | None) -> bool:
+    """Render a persistent widget that toggles the lazy loading flag."""
+
+    if not session_key:
+        return False
+
+    try:
+        if st.session_state.get(session_key):
+            return True
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo verificar el estado diferido %s", session_key, exc_info=True)
+
+    widget_callable = None
+    for attr in ("toggle", "checkbox"):
+        widget_callable = getattr(placeholder, attr, None)
+        if callable(widget_callable):
+            break
+    if not callable(widget_callable):
+        for attr in ("toggle", "checkbox"):
+            widget_callable = getattr(st, attr, None)
+            if callable(widget_callable):
+                break
+    result = False
+    if callable(widget_callable):
+        try:
+            result = bool(widget_callable(label, key=session_key))
+        except TypeError:
+            try:
+                result = bool(widget_callable(label, key=session_key, value=False))
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+    else:
+        button_callable = getattr(placeholder, "button", None)
+        if not callable(button_callable):
+            button_callable = getattr(st, "button", None)
+        if callable(button_callable):
+            try:
+                result = bool(button_callable(label, key=session_key))
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo renderizar el botón diferido %s", session_key, exc_info=True)
+
+    if result:
+        try:
+            st.session_state[session_key] = True
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
+
+    return bool(result)
+
+
 def _prompt_lazy_block(
     block: dict[str, Any],
     *,
@@ -750,31 +802,12 @@ def _prompt_lazy_block(
     dataset_token: str,
     fallback_key: str | None = None,
 ) -> bool:
-    """Render a button and info message for a lazy block, returning readiness."""
+    """Render a persistent lazy trigger returning readiness."""
 
     if block.get("status") == "loaded":
         return True
 
-    if info_message and not block.get("prompt_rendered"):
-        try:
-            placeholder.write(info_message)
-        except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo mostrar el mensaje diferido %s", key, exc_info=True)
-        block["prompt_rendered"] = True
-
-    clicked = False
-    try:
-        clicked = bool(st.button(button_label, key=key))
-    except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug("No se pudo renderizar el botón diferido %s", key, exc_info=True)
-
-    if clicked:
-        block["status"] = "loaded"
-        block["triggered_at"] = time.perf_counter()
-        _mark_lazy_flag_ready(key, dataset_token)
-        _mark_lazy_flag_ready(fallback_key, dataset_token)
-        return True
-
+    session_key = fallback_key or key
     session_ready = _lazy_flag_ready(key, dataset_token)
     if fallback_key is not None:
         session_ready = session_ready or _lazy_flag_ready(fallback_key, dataset_token)
@@ -784,6 +817,37 @@ def _prompt_lazy_block(
             block["status"] = "loaded"
             if block.get("triggered_at") is None:
                 block["triggered_at"] = time.perf_counter()
+        _mark_lazy_flag_ready(key, dataset_token)
+        _mark_lazy_flag_ready(fallback_key, dataset_token)
+        return True
+
+    if info_message and not block.get("prompt_rendered"):
+        try:
+            placeholder.write(info_message)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo mostrar el mensaje diferido %s", key, exc_info=True)
+        block["prompt_rendered"] = True
+
+    if session_key:
+        try:
+            st.session_state.setdefault(session_key, False)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo inicializar la llave diferida %s", session_key, exc_info=True)
+
+    triggered = False
+    if session_key:
+        try:
+            triggered = bool(st.session_state.get(session_key))
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo leer la llave diferida %s", session_key, exc_info=True)
+
+    if not triggered:
+        triggered = _render_lazy_trigger(placeholder, label=button_label, session_key=session_key)
+
+    if triggered:
+        block["status"] = "loaded"
+        if block.get("triggered_at") is None:
+            block["triggered_at"] = time.perf_counter()
         _mark_lazy_flag_ready(key, dataset_token)
         _mark_lazy_flag_ready(fallback_key, dataset_token)
         return True

@@ -47,9 +47,9 @@ def test_table_and_charts_defer_until_user_action(
     assert lazy_state["table"]["status"] == "pending"
     assert lazy_state["charts"]["status"] == "pending"
 
-    for call in fake_st.button_calls:
+    for call in fake_st.checkbox_calls:
         state_key = str(call["key"]) if call.get("key") is not None else str(call["label"])
-        fake_st._button_clicks[state_key] = [True]
+        fake_st._checkbox_values[state_key] = [True]
 
     render_portfolio(
         _DummyContainer(),
