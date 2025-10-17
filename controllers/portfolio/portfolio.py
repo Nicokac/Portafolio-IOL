@@ -34,6 +34,7 @@ from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
+from shared.telemetry import log_telemetry
 
 from .load_data import load_portfolio_data
 from .charts import (
@@ -73,12 +74,6 @@ _DATASET_STATS_FALLBACK: dict[str, Any] = {
 }
 
 _TAB_METRICS_PATH = Path("performance_metrics_14.csv")
-_TAB_METRICS_FIELDS = (
-    "tab_name",
-    "portfolio_tab_render_s",
-    "streamlit_overhead_ms",
-    "profile_block_total_ms",
-)
 
 
 def _append_tab_metric(
@@ -103,20 +98,19 @@ def _append_tab_metric(
         except Exception:
             return ""
 
-    payload = {
+    extra = {
         "tab_name": str(tab_name),
         "portfolio_tab_render_s": f"{safe_duration:.6f}",
         "streamlit_overhead_ms": _format_ms(overhead_ms),
         "profile_block_total_ms": _format_ms(profile_ms),
     }
     try:
-        _TAB_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        file_exists = _TAB_METRICS_PATH.exists()
-        with _TAB_METRICS_PATH.open("a", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=_TAB_METRICS_FIELDS)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(payload)
+        log_telemetry(
+            (_TAB_METRICS_PATH,),
+            phase="portfolio.tab_render",
+            elapsed_s=safe_duration,
+            extra=extra,
+        )
     except Exception:  # pragma: no cover - best effort logging
         logger.debug(
             "No se pudo actualizar %s con la métrica de la pestaña %s",

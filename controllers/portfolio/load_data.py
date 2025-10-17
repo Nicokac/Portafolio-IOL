@@ -1,14 +1,16 @@
+import hashlib
+import json
 import logging
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from threading import Lock
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import pandas as pd
 import streamlit as st
 
-from services.cache import fetch_portfolio, fetch_quotes_bulk
+from services.cache import fetch_portfolio, fetch_quotes_bulk, set_active_dataset_hash
 from services.cache.market_data_cache import (
     StaleWhileRevalidateCache,
     create_persistent_cache,
@@ -40,6 +42,10 @@ class QuoteBatch:
 
 _QUOTES_SWR_CACHE: StaleWhileRevalidateCache | None = None
 _QUOTES_SWR_LOCK = Lock()
+_BATCH_MEMO_LOCK = Lock()
+_BATCH_MEMO_CACHE: "OrderedDict[tuple[str, str, int], tuple[QuoteBatch, ...]]" = OrderedDict()
+_BATCH_MEMO_MAX = 8
+_LAST_BATCH_CONTEXT: dict[str, str] = {}
 
 
 def _get_quotes_swr_cache() -> StaleWhileRevalidateCache:
@@ -56,6 +62,81 @@ def _get_quotes_swr_cache() -> StaleWhileRevalidateCache:
                 max_workers=max_quote_workers,
             )
     return _QUOTES_SWR_CACHE
+
+
+def _hash_positions(df_pos: pd.DataFrame | None) -> str:
+    if df_pos is None or df_pos.empty:
+        return "empty"
+    try:
+        hashed = pd.util.hash_pandas_object(df_pos, index=True, categorize=True)
+        return hashlib.sha1(hashed.values.tobytes()).hexdigest()
+    except TypeError:
+        payload = json.dumps(
+            df_pos.to_dict(orient="list"), sort_keys=True, default=str
+        ).encode("utf-8")
+        return hashlib.sha1(payload).hexdigest()
+
+
+def _current_filters_snapshot() -> dict[str, Any]:
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return {}
+    try:
+        return {
+            "hide_cash": state.get("hide_cash"),
+            "selected_syms": list(state.get("selected_syms", []) or []),
+            "selected_types": list(state.get("selected_types", []) or []),
+            "symbol_query": state.get("symbol_query"),
+        }
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo obtener snapshot de filtros", exc_info=True)
+        return {}
+
+
+def _filters_signature(filters: Mapping[str, Any] | None = None) -> str:
+    source = dict(filters or {}) if filters else _current_filters_snapshot()
+    hide_cash = bool(source.get("hide_cash"))
+    raw_syms = source.get("selected_syms") or []
+    raw_types = source.get("selected_types") or []
+    symbol_query = str(source.get("symbol_query", "") or "").strip().lower()
+    cleaned_syms = sorted(
+        {str(sym).strip().upper() for sym in raw_syms if str(sym).strip()}
+    )
+    cleaned_types = sorted(
+        {str(tp).strip().lower() for tp in raw_types if str(tp).strip()}
+    )
+    payload = {
+        "hide_cash": hide_cash,
+        "selected_syms": cleaned_syms,
+        "selected_types": cleaned_types,
+        "symbol_query": symbol_query,
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
+def _clone_batches_for_cache(batches: Iterable[QuoteBatch]) -> tuple[QuoteBatch, ...]:
+    return tuple(
+        QuoteBatch(group=batch.group, pairs=tuple(batch.pairs), key=batch.key)
+        for batch in batches
+    )
+
+
+def _update_last_batch_context(dataset_hash: str, filters_key: str) -> None:
+    global _LAST_BATCH_CONTEXT
+    _LAST_BATCH_CONTEXT = {
+        "dataset_hash": dataset_hash,
+        "filters_key": filters_key,
+    }
+    state = getattr(st, "session_state", None)
+    if state is not None:
+        try:
+            state["portfolio_dataset_hash"] = dataset_hash
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo almacenar dataset_hash en session_state", exc_info=True)
+
+
+def get_last_batch_context() -> dict[str, str]:
+    return dict(_LAST_BATCH_CONTEXT)
 
 
 def _normalize_pairs(df_pos: pd.DataFrame) -> list[tuple[str, str]]:
@@ -121,24 +202,50 @@ def build_quote_batches(
     psvc,
     *,
     batch_size: int | None = None,
+    filters: Mapping[str, Any] | None = None,
 ) -> list[QuoteBatch]:
     """Group quote pairs by asset type and chunk the result into batches."""
 
+    dataset_hash = _hash_positions(df_pos)
+    filters_key = _filters_signature(filters)
     pairs = _normalize_pairs(df_pos)
     if not pairs:
+        _update_last_batch_context(dataset_hash, filters_key)
         return []
+
+    target_size = max(int(batch_size or quotes_batch_size), 1)
+    cache_key = (dataset_hash, filters_key, target_size)
+
+    with _BATCH_MEMO_LOCK:
+        cached = _BATCH_MEMO_CACHE.get(cache_key)
+        if cached is not None:
+            _BATCH_MEMO_CACHE.move_to_end(cache_key)
+    if cached is not None:
+        _update_last_batch_context(dataset_hash, filters_key)
+        return [
+            QuoteBatch(group=entry.group, pairs=list(entry.pairs), key=entry.key)
+            for entry in cached
+        ]
+
     asset_groups = _resolve_asset_groups(df_pos, psvc)
     grouped: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for market, symbol in pairs:
         group = asset_groups.get(symbol, "otros") or "otros"
         grouped[group].append((market, symbol))
-    target_size = max(int(batch_size or quotes_batch_size), 1)
     batches: list[QuoteBatch] = []
     for group in sorted(grouped):
         for chunk in _chunk_pairs(grouped[group], target_size):
             key_parts = [f"{m}:{s}" for m, s in chunk]
             batch_key = f"{group}|" + ",".join(sorted(key_parts))
             batches.append(QuoteBatch(group=group, pairs=list(chunk), key=batch_key))
+
+    stored = _clone_batches_for_cache(batches)
+    with _BATCH_MEMO_LOCK:
+        _BATCH_MEMO_CACHE[cache_key] = stored
+        _BATCH_MEMO_CACHE.move_to_end(cache_key)
+        while len(_BATCH_MEMO_CACHE) > _BATCH_MEMO_MAX:
+            _BATCH_MEMO_CACHE.popitem(last=False)
+    _update_last_batch_context(dataset_hash, filters_key)
     return batches
 
 
@@ -156,8 +263,15 @@ def refresh_quotes_pipeline(
 ) -> tuple[dict[tuple[str, str], dict], list[dict[str, object]]]:
     """Fetch quotes using batching and stale-while-revalidate strategy."""
 
-    batches = build_quote_batches(df_pos, psvc, batch_size=batch_size)
+    filters_snapshot = _current_filters_snapshot()
+    batches = build_quote_batches(
+        df_pos, psvc, batch_size=batch_size, filters=filters_snapshot
+    )
+    context = get_last_batch_context()
+    dataset_hash = context.get("dataset_hash")
+    set_active_dataset_hash(dataset_hash)
     if not batches:
+        set_active_dataset_hash(None)
         return {}, []
 
     cache = swr_cache or _get_quotes_swr_cache()
@@ -240,26 +354,29 @@ def refresh_quotes_pipeline(
         }
         return payload, batch_diagnostic
 
-    with ThreadPoolExecutor(max_workers=worker_count) as executor:
-        futures = {executor.submit(_process, batch): batch for batch in batches}
-        for future in as_completed(futures):
-            try:
-                payload, meta = future.result()
-            except Exception:
-                batch = futures[future]
-                logger.exception(
-                    "Quote batch failed",
-                    extra={
-                        "quotes_batch": {
-                            "group": batch.group,
-                            "symbols": [sym for _, sym in batch.pairs],
-                            "size": len(batch.pairs),
-                        }
-                    },
-                )
-                continue
-            combined.update(payload)
-            diagnostics.append(meta)
+    try:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(_process, batch): batch for batch in batches}
+            for future in as_completed(futures):
+                try:
+                    payload, meta = future.result()
+                except Exception:
+                    batch = futures[future]
+                    logger.exception(
+                        "Quote batch failed",
+                        extra={
+                            "quotes_batch": {
+                                "group": batch.group,
+                                "symbols": [sym for _, sym in batch.pairs],
+                                "size": len(batch.pairs),
+                            }
+                        },
+                    )
+                    continue
+                combined.update(payload)
+                diagnostics.append(meta)
+    finally:
+        set_active_dataset_hash(None)
 
     return combined, diagnostics
 

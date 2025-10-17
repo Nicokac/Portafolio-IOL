@@ -1,1 +1,1 @@
-kaleido_load_ms
+timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_load_ms,tab_name,portfolio_tab_render_s,streamlit_overhead_ms,profile_block_total_ms
