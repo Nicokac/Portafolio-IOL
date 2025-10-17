@@ -29,6 +29,7 @@ _METRIC_COLUMNS = (
     "incremental_render",
     "ui_partial_update_ms",
     "ui_persist_ms",
+    "ui_rerun_scope",
     "reused_visual_cache",
     "visual_cache_cleared",
     "lazy_loaded_component",
