@@ -113,7 +113,13 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_visual_sections_are_cached(monkeypatch: pytest.MonkeyPatch, _portfolio_setup) -> None:
-    fake_st = FakeStreamlit(radio_sequence=[0, 0])
+    fake_st = FakeStreamlit(
+        radio_sequence=[0, 0],
+        button_clicks={
+            "portafolio_load_table": [True, False],
+            "portafolio_load_charts": [True, False],
+        },
+    )
     telemetry_calls: list[dict[str, object]] = []
 
     def _log_telemetry_stub(*_args, **kwargs):

@@ -1,4 +1,4 @@
-timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_load_ms,tab_name,portfolio_tab_render_s,streamlit_overhead_ms,profile_block_total_ms,incremental_render,ui_partial_update_ms,reused_visual_cache,visual_cache_cleared
+timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_load_ms,tab_name,portfolio_tab_render_s,streamlit_overhead_ms,profile_block_total_ms,incremental_render,ui_partial_update_ms,reused_visual_cache,visual_cache_cleared,lazy_loaded_component,lazy_load_ms
 2025-10-17T05:18:28.130669+00:00,portfolio_view.apply_basic,0.070362,48e268885df5712079a0f58ec938c2a13fb70468,0.000,,
 2025-10-17T05:18:28.228484+00:00,portfolio_view.apply_basic,0.057345,48e268885df5712079a0f58ec938c2a13fb70468,0.000,,
 2025-10-17T05:18:28.258705+00:00,portfolio_view.apply_extended,0.007980,48e268885df5712079a0f58ec938c2a13fb70468,1.000,,
@@ -42,3 +42,13 @@ timestamp,phase,elapsed_s,dataset_hash,memo_hit_ratio,subbatch_avg_s,ui_total_lo
 2025-10-17T15:23:37.547908+00:00,portfolio.visual_cache,,dataset-1,,,,,,23.483624999194582,,false,1.41,true,false
 2025-10-17T15:26:52.894200+00:00,portfolio.visual_cache,,dataset-1,,,,,,0.0,,false,1.03,false,false
 2025-10-17T15:26:52.910605+00:00,portfolio.visual_cache,,dataset-1,,,,,,18.838926999758407,,false,1.03,true,false
+2025-10-17T16:01:45.161357+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,22.451806999924884,,false,7.09,false,false,,
+2025-10-17T16:01:45.247374+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,22.451806999924884,,true,0.0,true,false,,
+2025-10-17T16:04:30.445879+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,32.64521099936246,,false,11.83,false,false,,
+2025-10-17T16:04:30.554875+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,32.64521099936246,,true,0.0,true,false,,
+2025-10-17T16:07:16.951406+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,30.51815499929944,,false,11.27,false,false,,
+2025-10-17T16:07:17.076133+00:00,portfolio.lazy_component,0.004348,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,,,,,,,,
+2025-10-17T16:07:17.097493+00:00,portfolio.lazy_component,0.004900,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,,,,,,,,
+2025-10-17T16:07:17.129778+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,75.02413299880573,,false,54.49,true,false,,
+2025-10-17T16:07:55.286046+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,33.53577599955315,,false,12.08,false,false,,
+2025-10-17T16:07:55.457566+00:00,portfolio.visual_cache,,08db40f046b5837901a5ab2fb7df2047036551c4,,,,,,66.01355400016473,,false,44.77,true,false,,

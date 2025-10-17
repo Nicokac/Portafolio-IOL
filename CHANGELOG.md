@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.20 — Render diferido de componentes pesados (Diciembre 2025)
+
+### 🚀 Cambios principales
+- El resumen del portafolio se muestra al instante mientras que la tabla principal y los gráficos intradía/heatmap se cargan bajo demanda mediante botones dedicados.
+- El arranque registra tiempos de carga diferidos por componente y los asocia al hash del dataset para monitorear el impacto en `startup.render_portfolio_complete`.
+
+### 🛠 Internals
+- `render_basic_tab` mantiene `st.session_state["lazy_blocks"]` con los estados `pending`/`loaded`, renderiza placeholders persistentes y registra telemetría `portfolio.lazy_component` para cada carga diferida.
+- `shared.telemetry` incorpora las columnas `lazy_loaded_component` y `lazy_load_ms` en los CSV de métricas y normaliza el encabezado de `performance_metrics_14.csv`/`performance_metrics_15.csv`.
+- El controlador limpia el estado diferido al cambiar de usuario y evita renderizar tablas/gráficos hasta que el usuario interactúa con la UI.
+
+### 🧪 Tests
+```bash
+pytest -q tests/ui/test_streamlit_lazy_loading.py
+pytest -q tests/performance/test_lazy_component_overhead.py
+```
+
 ## 🧩 Portafolio IOL v0.6.19 — Renderización incremental de placeholders (Noviembre 2025)
 
 ### 🚀 Cambios principales

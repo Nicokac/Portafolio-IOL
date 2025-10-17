@@ -40,7 +40,7 @@ from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
-from shared.telemetry import log_telemetry
+from shared.telemetry import log_default_telemetry, log_telemetry
 from infrastructure.iol.auth import get_current_user_id
 
 from .load_data import load_portfolio_data
@@ -88,6 +88,7 @@ _VISUAL_CACHE_STATE_KEY = "cached_render"
 _DATASET_HASH_STATE_KEY = "dataset_hash"
 _DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
 _PORTFOLIO_LAST_USER_STATE_KEY = "__portfolio_last_user_id__"
+_LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
 
 
 def _append_tab_metric(
@@ -644,6 +645,93 @@ def _ensure_render_refs() -> dict[str, Any]:
     return refs
 
 
+def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
+    """Ensure the lazy loading scaffolding exists for the active dataset."""
+
+    state = st.session_state.get(_LAZY_BLOCKS_STATE_KEY)
+    if not isinstance(state, dict):
+        state = {}
+        try:
+            st.session_state[_LAZY_BLOCKS_STATE_KEY] = state
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+
+    lazy_blocks: dict[str, dict[str, Any]] = {}
+    for name in ("table", "charts"):
+        block = state.get(name)
+        if not isinstance(block, dict) or block.get("dataset_hash") != dataset_token:
+            block = {
+                "status": "pending",
+                "dataset_hash": dataset_token,
+                "triggered_at": None,
+                "loaded_at": None,
+                "prompt_rendered": False,
+            }
+            state[name] = block
+        else:
+            if block.get("status") not in ("pending", "loaded"):
+                block["status"] = "pending"
+            block.setdefault("dataset_hash", dataset_token)
+            block.setdefault("triggered_at", None)
+            block.setdefault("loaded_at", None)
+            block.setdefault("prompt_rendered", False)
+        lazy_blocks[name] = block
+    return lazy_blocks
+
+
+def _prompt_lazy_block(
+    block: dict[str, Any],
+    *,
+    placeholder: Any,
+    button_label: str,
+    info_message: str,
+    key: str,
+) -> bool:
+    """Render a button and info message for a lazy block, returning readiness."""
+
+    if block.get("status") == "loaded":
+        return True
+
+    if info_message and not block.get("prompt_rendered"):
+        try:
+            placeholder.info(info_message)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo mostrar el mensaje diferido %s", key, exc_info=True)
+        block["prompt_rendered"] = True
+
+    clicked = False
+    try:
+        clicked = bool(st.button(button_label, key=key))
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo renderizar el botón diferido %s", key, exc_info=True)
+
+    if clicked:
+        block["status"] = "loaded"
+        block["triggered_at"] = time.perf_counter()
+        return True
+
+    return False
+
+
+def _record_lazy_component_load(component: str, elapsed_ms: float, dataset_token: str) -> None:
+    """Persist telemetry for a deferred component once it renders."""
+
+    try:
+        log_default_telemetry(
+            phase="portfolio.lazy_component",
+            elapsed_s=max(float(elapsed_ms), 0.0) / 1000.0,
+            dataset_hash=dataset_token,
+            extra={
+                "lazy_loaded_component": component,
+                "lazy_load_ms": max(float(elapsed_ms), 0.0),
+            },
+        )
+    except Exception:  # pragma: no cover - best-effort logging
+        logger.debug(
+            "No se pudo registrar la telemetría diferida para %s", component, exc_info=True
+        )
+
+
 def _render_updated_caption(timestamp: float | None) -> None:
     """Render a caption with the last update timestamp."""
 
@@ -707,6 +795,12 @@ def render_basic_tab(
     dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
     visual_cache_entry = _get_visual_cache_entry(dataset_hash)
     dataset_token = str(dataset_hash or "none")
+
+    lazy_blocks = _ensure_lazy_blocks(dataset_token)
+    table_lazy = lazy_blocks["table"]
+    charts_lazy = lazy_blocks["charts"]
+    table_lazy["placeholder"] = table_entry["placeholder"]
+    charts_lazy["placeholder"] = charts_entry["placeholder"]
 
     summary_signature = (portfolio_id, summary_filters)
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
@@ -778,48 +872,70 @@ def render_basic_tab(
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
     table_refs["placeholder"] = table_entry["placeholder"]
     previously_rendered_table = bool(table_entry.get("rendered"))
+    if table_lazy.get("status") != "loaded":
+        table_entry["rendered"] = False
+        previously_rendered_table = False
+
+    table_ready = _prompt_lazy_block(
+        table_lazy,
+        placeholder=table_entry["placeholder"],
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla principal se cargará cuando la solicites.",
+        key=f"{tab_slug}_load_table",
+    )
 
     should_render_table = False
-    with _record_stage("render_table", timings):
-        should_render_table = (
-            table_entry.get("dataset_hash") != dataset_token
-            or not table_entry.get("rendered")
-        )
-        if should_render_table:
-            placeholder = table_entry["placeholder"]
-            references = table_refs.get("references")
-            updated_refs = update_table_data(
-                placeholder,
-                render_fn=render_table_section,
-                df_view=df_view,
-                controls=controls,
-                ccl_rate=ccl_rate,
-                favorites=favorites,
-                references=references,
+    if table_ready:
+        with _record_stage("render_table", timings):
+            should_render_table = (
+                table_entry.get("dataset_hash") != dataset_token
+                or not table_entry.get("rendered")
             )
-            table_refs["references"] = updated_refs
-            table_timestamp = time.time()
-            table_entry["signature"] = table_signature
-            table_entry["rendered"] = True
-            table_entry["updated_at"] = table_timestamp
-            table_entry["dataset_hash"] = dataset_token
-            table_refs["dataset_hash"] = dataset_token
-            visual_cache_entry["table_placeholder"] = placeholder
-            visual_cache_entry["table_rendered"] = True
-            visual_cache_entry["table_timestamp"] = table_timestamp
-            _store_component_metadata(
-                portfolio_id,
-                table_filters,
-                tab_slug,
-                "table",
-                table_timestamp,
-            )
-        elif table_meta is not None:
-            table_entry.setdefault("updated_at", table_meta.get("computed_at"))
-            table_refs.setdefault("dataset_hash", dataset_token)
-            visual_cache_entry.setdefault("table_placeholder", table_entry.get("placeholder"))
-            visual_cache_entry.setdefault("table_rendered", True)
-            visual_cache_entry.setdefault("table_timestamp", table_entry.get("updated_at"))
+            if should_render_table:
+                placeholder = table_entry["placeholder"]
+                references = table_refs.get("references")
+                start_trigger = table_lazy.get("triggered_at")
+                updated_refs = update_table_data(
+                    placeholder,
+                    render_fn=render_table_section,
+                    df_view=df_view,
+                    controls=controls,
+                    ccl_rate=ccl_rate,
+                    favorites=favorites,
+                    references=references,
+                )
+                table_refs["references"] = updated_refs
+                table_timestamp = time.time()
+                table_entry["signature"] = table_signature
+                table_entry["rendered"] = True
+                table_entry["updated_at"] = table_timestamp
+                table_entry["dataset_hash"] = dataset_token
+                table_refs["dataset_hash"] = dataset_token
+                visual_cache_entry["table_placeholder"] = placeholder
+                visual_cache_entry["table_rendered"] = True
+                visual_cache_entry["table_timestamp"] = table_timestamp
+                _store_component_metadata(
+                    portfolio_id,
+                    table_filters,
+                    tab_slug,
+                    "table",
+                    table_timestamp,
+                )
+                if start_trigger is not None:
+                    elapsed_ms = (time.perf_counter() - start_trigger) * 1000.0
+                    table_lazy["triggered_at"] = None
+                    table_lazy["loaded_at"] = time.time()
+                    _record_lazy_component_load("table", elapsed_ms, dataset_token)
+                elif not table_lazy.get("loaded_at"):
+                    table_lazy["loaded_at"] = time.time()
+            elif table_meta is not None:
+                table_entry.setdefault("updated_at", table_meta.get("computed_at"))
+                table_refs.setdefault("dataset_hash", dataset_token)
+                visual_cache_entry.setdefault("table_placeholder", table_entry.get("placeholder"))
+                visual_cache_entry.setdefault("table_rendered", True)
+                visual_cache_entry.setdefault(
+                    "table_timestamp", table_entry.get("updated_at")
+                )
 
     charts_signature = (portfolio_id, chart_filters)
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
@@ -827,53 +943,81 @@ def render_basic_tab(
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
     charts_refs["placeholder"] = charts_entry["placeholder"]
     previously_rendered_charts = bool(charts_entry.get("rendered"))
+    if charts_lazy.get("status") != "loaded":
+        charts_entry["rendered"] = False
+        previously_rendered_charts = False
+
+    charts_ready = _prompt_lazy_block(
+        charts_lazy,
+        placeholder=charts_entry["placeholder"],
+        button_label="📈 Cargar gráficos del portafolio",
+        info_message="Los gráficos intradía y el heatmap se cargarán bajo demanda.",
+        key=f"{tab_slug}_load_charts",
+    )
 
     should_render_charts = False
-    with _record_stage("render_charts", timings):
-        should_render_charts = (
-            charts_entry.get("dataset_hash") != dataset_token
-            or not charts_entry.get("rendered")
-        )
-        if should_render_charts:
-            placeholder = charts_entry["placeholder"]
-            references = charts_refs.get("references")
-            updated_refs = update_charts(
-                placeholder,
-                render_fn=render_charts_section,
-                df_view=df_view,
-                controls=controls,
-                ccl_rate=ccl_rate,
-                totals=totals,
-                contribution_metrics=contributions,
-                snapshot=snapshot,
-                references=references,
+    if charts_ready:
+        with _record_stage("render_charts", timings):
+            should_render_charts = (
+                charts_entry.get("dataset_hash") != dataset_token
+                or not charts_entry.get("rendered")
             )
-            charts_refs["references"] = updated_refs
-            charts_timestamp = time.time()
-            charts_entry["signature"] = charts_signature
-            charts_entry["rendered"] = True
-            charts_entry["updated_at"] = charts_timestamp
-            charts_entry["dataset_hash"] = dataset_token
-            charts_refs["dataset_hash"] = dataset_token
-            visual_cache_entry["charts_placeholder"] = placeholder
-            visual_cache_entry["charts_rendered"] = True
-            visual_cache_entry["charts_timestamp"] = charts_timestamp
-            _store_component_metadata(
-                portfolio_id,
-                chart_filters,
-                tab_slug,
-                "charts",
-                charts_timestamp,
-            )
-        elif charts_meta is not None:
-            charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
-            charts_refs.setdefault("dataset_hash", dataset_token)
-            visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
-            visual_cache_entry.setdefault("charts_rendered", True)
-            visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
+            if should_render_charts:
+                placeholder = charts_entry["placeholder"]
+                references = charts_refs.get("references")
+                start_trigger = charts_lazy.get("triggered_at")
+                updated_refs = update_charts(
+                    placeholder,
+                    render_fn=render_charts_section,
+                    df_view=df_view,
+                    controls=controls,
+                    ccl_rate=ccl_rate,
+                    totals=totals,
+                    contribution_metrics=contributions,
+                    snapshot=snapshot,
+                    references=references,
+                )
+                charts_refs["references"] = updated_refs
+                charts_timestamp = time.time()
+                charts_entry["signature"] = charts_signature
+                charts_entry["rendered"] = True
+                charts_entry["updated_at"] = charts_timestamp
+                charts_entry["dataset_hash"] = dataset_token
+                charts_refs["dataset_hash"] = dataset_token
+                visual_cache_entry["charts_placeholder"] = placeholder
+                visual_cache_entry["charts_rendered"] = True
+                visual_cache_entry["charts_timestamp"] = charts_timestamp
+                _store_component_metadata(
+                    portfolio_id,
+                    chart_filters,
+                    tab_slug,
+                    "charts",
+                    charts_timestamp,
+                )
+                if start_trigger is not None:
+                    elapsed_ms = (time.perf_counter() - start_trigger) * 1000.0
+                    charts_lazy["triggered_at"] = None
+                    charts_lazy["loaded_at"] = time.time()
+                    _record_lazy_component_load("charts", elapsed_ms, dataset_token)
+                elif not charts_lazy.get("loaded_at"):
+                    charts_lazy["loaded_at"] = time.time()
+            elif charts_meta is not None:
+                charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
+                charts_refs.setdefault("dataset_hash", dataset_token)
+                visual_cache_entry.setdefault(
+                    "charts_placeholder", charts_entry.get("placeholder")
+                )
+                visual_cache_entry.setdefault("charts_rendered", True)
+                visual_cache_entry.setdefault(
+                    "charts_timestamp", charts_entry.get("updated_at")
+                )
 
     partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
     incremental_render = not should_render_summary and not should_render_table and not should_render_charts
+    if isinstance(tab_cache, dict):
+        tab_cache["lazy_pending"] = (
+            table_lazy.get("status") != "loaded" or charts_lazy.get("status") != "loaded"
+        )
     if not incremental_render:
         cached_dataset = render_refs.get("dataset_hash")
         if cached_dataset == dataset_token:
@@ -1377,8 +1521,11 @@ def render_portfolio_section(
 
         with _record_stage(f"render_tab.{tab_slug}", timings):
             first_visit = not bool(tab_loaded.get(tab_slug))
-            should_render = cache_entry.get("signature") != tab_signature or not cache_entry.get(
-                "rendered"
+            lazy_pending = bool(cache_entry.get("lazy_pending"))
+            should_render = (
+                cache_entry.get("signature") != tab_signature
+                or not cache_entry.get("rendered")
+                or lazy_pending
             )
             source = "fresh" if not cache_entry.get("rendered") else "cache"
             latency_ms: float | None = cache_entry.get("latency_ms")
@@ -1655,6 +1802,7 @@ def _clear_visual_cache_state() -> None:
         _VISUAL_CACHE_STATE_KEY,
         _DATASET_HASH_STATE_KEY,
         _RENDER_REFS_STATE_KEY,
+        _LAZY_BLOCKS_STATE_KEY,
         "portfolio_incremental_render",
         "portfolio_ui_partial_update_ms",
     ):
