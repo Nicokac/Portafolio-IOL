@@ -8,7 +8,7 @@ import json
 import time
 import threading
 import math
-from typing import Dict, Any
+from typing import Dict, Any, Mapping
 
 import streamlit as st
 import requests
@@ -20,6 +20,8 @@ from services.diagnostics import run_startup_diagnostics
 from services.health import record_diagnostics_snapshot
 
 logger = logging.getLogger(__name__)
+_SESSION_USER_ID_KEY = "iol_current_user_id"
+_LAST_USER_STATE_KEY = "last_user_id"
 
 TOKEN_URL = "https://api.invertironline.com/token"
 REQ_TIMEOUT = 30
@@ -38,6 +40,78 @@ if _iol_key:
         FERNET = Fernet(_iol_key.encode())
     except Exception as e:
         logger.warning("Clave de cifrado inválida: %s", e)
+
+
+def _normalize_user_id(value: Any) -> str | None:
+    """Return a normalized string representation for ``value`` if possible."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, bool):  # pragma: no cover - bools are not expected
+        return str(value)
+    if isinstance(value, (int, float)):
+        try:
+            if isinstance(value, float) and math.isnan(value):
+                return None
+        except (TypeError, ValueError):  # pragma: no cover - defensive branch
+            return None
+        return str(value)
+    return None
+
+
+def _resolve_user_id(tokens: Mapping[str, Any] | Dict[str, Any], fallback: str | None) -> str | None:
+    """Extract the most relevant user identifier from ``tokens``."""
+
+    candidates = (
+        tokens.get("user_id") if isinstance(tokens, Mapping) else None,
+        tokens.get("userId") if isinstance(tokens, Mapping) else None,
+        tokens.get("UserId") if isinstance(tokens, Mapping) else None,
+        tokens.get("user") if isinstance(tokens, Mapping) else None,
+        tokens.get("username") if isinstance(tokens, Mapping) else None,
+        tokens.get("userName") if isinstance(tokens, Mapping) else None,
+        tokens.get("sub") if isinstance(tokens, Mapping) else None,
+    )
+    for candidate in candidates:
+        normalized = _normalize_user_id(candidate)
+        if normalized:
+            return normalized
+    return _normalize_user_id(fallback)
+
+
+def _update_session_user_identity(user_id: str | None) -> None:
+    """Persist the current user identity in ``st.session_state``."""
+
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return
+    try:
+        if user_id is None:
+            state.pop(_SESSION_USER_ID_KEY, None)
+            state.pop(_LAST_USER_STATE_KEY, None)
+        else:
+            state[_SESSION_USER_ID_KEY] = user_id
+            state[_LAST_USER_STATE_KEY] = user_id
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo actualizar el estado de usuario", exc_info=True)
+
+
+def get_current_user_id() -> str | None:
+    """Return the active user identifier stored in Streamlit's session state."""
+
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return None
+    try:
+        user_id = _normalize_user_id(state.get(_SESSION_USER_ID_KEY))
+        if user_id:
+            return user_id
+        return _normalize_user_id(state.get(_LAST_USER_STATE_KEY))
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo obtener el usuario actual", exc_info=True)
+        return None
 
 @dataclass
 class IOLAuth:
@@ -229,6 +303,7 @@ class IOLAuth:
                 raise NetworkError(str(e)) from e
 
             self._save_tokens(self.tokens)
+            _update_session_user_identity(_resolve_user_id(self.tokens, self.user))
             end = time.time()
             logger.info(
                 "IOL login ok",
@@ -320,6 +395,7 @@ class IOLAuth:
                 raise NetworkError(str(e)) from e
 
             self._save_tokens(self.tokens)
+            _update_session_user_identity(_resolve_user_id(self.tokens, self.user))
             logger.info(
                 "IOL refresh ok",
                 extra={
@@ -335,6 +411,7 @@ class IOLAuth:
         with self._lock:
             self.tokens = {}
             self._bootstrap_refresh_required = False
+            _update_session_user_identity(None)
             try:
                 os.remove(self.tokens_file)
                 logger.info("Tokens eliminados: %s", self.tokens_file)
