@@ -75,6 +75,9 @@ _DATASET_STATS_FALLBACK: dict[str, Any] = {
 }
 
 _TAB_METRICS_PATH = Path("performance_metrics_14.csv")
+_VISUAL_CACHE_STATE_KEY = "cached_render"
+_DATASET_HASH_STATE_KEY = "dataset_hash"
+_DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
 
 
 def _append_tab_metric(
@@ -673,15 +676,22 @@ def render_basic_tab(
     table_entry = _ensure_component_entry(component_store, "table")
     charts_entry = _ensure_component_entry(component_store, "charts")
 
+    dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
+    visual_cache_entry = _get_visual_cache_entry(dataset_hash)
+    dataset_token = str(dataset_hash or "none")
+
     summary_signature = (portfolio_id, summary_filters)
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
-    should_render_summary = (
-        summary_entry.get("signature") != summary_signature or summary_meta is None
-    )
+    summary_entry_hash = summary_entry.get("dataset_hash")
+    summary_entry.setdefault("dataset_hash", summary_entry_hash or dataset_token)
 
     has_positions = bool(summary_entry.get("has_positions", not getattr(df_view, "empty", True)))
     summary_timestamp = summary_entry.get("updated_at")
     with _record_stage("render_summary", timings):
+        should_render_summary = (
+            summary_entry.get("dataset_hash") != dataset_token
+            or not summary_entry.get("rendered")
+        )
         if should_render_summary:
             placeholder = summary_entry["placeholder"]
             placeholder.empty()
@@ -704,6 +714,10 @@ def render_basic_tab(
             summary_entry["rendered"] = True
             summary_entry["has_positions"] = has_positions
             summary_entry["updated_at"] = summary_timestamp
+            summary_entry["dataset_hash"] = dataset_token
+            visual_cache_entry["summary_placeholder"] = placeholder
+            visual_cache_entry["summary_rendered"] = True
+            visual_cache_entry["summary_timestamp"] = summary_timestamp
             _store_component_metadata(
                 portfolio_id,
                 summary_filters,
@@ -713,17 +727,24 @@ def render_basic_tab(
             )
         else:
             has_positions = bool(summary_entry.get("has_positions", has_positions))
-            if summary_meta is not None:
+            if summary_timestamp is None and summary_meta is not None:
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
+            visual_cache_entry.setdefault("summary_placeholder", summary_entry.get("placeholder"))
+            visual_cache_entry.setdefault("summary_rendered", True)
+            if summary_timestamp is not None:
+                visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
 
     table_signature = (portfolio_id, table_filters)
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
-    should_render_table = (
-        table_entry.get("signature") != table_signature or table_meta is None
-    )
+    table_entry_hash = table_entry.get("dataset_hash")
+    table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
 
     with _record_stage("render_table", timings):
+        should_render_table = (
+            table_entry.get("dataset_hash") != dataset_token
+            or not table_entry.get("rendered")
+        )
         if should_render_table:
             placeholder = table_entry["placeholder"]
             placeholder.empty()
@@ -738,6 +759,10 @@ def render_basic_tab(
             table_entry["signature"] = table_signature
             table_entry["rendered"] = True
             table_entry["updated_at"] = table_timestamp
+            table_entry["dataset_hash"] = dataset_token
+            visual_cache_entry["table_placeholder"] = placeholder
+            visual_cache_entry["table_rendered"] = True
+            visual_cache_entry["table_timestamp"] = table_timestamp
             _store_component_metadata(
                 portfolio_id,
                 table_filters,
@@ -747,14 +772,20 @@ def render_basic_tab(
             )
         elif table_meta is not None:
             table_entry.setdefault("updated_at", table_meta.get("computed_at"))
+            visual_cache_entry.setdefault("table_placeholder", table_entry.get("placeholder"))
+            visual_cache_entry.setdefault("table_rendered", True)
+            visual_cache_entry.setdefault("table_timestamp", table_entry.get("updated_at"))
 
     charts_signature = (portfolio_id, chart_filters)
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
-    should_render_charts = (
-        charts_entry.get("signature") != charts_signature or charts_meta is None
-    )
+    charts_entry_hash = charts_entry.get("dataset_hash")
+    charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
 
     with _record_stage("render_charts", timings):
+        should_render_charts = (
+            charts_entry.get("dataset_hash") != dataset_token
+            or not charts_entry.get("rendered")
+        )
         if should_render_charts:
             placeholder = charts_entry["placeholder"]
             placeholder.empty()
@@ -771,6 +802,10 @@ def render_basic_tab(
             charts_entry["signature"] = charts_signature
             charts_entry["rendered"] = True
             charts_entry["updated_at"] = charts_timestamp
+            charts_entry["dataset_hash"] = dataset_token
+            visual_cache_entry["charts_placeholder"] = placeholder
+            visual_cache_entry["charts_rendered"] = True
+            visual_cache_entry["charts_timestamp"] = charts_timestamp
             _store_component_metadata(
                 portfolio_id,
                 chart_filters,
@@ -780,6 +815,9 @@ def render_basic_tab(
             )
         elif charts_meta is not None:
             charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
+            visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
+            visual_cache_entry.setdefault("charts_rendered", True)
+            visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
 
 
 def render_risk_tab(
@@ -1215,6 +1253,31 @@ def render_portfolio_section(
         )
         df_view = viewmodel.positions
 
+        dataset_hash: str | None = None
+        hash_helper = getattr(view_model_service, "_hash_dataset", None)
+        if callable(hash_helper):
+            try:
+                dataset_hash = str(hash_helper(df_view))
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo calcular el hash del dataset con el servicio", exc_info=True)
+                dataset_hash = None
+        if not dataset_hash:
+            try:
+                dataset_hash = _hash_dataframe(df_view)
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo calcular el hash del dataset del portafolio", exc_info=True)
+                dataset_hash = ""
+        previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
+        reused_visual_cache = bool(previous_hash) and previous_hash == dataset_hash
+        try:
+            st.session_state[_DATASET_HASH_STATE_KEY] = dataset_hash
+            st.session_state[_DATASET_REUSE_FLAG_KEY] = reused_visual_cache
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo actualizar el estado de caché visual", exc_info=True)
+        visual_entry = _get_visual_cache_entry(dataset_hash)
+        visual_entry["dataset_hash"] = dataset_hash
+        visual_entry["last_seen"] = time.time()
+
         try:
             base_label = viewmodel.tab_options[tab_idx]
         except (IndexError, TypeError):
@@ -1284,23 +1347,54 @@ def render_portfolio_section(
             )
             tab_loaded[tab_slug] = True
 
+        profile_ms: float | None = None
+        overhead_ms: float | None = None
+        if latency_ms is not None and isinstance(timings, dict):
+            stage_key = f"render_tab.{tab_slug}"
+            stage_value = timings.get(stage_key)
+            try:
+                profile_ms = float(stage_value) if stage_value is not None else None
+            except (TypeError, ValueError):
+                profile_ms = None
+        if profile_ms is not None and latency_ms is not None:
+            overhead_ms = max(latency_ms - profile_ms, 0.0)
+        elif latency_ms is not None:
+            overhead_ms = max(latency_ms, 0.0)
+
         if rendered and latency_ms is not None:
-            profile_ms: float | None = None
-            overhead_ms: float | None = None
-            if isinstance(timings, dict):
-                stage_key = f"render_tab.{tab_slug}"
-                stage_value = timings.get(stage_key)
-                try:
-                    profile_ms = float(stage_value) if stage_value is not None else None
-                except (TypeError, ValueError):
-                    profile_ms = None
-            if profile_ms is not None:
-                overhead_ms = max(latency_ms - profile_ms, 0.0)
             _append_tab_metric(
                 tab_slug,
                 latency_ms / 1000.0,
                 profile_ms=profile_ms,
                 overhead_ms=overhead_ms,
+            )
+
+        try:
+            dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            dataset_hash = None
+        reused_visual_cache = bool(
+            st.session_state.get(_DATASET_REUSE_FLAG_KEY)
+        )
+        streamlit_overhead = overhead_ms
+        if streamlit_overhead is None and reused_visual_cache:
+            streamlit_overhead = 0.0
+        try:
+            log_telemetry(
+                (Path("performance_metrics_15.csv"),),
+                phase="portfolio.visual_cache",
+                dataset_hash=(str(dataset_hash) if dataset_hash else None),
+                extra={
+                    "reused_visual_cache": reused_visual_cache,
+                    "streamlit_overhead_ms": streamlit_overhead
+                    if streamlit_overhead is not None
+                    else "",
+                },
+            )
+        except Exception:  # pragma: no cover - telemetry should not break rendering
+            logger.debug(
+                "No se pudo registrar telemetría de caché visual del portafolio",
+                exc_info=True,
             )
 
         return refresh_secs
@@ -1377,6 +1471,31 @@ def _ensure_tab_cache(cache: dict[str, dict[str, Any]], tab_slug: str) -> dict[s
         body_placeholder = st.empty()
         entry["body_placeholder"] = body_placeholder
 
+    return entry
+
+
+def _ensure_visual_cache() -> dict[str, dict[str, Any]]:
+    """Return (and initialize) the dataset-level visual cache."""
+
+    cache = st.session_state.get(_VISUAL_CACHE_STATE_KEY)
+    if not isinstance(cache, dict):
+        cache = {}
+        try:
+            st.session_state[_VISUAL_CACHE_STATE_KEY] = cache
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+    return cache
+
+
+def _get_visual_cache_entry(dataset_hash: str | None) -> dict[str, Any]:
+    """Return the cache bucket associated with ``dataset_hash``."""
+
+    cache = _ensure_visual_cache()
+    key = str(dataset_hash or "none")
+    entry = cache.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+        cache[key] = entry
     return entry
 
 
