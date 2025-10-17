@@ -1477,3 +1477,115 @@ def _get_numeric(payload: Mapping[str, Any], key: str) -> float:
     except (TypeError, ValueError, AttributeError):
         return 0.0
 
+
+def _ensure_container(
+    placeholder: Any, references: MutableMapping[str, Any]
+) -> Any:
+    """Return a persistent container bound to ``placeholder``."""
+
+    container = references.get("container")
+    if container is None or not hasattr(container, "__enter__"):
+        try:
+            container = placeholder.container()
+        except AttributeError:
+            container = placeholder
+        references["container"] = container
+    return container
+
+
+def update_summary_section(
+    placeholder: Any,
+    *,
+    render_fn: Callable[..., Any],
+    df_view: Any,
+    controls: Any,
+    ccl_rate: Any,
+    totals: Any = None,
+    favorites: Any = None,
+    historical_total: Any = None,
+    contribution_metrics: Any = None,
+    snapshot: Any = None,
+    references: MutableMapping[str, Any] | None = None,
+) -> MutableMapping[str, Any]:
+    """Update the summary placeholder without rebuilding the container."""
+
+    refs: MutableMapping[str, Any]
+    if isinstance(references, MutableMapping):
+        refs = references
+    else:
+        refs = {}
+    container = _ensure_container(placeholder, refs)
+    with container:
+        result = render_fn(
+            df_view,
+            controls,
+            ccl_rate,
+            totals=totals,
+            favorites=favorites,
+            historical_total=historical_total,
+            contribution_metrics=contribution_metrics,
+            snapshot=snapshot,
+        )
+    refs["has_positions"] = bool(result)
+    return refs
+
+
+def update_table_data(
+    placeholder: Any,
+    *,
+    render_fn: Callable[..., Any],
+    df_view: Any,
+    controls: Any,
+    ccl_rate: Any,
+    favorites: Any = None,
+    references: MutableMapping[str, Any] | None = None,
+) -> MutableMapping[str, Any]:
+    """Refresh the table placeholder in-place using the provided renderer."""
+
+    refs: MutableMapping[str, Any]
+    if isinstance(references, MutableMapping):
+        refs = references
+    else:
+        refs = {}
+    container = _ensure_container(placeholder, refs)
+    with container:
+        render_fn(
+            df_view,
+            controls,
+            ccl_rate,
+            favorites=favorites,
+        )
+    return refs
+
+
+def update_charts(
+    placeholder: Any,
+    *,
+    render_fn: Callable[..., Any],
+    df_view: Any,
+    controls: Any,
+    ccl_rate: Any,
+    totals: Any = None,
+    contribution_metrics: Any = None,
+    snapshot: Any = None,
+    references: MutableMapping[str, Any] | None = None,
+) -> MutableMapping[str, Any]:
+    """Update the charts placeholder with fresh figures."""
+
+    refs: MutableMapping[str, Any]
+    if isinstance(references, MutableMapping):
+        refs = references
+    else:
+        refs = {}
+    container = _ensure_container(placeholder, refs)
+    with container:
+        render_fn(
+            df_view,
+            controls,
+            ccl_rate,
+            totals=totals,
+            contribution_metrics=contribution_metrics,
+            snapshot=snapshot,
+        )
+    return refs
+

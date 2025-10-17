@@ -28,7 +28,12 @@ from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from services.notifications import NotificationFlags, NotificationsService
 from services.health import record_tab_latency
-from services.portfolio_view import PortfolioViewModelService
+from services.portfolio_view import (
+    PortfolioViewModelService,
+    update_charts,
+    update_summary_section,
+    update_table_data,
+)
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from shared.utils import _as_float_or_none, format_money
@@ -62,6 +67,8 @@ _TA_SERVICE_KEY = "ta_service"
 
 _CACHE_TTL_SECONDS = 300.0
 _INCREMENTAL_CACHE = CacheService(namespace="portfolio_incremental")
+
+_RENDER_REFS_STATE_KEY = "render_refs"
 
 _DATASET_FINGERPRINT_CACHE_KEY = "__portfolio_dataset_fingerprints__"
 _DATASET_FINGERPRINT_STATS_KEY = "__portfolio_dataset_fingerprint_stats__"
@@ -624,6 +631,19 @@ def _ensure_component_entry(
     return entry
 
 
+def _ensure_render_refs() -> dict[str, Any]:
+    """Return the persistent placeholder references stored in session state."""
+
+    refs = st.session_state.get(_RENDER_REFS_STATE_KEY)
+    if not isinstance(refs, dict):
+        refs = {}
+        try:
+            st.session_state[_RENDER_REFS_STATE_KEY] = refs
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+    return refs
+
+
 def _render_updated_caption(timestamp: float | None) -> None:
     """Render a caption with the last update timestamp."""
 
@@ -679,6 +699,11 @@ def render_basic_tab(
     table_entry = _ensure_component_entry(component_store, "table")
     charts_entry = _ensure_component_entry(component_store, "charts")
 
+    render_refs = _ensure_render_refs()
+    summary_refs = render_refs.setdefault("summary", {})
+    table_refs = render_refs.setdefault("table", {})
+    charts_refs = render_refs.setdefault("charts", {})
+
     dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
     visual_cache_entry = _get_visual_cache_entry(dataset_hash)
     dataset_token = str(dataset_hash or "none")
@@ -688,8 +713,13 @@ def render_basic_tab(
     summary_entry_hash = summary_entry.get("dataset_hash")
     summary_entry.setdefault("dataset_hash", summary_entry_hash or dataset_token)
 
+    summary_refs["placeholder"] = summary_entry["placeholder"]
+
     has_positions = bool(summary_entry.get("has_positions", not getattr(df_view, "empty", True)))
     summary_timestamp = summary_entry.get("updated_at")
+    previously_rendered_summary = bool(summary_entry.get("rendered"))
+    partial_update_start = time.perf_counter()
+    should_render_summary = False
     with _record_stage("render_summary", timings):
         should_render_summary = (
             summary_entry.get("dataset_hash") != dataset_token
@@ -697,27 +727,30 @@ def render_basic_tab(
         )
         if should_render_summary:
             placeholder = summary_entry["placeholder"]
-            placeholder.empty()
-            with placeholder.container():
-                has_positions = bool(
-                    render_summary_section(
-                        df_view,
-                        controls,
-                        ccl_rate,
-                        totals=totals,
-                        favorites=favorites,
-                        historical_total=None if pending_extended else historical_total,
-                        contribution_metrics=None if pending_extended else contributions,
-                        snapshot=snapshot,
-                    )
-                )
-                summary_timestamp = time.time()
-                _render_updated_caption(summary_timestamp)
+            references = summary_refs.get("references")
+            updated_refs = update_summary_section(
+                placeholder,
+                render_fn=render_summary_section,
+                df_view=df_view,
+                controls=controls,
+                ccl_rate=ccl_rate,
+                totals=totals,
+                favorites=favorites,
+                historical_total=None if pending_extended else historical_total,
+                contribution_metrics=None if pending_extended else contributions,
+                snapshot=snapshot,
+                references=references,
+            )
+            summary_refs["references"] = updated_refs
+            has_positions = bool(updated_refs.get("has_positions", has_positions))
+            summary_timestamp = time.time()
+            _render_updated_caption(summary_timestamp)
             summary_entry["signature"] = summary_signature
             summary_entry["rendered"] = True
             summary_entry["has_positions"] = has_positions
             summary_entry["updated_at"] = summary_timestamp
             summary_entry["dataset_hash"] = dataset_token
+            summary_refs["dataset_hash"] = dataset_token
             visual_cache_entry["summary_placeholder"] = placeholder
             visual_cache_entry["summary_rendered"] = True
             visual_cache_entry["summary_timestamp"] = summary_timestamp
@@ -730,6 +763,7 @@ def render_basic_tab(
             )
         else:
             has_positions = bool(summary_entry.get("has_positions", has_positions))
+            summary_refs.setdefault("dataset_hash", dataset_token)
             if summary_timestamp is None and summary_meta is not None:
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
@@ -742,7 +776,10 @@ def render_basic_tab(
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
     table_entry_hash = table_entry.get("dataset_hash")
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
+    table_refs["placeholder"] = table_entry["placeholder"]
+    previously_rendered_table = bool(table_entry.get("rendered"))
 
+    should_render_table = False
     with _record_stage("render_table", timings):
         should_render_table = (
             table_entry.get("dataset_hash") != dataset_token
@@ -750,19 +787,23 @@ def render_basic_tab(
         )
         if should_render_table:
             placeholder = table_entry["placeholder"]
-            placeholder.empty()
-            with placeholder.container():
-                render_table_section(
-                    df_view,
-                    controls,
-                    ccl_rate,
-                    favorites=favorites,
-                )
+            references = table_refs.get("references")
+            updated_refs = update_table_data(
+                placeholder,
+                render_fn=render_table_section,
+                df_view=df_view,
+                controls=controls,
+                ccl_rate=ccl_rate,
+                favorites=favorites,
+                references=references,
+            )
+            table_refs["references"] = updated_refs
             table_timestamp = time.time()
             table_entry["signature"] = table_signature
             table_entry["rendered"] = True
             table_entry["updated_at"] = table_timestamp
             table_entry["dataset_hash"] = dataset_token
+            table_refs["dataset_hash"] = dataset_token
             visual_cache_entry["table_placeholder"] = placeholder
             visual_cache_entry["table_rendered"] = True
             visual_cache_entry["table_timestamp"] = table_timestamp
@@ -775,6 +816,7 @@ def render_basic_tab(
             )
         elif table_meta is not None:
             table_entry.setdefault("updated_at", table_meta.get("computed_at"))
+            table_refs.setdefault("dataset_hash", dataset_token)
             visual_cache_entry.setdefault("table_placeholder", table_entry.get("placeholder"))
             visual_cache_entry.setdefault("table_rendered", True)
             visual_cache_entry.setdefault("table_timestamp", table_entry.get("updated_at"))
@@ -783,7 +825,10 @@ def render_basic_tab(
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
     charts_entry_hash = charts_entry.get("dataset_hash")
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
+    charts_refs["placeholder"] = charts_entry["placeholder"]
+    previously_rendered_charts = bool(charts_entry.get("rendered"))
 
+    should_render_charts = False
     with _record_stage("render_charts", timings):
         should_render_charts = (
             charts_entry.get("dataset_hash") != dataset_token
@@ -791,21 +836,25 @@ def render_basic_tab(
         )
         if should_render_charts:
             placeholder = charts_entry["placeholder"]
-            placeholder.empty()
-            with placeholder.container():
-                render_charts_section(
-                    df_view,
-                    controls,
-                    ccl_rate,
-                    totals=totals,
-                    contribution_metrics=contributions,
-                    snapshot=snapshot,
-                )
+            references = charts_refs.get("references")
+            updated_refs = update_charts(
+                placeholder,
+                render_fn=render_charts_section,
+                df_view=df_view,
+                controls=controls,
+                ccl_rate=ccl_rate,
+                totals=totals,
+                contribution_metrics=contributions,
+                snapshot=snapshot,
+                references=references,
+            )
+            charts_refs["references"] = updated_refs
             charts_timestamp = time.time()
             charts_entry["signature"] = charts_signature
             charts_entry["rendered"] = True
             charts_entry["updated_at"] = charts_timestamp
             charts_entry["dataset_hash"] = dataset_token
+            charts_refs["dataset_hash"] = dataset_token
             visual_cache_entry["charts_placeholder"] = placeholder
             visual_cache_entry["charts_rendered"] = True
             visual_cache_entry["charts_timestamp"] = charts_timestamp
@@ -818,9 +867,36 @@ def render_basic_tab(
             )
         elif charts_meta is not None:
             charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
+            charts_refs.setdefault("dataset_hash", dataset_token)
             visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
             visual_cache_entry.setdefault("charts_rendered", True)
             visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
+
+    partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
+    incremental_render = not should_render_summary and not should_render_table and not should_render_charts
+    if not incremental_render:
+        cached_dataset = render_refs.get("dataset_hash")
+        if cached_dataset == dataset_token:
+            incremental_render = (
+                previously_rendered_summary
+                and previously_rendered_table
+                and previously_rendered_charts
+                and not should_render_summary
+                and not should_render_table
+                and not should_render_charts
+            )
+    render_refs["dataset_hash"] = dataset_token
+    render_refs["incremental_render"] = incremental_render
+    render_refs["ui_partial_update_ms"] = partial_update_ms
+    visual_cache_entry["incremental_render"] = incremental_render
+    visual_cache_entry["ui_partial_update_ms"] = partial_update_ms
+    try:
+        st.session_state["portfolio_incremental_render"] = incremental_render
+        st.session_state["portfolio_ui_partial_update_ms"] = partial_update_ms
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo persistir el estado incremental del portafolio", exc_info=True
+        )
 
 
 def render_risk_tab(
@@ -1280,6 +1356,7 @@ def render_portfolio_section(
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo actualizar el estado de caché visual", exc_info=True)
         visual_entry = _get_visual_cache_entry(dataset_hash)
+        dataset_token = str(dataset_hash or "none")
         visual_entry["dataset_hash"] = dataset_hash
         visual_entry["last_seen"] = time.time()
 
@@ -1342,6 +1419,25 @@ def render_portfolio_section(
                 record_tab_latency(tab_slug, latency_ms, status=source)
             else:
                 record_tab_latency(tab_slug, 0.0, status="cache")
+                # When nothing was re-rendered we are effectively performing an
+                # incremental update and should expose that state for
+                # downstream telemetry (even if the render helpers were not
+                # invoked on this pass).
+                try:
+                    st.session_state["portfolio_incremental_render"] = True
+                    st.session_state["portfolio_ui_partial_update_ms"] = 0.0
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo marcar el render incremental del portafolio",
+                        exc_info=True,
+                    )
+                render_refs = st.session_state.get(_RENDER_REFS_STATE_KEY)
+                if isinstance(render_refs, dict):
+                    render_refs["dataset_hash"] = dataset_token
+                    render_refs["incremental_render"] = True
+                    render_refs["ui_partial_update_ms"] = 0.0
+                visual_entry["incremental_render"] = True
+                visual_entry["ui_partial_update_ms"] = 0.0
 
             cache_entry["last_source"] = source
             _update_status_message(
@@ -1366,12 +1462,29 @@ def render_portfolio_section(
         elif latency_ms is not None:
             overhead_ms = max(latency_ms, 0.0)
 
+        incremental_render = bool(
+            st.session_state.get("portfolio_incremental_render", False)
+        )
+        partial_update_ms = st.session_state.get("portfolio_ui_partial_update_ms")
+        if not isinstance(partial_update_ms, (int, float)):
+            partial_update_ms = None
+        elif partial_update_ms < 0:
+            partial_update_ms = 0.0
+        else:
+            partial_update_ms = round(float(partial_update_ms), 2)
         if rendered and latency_ms is not None:
             _append_tab_metric(
                 tab_slug,
                 latency_ms / 1000.0,
                 profile_ms=profile_ms,
                 overhead_ms=overhead_ms,
+            )
+        elif incremental_render:
+            _append_tab_metric(
+                tab_slug,
+                0.0,
+                profile_ms=0.0,
+                overhead_ms=0.0,
             )
 
         try:
@@ -1388,6 +1501,8 @@ def render_portfolio_section(
             "reused_visual_cache": reused_visual_cache,
             "streamlit_overhead_ms": streamlit_overhead if streamlit_overhead is not None else "",
             "visual_cache_cleared": visual_cache_cleared,
+            "incremental_render": incremental_render,
+            "ui_partial_update_ms": partial_update_ms,
         }
         try:
             log_telemetry(
@@ -1536,7 +1651,13 @@ def _resolve_active_user_id() -> str | None:
 def _clear_visual_cache_state() -> None:
     """Remove cached visual state from ``st.session_state``."""
 
-    for key in (_VISUAL_CACHE_STATE_KEY, _DATASET_HASH_STATE_KEY):
+    for key in (
+        _VISUAL_CACHE_STATE_KEY,
+        _DATASET_HASH_STATE_KEY,
+        _RENDER_REFS_STATE_KEY,
+        "portfolio_incremental_render",
+        "portfolio_ui_partial_update_ms",
+    ):
         try:
             if key in st.session_state:
                 del st.session_state[key]

@@ -24,6 +24,8 @@ _METRIC_COLUMNS = (
     "portfolio_tab_render_s",
     "streamlit_overhead_ms",
     "profile_block_total_ms",
+    "incremental_render",
+    "ui_partial_update_ms",
     "reused_visual_cache",
     "visual_cache_cleared",
 )
@@ -55,6 +57,8 @@ class TelemetryRow:
             "portfolio_tab_render_s": "",
             "streamlit_overhead_ms": "",
             "profile_block_total_ms": "",
+            "incremental_render": "",
+            "ui_partial_update_ms": "",
             "reused_visual_cache": "",
             "visual_cache_cleared": "",
         }

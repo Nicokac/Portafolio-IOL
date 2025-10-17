@@ -18,6 +18,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.19 — Renderización incremental de placeholders (Noviembre 2025)
+
+### 🚀 Cambios principales
+- El tab de portafolio reutiliza placeholders persistentes para resumen, tabla y gráficos, evitando reconstrucciones del DOM cuando el dataset no cambia.
+- Las actualizaciones parciales registran `incremental_render` y `ui_partial_update_ms`, permitiendo medir la latencia de refrescos incrementales.
+- Los KPIs del resumen se muestran inmediatamente mientras que tabla y gráficos se actualizan progresivamente usando referencias almacenadas en `st.session_state["render_refs"]`.
+
+### 🛠 Internals
+- `render_basic_tab` conserva referencias de contenedores en sesión, sincroniza el hash del dataset y actualiza cada sección con los nuevos helpers incrementales del servicio de viewmodel.
+- `services.portfolio_view` incorpora `update_summary_section`, `update_table_data` y `update_charts` para refrescar componentes existentes sin invocar `empty()`.
+- `shared.telemetry` y `performance_metrics_15.csv` incluyen las columnas `incremental_render` y `ui_partial_update_ms` para correlacionar los beneficios de la renderización parcial.
+- Se persisten métricas de refresco incremental en `st.session_state` y se limpian junto con el caché visual al cambiar de usuario.
+
+### 🧪 Tests
+```bash
+pytest -q tests/ui/test_streamlit_incremental_render.py
+pytest -q tests/performance/test_incremental_overhead_reduction.py
+```
+
 ## 🧩 Portafolio IOL v0.6.18 — Limpieza de caché visual por sesión (Noviembre 2025)
 
 ### 🚀 Cambios principales
