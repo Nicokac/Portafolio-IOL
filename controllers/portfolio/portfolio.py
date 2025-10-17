@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 import unicodedata
 from collections import OrderedDict
@@ -521,6 +522,9 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
         "ccl_rate": getattr(metrics, "ccl_rate", None),
         "snapshot": getattr(snapshot, "storage_id", None) or getattr(snapshot, "id", None),
         "favorites": _favorites_signature(favorites),
+        "pending": ";".join(
+            sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())
+        ),
     }
     return json.dumps(payload, sort_keys=True, default=str)
 
@@ -639,6 +643,7 @@ def render_basic_tab(
     tab_slug: str = "portafolio",
     tab_cache: dict[str, Any] | None = None,
     timings: dict[str, float] | None = None,
+    lazy_metrics: bool = False,
 ) -> None:
     """Render the summary view for the basic portfolio tab with incremental caching."""
 
@@ -650,6 +655,13 @@ def render_basic_tab(
     historical_total = getattr(viewmodel, "historical_total", None)
     contributions = getattr(viewmodel, "contributions", None)
     ccl_rate = getattr(metrics, "ccl_rate", None)
+    pending_metrics = tuple(getattr(viewmodel, "pending_metrics", ()) or ())
+    pending_extended = "extended_metrics" in pending_metrics
+
+    if lazy_metrics and pending_extended:
+        with st.spinner("Calculando métricas extendidas del portafolio..."):
+            time.sleep(0.05)
+        st.caption("⏳ Calculando métricas extendidas del portafolio...")
 
     portfolio_id = _portfolio_dataset_key(viewmodel, df_view)
     summary_filters = _summary_filters_key(controls, metrics, favorites, snapshot)
@@ -681,8 +693,8 @@ def render_basic_tab(
                         ccl_rate,
                         totals=totals,
                         favorites=favorites,
-                        historical_total=historical_total,
-                        contribution_metrics=contributions,
+                        historical_total=None if pending_extended else historical_total,
+                        contribution_metrics=None if pending_extended else contributions,
                         snapshot=snapshot,
                     )
                 )
@@ -1060,6 +1072,7 @@ def render_portfolio_section(
     view_model_service_factory: Callable[[], PortfolioViewModelService] | None = None,
     notifications_service_factory: Callable[[], NotificationsService] | None = None,
     timings: dict[str, float] | None = None,
+    lazy_metrics: bool = False,
 ) -> Any:
     """Render the main portfolio section and return refresh interval."""
     with container:
@@ -1068,6 +1081,77 @@ def render_portfolio_section(
 
         view_model_service = get_portfolio_view_service(view_model_service_factory)
         notifications_service = get_notifications_service(notifications_service_factory)
+
+        def _schedule_lazy_metrics_refresh() -> None:
+            thread_key = "portfolio_extended_thread"
+            dataset_key = view_model_service._hash_dataset(df_pos)
+            entry = st.session_state.get(thread_key)
+            if isinstance(entry, Mapping):
+                active_thread = entry.get("thread")
+                active_dataset = entry.get("dataset")
+                if (
+                    isinstance(active_thread, threading.Thread)
+                    and active_thread.is_alive()
+                    and active_dataset == dataset_key
+                ):
+                    return
+
+            def _compute_and_rerun() -> None:
+                try:
+                    current_dataset = getattr(view_model_service, "_dataset_key", None)
+                    if current_dataset != dataset_key:
+                        return
+                    view_model_service.compute_extended_metrics(
+                        df_pos=df_pos,
+                        controls=controls,
+                        cli=cli,
+                        psvc=psvc,
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo calcular métricas extendidas del portafolio",
+                        exc_info=True,
+                    )
+                finally:
+                    try:
+                        st.session_state.pop(thread_key, None)
+                    except Exception:
+                        logger.debug(
+                            "No se pudo limpiar el estado del hilo de métricas extendidas",
+                            exc_info=True,
+                        )
+                    try:
+                        st.experimental_rerun()
+                    except Exception:
+                        logger.debug(
+                            "No se pudo solicitar rerun tras completar métricas extendidas",
+                            exc_info=True,
+                        )
+
+            worker = threading.Thread(
+                target=_compute_and_rerun,
+                name="portfolio-extended-metrics",
+                daemon=True,
+            )
+
+            try:  # pragma: no cover - optional context for Streamlit threads
+                from streamlit.runtime.scriptrunner import (
+                    add_script_run_ctx,
+                    get_script_run_ctx,
+                )
+            except Exception:
+                add_script_run_ctx = get_script_run_ctx = None
+            if add_script_run_ctx and get_script_run_ctx:
+                try:
+                    add_script_run_ctx(worker, ctx=get_script_run_ctx())
+                except Exception:
+                    logger.debug(
+                        "No se pudo adjuntar el contexto de Streamlit al hilo de métricas",
+                        exc_info=True,
+                    )
+
+            worker.start()
+            st.session_state[thread_key] = {"thread": worker, "dataset": dataset_key}
 
         if snapshot_service.is_null_backend():
             backend_name = snapshot_service.current_backend_name()
@@ -1097,6 +1181,7 @@ def render_portfolio_section(
                 controls=controls,
                 cli=cli,
                 psvc=psvc,
+                lazy_metrics=lazy_metrics,
             )
 
             viewmodel = build_portfolio_viewmodel(
@@ -1112,6 +1197,10 @@ def render_portfolio_section(
             st.session_state["portfolio_last_totals"] = viewmodel.totals
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo almacenar el viewmodel en session_state", exc_info=True)
+
+        pending_extended = "extended_metrics" in getattr(viewmodel, "pending_metrics", ())
+        if lazy_metrics and pending_extended:
+            _schedule_lazy_metrics_refresh()
 
         with _record_stage("notifications", timings):
             notifications = notifications_service.get_flags()
@@ -1175,6 +1264,7 @@ def render_portfolio_section(
                                 tab_slug=tab_slug,
                                 tab_cache=cache_entry,
                                 timings=timings,
+                                lazy_metrics=lazy_metrics,
                             )
                 latency_ms = (time.perf_counter() - perf_start) * 1000.0
                 rendered = True
@@ -1322,6 +1412,7 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
         selected_types,
         symbol_query,
         hide_cash,
+        tuple(sorted(str(item) for item in getattr(viewmodel, "pending_metrics", ()) or ())),
     )
 
 
@@ -1339,6 +1430,7 @@ def _render_selected_tab(
     tab_slug: str,
     tab_cache: dict[str, Any] | None = None,
     timings: dict[str, float] | None = None,
+    lazy_metrics: bool = False,
 ) -> None:
     """Dispatch rendering to the appropriate tab implementation."""
 
@@ -1350,6 +1442,7 @@ def _render_selected_tab(
             tab_slug=tab_slug,
             tab_cache=tab_cache,
             timings=timings,
+            lazy_metrics=lazy_metrics,
         )
     elif tab_idx == 1:
         render_advanced_analysis(df_view, tasvc)
