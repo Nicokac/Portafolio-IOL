@@ -18,6 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.18 — Limpieza de caché visual por sesión (Noviembre 2025)
+
+### 🚀 Cambios principales
+- La UI limpia automáticamente el caché visual cuando el usuario cambia de cuenta o cierra sesión, evitando placeholders con datos obsoletos.
+- El portafolio registra en telemetría el indicador `visual_cache_cleared` para correlacionar reinicios del layout con métricas de performance.
+
+### 🛠 Internals
+- `infrastructure.iol.auth` expone `get_current_user_id()` y sincroniza `st.session_state['last_user_id']` tras login/logout para que la UI detecte cambios de usuario.
+- `render_portfolio_section` invalida `cached_render`/`dataset_hash` al detectar cambios de usuario, loguea el evento `controllers.portfolio.session` y propaga la bandera `visual_cache_cleared`.
+- `shared.telemetry` agrega la columna `visual_cache_cleared` en `performance_metrics_15.csv` para mantener consistencia en los reportes.
+
+### 🧪 Tests
+```bash
+pytest -q tests/ui/test_streamlit_cache_reset.py
+pytest -q tests/ui/test_streamlit_cache_reuse.py
+```
+
 ## 🧩 Portafolio IOL v0.6.17 — Caché visual por hash del dataset (Noviembre 2025)
 
 ### 🚀 Cambios principales

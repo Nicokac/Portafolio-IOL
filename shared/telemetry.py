@@ -25,6 +25,7 @@ _METRIC_COLUMNS = (
     "streamlit_overhead_ms",
     "profile_block_total_ms",
     "reused_visual_cache",
+    "visual_cache_cleared",
 )
 
 
@@ -55,6 +56,7 @@ class TelemetryRow:
             "streamlit_overhead_ms": "",
             "profile_block_total_ms": "",
             "reused_visual_cache": "",
+            "visual_cache_cleared": "",
         }
         if self.extra:
             for key, value in self.extra.items():

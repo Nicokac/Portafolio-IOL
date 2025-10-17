@@ -36,6 +36,7 @@ from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
 from shared.telemetry import log_telemetry
+from infrastructure.iol.auth import get_current_user_id
 
 from .load_data import load_portfolio_data
 from .charts import (
@@ -48,6 +49,7 @@ from .charts import (
 from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
+session_logger = logging.getLogger("controllers.portfolio.session")
 
 _SERVICE_REGISTRY_KEY = "__portfolio_services__"
 _VIEW_MODEL_SERVICE_KEY = "view_model_service"
@@ -78,6 +80,7 @@ _TAB_METRICS_PATH = Path("performance_metrics_14.csv")
 _VISUAL_CACHE_STATE_KEY = "cached_render"
 _DATASET_HASH_STATE_KEY = "dataset_hash"
 _DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
+_PORTFOLIO_LAST_USER_STATE_KEY = "__portfolio_last_user_id__"
 
 
 def _append_tab_metric(
@@ -1120,6 +1123,8 @@ def render_portfolio_section(
         view_model_service = get_portfolio_view_service(view_model_service_factory)
         notifications_service = get_notifications_service(notifications_service_factory)
 
+        visual_cache_cleared = _maybe_reset_visual_cache_state()
+
         def _schedule_lazy_metrics_refresh() -> None:
             thread_key = "portfolio_extended_thread"
             dataset_key = view_model_service._hash_dataset(df_pos)
@@ -1379,17 +1384,17 @@ def render_portfolio_section(
         streamlit_overhead = overhead_ms
         if streamlit_overhead is None and reused_visual_cache:
             streamlit_overhead = 0.0
+        telemetry_extra = {
+            "reused_visual_cache": reused_visual_cache,
+            "streamlit_overhead_ms": streamlit_overhead if streamlit_overhead is not None else "",
+            "visual_cache_cleared": visual_cache_cleared,
+        }
         try:
             log_telemetry(
                 (Path("performance_metrics_15.csv"),),
                 phase="portfolio.visual_cache",
                 dataset_hash=(str(dataset_hash) if dataset_hash else None),
-                extra={
-                    "reused_visual_cache": reused_visual_cache,
-                    "streamlit_overhead_ms": streamlit_overhead
-                    if streamlit_overhead is not None
-                    else "",
-                },
+                extra=telemetry_extra,
             )
         except Exception:  # pragma: no cover - telemetry should not break rendering
             logger.debug(
@@ -1497,6 +1502,90 @@ def _get_visual_cache_entry(dataset_hash: str | None) -> dict[str, Any]:
         entry = {}
         cache[key] = entry
     return entry
+
+
+def _normalize_user_identifier(value: Any) -> str | None:
+    """Normalize a user identifier from ``value`` if possible."""
+
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+    if isinstance(value, (int, float)):
+        try:
+            return str(int(value)) if isinstance(value, int) else str(value)
+        except (TypeError, ValueError):  # pragma: no cover - defensive branch
+            return None
+    return None
+
+
+def _resolve_active_user_id() -> str | None:
+    """Return the active user identifier available in the session state."""
+
+    user_id = get_current_user_id()
+    if user_id:
+        return user_id
+    try:
+        raw = st.session_state.get("last_user_id")
+    except Exception:  # pragma: no cover - defensive safeguard
+        return None
+    return _normalize_user_identifier(raw)
+
+
+def _clear_visual_cache_state() -> None:
+    """Remove cached visual state from ``st.session_state``."""
+
+    for key in (_VISUAL_CACHE_STATE_KEY, _DATASET_HASH_STATE_KEY):
+        try:
+            if key in st.session_state:
+                del st.session_state[key]
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo limpiar el estado %s", key, exc_info=True)
+    try:
+        st.session_state.pop(_DATASET_REUSE_FLAG_KEY, None)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo limpiar la bandera de reutilización de caché visual",
+            exc_info=True,
+        )
+
+
+def _maybe_reset_visual_cache_state() -> bool:
+    """Reset visual caches when the active user changes or logs out."""
+
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return False
+
+    current_user = _resolve_active_user_id()
+    previous_user = _normalize_user_identifier(state.get(_PORTFOLIO_LAST_USER_STATE_KEY))
+    should_reset = False
+    if current_user is None:
+        if previous_user is not None:
+            should_reset = True
+    elif previous_user is not None and previous_user != current_user:
+        should_reset = True
+
+    if should_reset:
+        _clear_visual_cache_state()
+        session_logger.info("Visual cache cleared due to user change/logout")
+
+    try:
+        if current_user is None:
+            state.pop(_PORTFOLIO_LAST_USER_STATE_KEY, None)
+        else:
+            state[_PORTFOLIO_LAST_USER_STATE_KEY] = current_user
+            legacy_user = _normalize_user_identifier(state.get("last_user_id"))
+            if legacy_user != current_user:
+                state["last_user_id"] = current_user
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo actualizar el estado de usuario del portafolio",
+            exc_info=True,
+        )
+
+    return should_reset
 
 
 def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ...]:
