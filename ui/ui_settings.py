@@ -1,7 +1,10 @@
 # ui/ui_settings.py
 from dataclasses import dataclass
+
 import streamlit as st
+
 from .palette import get_palette
+from .utils.bootstrap import ensure_bootstrap_assets
 
 @dataclass
 class UISettings:
@@ -18,13 +21,35 @@ def get_settings() -> UISettings:
     )
 
 
-def apply_settings(settings: UISettings) -> None:
-    """Apply settings to the Streamlit page."""
-    if hasattr(st, "set_page_config"):
+_PAGE_CONFIGURED_KEY = "_ui_page_configured"
+
+
+def _ensure_page_config(layout: str) -> None:
+    if not hasattr(st, "set_page_config"):
+        return
+    try:
+        if st.session_state.get(_PAGE_CONFIGURED_KEY):
+            return
+    except Exception:  # pragma: no cover - session state may be read-only
+        pass
+    try:
         st.set_page_config(
             page_title="IOL — Portafolio en vivo (solo lectura)",
-            layout=settings.layout,
+            layout=layout or "wide",
+            initial_sidebar_state="expanded",
         )
+    except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+        return
+    try:
+        st.session_state[_PAGE_CONFIGURED_KEY] = True
+    except Exception:  # pragma: no cover - session state may be read-only
+        pass
+
+
+def apply_settings(settings: UISettings) -> None:
+    """Apply settings to the Streamlit page."""
+    ensure_bootstrap_assets()
+    _ensure_page_config(settings.layout)
     pal = get_palette(settings.theme)
     style_block = f"""
         <style>
@@ -35,6 +60,8 @@ def apply_settings(settings: UISettings) -> None:
             --color-positive: {pal.positive};
             --color-negative: {pal.negative};
             --color-accent: {pal.accent};
+            --color-highlight-bg: {pal.highlight_bg};
+            --color-highlight-text: {pal.highlight_text};
         }}
         html, body, [data-testid=\"stAppViewContainer\"] {{
             background-color: var(--color-bg);
@@ -54,6 +81,28 @@ def init_ui() -> UISettings:
     return s
 
 
+_LAYOUT_WIDGET_KEY = "_ui_controls_layout"
+_THEME_WIDGET_KEY = "_ui_controls_theme"
+
+
+def _sync_setting(source_key: str, target_key: str) -> None:
+    try:
+        value = st.session_state.get(source_key)
+    except Exception:  # pragma: no cover - session state may be read-only
+        value = None
+    if value is not None:
+        try:
+            st.session_state[target_key] = value
+        except Exception:  # pragma: no cover - defensive guard
+            pass
+    try:
+        st.rerun(False)
+    except TypeError:
+        st.rerun()
+    except Exception:  # pragma: no cover - defensive guard
+        pass
+
+
 def render_ui_controls(container=None) -> UISettings:
     """Render controls allowing the user to tweak layout/theme."""
 
@@ -64,23 +113,27 @@ def render_ui_controls(container=None) -> UISettings:
     if hasattr(host, "markdown"):
         host.markdown("### Apariencia")
 
-    layout = host.radio(
+    try:
+        st.session_state.setdefault(_LAYOUT_WIDGET_KEY, current.layout)
+        st.session_state.setdefault(_THEME_WIDGET_KEY, current.theme)
+    except Exception:  # pragma: no cover - session state may be read-only
+        pass
+
+    host.radio(
         "Layout",
         ("wide", "centered"),
         index=0 if current.layout == "wide" else 1,
+        key=_LAYOUT_WIDGET_KEY,
+        on_change=_sync_setting,
+        args=(_LAYOUT_WIDGET_KEY, "ui_layout"),
     )
-    theme = host.radio(
+    host.radio(
         "Tema",
         ("light", "dark"),
         index=0 if current.theme == "light" else 1,
+        key=_THEME_WIDGET_KEY,
+        on_change=_sync_setting,
+        args=(_THEME_WIDGET_KEY, "ui_theme"),
     )
-
-    new_layout = layout if isinstance(layout, str) else current.layout
-    new_theme = theme if isinstance(theme, str) else current.theme
-
-    if new_layout != current.layout or new_theme != current.theme:
-        st.session_state["ui_layout"] = new_layout
-        st.session_state["ui_theme"] = new_theme
-        st.rerun()
 
     return get_settings()

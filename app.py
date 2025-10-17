@@ -19,6 +19,8 @@ from uuid import uuid4
 
 import streamlit as st
 
+from shared import skeletons
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -67,6 +69,7 @@ def is_preload_complete() -> bool:
 
 
 _TOTAL_LOAD_START = time.perf_counter()
+skeletons.initialize(_TOTAL_LOAD_START)
 
 _LOGIN_PHASE_START_KEY = "_login_phase_started_at"
 _LOGIN_PRELOAD_RECORDED_KEY = "_login_preload_recorded"
@@ -505,6 +508,10 @@ def _render_total_load_indicator(placeholder) -> None:
     overhead_ms: float | None = None
     if logic_total_ms is not None:
         overhead_ms = max(float(elapsed_ms) - logic_total_ms, 0.0)
+    try:
+        st.session_state["streamlit_overhead_ms"] = overhead_ms
+    except Exception:
+        logger.debug("No se pudo almacenar streamlit_overhead_ms", exc_info=True)
 
     try:
         startup_ms = st.session_state.get(_UI_STARTUP_METRIC_KEY)
@@ -528,14 +535,19 @@ def _render_total_load_indicator(placeholder) -> None:
     except Exception:
         logger.debug("No se pudo renderizar el indicador de tiempo total", exc_info=True)
 
-    extra_payload: dict[str, object] | None = None
+    extra_payload: dict[str, object] = {}
     if logic_total_ms is not None:
-        extra_payload = {
-            "profile_block_total_ms": round(logic_total_ms, 2),
-            "profile_block_count": len(profile_block_durations),
-        }
-        if overhead_ms is not None:
-            extra_payload["streamlit_overhead_ms"] = round(overhead_ms, 2)
+        extra_payload["profile_block_total_ms"] = round(logic_total_ms, 2)
+        extra_payload["profile_block_count"] = len(profile_block_durations)
+    if overhead_ms is not None:
+        extra_payload["streamlit_overhead_ms"] = round(overhead_ms, 2)
+    skeleton_ms, skeleton_label = skeletons.get_metric()
+    if skeleton_ms is not None:
+        extra_payload["skeleton_render_ms"] = round(float(skeleton_ms), 2)
+        if skeleton_label:
+            extra_payload["skeleton_placeholder"] = skeleton_label
+    if not extra_payload:
+        extra_payload = None
 
     record_kwargs = {"total_ms": elapsed_ms, "status": "success"}
     if extra_payload:
@@ -555,345 +567,6 @@ def _render_total_load_indicator(placeholder) -> None:
 # Configuración de UI centralizada (tema y layout)
 validate_security_environment()
 init_ui()
-
-st.markdown(
-    """
-    <style>
-        [data-testid="block-container"] {
-            max-width: 100%;
-            padding: 3.5rem 3.25rem 2.75rem;
-            margin: 0 auto;
-        }
-
-        @media (max-width: 992px) {
-            [data-testid="block-container"] {
-                padding: 3rem 2.2rem 2.25rem;
-            }
-        }
-
-        @media (max-width: 640px) {
-            [data-testid="block-container"] {
-                padding: 2.4rem 1.3rem 2rem;
-            }
-        }
-
-        .health-status-badge {
-            --badge-bg: rgba(15, 23, 42, 0.08);
-            --badge-fg: rgb(24, 40, 58);
-            --badge-detail: rgba(15, 23, 42, 0.65);
-            --badge-indicator: rgba(16, 163, 127, 0.85);
-            --badge-indicator-shadow: rgba(16, 163, 127, 0.35);
-            display: inline-flex;
-            align-items: center;
-            gap: 0.65rem;
-            padding: 0.45rem 1.1rem 0.45rem 0.95rem;
-            border-radius: 999px;
-            background: var(--badge-bg);
-            color: var(--badge-fg);
-            font-weight: 600;
-            font-size: 0.95rem;
-            margin-bottom: 1.75rem;
-            transition: background-color 200ms ease, color 200ms ease;
-        }
-
-        .health-status-badge__pulse {
-            width: 0.6rem;
-            height: 0.6rem;
-            border-radius: 50%;
-            background: var(--badge-indicator);
-            box-shadow: 0 0 0 0 var(--badge-indicator-shadow);
-            animation: healthPulse 3.2s ease-in-out infinite;
-            flex-shrink: 0;
-        }
-
-        .health-status-badge__icon {
-            line-height: 1;
-        }
-
-        .health-status-badge__detail {
-            font-weight: 500;
-            color: var(--badge-detail);
-        }
-
-        .health-status-badge--success {
-            --badge-bg: rgba(16, 163, 127, 0.12);
-            --badge-fg: rgb(7, 65, 55);
-            --badge-detail: rgba(7, 65, 55, 0.7);
-            --badge-indicator: rgba(16, 163, 127, 0.95);
-            --badge-indicator-shadow: rgba(16, 163, 127, 0.35);
-        }
-
-        .load-time-indicator {
-            color: rgba(15, 23, 42, 0.65);
-            font-size: 0.9rem;
-            margin: -0.75rem 0 1.5rem;
-        }
-
-        [data-theme="dark"] .load-time-indicator {
-            color: rgba(226, 232, 240, 0.75);
-        }
-
-        .health-status-badge--warning {
-            --badge-bg: rgba(202, 138, 4, 0.14);
-            --badge-fg: rgb(133, 77, 14);
-            --badge-detail: rgba(133, 77, 14, 0.75);
-            --badge-indicator: rgba(217, 119, 6, 0.92);
-            --badge-indicator-shadow: rgba(217, 119, 6, 0.36);
-        }
-
-        .health-status-badge--danger {
-            --badge-bg: rgba(220, 38, 38, 0.14);
-            --badge-fg: rgb(153, 27, 27);
-            --badge-detail: rgba(153, 27, 27, 0.75);
-            --badge-indicator: rgba(239, 68, 68, 0.92);
-            --badge-indicator-shadow: rgba(239, 68, 68, 0.4);
-        }
-
-        .health-status-badge--unknown {
-            --badge-bg: rgba(100, 116, 139, 0.14);
-            --badge-fg: rgb(71, 85, 105);
-            --badge-detail: rgba(71, 85, 105, 0.7);
-            --badge-indicator: rgba(148, 163, 184, 0.9);
-            --badge-indicator-shadow: rgba(148, 163, 184, 0.36);
-        }
-
-        @keyframes healthPulse {
-            0% {
-                box-shadow: 0 0 0 0 var(--badge-indicator-shadow);
-                transform: scale(0.98);
-            }
-            60% {
-                box-shadow: 0 0 0 0.9rem rgba(0, 0, 0, 0);
-                transform: scale(1);
-            }
-            100% {
-                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
-                transform: scale(0.98);
-            }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .health-status-badge__pulse {
-                animation: none;
-            }
-        }
-
-        [data-theme="dark"] .health-status-badge {
-            --badge-bg: rgba(148, 163, 184, 0.16);
-            --badge-fg: rgba(226, 232, 240, 0.92);
-            --badge-detail: rgba(226, 232, 240, 0.65);
-            --badge-indicator-shadow: rgba(94, 234, 212, 0.28);
-        }
-
-        [data-theme="dark"] .health-status-badge--success {
-            --badge-bg: rgba(16, 185, 129, 0.22);
-            --badge-fg: rgba(190, 242, 100, 0.92);
-            --badge-detail: rgba(190, 242, 100, 0.72);
-            --badge-indicator: rgba(16, 185, 129, 0.95);
-            --badge-indicator-shadow: rgba(16, 185, 129, 0.4);
-        }
-
-        [data-theme="dark"] .health-status-badge--warning {
-            --badge-bg: rgba(202, 138, 4, 0.28);
-            --badge-fg: rgba(253, 224, 71, 0.92);
-            --badge-detail: rgba(253, 224, 71, 0.72);
-            --badge-indicator: rgba(234, 179, 8, 0.95);
-            --badge-indicator-shadow: rgba(234, 179, 8, 0.42);
-        }
-
-        [data-theme="dark"] .health-status-badge--danger {
-            --badge-bg: rgba(239, 68, 68, 0.28);
-            --badge-fg: rgba(252, 165, 165, 0.94);
-            --badge-detail: rgba(252, 165, 165, 0.72);
-            --badge-indicator: rgba(248, 113, 113, 0.95);
-            --badge-indicator-shadow: rgba(248, 113, 113, 0.45);
-        }
-
-        [data-theme="dark"] .health-status-badge--unknown {
-            --badge-bg: rgba(100, 116, 139, 0.32);
-            --badge-fg: rgba(226, 232, 240, 0.85);
-            --badge-detail: rgba(226, 232, 240, 0.62);
-            --badge-indicator: rgba(148, 163, 184, 0.9);
-            --badge-indicator-shadow: rgba(148, 163, 184, 0.36);
-        }
-
-        .control-panel__body {
-            background: rgba(15, 23, 42, 0.06);
-            border-radius: 1.25rem;
-            padding: 1.75rem 2rem;
-        }
-
-        .control-panel__body--sidebar {
-            padding: 1.6rem 1.75rem;
-            margin-bottom: 1.6rem;
-        }
-
-        .control-panel__section {
-            background: rgba(15, 23, 42, 0.04);
-            border-radius: 1rem;
-            padding: 1.25rem 1.5rem;
-            margin-bottom: 1.4rem;
-        }
-
-        .control-panel__section:last-child {
-            margin-bottom: 0;
-        }
-
-        .control-panel__banner {
-            padding: 0.85rem 1.2rem;
-            border-radius: 0.95rem;
-            background: rgba(16, 163, 127, 0.12);
-            border: 1px solid rgba(16, 163, 127, 0.28);
-            color: rgb(7, 65, 55);
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        .control-panel__banner--logout {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
-
-        .control-panel__banner--logout::before {
-            content: "\1F512";
-        }
-
-        .fade-out {
-            animation: fade-out 0.9s ease-in forwards;
-            animation-delay: 0.9s;
-        }
-
-        @keyframes fade-out {
-            0% {
-                opacity: 1;
-            }
-
-            100% {
-                opacity: 0;
-            }
-        }
-
-        .control-panel__actions .stButton button {
-            border-radius: 999px;
-            background: rgba(16, 163, 127, 0.12);
-            background: color-mix(in srgb, var(--color-accent) 16%, transparent);
-            border: 1px solid color-mix(in srgb, var(--color-accent) 36%, transparent);
-            color: color-mix(in srgb, var(--color-accent) 78%, var(--color-text) 22%);
-            transition: background-color 150ms ease, border-color 150ms ease,
-                color 150ms ease, box-shadow 150ms ease, transform 120ms ease;
-        }
-
-        .control-panel__actions .stButton button:hover,
-        .control-panel__actions .stButton button:focus-visible {
-            background: color-mix(in srgb, var(--color-accent) 26%, var(--color-bg) 74%);
-            border-color: color-mix(in srgb, var(--color-accent) 48%, transparent);
-            color: color-mix(in srgb, var(--color-accent) 86%, var(--color-text) 14%);
-        }
-
-        .control-panel__actions .stButton button:active {
-            background: color-mix(in srgb, var(--color-accent) 34%, var(--color-bg) 66%);
-            border-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
-            transform: translateY(1px);
-        }
-
-        .control-panel__actions .stButton button:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 32%, transparent);
-        }
-
-        [data-testid="stSidebar"] [role="switch"] {
-            border-radius: 999px;
-            background: color-mix(in srgb, var(--color-text) 14%, transparent);
-            border: 1px solid color-mix(in srgb, var(--color-text) 22%, transparent);
-            transition: background-color 150ms ease, border-color 150ms ease,
-                box-shadow 150ms ease;
-            outline: none;
-        }
-
-        [data-testid="stSidebar"] [role="switch"][aria-checked="true"] {
-            background: color-mix(in srgb, var(--color-accent) 40%, var(--color-bg) 60%);
-            border-color: color-mix(in srgb, var(--color-accent) 58%, transparent);
-        }
-
-        [data-testid="stSidebar"] [role="switch"]:hover {
-            border-color: color-mix(in srgb, var(--color-accent) 46%, transparent);
-        }
-
-        [data-testid="stSidebar"] [role="switch"]:active {
-            background: color-mix(in srgb, var(--color-accent) 48%, var(--color-bg) 52%);
-        }
-
-        [data-testid="stSidebar"] [role="switch"]:focus-visible {
-            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 34%, transparent);
-        }
-
-        [data-testid="stSidebar"] div[data-baseweb="select"] {
-            border-radius: 0.75rem;
-            border: 1px solid color-mix(in srgb, var(--color-text) 22%, transparent);
-            transition: border-color 150ms ease, box-shadow 150ms ease,
-                background-color 150ms ease;
-        }
-
-        [data-testid="stSidebar"] div[data-baseweb="select"]:hover {
-            border-color: color-mix(in srgb, var(--color-accent) 48%, transparent);
-        }
-
-        [data-testid="stSidebar"] div[data-baseweb="select"]:focus-within {
-            border-color: color-mix(in srgb, var(--color-accent) 66%, transparent);
-            box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 30%, transparent);
-            background: color-mix(in srgb, var(--color-accent) 12%, var(--color-bg) 88%);
-        }
-
-        [data-testid="stSidebar"] div[data-baseweb="select"]:active {
-            border-color: color-mix(in srgb, var(--color-accent) 70%, transparent);
-        }
-
-        .control-panel__body .stCaption, .control-panel__section .stCaption {
-            color: rgba(15, 23, 42, 0.65);
-        }
-
-        .control-panel__section + .control-panel__section {
-            margin-top: 0.2rem;
-        }
-
-        div[data-baseweb="tab-panel"] {
-            position: relative;
-            transition: opacity 0.18s ease-out, transform 0.22s ease-out;
-            will-change: opacity, transform;
-        }
-
-        div[data-baseweb="tab-panel"][data-tab-visible="false"] {
-            opacity: 0;
-            transform: translateY(0.6rem) scale(0.985);
-            pointer-events: none;
-        }
-
-        div[data-baseweb="tab-panel"][data-tab-visible="true"] {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: auto;
-        }
-
-        div[data-baseweb="tab-panel"].tab-panel--fade-expand {
-            animation: tab-fade-expand 0.24s ease-out both;
-        }
-
-        @keyframes tab-fade-expand {
-            from {
-                opacity: 0;
-                transform: translateY(0.6rem) scale(0.985);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0) scale(1);
-            }
-        }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 
 def _inject_tab_animation_support() -> None:
@@ -1262,11 +935,22 @@ def main(argv: list[str] | None = None):
             except Exception:  # pragma: no cover - defensive safeguard
                 dataset_hash = None
             try:
+                overhead_value = st.session_state.get("streamlit_overhead_ms")
+            except Exception:
+                overhead_value = None
+            skeleton_ms, _skeleton_label = skeletons.get_metric()
+            telemetry_extra: dict[str, object] = {}
+            if isinstance(overhead_value, (int, float)):
+                telemetry_extra["streamlit_overhead_ms"] = round(float(overhead_value), 2)
+            if skeleton_ms is not None:
+                telemetry_extra["skeleton_render_ms"] = round(float(skeleton_ms), 2)
+            try:
                 log_default_telemetry(
                     phase=event_name,
                     elapsed_s=elapsed_ms / 1000.0,
                     dataset_hash=(str(dataset_hash) if dataset_hash else None),
                     ui_total_load_ms=elapsed_ms,
+                    extra=telemetry_extra or None,
                 )
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug(

@@ -24,6 +24,7 @@ from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.portfolio_service import PortfolioService, map_to_us_ticker
 from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
+from shared import skeletons
 from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from services.notifications import NotificationFlags, NotificationsService
@@ -694,7 +695,7 @@ def _prompt_lazy_block(
 
     if info_message and not block.get("prompt_rendered"):
         try:
-            placeholder.info(info_message)
+            placeholder.write(info_message)
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo mostrar el mensaje diferido %s", key, exc_info=True)
         block["prompt_rendered"] = True
@@ -870,8 +871,17 @@ def render_basic_tab(
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
     table_entry_hash = table_entry.get("dataset_hash")
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
-    table_refs["placeholder"] = table_entry["placeholder"]
+    table_placeholder = table_entry["placeholder"]
     previously_rendered_table = bool(table_entry.get("rendered"))
+    if not previously_rendered_table and not table_entry.get("skeleton_displayed"):
+        try:
+            table_placeholder.write("⏳ Cargando tabla…")
+        except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+            logger.debug("No se pudo mostrar el placeholder inicial de la tabla", exc_info=True)
+        else:
+            table_entry["skeleton_displayed"] = True
+            skeletons.mark_placeholder("table")
+    table_refs["placeholder"] = table_placeholder
     if table_lazy.get("status") != "loaded":
         table_entry["rendered"] = False
         previously_rendered_table = False
@@ -941,7 +951,8 @@ def render_basic_tab(
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
     charts_entry_hash = charts_entry.get("dataset_hash")
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
-    charts_refs["placeholder"] = charts_entry["placeholder"]
+    charts_placeholder = charts_entry["placeholder"]
+    charts_refs["placeholder"] = charts_placeholder
     previously_rendered_charts = bool(charts_entry.get("rendered"))
     if charts_lazy.get("status") != "loaded":
         charts_entry["rendered"] = False
@@ -964,6 +975,16 @@ def render_basic_tab(
             )
             if should_render_charts:
                 placeholder = charts_entry["placeholder"]
+                if not previously_rendered_charts:
+                    try:
+                        placeholder.write("⏳ Cargando gráficos del portafolio…")
+                    except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+                        logger.debug(
+                            "No se pudo mostrar el placeholder de carga de gráficos",
+                            exc_info=True,
+                        )
+                    else:
+                        skeletons.mark_placeholder("charts")
                 references = charts_refs.get("references")
                 start_trigger = charts_lazy.get("triggered_at")
                 updated_refs = update_charts(
@@ -1534,7 +1555,6 @@ def render_portfolio_section(
                 if cache_entry.get("rendered"):
                     source = "hot"
                 body_placeholder = cache_entry["body_placeholder"]
-                body_placeholder.empty()
                 perf_start = time.perf_counter()
                 with body_placeholder.container():
                     if first_visit:

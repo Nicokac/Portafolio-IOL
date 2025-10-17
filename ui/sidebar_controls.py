@@ -9,93 +9,7 @@ import streamlit as st
 
 from domain.models import Controls
 
-_CHIP_STYLE_KEY = "_sidebar_filter_chip_css"
-_FLASH_STYLE_KEY = "_sidebar_controls_flash_css"
 _FLASH_FLAG_KEY = "_sidebar_controls_flash_flag"
-
-
-def _ensure_chip_styles(container) -> None:
-    if st.session_state.get(_CHIP_STYLE_KEY):
-        return
-    container.markdown(
-        """
-        <style>
-            .sidebar-chip-row {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 0.35rem;
-                margin: 0.25rem 0 1rem;
-            }
-            .sidebar-chip {
-                background: rgba(16, 163, 127, 0.12);
-                background: color-mix(in srgb, var(--color-accent) 15%, transparent);
-                color: color-mix(in srgb, var(--color-accent) 70%, var(--color-text) 30%);
-                border-radius: 999px;
-                padding: 0.2rem 0.65rem;
-                font-size: 0.78rem;
-                font-weight: 600;
-                border: 1px solid color-mix(in srgb, var(--color-accent) 32%, transparent);
-                display: inline-flex;
-                align-items: center;
-                gap: 0.35rem;
-                white-space: nowrap;
-                transition: background-color 150ms ease, border-color 150ms ease,
-                    box-shadow 150ms ease, color 150ms ease, transform 120ms ease;
-            }
-            .sidebar-chip:hover,
-            .sidebar-chip:focus-visible {
-                background: color-mix(in srgb, var(--color-accent) 24%, var(--color-bg) 76%);
-                border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-                color: color-mix(in srgb, var(--color-accent) 82%, var(--color-text) 18%);
-            }
-            .sidebar-chip:active {
-                background: color-mix(in srgb, var(--color-accent) 32%, var(--color-bg) 68%);
-                border-color: color-mix(in srgb, var(--color-accent) 58%, transparent);
-                color: color-mix(in srgb, var(--color-accent) 88%, var(--color-text) 12%);
-                transform: translateY(1px);
-            }
-            .sidebar-chip:focus-visible {
-                outline: none;
-                box-shadow: 0 0 0 0.18rem color-mix(in srgb, var(--color-accent) 35%, transparent);
-            }
-            .sidebar-chip__label {
-                line-height: 1.1;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.session_state[_CHIP_STYLE_KEY] = True
-
-
-def _ensure_flash_styles() -> None:
-    if st.session_state.get(_FLASH_STYLE_KEY):
-        return
-    st.markdown(
-        """
-        <style>
-            .control-panel__section--flash {
-                animation: sidebar-controls-flash 1.6s ease-out;
-            }
-            @keyframes sidebar-controls-flash {
-                0% {
-                    box-shadow: 0 0 0 0 rgba(16, 163, 127, 0.45);
-                    background-color: rgba(16, 163, 127, 0.12);
-                }
-                60% {
-                    box-shadow: 0 0 0 6px rgba(16, 163, 127, 0);
-                    background-color: rgba(16, 163, 127, 0.06);
-                }
-                100% {
-                    box-shadow: 0 0 0 0 rgba(16, 163, 127, 0);
-                    background-color: transparent;
-                }
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.session_state[_FLASH_STYLE_KEY] = True
 
 
 def _show_apply_feedback() -> None:
@@ -138,7 +52,6 @@ def _render_filter_overview(container, chips: list[str]) -> None:
         container.caption("Mostrando todos los activos disponibles.")
         return
 
-    _ensure_chip_styles(container)
     chip_html = "".join(
         "<span class='sidebar-chip' tabindex='0' role='status'>"
         "<span class='sidebar-chip__label'>{label}</span>"
@@ -176,9 +89,6 @@ def render_sidebar(
     available_types = list(available_types or [])
 
     flash_active = bool(st.session_state.get(_FLASH_FLAG_KEY))
-    if flash_active:
-        _ensure_flash_styles()
-
     selected_types_state = st.session_state.get("selected_types")
     if selected_types_state is None:
         selected_types_state = st.session_state.get("selected_asset_types")

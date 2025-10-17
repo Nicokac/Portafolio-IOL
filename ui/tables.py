@@ -67,27 +67,6 @@ def render_table(
 
     favorites = favorites or get_persistent_favorites()
     palette = get_active_palette()
-    st.markdown(f"""
-        <style>
-        div[data-testid='stDataFrame'] thead tr th {{
-            position: sticky;
-            top: 0;
-            background-color: {palette.bg};
-            color: {palette.text};
-        }}
-        div[data-testid='stDataFrame'] tbody tr {{
-            background-color: {palette.bg};
-            color: {palette.text};
-        }}
-        div[data-testid='stDataFrame'] tbody td {{
-            transition: background-color 0.2s ease;
-        }}
-        div[data-testid='stDataFrame'] tbody td:hover {{
-            background-color: {palette.highlight_bg};
-            color: {palette.highlight_text};
-        }}
-        </style>
-    """, unsafe_allow_html=True)
 
     cols_order = ["mercado", "simbolo", "tipo", "cantidad", "ultimo", "valor_actual", "costo", "pl", "pl_%", "pl_d", "chg_%"]
     for c in cols_order:

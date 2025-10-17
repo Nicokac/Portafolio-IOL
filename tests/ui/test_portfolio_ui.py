@@ -96,6 +96,11 @@ class _Placeholder:
     def caption(self, text: str) -> None:
         self._owner.caption(text)
 
+    def write(self, body: str) -> None:
+        self._owner.markdowns.append(
+            {"body": body, "unsafe": False, "placeholder": True, "write": True}
+        )
+
 
 class FakeStreamlit:
     """Minimal Streamlit stub capturing the interactions we care about."""
