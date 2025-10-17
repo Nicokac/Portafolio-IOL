@@ -70,6 +70,7 @@ def is_preload_complete() -> bool:
 
 _TOTAL_LOAD_START = time.perf_counter()
 skeletons.initialize(_TOTAL_LOAD_START)
+logger.info("🧩 Skeleton system initialized at %.2f", _TOTAL_LOAD_START)
 
 _LOGIN_PHASE_START_KEY = "_login_phase_started_at"
 _LOGIN_PRELOAD_RECORDED_KEY = "_login_preload_recorded"
@@ -544,6 +545,7 @@ def _render_total_load_indicator(placeholder) -> None:
     skeleton_ms, skeleton_label = skeletons.get_metric()
     if skeleton_ms is not None:
         extra_payload["skeleton_render_ms"] = round(float(skeleton_ms), 2)
+        extra_payload["ui_first_paint_ms"] = round(float(skeleton_ms), 2)
         if skeleton_label:
             extra_payload["skeleton_placeholder"] = skeleton_label
     if not extra_payload:
@@ -944,6 +946,7 @@ def main(argv: list[str] | None = None):
                 telemetry_extra["streamlit_overhead_ms"] = round(float(overhead_value), 2)
             if skeleton_ms is not None:
                 telemetry_extra["skeleton_render_ms"] = round(float(skeleton_ms), 2)
+                telemetry_extra["ui_first_paint_ms"] = round(float(skeleton_ms), 2)
             try:
                 log_default_telemetry(
                     phase=event_name,

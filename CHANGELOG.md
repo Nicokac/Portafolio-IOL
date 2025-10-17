@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🩹 Portafolio IOL v0.6.21-patch1 — Skeletons visibles y fallback de Kaleido (Enero 2026)
+
+### 🚑 Hotfix
+- Skeletons visibles al entrar en el tab “Portafolio”, con placeholders que se actualizan automáticamente al cumplirse las condiciones diferidas (`st.session_state["load_table"]`).
+- Logging explícito de cada render de skeleton (`🧩 Skeleton render called for …`) para diagnosticar la secuencia de placeholders.
+- Fallback de exportación Plotly usando el renderer `browser` cuando Kaleido falla o Chromium no está disponible, evitando gráficos en blanco.
+- Telemetría visual reactivada (`skeleton_render_ms`, `ui_first_paint_ms`) en los CSV para monitorear el tiempo hasta la primera pintura.
+- Prevención de estados en blanco re-renderizando tabla y gráficos al completarse el lazy-load y sincronizando el placeholder con el dataset.
+
+### 🧪 Tests
+```bash
+pytest -q --override-ini addopts='' tests/ui/test_streamlit_skeletons_patch1.py
+pytest -q --override-ini addopts='' tests/performance/test_lazy_render_fallback.py
+```
+
 ## 🧩 Portafolio IOL v0.6.20 — Render diferido de componentes pesados (Diciembre 2025)
 
 ### 🚀 Cambios principales

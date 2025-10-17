@@ -711,6 +711,31 @@ def _prompt_lazy_block(
         block["triggered_at"] = time.perf_counter()
         return True
 
+    session_ready = False
+    try:
+        session_ready = bool(st.session_state.get(key))
+    except Exception:  # pragma: no cover - defensive safeguard
+        session_ready = False
+
+    fallback_key = None
+    if key.endswith("_load_table"):
+        fallback_key = "load_table"
+    elif key.endswith("_load_charts"):
+        fallback_key = "load_charts"
+
+    if fallback_key is not None:
+        try:
+            session_ready = session_ready or bool(st.session_state.get(fallback_key))
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+
+    if session_ready:
+        if block.get("status") != "loaded":
+            block["status"] = "loaded"
+            if block.get("triggered_at") is None:
+                block["triggered_at"] = time.perf_counter()
+        return True
+
     return False
 
 
@@ -874,13 +899,13 @@ def render_basic_tab(
     table_placeholder = table_entry["placeholder"]
     previously_rendered_table = bool(table_entry.get("rendered"))
     if not previously_rendered_table and not table_entry.get("skeleton_displayed"):
+        skeletons.mark_placeholder("table", placeholder=table_placeholder)
         try:
             table_placeholder.write("⏳ Cargando tabla…")
         except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
             logger.debug("No se pudo mostrar el placeholder inicial de la tabla", exc_info=True)
         else:
             table_entry["skeleton_displayed"] = True
-            skeletons.mark_placeholder("table")
     table_refs["placeholder"] = table_placeholder
     if table_lazy.get("status") != "loaded":
         table_entry["rendered"] = False
@@ -976,6 +1001,7 @@ def render_basic_tab(
             if should_render_charts:
                 placeholder = charts_entry["placeholder"]
                 if not previously_rendered_charts:
+                    skeletons.mark_placeholder("charts", placeholder=placeholder)
                     try:
                         placeholder.write("⏳ Cargando gráficos del portafolio…")
                     except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
@@ -983,8 +1009,6 @@ def render_basic_tab(
                             "No se pudo mostrar el placeholder de carga de gráficos",
                             exc_info=True,
                         )
-                    else:
-                        skeletons.mark_placeholder("charts")
                 references = charts_refs.get("references")
                 start_trigger = charts_lazy.get("triggered_at")
                 updated_refs = update_charts(
