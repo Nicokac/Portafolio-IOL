@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## 🧩 Portafolio IOL v0.6.16 — Optimización media: viewmodel diferido y cálculos on-demand
+
+### 🚀 Cambios principales
+- El portafolio ahora construye un snapshot mínimo en la primera pasada y calcula métricas extendidas bajo demanda, mostrando los datos esenciales en menos tiempo.
+- El render de la pestaña principal admite un modo `lazy_metrics` que muestra un spinner mientras las métricas completas se materializan y re-renderiza automáticamente al finalizar.
+
+### 🛠 Internals
+- `PortfolioViewModelService` separa las fases básica y extendida (`build_minimal_viewmodel` y `compute_extended_metrics`), marca métricas pendientes y reutiliza resultados desde `_incremental_cache`.
+- La persistencia de snapshots se ejecuta en background y registra la nueva fase `snapshot.persist_async`; se añadieron las fases `portfolio_view.apply_basic` y `portfolio_view.apply_extended` en la telemetría unificada.
+- `render_portfolio_section` coordina la ejecución diferida, registra banderas `lazy_metrics` y dispara `st.experimental_rerun` cuando las métricas extendidas están listas.
+
+### 🧪 Tests
+```bash
+pytest -q tests/services/test_portfolio_view_lazy_metrics.py tests/ui/test_portfolio_lazy_render.py
+```
+
 ## 🧩 Portafolio IOL v0.6.15 — Optimización rápida de carga (Noviembre 2025)
 
 ### 🚀 Cambios principales

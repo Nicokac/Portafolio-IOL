@@ -52,6 +52,7 @@ class PortfolioViewModel:
     contributions: PortfolioContributionMetrics
     snapshot_id: str | None = None
     snapshot_catalog: Mapping[str, tuple["SnapshotSummary", ...]] = field(default_factory=dict)
+    pending_metrics: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -92,6 +93,7 @@ def build_portfolio_viewmodel(
         )
         contributions = PortfolioContributionMetrics.empty()
         snapshot_id = None
+        pending_metrics: tuple[str, ...] = ()
     else:
         df_view = snapshot.df_view if isinstance(snapshot.df_view, pd.DataFrame) else pd.DataFrame()
         totals = snapshot.totals if isinstance(snapshot.totals, PortfolioTotals) else calculate_totals(df_view)
@@ -106,6 +108,7 @@ def build_portfolio_viewmodel(
             else PortfolioContributionMetrics.empty()
         )
         snapshot_id = getattr(snapshot, "storage_id", None)
+        pending_metrics = tuple(getattr(snapshot, "pending_metrics", ()) or ())
 
     ccl_rate = None
     if fx_rates:
@@ -128,6 +131,7 @@ def build_portfolio_viewmodel(
         contributions=contributions,
         snapshot_id=snapshot_id,
         snapshot_catalog=snapshot_catalog,
+        pending_metrics=pending_metrics,
     )
 
 

@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from collections import Counter, deque
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
 
@@ -338,12 +338,14 @@ def compute_incremental_view(
     compute_contributions_fn: Callable[[pd.DataFrame], PortfolioContributionMetrics],
     update_history_fn: Callable[[PortfolioTotals], pd.DataFrame],
     build_returns_fn: Callable[[pd.DataFrame], pd.DataFrame] = _compute_returns_block,
+    include_extended: bool = True,
 ) -> IncrementalComputationResult:
     start = time.perf_counter()
     prev_blocks: MutableMapping[str, Any] = dict(previous_blocks or {})
     prev_fingerprints: Mapping[str, str] = prev_blocks.get("fingerprints", {})
     reused_blocks: set[str] = set()
     recomputed_blocks: set[str] = set()
+    previous_pending = tuple(getattr(previous_snapshot, "pending_metrics", ()) or ())
 
     positions_df: pd.DataFrame | None = None
     apply_elapsed = 0.0
@@ -368,25 +370,6 @@ def compute_incremental_view(
     if not isinstance(positions_df, pd.DataFrame):
         positions_df = pd.DataFrame(positions_df)
 
-    returns_df: pd.DataFrame | None = None
-    if _should_reuse_block(
-        dataset_changed=dataset_changed,
-        previous_snapshot=previous_snapshot,
-        previous_fingerprints=prev_fingerprints,
-        current_fingerprints=fingerprints,
-        dependencies=("dataset", "filters.time", "filters.fx"),
-    ) and "positions_df" in reused_blocks:
-        cached_returns = prev_blocks.get("returns_df")
-        if isinstance(cached_returns, pd.DataFrame):
-            returns_df = cached_returns
-            reused_blocks.add("returns_df")
-
-    if returns_df is None:
-        returns_df = build_returns_fn(positions_df)
-        if returns_df is None:
-            returns_df = pd.DataFrame()
-        recomputed_blocks.add("returns_df")
-
     totals: PortfolioTotals | None = None
     totals_elapsed = 0.0
     if _should_reuse_block(
@@ -406,21 +389,75 @@ def compute_incremental_view(
         recomputed_blocks.add("totals")
 
     contribution_metrics: PortfolioContributionMetrics | None = None
-    if _should_reuse_block(
-        dataset_changed=dataset_changed,
-        previous_snapshot=previous_snapshot,
-        previous_fingerprints=prev_fingerprints,
-        current_fingerprints=fingerprints,
-        dependencies=("dataset", "filters.base", "filters.misc"),
-    ) and "positions_df" in reused_blocks:
-        contribution_metrics = previous_snapshot.contribution_metrics
-        reused_blocks.add("contribution_metrics")
+    history_df: pd.DataFrame | None = None
+    returns_df: pd.DataFrame | None = None
+    extended_computed = False
 
-    if contribution_metrics is None:
-        contribution_metrics = compute_contributions_fn(positions_df)
-        recomputed_blocks.add("contribution_metrics")
+    if include_extended:
+        if (
+            not previous_pending
+            and _should_reuse_block(
+            dataset_changed=dataset_changed,
+            previous_snapshot=previous_snapshot,
+            previous_fingerprints=prev_fingerprints,
+            current_fingerprints=fingerprints,
+            dependencies=("dataset", "filters.time", "filters.fx"),
+        )
+        and "positions_df" in reused_blocks
+        ):
+            cached_returns = prev_blocks.get("returns_df")
+            if isinstance(cached_returns, pd.DataFrame):
+                returns_df = cached_returns
+                reused_blocks.add("returns_df")
 
-    history_df = update_history_fn(totals)
+        if returns_df is None:
+            returns_df = build_returns_fn(positions_df)
+            if returns_df is None:
+                returns_df = pd.DataFrame()
+            recomputed_blocks.add("returns_df")
+
+        if (
+            not previous_pending
+            and _should_reuse_block(
+            dataset_changed=dataset_changed,
+            previous_snapshot=previous_snapshot,
+            previous_fingerprints=prev_fingerprints,
+            current_fingerprints=fingerprints,
+            dependencies=("dataset", "filters.base", "filters.misc"),
+        )
+        and "positions_df" in reused_blocks
+        ):
+            contribution_metrics = previous_snapshot.contribution_metrics
+            reused_blocks.add("contribution_metrics")
+
+        if contribution_metrics is None:
+            contribution_metrics = compute_contributions_fn(positions_df)
+            recomputed_blocks.add("contribution_metrics")
+
+        history_df = update_history_fn(totals)
+        extended_computed = True
+    else:
+        if (
+            previous_snapshot is not None
+            and not dataset_changed
+            and not getattr(previous_snapshot, "pending_metrics", ())
+        ):
+            contribution_metrics = previous_snapshot.contribution_metrics
+            history_df = previous_snapshot.historical_total
+            cached_returns = prev_blocks.get("returns_df")
+            if isinstance(cached_returns, pd.DataFrame):
+                returns_df = cached_returns
+        if contribution_metrics is None:
+            contribution_metrics = PortfolioContributionMetrics.empty()
+        if history_df is None:
+            history_df = _empty_history_dataframe()
+        if returns_df is None:
+            cached_returns = prev_blocks.get("returns_df")
+            if isinstance(cached_returns, pd.DataFrame):
+                returns_df = cached_returns
+        if returns_df is None:
+            returns_df = pd.DataFrame()
+
     duration = time.perf_counter() - start
 
     return IncrementalComputationResult(
@@ -434,6 +471,7 @@ def compute_incremental_view(
         reused_blocks=tuple(sorted(reused_blocks)),
         recomputed_blocks=tuple(sorted(recomputed_blocks)),
         duration=duration,
+        extended_computed=extended_computed,
     )
 
 
@@ -655,6 +693,10 @@ class PortfolioContributionMetrics:
         return cls(by_symbol=by_symbol, by_type=by_type)
 
 
+def _empty_history_dataframe() -> pd.DataFrame:
+    return pd.DataFrame(columns=["timestamp", "total_value", "total_cost", "total_pl"])
+
+
 @dataclass(frozen=True)
 class PortfolioViewSnapshot:
     """Resultado cacheado del portafolio."""
@@ -667,6 +709,7 @@ class PortfolioViewSnapshot:
     historical_total: pd.DataFrame
     contribution_metrics: PortfolioContributionMetrics
     storage_id: str | None = None
+    pending_metrics: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -683,6 +726,7 @@ class IncrementalComputationResult:
     reused_blocks: tuple[str, ...]
     recomputed_blocks: tuple[str, ...]
     duration: float
+    extended_computed: bool
 
 
 class PortfolioViewModelService:
@@ -700,6 +744,7 @@ class PortfolioViewModelService:
         self._history_records: list[dict[str, float]] = []
         self._incremental_cache: dict[str, Any] = {}
         self._last_incremental_stats: dict[str, Any] | None = None
+        self._snapshot_lock = threading.Lock()
         self._snapshot_kind = "portfolio"
         self.configure_snapshot_backend(snapshot_backend)
 
@@ -804,7 +849,7 @@ class PortfolioViewModelService:
         }
         return json.dumps(payload, sort_keys=True)
 
-    def _persist_snapshot(
+    def _persist_snapshot_sync(
         self,
         *,
         df_view: pd.DataFrame,
@@ -863,15 +908,85 @@ class PortfolioViewModelService:
 
         return storage_id, persisted_history
 
+    def _schedule_snapshot_persistence(
+        self,
+        *,
+        snapshot: PortfolioViewSnapshot,
+        controls: Any,
+        dataset_key: str,
+        filters_key: str,
+    ) -> None:
+        def _worker() -> None:
+            start = time.perf_counter()
+            try:
+                storage_id, persisted_history = self._persist_snapshot_sync(
+                    df_view=snapshot.df_view,
+                    totals=snapshot.totals,
+                    controls=controls,
+                    dataset_key=dataset_key,
+                    filters_key=filters_key,
+                    generated_at=snapshot.generated_at,
+                    contribution_metrics=snapshot.contribution_metrics,
+                    historical_total=snapshot.historical_total,
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo persistir el snapshot del portafolio en background",
+                    exc_info=True,
+                )
+                return
+
+            elapsed = time.perf_counter() - start
+            try:
+                log_default_telemetry(
+                    phase="snapshot.persist_async",
+                    elapsed_s=elapsed,
+                    dataset_hash=dataset_key,
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar telemetría para snapshot.persist_async",
+                    exc_info=True,
+                )
+
+            if storage_id or persisted_history is not None:
+                with self._snapshot_lock:
+                    current = self._snapshot
+                    if current is snapshot:
+                        history = (
+                            persisted_history
+                            if persisted_history is not None
+                            else snapshot.historical_total
+                        )
+                        self._snapshot = PortfolioViewSnapshot(
+                            df_view=snapshot.df_view,
+                            totals=snapshot.totals,
+                            apply_elapsed=snapshot.apply_elapsed,
+                            totals_elapsed=snapshot.totals_elapsed,
+                            generated_at=snapshot.generated_at,
+                            historical_total=history,
+                            contribution_metrics=snapshot.contribution_metrics,
+                            storage_id=storage_id or snapshot.storage_id,
+                            pending_metrics=snapshot.pending_metrics,
+                        )
+
+        worker = threading.Thread(
+            target=_worker,
+            name="portfolio-snapshot-persist",
+            daemon=True,
+        )
+        worker.start()
+
     def invalidate_positions(self, dataset_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambia el dataset base."""
 
-        self._snapshot = None
-        self._dataset_key = dataset_key
-        self._filters_key = None
-        self._history_records = []
-        self._incremental_cache = {}
-        self._last_incremental_stats = None
+        with self._snapshot_lock:
+            self._snapshot = None
+            self._dataset_key = dataset_key
+            self._filters_key = None
+            self._history_records = []
+            self._incremental_cache = {}
+            self._last_incremental_stats = None
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "dataset_changed", detail=dataset_key
         )
@@ -882,10 +997,11 @@ class PortfolioViewModelService:
     def invalidate_filters(self, filters_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambian los filtros relevantes."""
 
-        self._snapshot = None
-        self._filters_key = filters_key
-        self._incremental_cache = {}
-        self._last_incremental_stats = None
+        with self._snapshot_lock:
+            self._snapshot = None
+            self._filters_key = filters_key
+            self._incremental_cache = {}
+            self._last_incremental_stats = None
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "filters_changed", detail=filters_key
         )
@@ -893,9 +1009,17 @@ class PortfolioViewModelService:
             "portfolio_view cache invalidated (filters) filters=%s", filters_key
         )
 
-    def get_portfolio_view(self, df_pos, controls, cli, psvc) -> PortfolioViewSnapshot:
-        """Devuelve el resultado de ``apply_filters`` con cacheo básico."""
-
+    def _compute_viewmodel_phase(
+        self,
+        *,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        include_extended: bool,
+        telemetry_phase: str,
+        allow_pending_reuse: bool,
+    ) -> PortfolioViewSnapshot:
         dataset_key = self._hash_dataset(df_pos)
         filters_key = self._filters_key_from(controls)
 
@@ -906,7 +1030,8 @@ class PortfolioViewModelService:
 
         if dataset_changed:
             self.invalidate_positions(dataset_key)
-        previous_snapshot = self._snapshot
+        with self._snapshot_lock:
+            previous_snapshot = self._snapshot
 
         cached_blocks: Mapping[str, Any] = {}
         cached_fingerprints: Mapping[str, str] = {}
@@ -924,47 +1049,48 @@ class PortfolioViewModelService:
             fingerprints.get(key) != cached_fingerprints.get(key)
             for key in ("filters.time", "filters.fx", "filters.misc")
         )
-
         effective_filters_changed = filters_changed or incremental_changed
 
-        if (
+        can_reuse_snapshot = (
             previous_snapshot is not None
             and not dataset_changed
             and not effective_filters_changed
-            and not incremental_changed
-        ):
-            snapshot = previous_snapshot
-            self._record_snapshot_event(
-                action="load",
-                status="reused",
-                storage_id=snapshot.storage_id,
-            )
-            logger.info(
-                "portfolio_view cache hit dataset_changed=%s filters_changed=%s apply=%.4fs totals=%.4fs",
-                dataset_changed,
-                effective_filters_changed,
-                snapshot.apply_elapsed,
-                snapshot.totals_elapsed,
-            )
+        )
+
+        if can_reuse_snapshot:
+            pending = tuple(getattr(previous_snapshot, "pending_metrics", ()))
+            if include_extended and pending:
+                can_reuse_snapshot = False
+            elif not include_extended and not allow_pending_reuse and pending:
+                can_reuse_snapshot = False
+
+        if can_reuse_snapshot:
             elapsed = time.perf_counter() - render_start
-            _PORTFOLIO_CACHE_TELEMETRY.record_hit(
-                elapsed_s=elapsed,
-                dataset_changed=dataset_changed,
-                filters_changed=effective_filters_changed,
+            if include_extended:
+                _PORTFOLIO_CACHE_TELEMETRY.record_hit(
+                    elapsed_s=elapsed,
+                    dataset_changed=dataset_changed,
+                    filters_changed=effective_filters_changed,
+                )
+                try:
+                    log_default_telemetry(
+                        phase=telemetry_phase,
+                        elapsed_s=previous_snapshot.apply_elapsed,
+                        dataset_hash=dataset_key,
+                        memo_hit_ratio=1.0,
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo registrar telemetría para %s (hit)",
+                        telemetry_phase,
+                        exc_info=True,
+                    )
+            self._record_snapshot_event(
+                action='load',
+                status='reused',
+                storage_id=previous_snapshot.storage_id,
             )
-            try:
-                log_default_telemetry(
-                    phase="portfolio_view.apply",
-                    elapsed_s=snapshot.apply_elapsed,
-                    dataset_hash=dataset_key,
-                    memo_hit_ratio=1.0,
-                )
-            except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug(
-                    "No se pudo registrar telemetría para portfolio_view.apply (hit)",
-                    exc_info=True,
-                )
-            return snapshot
+            return previous_snapshot
 
         positions_state: dict[str, Any] = {}
 
@@ -988,102 +1114,170 @@ class PortfolioViewModelService:
             compute_totals_fn=calculate_totals,
             compute_contributions_fn=_compute_contribution_metrics,
             update_history_fn=self._update_history,
+            include_extended=include_extended,
         )
-
-        df_view = incremental.df_view
-        totals = incremental.totals
-        apply_elapsed = incremental.apply_elapsed
-        totals_elapsed = incremental.totals_elapsed
-        contribution_metrics = incremental.contribution_metrics
-        history_df = incremental.historical_total
 
         generated_ts = time.time()
-        storage_id, persisted_history = self._persist_snapshot(
-            df_view=df_view,
-            totals=totals,
-            controls=controls,
-            dataset_key=dataset_key,
-            filters_key=filters_key,
-            generated_at=generated_ts,
-            contribution_metrics=contribution_metrics,
-            historical_total=history_df,
-        )
+        pending_metrics: tuple[str, ...] = ()
+        if not incremental.extended_computed:
+            pending_metrics = ("extended_metrics",)
 
-        if persisted_history is not None:
-            history_df = persisted_history
+        storage_id = None
+        if (
+            previous_snapshot is not None
+            and not dataset_changed
+            and not effective_filters_changed
+        ):
+            storage_id = previous_snapshot.storage_id
 
         snapshot = PortfolioViewSnapshot(
-            df_view=df_view,
-            totals=totals,
-            apply_elapsed=apply_elapsed,
-            totals_elapsed=totals_elapsed,
+            df_view=incremental.df_view,
+            totals=incremental.totals,
+            apply_elapsed=incremental.apply_elapsed,
+            totals_elapsed=incremental.totals_elapsed,
             generated_at=generated_ts,
-            historical_total=history_df,
-            contribution_metrics=contribution_metrics,
+            historical_total=incremental.historical_total,
+            contribution_metrics=incremental.contribution_metrics,
             storage_id=storage_id,
+            pending_metrics=pending_metrics,
         )
-
-        self._snapshot = snapshot
-        self._dataset_key = dataset_key
-        self._filters_key = filters_key
-        self._incremental_cache = {
-            "positions_df": df_view,
-            "returns_df": incremental.returns_df,
-            "fingerprints": dict(fingerprints),
-        }
 
         total_blocks = len(incremental.reused_blocks) + len(incremental.recomputed_blocks)
         hit_ratio = (len(incremental.reused_blocks) / total_blocks) if total_blocks else 0.0
-        self._last_incremental_stats = {
-            "reused_blocks": incremental.reused_blocks,
-            "recomputed_blocks": incremental.recomputed_blocks,
-            "memoization_hit_ratio": hit_ratio,
-            "dataset_changed": dataset_changed,
-            "filters_changed": effective_filters_changed,
-            "compute_duration_s": incremental.duration,
-            "apply_elapsed": apply_elapsed,
-            "totals_elapsed": totals_elapsed,
-        }
+
+        with self._snapshot_lock:
+            self._snapshot = snapshot
+            self._dataset_key = dataset_key
+            self._filters_key = filters_key
+            self._incremental_cache = {
+                "positions_df": incremental.df_view,
+                "returns_df": incremental.returns_df,
+                "fingerprints": dict(fingerprints),
+                "dataset_key": dataset_key,
+                "filters_key": filters_key,
+                "generated_at": generated_ts,
+                "pending_metrics": pending_metrics,
+            }
+            self._last_incremental_stats = {
+                "reused_blocks": incremental.reused_blocks,
+                "recomputed_blocks": incremental.recomputed_blocks,
+                "memoization_hit_ratio": hit_ratio,
+                "dataset_changed": dataset_changed,
+                "filters_changed": effective_filters_changed,
+                "compute_duration_s": incremental.duration,
+                "apply_elapsed": incremental.apply_elapsed,
+                "totals_elapsed": incremental.totals_elapsed,
+                "phase": telemetry_phase,
+            }
 
         logger.info(
-            "portfolio_view incremental update dataset_changed=%s filters_changed=%s reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
+            "portfolio_view phase=%s dataset_changed=%s filters_changed=%s pending=%s reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
+            telemetry_phase,
             dataset_changed,
             effective_filters_changed,
+            ",".join(pending_metrics) or "none",
             ",".join(incremental.reused_blocks) or "none",
             ",".join(incremental.recomputed_blocks) or "none",
-            apply_elapsed,
-            totals_elapsed,
+            incremental.apply_elapsed,
+            incremental.totals_elapsed,
         )
+
         total_elapsed = time.perf_counter() - render_start
-        _PORTFOLIO_CACHE_TELEMETRY.record_miss(
-            elapsed_s=total_elapsed,
-            dataset_changed=dataset_changed,
-            filters_changed=effective_filters_changed,
-            apply_elapsed=apply_elapsed,
-            totals_elapsed=totals_elapsed,
-        )
-        _append_incremental_metric(
-            dataset_hash=dataset_key,
-            filters_changed=effective_filters_changed,
-            reused_blocks=incremental.reused_blocks,
-            recomputed_blocks=incremental.recomputed_blocks,
-            total_duration=total_elapsed,
-            memoization_hit_ratio=hit_ratio,
-        )
+        if include_extended or not incremental.extended_computed:
+            _PORTFOLIO_CACHE_TELEMETRY.record_miss(
+                elapsed_s=total_elapsed,
+                dataset_changed=dataset_changed,
+                filters_changed=effective_filters_changed,
+                apply_elapsed=incremental.apply_elapsed,
+                totals_elapsed=incremental.totals_elapsed,
+            )
+
+        if include_extended or not incremental.extended_computed:
+            _append_incremental_metric(
+                dataset_hash=dataset_key,
+                filters_changed=effective_filters_changed,
+                reused_blocks=incremental.reused_blocks,
+                recomputed_blocks=incremental.recomputed_blocks,
+                total_duration=total_elapsed,
+                memoization_hit_ratio=hit_ratio,
+            )
+
         try:
             log_default_telemetry(
-                phase="portfolio_view.apply",
-                elapsed_s=apply_elapsed,
+                phase=telemetry_phase,
+                elapsed_s=incremental.duration,
                 dataset_hash=dataset_key,
                 memo_hit_ratio=hit_ratio,
             )
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug(
-                "No se pudo registrar telemetría para portfolio_view.apply",
+                "No se pudo registrar telemetría para %s",
+                telemetry_phase,
                 exc_info=True,
             )
+
+        if (
+            include_extended
+            and not pending_metrics
+            and (
+                dataset_changed
+                or effective_filters_changed
+                or previous_snapshot is None
+                or getattr(previous_snapshot, "pending_metrics", ())
+            )
+        ):
+            self._schedule_snapshot_persistence(
+                snapshot=snapshot,
+                controls=controls,
+                dataset_key=dataset_key,
+                filters_key=filters_key,
+            )
+
         return snapshot
 
+    def build_minimal_viewmodel(self, df_pos, controls, cli, psvc) -> PortfolioViewSnapshot:
+        """Construye el snapshot mínimo requerido para renderizar el portafolio."""
+
+        return self._compute_viewmodel_phase(
+            df_pos=df_pos,
+            controls=controls,
+            cli=cli,
+            psvc=psvc,
+            include_extended=False,
+            telemetry_phase="portfolio_view.apply_basic",
+            allow_pending_reuse=True,
+        )
+
+    def compute_extended_metrics(self, df_pos, controls, cli, psvc) -> PortfolioViewSnapshot:
+        """Completa las métricas extendidas del snapshot cuando son necesarias."""
+
+        return self._compute_viewmodel_phase(
+            df_pos=df_pos,
+            controls=controls,
+            cli=cli,
+            psvc=psvc,
+            include_extended=True,
+            telemetry_phase="portfolio_view.apply_extended",
+            allow_pending_reuse=False,
+        )
+
+    def get_portfolio_view(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        lazy_metrics: bool = False,
+    ) -> PortfolioViewSnapshot:
+        """Devuelve el snapshot del portafolio aplicando métricas diferidas si es necesario."""
+
+        snapshot = self.build_minimal_viewmodel(df_pos, controls, cli, psvc)
+        if lazy_metrics and snapshot.pending_metrics:
+            return snapshot
+        if snapshot.pending_metrics:
+            snapshot = self.compute_extended_metrics(df_pos, controls, cli, psvc)
+        return snapshot
 
 def _coerce_json(value: Any) -> Any:
     if isinstance(value, (pd.Timestamp, pd.Timedelta)):
