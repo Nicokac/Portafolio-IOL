@@ -772,14 +772,16 @@ def main(argv: list[str] | None = None):
     ensure_tokens_key()
 
     first_frame_placeholder = getattr(st, "empty", lambda: None)()
-    shell_container = skeletons.mark_placeholder("app_shell", placeholder=first_frame_placeholder)
-    if shell_container is not None:
-        already_rendered = False
-        try:
-            already_rendered = bool(st.session_state.get("_app_shell_placeholder_rendered"))
-        except Exception:
-            logger.debug("No se pudo comprobar el estado del skeleton inicial", exc_info=True)
-        if not already_rendered:
+    already_rendered = False
+    try:
+        already_rendered = bool(st.session_state.get("_app_shell_placeholder_rendered"))
+    except Exception:
+        logger.debug("No se pudo comprobar el estado del skeleton inicial", exc_info=True)
+    if not already_rendered:
+        shell_container = skeletons.mark_placeholder(
+            "app_shell", placeholder=first_frame_placeholder
+        )
+        if shell_container is not None:
             try:
                 shell_container.markdown("⌛ Preparando tu portafolio…")
             except Exception:
@@ -788,7 +790,9 @@ def main(argv: list[str] | None = None):
                 try:
                     st.session_state["_app_shell_placeholder_rendered"] = True
                 except Exception:
-                    logger.debug("No se pudo marcar el skeleton inicial como renderizado", exc_info=True)
+                    logger.debug(
+                        "No se pudo marcar el skeleton inicial como renderizado", exc_info=True
+                    )
     try:
         first_paint_metric, _ = skeletons.get_metric()
     except Exception:
