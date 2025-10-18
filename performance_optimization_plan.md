@@ -6,7 +6,7 @@
 - La telemetría más reciente (`performance_metrics_9.csv`) muestra 6.94 s para `quotes_refresh`, sublotes de hasta 1.32 s y un hit ratio del memoizador del portafolio de 55.56 % (21.38 s acumulados en `portfolio_view.render`).【F:performance_metrics_9.csv†L1-L11】【F:docs/fixtures/telemetry/quotes_refresh_logs.jsonl†L1-L20】
 - Las proyecciones de la iteración adaptativa (`performance_metrics_10.csv`) indican que es posible bajar `quotes_refresh_total_s` a 5.78 s si se sostiene un tamaño de sublote promedio 5 y 596 ms por lote.【F:performance_metrics_10.csv†L1-L4】
 - Los snapshots de cache del viewmodel confirman misiones de 3.1 s a 3.8 s por `apply` y 0.9 s–1.1 s en `totals`, lo que deja margen para reducir cálculos redundantes.【F:docs/fixtures/telemetry/portfolio_view_cache.json†L2-L55】
-- `performance_metrics_14.csv` y `performance_metrics_15.csv` sólo contienen cabeceras, por lo que no hay serie histórica pre/post Kaleido. Es prioritario reactivar la escritura de estos archivos para poder validar mejoras futuras.
+- `performance_metrics_14.csv` y `performance_metrics_15.csv` registran la corrida del 18/10 (refresh de 8.43 s, render de pestaña hasta 16.70 s y snapshots en ~5 s), habilitando comparativas pre/post Kaleido con datos reales.【F:performance_metrics_14.csv†L2-L27】【F:performance_metrics_15.csv†L2-L27】
 
 ## Tiempos actuales vs estimaciones propuestas
 | Etapa | Tiempo actual | Fuente | Mejora estimada tras ajustes | Impacto aproximado |
