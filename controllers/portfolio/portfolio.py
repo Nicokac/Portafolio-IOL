@@ -37,7 +37,7 @@ from services.portfolio_view import (
 )
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
-from ui.lazy import charts_fragment, in_form_scope, table_fragment
+from ui.lazy import charts_fragment, current_scope, in_form_scope, table_fragment
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
@@ -921,6 +921,10 @@ def _prompt_lazy_block(
         session_ready = session_ready or _lazy_flag_ready(fallback_key, dataset_token)
 
     ready = bool(session_ready)
+    scope = current_scope()
+    if not ready and scope == "global":
+        ready = True
+        block.setdefault("auto_loaded", True)
 
     if info_message and not ready and not block.get("prompt_rendered"):
         try:
@@ -936,16 +940,25 @@ def _prompt_lazy_block(
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo inicializar la llave diferida %s", session_key, exc_info=True)
 
-    trigger_state = _render_lazy_trigger(
-        placeholder, label=button_label, session_key=session_key
-    )
-    ready = ready or trigger_state
+    trigger_state = False
+    has_loaded_flag = "loaded_at" in block
+    should_render_trigger = not ready or block.get("auto_loaded") is True or has_loaded_flag
+    if should_render_trigger:
+        trigger_state = _render_lazy_trigger(
+            placeholder, label=button_label, session_key=session_key
+        )
+        ready = ready or trigger_state
 
     if ready:
         if block.get("status") != "loaded":
             block["status"] = "loaded"
             if block.get("triggered_at") is None:
                 block["triggered_at"] = time.perf_counter()
+        if session_key:
+            try:
+                st.session_state[session_key] = True
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
         _mark_lazy_flag_ready(key, dataset_token)
         _mark_lazy_flag_ready(fallback_key, dataset_token)
         _record_ui_persist_visibility(block, visible=True)
@@ -1035,6 +1048,10 @@ def render_basic_tab(
     summary_refs = render_refs.setdefault("summary", {})
     table_refs = render_refs.setdefault("table", {})
     charts_refs = render_refs.setdefault("charts", {})
+
+    table_container = table_entry.get("container")
+    if hasattr(table_container, "empty"):
+        table_refs.setdefault("container", table_container)
 
     dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
     visual_cache_entry = _get_visual_cache_entry(dataset_hash)
@@ -1126,6 +1143,13 @@ def render_basic_tab(
         else:
             table_entry["skeleton_displayed"] = True
     table_refs["placeholder"] = table_placeholder
+    if (
+        has_positions
+        and table_entry.get("dataset_hash") == dataset_token
+        and table_entry.get("rendered")
+    ):
+        if table_lazy.get("status") != "loaded":
+            table_lazy["status"] = "loaded"
     if table_lazy.get("status") != "loaded":
         table_entry["rendered"] = False
         previously_rendered_table = False
