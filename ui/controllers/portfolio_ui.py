@@ -1,6 +1,7 @@
 """Streamlit-facing controller helpers for the portfolio dashboard."""
 
 import importlib
+import importlib
 from functools import lru_cache
 from typing import Any, Callable
 
@@ -9,6 +10,7 @@ import streamlit as st
 from services import snapshot_defer
 from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
+from shared.user_actions import log_user_action
 
 
 @lru_cache(maxsize=1)
@@ -42,6 +44,18 @@ def render_portfolio_ui(
     active_tab = st.session_state.get("active_tab")
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab
+        last_reported = st.session_state.get("_portfolio_ui_last_tab_event")
+        if last_reported != active_tab:
+            dataset_hash = st.session_state.get("dataset_hash")
+            log_user_action(
+                "tab_change",
+                {"tab": active_tab, "container": "portfolio_ui"},
+                dataset_hash=str(dataset_hash or ""),
+            )
+            try:
+                st.session_state["_portfolio_ui_last_tab_event"] = active_tab
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
     tab_loaded = st.session_state.get("tab_loaded")
     if not isinstance(tab_loaded, dict):
         tab_loaded = {}

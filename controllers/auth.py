@@ -9,6 +9,7 @@ from infrastructure.iol.client import IIOLProvider
 from application.auth_service import get_auth_provider
 from infrastructure.iol.auth import InvalidCredentialsError
 from shared.visual_cache_prewarm import prewarm_visual_cache
+from shared.user_actions import log_user_action
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,22 @@ def build_iol_client() -> IIOLProvider | None:
         logger.exception("build_iol_client failed", exc_info=error)
         if isinstance(error, InvalidCredentialsError):
             st.session_state["login_error"] = "Credenciales inválidas"
+            log_user_action(
+                "session_timeout",
+                {
+                    "provider": telemetry["provider"],
+                    "user": _mask_username(session_user),
+                },
+            )
         else:
             st.session_state["login_error"] = "Error de conexión"
+            log_user_action(
+                "login_error",
+                {
+                    "provider": telemetry["provider"],
+                    "user": _mask_username(session_user),
+                },
+            )
         st.session_state["force_login"] = True
         st.rerun()
         return None
@@ -65,6 +80,13 @@ def build_iol_client() -> IIOLProvider | None:
         prewarm_visual_cache()
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo precalentar la caché visual tras el login", exc_info=True)
+    log_user_action(
+        "login_success",
+        {
+            "provider": telemetry["provider"],
+            "user": _mask_username(session_user),
+        },
+    )
     return cli
 
 
