@@ -45,6 +45,18 @@ def current_scope() -> str | None:
     return _SCOPE.get()
 
 
+def current_component() -> str | None:
+    """Return the component name currently associated with the fragment."""
+
+    return _COMPONENT.get()
+
+
+def current_dataset_token() -> str | None:
+    """Return the dataset token associated with the active fragment."""
+
+    return _DATASET.get()
+
+
 def in_form_scope() -> bool:
     """Whether the current lazy fragment fallback uses a Streamlit form."""
 
