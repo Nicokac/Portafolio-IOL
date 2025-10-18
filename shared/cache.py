@@ -1,11 +1,16 @@
+import csv
+import logging
 import time
 from collections import OrderedDict
+from datetime import UTC, datetime
 from functools import wraps
-from pathlib import PurePath
+from pathlib import Path, PurePath
 from threading import Lock
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, Iterable, Tuple
 
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 
 class Cache:
@@ -169,6 +174,174 @@ class Cache:
 
 # Global cache instance used across the application
 cache = Cache()
+
+
+class VisualCacheRegistry:
+    """In-memory index of rendered visuals and their reuse statistics."""
+
+    def __init__(self, *, log_path: str | Path | None = None) -> None:
+        self._entries: Dict[str, Dict[str, Any]] = {}
+        self._stats: Dict[str, int] = {"hits": 0, "misses": 0}
+        self._lock = Lock()
+        self._log_path = Path(log_path or "visual_cache_invalidations.csv")
+
+    @staticmethod
+    def _normalize_component(component: str) -> str:
+        return component.strip().lower() or "unknown"
+
+    @staticmethod
+    def _normalize_hash(dataset_hash: str | None) -> str:
+        return str(dataset_hash or "none")
+
+    @staticmethod
+    def _hash_signature(signature: Any) -> Any:
+        if isinstance(signature, (str, bytes, type(None))):
+            return signature
+        if isinstance(signature, Iterable) and not isinstance(signature, dict):
+            try:
+                return tuple(VisualCacheRegistry._hash_signature(v) for v in signature)
+            except TypeError:
+                return str(signature)
+        if isinstance(signature, dict):
+            try:
+                return tuple(
+                    (k, VisualCacheRegistry._hash_signature(v))
+                    for k, v in sorted(signature.items())
+                )
+            except Exception:
+                return str(signature)
+        return signature
+
+    def record(
+        self,
+        component: str,
+        *,
+        dataset_hash: str | None,
+        reused: bool,
+        signature: Any = None,
+    ) -> None:
+        """Track reuse information for ``component`` bound to ``dataset_hash``."""
+
+        normalized_component = self._normalize_component(component)
+        normalized_hash = self._normalize_hash(dataset_hash)
+        hashed_signature = self._hash_signature(signature)
+        now = time.time()
+
+        with self._lock:
+            previous = self._entries.get(normalized_component)
+            hits = previous.get("hits", 0) if isinstance(previous, dict) else 0
+            misses = previous.get("misses", 0) if isinstance(previous, dict) else 0
+            if reused:
+                hits += 1
+                self._stats["hits"] = self._stats.get("hits", 0) + 1
+            else:
+                misses += 1
+                self._stats["misses"] = self._stats.get("misses", 0) + 1
+
+            self._entries[normalized_component] = {
+                "dataset_hash": normalized_hash,
+                "signature": hashed_signature,
+                "last_used": now,
+                "last_status": "hit" if reused else "miss",
+                "hits": hits,
+                "misses": misses,
+            }
+
+    def invalidate(
+        self,
+        component: str,
+        *,
+        reason: str,
+        dataset_hash: str | None = None,
+    ) -> None:
+        """Drop the entry for ``component`` and log the invalidation."""
+
+        normalized_component = self._normalize_component(component)
+        with self._lock:
+            entry = self._entries.pop(normalized_component, None)
+        affected_hash = dataset_hash
+        if affected_hash is None and isinstance(entry, dict):
+            affected_hash = entry.get("dataset_hash")
+        self._log_invalidation(reason, affected_hash, normalized_component)
+
+    def invalidate_dataset(self, dataset_hash: str | None, *, reason: str) -> None:
+        """Remove every entry that references ``dataset_hash``."""
+
+        normalized_hash = self._normalize_hash(dataset_hash)
+        with self._lock:
+            affected = [
+                component
+                for component, entry in self._entries.items()
+                if entry.get("dataset_hash") == normalized_hash
+            ]
+            for component in affected:
+                self._entries.pop(component, None)
+        for component in affected:
+            self._log_invalidation(reason, normalized_hash, component)
+
+    def invalidate_all(self, *, reason: str) -> None:
+        """Remove every entry stored in the registry."""
+
+        with self._lock:
+            components = list(self._entries.keys())
+            entries = {comp: self._entries.pop(comp) for comp in components}
+        for component in components:
+            entry = entries.get(component) if isinstance(entries, dict) else None
+            dataset_hash = None
+            if isinstance(entry, dict):
+                dataset_hash = entry.get("dataset_hash")
+            self._log_invalidation(reason, dataset_hash, component)
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Return a read-only snapshot of registry state."""
+
+        with self._lock:
+            entries = {
+                component: dict(value)
+                for component, value in self._entries.items()
+                if isinstance(value, dict)
+            }
+            stats = dict(self._stats)
+        return {"entries": entries, "stats": stats}
+
+    def reset(self) -> None:
+        """Clear entries and statistics. Intended for tests."""
+
+        with self._lock:
+            self._entries.clear()
+            self._stats = {"hits": 0, "misses": 0}
+
+    def _log_invalidation(
+        self,
+        reason: str,
+        dataset_hash: str | None,
+        component: str,
+    ) -> None:
+        if not reason:
+            return
+        normalized_hash = self._normalize_hash(dataset_hash)
+        timestamp = datetime.now(UTC).isoformat(timespec="seconds")
+        try:
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.debug(
+                "No se pudo crear el directorio para registrar invalidaciones de caché visual",
+                exc_info=True,
+            )
+        try:
+            file_exists = self._log_path.exists()
+            with self._log_path.open("a", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                if not file_exists:
+                    writer.writerow(["timestamp", "reason", "dataset_hash", "component"])
+                writer.writerow([timestamp, reason, normalized_hash, component])
+        except Exception:
+            logger.debug(
+                "No se pudo registrar invalidación de caché visual para %s", component, exc_info=True
+            )
+
+
+visual_cache_registry = VisualCacheRegistry()
 
 
 def cached(func: Callable | None = None, *, ttl: int | None = None, maxsize: int | None = None) -> Callable:
