@@ -8,6 +8,7 @@ import streamlit as st
 from infrastructure.iol.client import IIOLProvider
 from application.auth_service import get_auth_provider
 from infrastructure.iol.auth import InvalidCredentialsError
+from shared.visual_cache_prewarm import prewarm_visual_cache
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ def build_iol_client() -> IIOLProvider | None:
         st.session_state[LOGIN_AUTH_TIMESTAMP_KEY] = time.perf_counter()
     except Exception:  # pragma: no cover - session_state may be read-only in tests
         logger.debug("No se pudo registrar el timestamp de autenticación", exc_info=True)
+    try:
+        prewarm_visual_cache()
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo precalentar la caché visual tras el login", exc_info=True)
     return cli
 
 
