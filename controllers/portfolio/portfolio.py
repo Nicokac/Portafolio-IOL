@@ -1739,6 +1739,17 @@ def render_portfolio_section(
             )
 
         refresh_secs = controls.refresh_secs
+        precomputed_dataset_hash: str | None = None
+        hash_helper = getattr(view_model_service, "_hash_dataset", None)
+        if callable(hash_helper):
+            try:
+                precomputed_dataset_hash = str(hash_helper(df_pos))
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo calcular el hash del dataset previo al viewmodel",
+                    exc_info=True,
+                )
+                precomputed_dataset_hash = None
         with _record_stage("build_viewmodel", timings):
             snapshot = view_model_service.get_portfolio_view(
                 df_pos=df_pos,
@@ -1746,6 +1757,7 @@ def render_portfolio_section(
                 cli=cli,
                 psvc=psvc,
                 lazy_metrics=lazy_metrics,
+                dataset_hash=precomputed_dataset_hash,
             )
 
             viewmodel = build_portfolio_viewmodel(
@@ -1779,14 +1791,7 @@ def render_portfolio_section(
         )
         df_view = viewmodel.positions
 
-        dataset_hash: str | None = None
-        hash_helper = getattr(view_model_service, "_hash_dataset", None)
-        if callable(hash_helper):
-            try:
-                dataset_hash = str(hash_helper(df_view))
-            except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo calcular el hash del dataset con el servicio", exc_info=True)
-                dataset_hash = None
+        dataset_hash = snapshot.dataset_hash or precomputed_dataset_hash
         if not dataset_hash:
             try:
                 dataset_hash = _hash_dataframe(df_view)
