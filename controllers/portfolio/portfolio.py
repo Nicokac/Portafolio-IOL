@@ -2,6 +2,7 @@ import csv
 import hashlib
 import json
 import logging
+import os
 import re
 import threading
 import time
@@ -44,6 +45,7 @@ from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
 from shared.telemetry import log_default_telemetry, log_telemetry
+from shared.cache import visual_cache_registry
 from infrastructure.iol.auth import get_current_user_id
 
 from .load_data import load_portfolio_data
@@ -428,6 +430,19 @@ def _record_fingerprint_event(status: str, elapsed_ms: float, cache_key: str) ->
     except Exception:  # pragma: no cover - telemetry should not break rendering
         logger.debug(
             "No se pudo registrar métricas de fingerprint cache", exc_info=True
+        )
+
+
+def _publish_visual_cache_debug() -> None:
+    """Expose visual cache diagnostics when developer tooling is enabled."""
+
+    if os.getenv("ST_DEBUG_CACHE") != "1":
+        return
+    try:
+        st.session_state["portfolio_visual_cache_debug"] = visual_cache_registry.snapshot()
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo exponer el estado de depuración de la caché visual", exc_info=True
         )
 
 
@@ -1144,6 +1159,7 @@ def render_basic_tab(
         else:
             has_positions = bool(summary_entry.get("has_positions", has_positions))
             summary_refs.setdefault("dataset_hash", dataset_token)
+            summary_entry.setdefault("signature", summary_signature)
             if summary_timestamp is None and summary_meta is not None:
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
@@ -1154,6 +1170,18 @@ def render_basic_tab(
                 visual_cache_entry.setdefault("summary_rendered", True)
                 if summary_timestamp is not None:
                     visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
+
+    summary_reused = (
+        bool(summary_entry.get("rendered"))
+        and summary_entry.get("dataset_hash") == dataset_token
+        and summary_entry.get("signature") == summary_signature
+    )
+    visual_cache_registry.record(
+        "summary",
+        dataset_hash=dataset_hash,
+        reused=summary_reused,
+        signature=summary_signature,
+    )
 
     table_signature = (portfolio_id, table_filters)
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
@@ -1267,6 +1295,7 @@ def render_basic_tab(
                     )
                 elif table_meta is not None:
                     table_entry.setdefault("updated_at", table_meta.get("computed_at"))
+                    table_entry.setdefault("signature", table_signature)
                     table_refs.setdefault("dataset_hash", dataset_token)
                     with _VISUAL_STATE_LOCK:
                         visual_cache_entry.setdefault("table_placeholder", table_placeholder)
@@ -1283,6 +1312,19 @@ def render_basic_tab(
 
         if table_ready:
             table_ctx.stop()
+
+    if table_ready or table_entry.get("rendered"):
+        table_reused = (
+            bool(table_entry.get("rendered"))
+            and table_entry.get("dataset_hash") == dataset_token
+            and table_entry.get("signature") == table_signature
+        )
+        visual_cache_registry.record(
+            "table",
+            dataset_hash=dataset_hash,
+            reused=table_reused,
+            signature=table_signature,
+        )
 
     charts_signature = (portfolio_id, chart_filters)
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
@@ -1392,6 +1434,7 @@ def render_basic_tab(
                     )
                 elif charts_meta is not None:
                     charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
+                    charts_entry.setdefault("signature", charts_signature)
                     charts_refs.setdefault("dataset_hash", dataset_token)
                     with _VISUAL_STATE_LOCK:
                         visual_cache_entry.setdefault(
@@ -1410,6 +1453,19 @@ def render_basic_tab(
 
         if charts_ready:
             charts_ctx.stop()
+
+    if charts_ready or charts_entry.get("rendered"):
+        charts_reused = (
+            bool(charts_entry.get("rendered"))
+            and charts_entry.get("dataset_hash") == dataset_token
+            and charts_entry.get("signature") == charts_signature
+        )
+        visual_cache_registry.record(
+            "charts",
+            dataset_hash=dataset_hash,
+            reused=charts_reused,
+            signature=charts_signature,
+        )
 
     partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
     incremental_render = not should_render_summary and not should_render_table and not should_render_charts
@@ -1898,6 +1954,10 @@ def render_portfolio_section(
                 logger.debug("No se pudo calcular el hash del dataset del portafolio", exc_info=True)
                 dataset_hash = ""
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
+        if previous_hash and dataset_hash and previous_hash != dataset_hash:
+            visual_cache_registry.invalidate_dataset(
+                previous_hash, reason="dataset_hash_changed"
+            )
         reused_visual_cache = bool(previous_hash) and previous_hash == dataset_hash
         try:
             st.session_state[_DATASET_HASH_STATE_KEY] = dataset_hash
@@ -2098,6 +2158,8 @@ def render_portfolio_section(
                 exc_info=True,
             )
 
+        _publish_visual_cache_debug()
+
         return refresh_secs
 @contextmanager
 def _record_stage(name: str, timings: dict[str, float] | None = None) -> Iterator[None]:
@@ -2234,6 +2296,7 @@ def _resolve_active_user_id() -> str | None:
 def _clear_visual_cache_state() -> None:
     """Remove cached visual state from ``st.session_state``."""
 
+    visual_cache_registry.invalidate_all(reason="session_state_reset")
     with _VISUAL_STATE_LOCK:
         for key in (
             _VISUAL_CACHE_STATE_KEY,
