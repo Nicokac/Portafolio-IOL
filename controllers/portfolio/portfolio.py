@@ -39,7 +39,7 @@ from services.portfolio_view import (
 )
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
-from ui.lazy import charts_fragment, current_scope, in_form_scope, table_fragment
+from ui.lazy import charts_fragment, current_component, current_scope, in_form_scope, table_fragment
 from ui.lazy.runtime import current_dataset_token
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
@@ -49,6 +49,7 @@ from shared.telemetry import log_default_telemetry, log_telemetry
 from shared.user_actions import log_user_action
 from shared.cache import visual_cache_registry
 from infrastructure.iol.auth import get_current_user_id
+from shared.fragment_state import FragmentGuardResult, get_fragment_state_guardian
 
 from .load_data import load_portfolio_data
 from .charts import (
@@ -765,6 +766,26 @@ def _mark_lazy_flag_ready(key: str | None, dataset_token: str) -> None:
         store[key] = {"dataset": dataset_token, "ts": time.time()}
 
 
+def _clear_lazy_flag(key: str | None) -> None:
+    """Reset the persistent flag associated with a lazy block."""
+
+    if not key:
+        return
+
+    with _VISUAL_STATE_LOCK:
+        try:
+            st.session_state[key] = False
+        except Exception:  # pragma: no cover - defensive safeguard
+            try:
+                st.session_state.pop(key, None)
+            except Exception:
+                pass
+
+        store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
+        if isinstance(store, dict):
+            store.pop(key, None)
+
+
 def _lazy_flag_ready(key: str | None, dataset_token: str) -> bool:
     """Return whether ``key`` should unlock the lazy block for ``dataset_token``."""
 
@@ -978,14 +999,20 @@ def _prompt_lazy_block(
 ) -> bool:
     """Render a persistent lazy trigger returning readiness."""
 
+    guardian = get_fragment_state_guardian()
     session_key = fallback_key or key
-    session_ready = _lazy_flag_ready(key, dataset_token)
+    primary_ready = _lazy_flag_ready(key, dataset_token)
+    fallback_ready = False
     if fallback_key is not None:
-        session_ready = session_ready or _lazy_flag_ready(fallback_key, dataset_token)
+        fallback_ready = _lazy_flag_ready(fallback_key, dataset_token)
+    session_ready = primary_ready or fallback_ready
 
     ready = bool(session_ready)
     scope = current_scope()
+    component = current_component() or ("charts" if "chart" in (key or "") else "table")
     resolved_dataset = dataset_token or current_dataset_token() or _current_dataset_hash()
+    dataset_hash = str(resolved_dataset or "")
+    was_loaded = block.get("status") == "loaded"
     last_scope = block.get("__user_action_scope__")
     if scope != last_scope:
         block["__user_action_scope__"] = scope
@@ -997,6 +1024,21 @@ def _prompt_lazy_block(
     if not ready and scope == "global":
         ready = True
         block.setdefault("auto_loaded", True)
+
+    guard_result = FragmentGuardResult(rehydrated=False, explicit_hide=False)
+    if not ready:
+        guard_result = guardian.maybe_rehydrate(
+            key=key,
+            session_key=session_key,
+            dataset_hash=dataset_hash,
+            component=component,
+            scope=scope,
+            was_loaded=was_loaded,
+            fallback_key=fallback_key,
+        )
+        if guard_result.rehydrated:
+            ready = True
+            session_ready = True
 
     if info_message and not ready and not block.get("prompt_rendered"):
         try:
@@ -1013,7 +1055,7 @@ def _prompt_lazy_block(
             logger.debug("No se pudo inicializar la llave diferida %s", session_key, exc_info=True)
 
     trigger_state = False
-    has_loaded_flag = "loaded_at" in block
+    has_loaded_flag = block.get("status") == "loaded" or "loaded_at" in block
     should_render_trigger = not ready or block.get("auto_loaded") is True or has_loaded_flag
     if should_render_trigger:
         trigger_state = _render_lazy_trigger(
@@ -1031,6 +1073,26 @@ def _prompt_lazy_block(
             log_user_action(action, detail, dataset_hash=resolved_dataset)
         ready = ready or trigger_state
 
+    explicit_hide_during_run = False
+    if (
+        primary_ready
+        and not trigger_state
+        and block.get("status") == "loaded"
+    ):
+        current_flag = False
+        if session_key:
+            try:
+                current_flag = bool(st.session_state.get(session_key))
+            except Exception:  # pragma: no cover - defensive safeguard
+                current_flag = False
+        if current_flag is False:
+            _clear_lazy_flag(key)
+            primary_ready = False
+            fallback_ready = False
+            session_ready = False
+            ready = False
+            explicit_hide_during_run = True
+
     if ready:
         if block.get("status") != "loaded":
             block["status"] = "loaded"
@@ -1044,11 +1106,30 @@ def _prompt_lazy_block(
         _mark_lazy_flag_ready(key, dataset_token)
         _mark_lazy_flag_ready(fallback_key, dataset_token)
         _record_ui_persist_visibility(block, visible=True)
+        guardian.mark_ready(
+            key=key,
+            session_key=session_key,
+            dataset_hash=dataset_hash,
+            component=component,
+            scope=scope,
+            fallback_key=fallback_key,
+        )
         return True
 
     block["status"] = "pending"
     block["prompt_rendered"] = False
     _record_ui_persist_visibility(block, visible=False)
+    explicit_hide = guard_result.explicit_hide or explicit_hide_during_run
+    if explicit_hide:
+        _clear_lazy_flag(key)
+        _clear_lazy_flag(session_key)
+        _clear_lazy_flag(fallback_key)
+    guardian.mark_not_ready(
+        key=key,
+        session_key=session_key,
+        dataset_hash=dataset_hash,
+        explicit_hide=explicit_hide,
+    )
     if resolved_dataset:
         marker = f"{resolved_dataset}:{key}"
         if block.get("__user_action_not_loaded") != marker:
