@@ -4,6 +4,8 @@ import csv
 import hashlib
 import json
 import logging
+import os
+import pickle
 import threading
 import time
 from collections import Counter, deque
@@ -18,6 +20,7 @@ import pandas as pd
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from services import health
 from services import snapshots as snapshot_service
+from services.cache import CacheService
 from services.cache.market_data_cache import get_market_data_cache
 from application.risk_service import (
     annualized_volatility,
@@ -29,6 +32,11 @@ from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
+try:  # pragma: no cover - optional dependency for Redis adapter
+    import redis  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - redis is optional
+    redis = None
+
 _INCREMENTAL_METRICS_PATH = Path("performance_metrics_12.csv")
 _INCREMENTAL_METRICS_FIELDS = (
     "dataset_hash",
@@ -38,6 +46,301 @@ _INCREMENTAL_METRICS_FIELDS = (
     "total_duration_s",
     "memoization_hit_ratio",
 )
+
+
+_DATASET_CACHE_TTL_SECONDS = 300.0
+_DATASET_CACHE_MAX_ENTRIES = 8
+_DATASET_CACHE_LOCK = threading.Lock()
+_DATASET_CACHE_ADAPTER: "PortfolioDatasetCacheAdapter | None" = None
+
+
+class PortfolioDatasetCacheAdapter:
+    """Abstract adapter used to persist dataset-level aggregates."""
+
+    def get(self, key: str) -> Any | None:  # pragma: no cover - interface definition
+        raise NotImplementedError
+
+    def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+    def invalidate(self, key: str) -> None:  # pragma: no cover - interface definition
+        raise NotImplementedError
+
+    def clear(self) -> None:  # pragma: no cover - interface definition
+        raise NotImplementedError
+
+
+@dataclass
+class PortfolioDatasetCacheEntry:
+    """Snapshot persisted in the dataset-level cache."""
+
+    snapshot: "PortfolioViewSnapshot"
+    incremental_cache: dict[str, Any]
+    fingerprints: dict[str, str]
+    stats: dict[str, Any]
+    dataset_key: str
+    filters_key: str
+    created_at: float
+    pending_metrics: tuple[str, ...]
+    history_records: tuple[dict[str, float], ...]
+    timestamp_bucket: str | None = None
+
+
+class InMemoryDatasetCacheAdapter(PortfolioDatasetCacheAdapter):
+    """Simple adapter backed by ``CacheService`` using process memory."""
+
+    def __init__(
+        self,
+        *,
+        ttl_seconds: float | None = None,
+        max_entries: int = _DATASET_CACHE_MAX_ENTRIES,
+        namespace: str = "portfolio_dataset",
+    ) -> None:
+        self._cache = CacheService(namespace=namespace)
+        self._ttl_seconds = float(ttl_seconds) if ttl_seconds is not None else None
+        self._max_entries = max(int(max_entries or 0), 0)
+        self._order: Deque[str] = deque()
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> Any | None:
+        return self._cache.get(key)
+
+    def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
+        ttl_value = self._ttl_seconds if ttl is None else ttl
+        with self._lock:
+            if key in self._order:
+                try:
+                    self._order.remove(key)
+                except ValueError:  # pragma: no cover - defensive guard
+                    pass
+            self._order.append(key)
+            while self._max_entries and len(self._order) > self._max_entries:
+                evicted = self._order.popleft()
+                if evicted == key:
+                    break
+                self._cache.invalidate(evicted)
+        self._cache.set(key, value, ttl=ttl_value)
+
+    def invalidate(self, key: str) -> None:
+        with self._lock:
+            try:
+                self._order.remove(key)
+            except ValueError:
+                pass
+        self._cache.invalidate(key)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._order.clear()
+        self._cache.clear()
+
+
+class RedisDatasetCacheAdapter(PortfolioDatasetCacheAdapter):
+    """Redis-backed adapter storing pickled dataset cache entries."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        ttl_seconds: float | None = None,
+        namespace: str = "portfolio_dataset",
+    ) -> None:
+        if client is None:  # pragma: no cover - defensive guard
+            raise ValueError("Redis client must not be None")
+        self._client = client
+        self._ttl_seconds = float(ttl_seconds) if ttl_seconds is not None else None
+        self._namespace = namespace.strip()
+
+    def _full_key(self, key: str) -> str:
+        if not self._namespace:
+            return key
+        return f"{self._namespace}:{key}"
+
+    def get(self, key: str) -> Any | None:
+        try:
+            payload = self._client.get(self._full_key(key))
+        except Exception:  # pragma: no cover - redis errors should not bubble up
+            logger.debug("Redis dataset cache get failed for %s", key, exc_info=True)
+            return None
+        if payload is None:
+            return None
+        try:
+            return pickle.loads(payload)
+        except Exception:  # pragma: no cover - corrupted payloads are ignored
+            logger.warning("Invalid dataset cache payload for key %s", key, exc_info=True)
+            return None
+
+    def set(self, key: str, value: Any, *, ttl: float | None = None) -> None:
+        ttl_value = self._ttl_seconds if ttl is None else ttl
+        payload = pickle.dumps(value)
+        full_key = self._full_key(key)
+        try:
+            if ttl_value is not None and float(ttl_value) > 0:
+                self._client.setex(full_key, int(float(ttl_value)), payload)
+            else:
+                self._client.set(full_key, payload)
+        except Exception:  # pragma: no cover - redis errors are logged
+            logger.debug("Redis dataset cache set failed for %s", key, exc_info=True)
+
+    def invalidate(self, key: str) -> None:
+        try:
+            self._client.delete(self._full_key(key))
+        except Exception:  # pragma: no cover - defensive guard
+            logger.debug("Redis dataset cache invalidate failed for %s", key, exc_info=True)
+
+    def clear(self) -> None:
+        if not self._namespace:
+            try:
+                self._client.flushdb()
+            except Exception:  # pragma: no cover - defensive guard
+                logger.debug("Redis dataset cache flush failed", exc_info=True)
+            return
+        pattern = f"{self._namespace}:*"
+        try:
+            for key in self._client.scan_iter(pattern):
+                self._client.delete(key)
+        except Exception:  # pragma: no cover - defensive guard
+            logger.debug("Redis dataset cache clear failed", exc_info=True)
+
+
+def _initialize_dataset_cache_adapter() -> PortfolioDatasetCacheAdapter:
+    url = os.getenv("PORTFOLIO_DATASET_CACHE_URL")
+    if url and redis is not None:
+        try:
+            client = redis.Redis.from_url(url)
+            logger.info(
+                "portfolio_dataset_cache configured with Redis backend", extra={"url": url}
+            )
+            return RedisDatasetCacheAdapter(
+                client, ttl_seconds=_DATASET_CACHE_TTL_SECONDS
+            )
+        except Exception:  # pragma: no cover - fall back to in-memory adapter
+            logger.warning(
+                "Falling back to in-memory dataset cache adapter", exc_info=True
+            )
+    return InMemoryDatasetCacheAdapter(
+        ttl_seconds=_DATASET_CACHE_TTL_SECONDS,
+        max_entries=_DATASET_CACHE_MAX_ENTRIES,
+    )
+
+
+def configure_portfolio_dataset_cache(
+    adapter: PortfolioDatasetCacheAdapter | None,
+) -> None:
+    """Globally override the dataset cache adapter used by the portfolio service."""
+
+    global _DATASET_CACHE_ADAPTER
+    with _DATASET_CACHE_LOCK:
+        if adapter is None:
+            _DATASET_CACHE_ADAPTER = _initialize_dataset_cache_adapter()
+        else:
+            _DATASET_CACHE_ADAPTER = adapter
+
+
+def _get_dataset_cache_adapter() -> PortfolioDatasetCacheAdapter:
+    global _DATASET_CACHE_ADAPTER
+    with _DATASET_CACHE_LOCK:
+        if _DATASET_CACHE_ADAPTER is None:
+            _DATASET_CACHE_ADAPTER = _initialize_dataset_cache_adapter()
+        return _DATASET_CACHE_ADAPTER
+
+
+def _normalize_timestamp_bucket(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        timestamp = pd.to_datetime(value, utc=True, errors="coerce")
+    except Exception:
+        return None
+    if timestamp is None or pd.isna(timestamp):
+        return None
+    floored = timestamp.floor("T")
+    return floored.isoformat()
+
+
+def _extract_quotes_timestamp(*sources: Any) -> str | None:
+    candidates = (
+        "quotes_timestamp",
+        "quotes_ts",
+        "quotes_updated_at",
+        "quotes_last_sync",
+        "last_quotes_refresh",
+        "last_quotes_timestamp",
+    )
+    for source in sources:
+        if source is None:
+            continue
+        for attr in candidates:
+            value = getattr(source, attr, None)
+            bucket = _normalize_timestamp_bucket(value)
+            if bucket:
+                return bucket
+    return None
+
+
+_VOLATILE_CONTROL_KEYS = {
+    "refresh_secs",
+    "refresh_interval",
+    "last_refresh_ts",
+    "last_refresh_at",
+    "quotes_refresh_ts",
+    "quotes_timestamp",
+    "quotes_ts",
+    "quotes_updated_at",
+    "quotes_last_sync",
+    "ui_cache_token",
+}
+
+
+def _sanitize_control_attributes(attributes: Mapping[str, Any]) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in attributes.items():
+        normalized_key = key.lower()
+        if normalized_key in _VOLATILE_CONTROL_KEYS:
+            continue
+        if normalized_key.startswith("ui_"):
+            continue
+        if (
+            "timestamp" in normalized_key
+            or normalized_key.endswith("_ts")
+            or normalized_key.endswith("_at")
+            or "last_refresh" in normalized_key
+        ):
+            bucket = _normalize_timestamp_bucket(value)
+            if bucket is None:
+                continue
+            sanitized[key] = bucket
+            continue
+        sanitized[key] = value
+    return sanitized
+
+
+def _dataset_cache_key(
+    dataset_key: str,
+    filters_key: str,
+    fingerprints: Mapping[str, str],
+    timestamp_bucket: str | None,
+) -> str:
+    components = [str(dataset_key or "empty"), str(filters_key or "none")]
+    components.append(fingerprints.get("filters.time", "none"))
+    components.append(fingerprints.get("filters.fx", "none"))
+    if timestamp_bucket:
+        components.append(str(timestamp_bucket))
+    return "|".join(components)
+
+
+def _log_dataset_cache_event(event: str, dataset_hash: str | None, **extra: Any) -> None:
+    payload: dict[str, Any] = {
+        "event": str(event),
+        "dataset_hash": str(dataset_hash or "unknown"),
+    }
+    for key, value in extra.items():
+        payload[key] = value
+    try:
+        message = json.dumps(payload, sort_keys=True, default=_coerce_json)
+    except TypeError:  # pragma: no cover - defensive fallback
+        message = json.dumps({k: str(v) for k, v in payload.items()}, sort_keys=True)
+    logger.info("portfolio_dataset_cache %s", message)
 
 
 @dataclass(frozen=True)
@@ -247,7 +550,8 @@ def _extract_controls_attributes(controls: Any) -> dict[str, Any]:
 def _build_incremental_fingerprints(
     dataset_key: str, controls: Any, filters_key: str
 ) -> dict[str, str]:
-    attributes = _extract_controls_attributes(controls)
+    raw_attributes = _extract_controls_attributes(controls)
+    attributes = _sanitize_control_attributes(raw_attributes)
     fingerprints: dict[str, str] = {
         "dataset": str(dataset_key or "empty"),
         "filters.base": str(filters_key or "none"),
@@ -710,6 +1014,7 @@ class PortfolioViewSnapshot:
     contribution_metrics: PortfolioContributionMetrics
     storage_id: str | None = None
     pending_metrics: tuple[str, ...] = field(default_factory=tuple)
+    dataset_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -746,6 +1051,9 @@ class PortfolioViewModelService:
         self._last_incremental_stats: dict[str, Any] | None = None
         self._snapshot_lock = threading.Lock()
         self._snapshot_kind = "portfolio"
+        self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = (
+            _get_dataset_cache_adapter()
+        )
         self.configure_snapshot_backend(snapshot_backend)
 
     def configure_snapshot_backend(self, snapshot_backend: Any | None) -> None:
@@ -755,6 +1063,15 @@ class PortfolioViewModelService:
             self._snapshot_storage = snapshot_service
         else:
             self._snapshot_storage = snapshot_backend
+
+    def configure_dataset_cache_adapter(
+        self, adapter: PortfolioDatasetCacheAdapter | None
+    ) -> None:
+        """Override the dataset cache adapter for this service instance."""
+
+        if adapter is None:
+            adapter = _get_dataset_cache_adapter()
+        self._dataset_cache_adapter = adapter
 
     def _snapshot_backend_details(self) -> Dict[str, Any]:
         backend = getattr(self, "_snapshot_storage", None)
@@ -968,6 +1285,7 @@ class PortfolioViewModelService:
                             contribution_metrics=snapshot.contribution_metrics,
                             storage_id=storage_id or snapshot.storage_id,
                             pending_metrics=snapshot.pending_metrics,
+                            dataset_hash=snapshot.dataset_hash,
                         )
 
         worker = threading.Thread(
@@ -980,6 +1298,7 @@ class PortfolioViewModelService:
     def invalidate_positions(self, dataset_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambia el dataset base."""
 
+        current_filters = self._filters_key
         with self._snapshot_lock:
             self._snapshot = None
             self._dataset_key = dataset_key
@@ -990,6 +1309,12 @@ class PortfolioViewModelService:
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "dataset_changed", detail=dataset_key
         )
+        _log_dataset_cache_event(
+            "invalidate",
+            dataset_key,
+            scope="positions",
+            filters_key=current_filters,
+        )
         logger.info(
             "portfolio_view cache invalidated (positions) dataset=%s", dataset_key
         )
@@ -997,6 +1322,7 @@ class PortfolioViewModelService:
     def invalidate_filters(self, filters_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambian los filtros relevantes."""
 
+        current_dataset = self._dataset_key
         with self._snapshot_lock:
             self._snapshot = None
             self._filters_key = filters_key
@@ -1005,9 +1331,60 @@ class PortfolioViewModelService:
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "filters_changed", detail=filters_key
         )
+        _log_dataset_cache_event(
+            "invalidate",
+            current_dataset,
+            scope="filters",
+            filters_key=filters_key,
+        )
         logger.info(
             "portfolio_view cache invalidated (filters) filters=%s", filters_key
         )
+
+    def _store_dataset_cache_entry(
+        self,
+        *,
+        dataset_key: str,
+        filters_key: str,
+        fingerprints: Mapping[str, str],
+        snapshot: PortfolioViewSnapshot,
+        pending_metrics: tuple[str, ...],
+        timestamp_bucket: str | None,
+        include_extended: bool,
+    ) -> None:
+        adapter = self._dataset_cache_adapter
+        if adapter is None or not dataset_key:
+            return
+        cache_key = _dataset_cache_key(
+            dataset_key, filters_key, fingerprints, timestamp_bucket
+        )
+        try:
+            history_payload = tuple(dict(row) for row in self._history_records)
+            entry = PortfolioDatasetCacheEntry(
+                snapshot=snapshot,
+                incremental_cache=dict(self._incremental_cache),
+                fingerprints=dict(fingerprints),
+                stats=dict(self._last_incremental_stats or {}),
+                dataset_key=dataset_key,
+                filters_key=filters_key,
+                created_at=float(snapshot.generated_at),
+                pending_metrics=tuple(pending_metrics),
+                history_records=history_payload,
+                timestamp_bucket=timestamp_bucket,
+            )
+            adapter.set(cache_key, entry, ttl=_DATASET_CACHE_TTL_SECONDS)
+            _log_dataset_cache_event(
+                "store",
+                dataset_key,
+                filters_key=filters_key,
+                pending=";".join(pending_metrics) if pending_metrics else "none",
+                include_extended=include_extended,
+                timestamp_bucket=timestamp_bucket,
+            )
+        except Exception:  # pragma: no cover - cache errors should not break flow
+            logger.debug(
+                "No se pudo almacenar la entrada del dataset cache", exc_info=True
+            )
 
     def _compute_viewmodel_phase(
         self,
@@ -1019,14 +1396,116 @@ class PortfolioViewModelService:
         include_extended: bool,
         telemetry_phase: str,
         allow_pending_reuse: bool,
+        dataset_hash: str | None = None,
     ) -> PortfolioViewSnapshot:
-        dataset_key = self._hash_dataset(df_pos)
+        dataset_key = str(dataset_hash) if dataset_hash else self._hash_dataset(df_pos)
         filters_key = self._filters_key_from(controls)
+
+        timestamp_bucket = _extract_quotes_timestamp(cli, psvc)
 
         dataset_changed = dataset_key != self._dataset_key
         filters_changed = filters_key != self._filters_key
 
         render_start = time.perf_counter()
+
+        fingerprints = _build_incremental_fingerprints(
+            dataset_key, controls, filters_key
+        )
+
+        cache_adapter = self._dataset_cache_adapter
+        cached_entry: PortfolioDatasetCacheEntry | None = None
+        warm_entry: PortfolioDatasetCacheEntry | None = None
+        if cache_adapter is not None and dataset_key:
+            cache_key = _dataset_cache_key(
+                dataset_key, filters_key, fingerprints, timestamp_bucket
+            )
+            candidate = cache_adapter.get(cache_key)
+            if isinstance(candidate, PortfolioDatasetCacheEntry):
+                cached_entry = candidate
+            elif cache_adapter is not None:
+                _log_dataset_cache_event(
+                    "miss",
+                    dataset_key,
+                    filters_key=filters_key,
+                    include_extended=include_extended,
+                    timestamp_bucket=timestamp_bucket,
+                )
+
+        if cached_entry is not None:
+            pending = tuple(cached_entry.pending_metrics)
+            entry_fingerprints = dict(cached_entry.fingerprints)
+            entry_timestamp_match = cached_entry.timestamp_bucket == timestamp_bucket
+            entry_filters_match = cached_entry.filters_key == filters_key
+            can_reuse_entry = (
+                entry_filters_match
+                and entry_fingerprints == dict(fingerprints)
+                and entry_timestamp_match
+            )
+            reason = ""
+            if include_extended and pending:
+                can_reuse_entry = False
+                reason = "pending_metrics"
+            elif not include_extended and not allow_pending_reuse and pending:
+                can_reuse_entry = False
+                reason = "pending_metrics"
+
+            if can_reuse_entry:
+                with self._snapshot_lock:
+                    self._snapshot = cached_entry.snapshot
+                    self._dataset_key = dataset_key
+                    self._filters_key = filters_key
+                    self._incremental_cache = dict(cached_entry.incremental_cache)
+                    self._incremental_cache.setdefault(
+                        "fingerprints", entry_fingerprints
+                    )
+                    self._last_incremental_stats = dict(cached_entry.stats)
+                    self._history_records = [
+                        dict(row) for row in cached_entry.history_records
+                    ]
+                elapsed = time.perf_counter() - render_start
+                _PORTFOLIO_CACHE_TELEMETRY.record_hit(
+                    elapsed_s=elapsed,
+                    dataset_changed=dataset_changed,
+                    filters_changed=filters_changed,
+                )
+                _log_dataset_cache_event(
+                    "hit",
+                    dataset_key,
+                    filters_key=filters_key,
+                    pending=";".join(pending) if pending else "none",
+                    include_extended=include_extended,
+                    timestamp_bucket=timestamp_bucket,
+                )
+                self._record_snapshot_event(
+                    action="load",
+                    status="reused",
+                    storage_id=cached_entry.snapshot.storage_id,
+                )
+                try:
+                    log_default_telemetry(
+                        phase=telemetry_phase,
+                        elapsed_s=cached_entry.snapshot.apply_elapsed,
+                        dataset_hash=dataset_key,
+                        memo_hit_ratio=1.0,
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo registrar telemetría para %s (dataset hit)",
+                        telemetry_phase,
+                        exc_info=True,
+                    )
+                return cached_entry.snapshot
+
+            warm_entry = cached_entry
+            _log_dataset_cache_event(
+                "bypass",
+                dataset_key,
+                filters_key=filters_key,
+                pending=";".join(pending) if pending else "none",
+                include_extended=include_extended,
+                reason=reason or "mismatch",
+                timestamp_bucket=timestamp_bucket,
+            )
 
         if dataset_changed:
             self.invalidate_positions(dataset_key)
@@ -1035,15 +1514,25 @@ class PortfolioViewModelService:
 
         cached_blocks: Mapping[str, Any] = {}
         cached_fingerprints: Mapping[str, str] = {}
-        if not dataset_changed:
+        if dataset_changed:
+            if warm_entry is not None:
+                cached_blocks = dict(warm_entry.incremental_cache)
+                cached_fingerprints = dict(warm_entry.fingerprints)
+                _log_dataset_cache_event(
+                    "warm",
+                    dataset_key,
+                    filters_key=filters_key,
+                    pending=";".join(warm_entry.pending_metrics)
+                    if warm_entry.pending_metrics
+                    else "none",
+                    include_extended=include_extended,
+                    timestamp_bucket=timestamp_bucket,
+                )
+        else:
             cached_blocks = dict(self._incremental_cache)
             cached_fp = cached_blocks.get("fingerprints")
             if isinstance(cached_fp, Mapping):
                 cached_fingerprints = dict(cached_fp)
-
-        fingerprints = _build_incremental_fingerprints(
-            dataset_key, controls, filters_key
-        )
 
         incremental_changed = any(
             fingerprints.get(key) != cached_fingerprints.get(key)
@@ -1086,8 +1575,8 @@ class PortfolioViewModelService:
                         exc_info=True,
                     )
             self._record_snapshot_event(
-                action='load',
-                status='reused',
+                action="load",
+                status="reused",
                 storage_id=previous_snapshot.storage_id,
             )
             return previous_snapshot
@@ -1140,6 +1629,7 @@ class PortfolioViewModelService:
             contribution_metrics=incremental.contribution_metrics,
             storage_id=storage_id,
             pending_metrics=pending_metrics,
+            dataset_hash=dataset_key,
         )
 
         total_blocks = len(incremental.reused_blocks) + len(incremental.recomputed_blocks)
@@ -1169,6 +1659,16 @@ class PortfolioViewModelService:
                 "totals_elapsed": incremental.totals_elapsed,
                 "phase": telemetry_phase,
             }
+
+        self._store_dataset_cache_entry(
+            dataset_key=dataset_key,
+            filters_key=filters_key,
+            fingerprints=fingerprints,
+            snapshot=snapshot,
+            pending_metrics=pending_metrics,
+            timestamp_bucket=timestamp_bucket,
+            include_extended=include_extended,
+        )
 
         logger.info(
             "portfolio_view phase=%s dataset_changed=%s filters_changed=%s pending=%s reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
@@ -1235,7 +1735,15 @@ class PortfolioViewModelService:
 
         return snapshot
 
-    def build_minimal_viewmodel(self, df_pos, controls, cli, psvc) -> PortfolioViewSnapshot:
+    def build_minimal_viewmodel(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash: str | None = None,
+    ) -> PortfolioViewSnapshot:
         """Construye el snapshot mínimo requerido para renderizar el portafolio."""
 
         return self._compute_viewmodel_phase(
@@ -1246,9 +1754,18 @@ class PortfolioViewModelService:
             include_extended=False,
             telemetry_phase="portfolio_view.apply_basic",
             allow_pending_reuse=True,
+            dataset_hash=dataset_hash,
         )
 
-    def compute_extended_metrics(self, df_pos, controls, cli, psvc) -> PortfolioViewSnapshot:
+    def compute_extended_metrics(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash: str | None = None,
+    ) -> PortfolioViewSnapshot:
         """Completa las métricas extendidas del snapshot cuando son necesarias."""
 
         return self._compute_viewmodel_phase(
@@ -1259,6 +1776,7 @@ class PortfolioViewModelService:
             include_extended=True,
             telemetry_phase="portfolio_view.apply_extended",
             allow_pending_reuse=False,
+            dataset_hash=dataset_hash,
         )
 
     def get_portfolio_view(
@@ -1269,14 +1787,27 @@ class PortfolioViewModelService:
         psvc,
         *,
         lazy_metrics: bool = False,
+        dataset_hash: str | None = None,
     ) -> PortfolioViewSnapshot:
         """Devuelve el snapshot del portafolio aplicando métricas diferidas si es necesario."""
 
-        snapshot = self.build_minimal_viewmodel(df_pos, controls, cli, psvc)
+        snapshot = self.build_minimal_viewmodel(
+            df_pos,
+            controls,
+            cli,
+            psvc,
+            dataset_hash=dataset_hash,
+        )
         if lazy_metrics and snapshot.pending_metrics:
             return snapshot
         if snapshot.pending_metrics:
-            snapshot = self.compute_extended_metrics(df_pos, controls, cli, psvc)
+            snapshot = self.compute_extended_metrics(
+                df_pos,
+                controls,
+                cli,
+                psvc,
+                dataset_hash=dataset_hash,
+            )
         return snapshot
 
 def _coerce_json(value: Any) -> Any:
