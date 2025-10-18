@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 import streamlit as st
 
+from services import snapshot_defer
 from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
 
@@ -36,6 +37,8 @@ def render_portfolio_ui(
         "status": "success",
         "has_cli": cli is not None,
     }
+    st.session_state["ui_idle"] = False
+    snapshot_defer.mark_ui_busy()
     active_tab = st.session_state.get("active_tab")
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab
@@ -86,6 +89,8 @@ def render_portfolio_ui(
         if isinstance(visual_cache, dict):
             telemetry["visual_cache_datasets"] = len(visual_cache)
         mark_portfolio_ui_render_complete()
+        st.session_state["ui_idle"] = True
+        snapshot_defer.mark_ui_idle()
         return refresh_secs
 
 
