@@ -38,6 +38,7 @@ from services.portfolio_view import (
 from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from ui.lazy import charts_fragment, current_scope, in_form_scope, table_fragment
+from ui.lazy.runtime import current_dataset_token
 from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
@@ -94,6 +95,8 @@ _LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
 _LAZY_FLAGS_STATE_KEY = "__portfolio_lazy_flag_tokens__"
 _VISUAL_CACHE_EVENT_STATE_KEY = "__portfolio_visual_cache_event__"
 _UI_PERSIST_STATE_KEY = "portfolio_ui_persist_ms"
+
+_VISUAL_STATE_LOCK = threading.RLock()
 
 
 def _append_tab_metric(
@@ -667,31 +670,33 @@ def _ensure_component_entry(
 def _ensure_render_refs() -> dict[str, Any]:
     """Return the persistent placeholder references stored in session state."""
 
-    refs = st.session_state.get(_RENDER_REFS_STATE_KEY)
-    if not isinstance(refs, dict):
-        refs = {}
-        try:
-            st.session_state[_RENDER_REFS_STATE_KEY] = refs
-        except Exception:  # pragma: no cover - defensive safeguard
-            pass
-    return refs
+    with _VISUAL_STATE_LOCK:
+        refs = st.session_state.get(_RENDER_REFS_STATE_KEY)
+        if not isinstance(refs, dict):
+            refs = {}
+            try:
+                st.session_state[_RENDER_REFS_STATE_KEY] = refs
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
+        return refs
 
 
 def _get_lazy_flag_store() -> dict[str, Any]:
     """Return the dataset map that tracks persisted lazy triggers."""
 
-    try:
-        store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
-    except Exception:  # pragma: no cover - defensive safeguard
-        store = None
-
-    if not isinstance(store, dict):
-        store = {}
+    with _VISUAL_STATE_LOCK:
         try:
-            st.session_state[_LAZY_FLAGS_STATE_KEY] = store
+            store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
         except Exception:  # pragma: no cover - defensive safeguard
-            pass
-    return store
+            store = None
+
+        if not isinstance(store, dict):
+            store = {}
+            try:
+                st.session_state[_LAZY_FLAGS_STATE_KEY] = store
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
+        return store
 
 
 def _mark_lazy_flag_ready(key: str | None, dataset_token: str) -> None:
@@ -700,13 +705,14 @@ def _mark_lazy_flag_ready(key: str | None, dataset_token: str) -> None:
     if not key:
         return
 
-    try:
-        st.session_state[key] = True
-    except Exception:  # pragma: no cover - defensive safeguard
-        pass
+    with _VISUAL_STATE_LOCK:
+        try:
+            st.session_state[key] = True
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
 
-    store = _get_lazy_flag_store()
-    store[key] = {"dataset": dataset_token, "ts": time.time()}
+        store = _get_lazy_flag_store()
+        store[key] = {"dataset": dataset_token, "ts": time.time()}
 
 
 def _lazy_flag_ready(key: str | None, dataset_token: str) -> bool:
@@ -715,59 +721,65 @@ def _lazy_flag_ready(key: str | None, dataset_token: str) -> bool:
     if not key:
         return False
 
-    try:
-        value = st.session_state.get(key)
-    except Exception:  # pragma: no cover - defensive safeguard
-        value = None
+    with _VISUAL_STATE_LOCK:
+        try:
+            value = st.session_state.get(key)
+        except Exception:  # pragma: no cover - defensive safeguard
+            value = None
 
-    store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
-    if isinstance(store, dict):
-        record = store.get(key)
-        if isinstance(record, dict):
-            stored_dataset = record.get("dataset")
-            if stored_dataset and stored_dataset != dataset_token:
-                store.pop(key, None)
-                try:
-                    st.session_state.pop(key, None)
-                except Exception:  # pragma: no cover - defensive safeguard
-                    pass
-                return False
+        store = st.session_state.get(_LAZY_FLAGS_STATE_KEY)
+        if isinstance(store, dict):
+            record = store.get(key)
+            if isinstance(record, dict):
+                stored_dataset = record.get("dataset")
+                if stored_dataset and stored_dataset != dataset_token:
+                    store.pop(key, None)
+                    try:
+                        st.session_state.pop(key, None)
+                    except Exception:  # pragma: no cover - defensive safeguard
+                        pass
+                    return False
 
-    return bool(value)
+        return bool(value)
 
 
 def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
     """Ensure the lazy loading scaffolding exists for the active dataset."""
 
-    state = st.session_state.get(_LAZY_BLOCKS_STATE_KEY)
-    if not isinstance(state, dict):
-        state = {}
-        try:
-            st.session_state[_LAZY_BLOCKS_STATE_KEY] = state
-        except Exception:  # pragma: no cover - defensive safeguard
-            pass
+    with _VISUAL_STATE_LOCK:
+        state = st.session_state.get(_LAZY_BLOCKS_STATE_KEY)
+        if not isinstance(state, dict):
+            state = {}
+            try:
+                st.session_state[_LAZY_BLOCKS_STATE_KEY] = state
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
 
-    lazy_blocks: dict[str, dict[str, Any]] = {}
-    for name in ("table", "charts"):
-        block = state.get(name)
-        if not isinstance(block, dict) or block.get("dataset_hash") != dataset_token:
-            block = {
-                "status": "pending",
-                "dataset_hash": dataset_token,
-                "triggered_at": None,
-                "loaded_at": None,
-                "prompt_rendered": False,
-            }
-            state[name] = block
-        else:
-            if block.get("status") not in ("pending", "loaded"):
-                block["status"] = "pending"
-            block.setdefault("dataset_hash", dataset_token)
-            block.setdefault("triggered_at", None)
-            block.setdefault("loaded_at", None)
-            block.setdefault("prompt_rendered", False)
-        lazy_blocks[name] = block
-    return lazy_blocks
+        lazy_blocks: dict[str, dict[str, Any]] = {}
+        for name in ("table", "charts"):
+            block = state.get(name)
+            if not isinstance(block, dict) or block.get("dataset_hash") != dataset_token:
+                block = {
+                    "status": "pending",
+                    "dataset_hash": dataset_token,
+                    "triggered_at": None,
+                    "loaded_at": None,
+                    "prompt_rendered": False,
+                    "lazy_load_ms": None,
+                    "mount_latency_ms": None,
+                }
+                state[name] = block
+            else:
+                if block.get("status") not in ("pending", "loaded"):
+                    block["status"] = "pending"
+                block.setdefault("dataset_hash", dataset_token)
+                block.setdefault("triggered_at", None)
+                block.setdefault("loaded_at", None)
+                block.setdefault("prompt_rendered", False)
+                block.setdefault("lazy_load_ms", None)
+                block.setdefault("mount_latency_ms", None)
+            lazy_blocks[name] = block
+        return lazy_blocks
 
 
 def _record_ui_persist_visibility(block: dict[str, Any], *, visible: bool) -> None:
@@ -776,42 +788,43 @@ def _record_ui_persist_visibility(block: dict[str, Any], *, visible: bool) -> No
     if not isinstance(block, dict):
         return
 
-    if not visible:
-        block.pop("_ui_persist_start", None)
+    with _VISUAL_STATE_LOCK:
+        if not visible:
+            block.pop("_ui_persist_start", None)
+            try:
+                st.session_state.pop(_UI_PERSIST_STATE_KEY, None)
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo limpiar ui_persist_ms", exc_info=True)
+            return
+
+        now = time.time()
+        loaded_at = block.get("loaded_at")
+        start = None
+        if isinstance(loaded_at, (int, float)):
+            start = float(loaded_at)
+        else:
+            start = block.get("_ui_persist_start")
+            if not isinstance(start, (int, float)):
+                start = now
+                block["_ui_persist_start"] = start
+
         try:
-            st.session_state.pop(_UI_PERSIST_STATE_KEY, None)
+            persist_ms = max((now - float(start)) * 1000.0, 0.0)
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo limpiar ui_persist_ms", exc_info=True)
-        return
+            persist_ms = 0.0
 
-    now = time.time()
-    loaded_at = block.get("loaded_at")
-    start = None
-    if isinstance(loaded_at, (int, float)):
-        start = float(loaded_at)
-    else:
-        start = block.get("_ui_persist_start")
-        if not isinstance(start, (int, float)):
-            start = now
-            block["_ui_persist_start"] = start
+        try:
+            existing = st.session_state.get(_UI_PERSIST_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            existing = None
+        if isinstance(existing, (int, float)):
+            persist_ms = max(persist_ms, float(existing))
 
-    try:
-        persist_ms = max((now - float(start)) * 1000.0, 0.0)
-    except Exception:  # pragma: no cover - defensive safeguard
-        persist_ms = 0.0
-
-    try:
-        existing = st.session_state.get(_UI_PERSIST_STATE_KEY)
-    except Exception:  # pragma: no cover - defensive safeguard
-        existing = None
-    if isinstance(existing, (int, float)):
-        persist_ms = max(persist_ms, float(existing))
-
-    persist_ms = round(float(persist_ms), 2)
-    try:
-        st.session_state[_UI_PERSIST_STATE_KEY] = persist_ms
-    except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug("No se pudo persistir ui_persist_ms", exc_info=True)
+        persist_ms = round(float(persist_ms), 2)
+        try:
+            st.session_state[_UI_PERSIST_STATE_KEY] = persist_ms
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo persistir ui_persist_ms", exc_info=True)
 
 def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | None) -> bool:
     """Render a persistent widget that toggles the lazy loading flag."""
@@ -970,18 +983,29 @@ def _prompt_lazy_block(
     return False
 
 
-def _record_lazy_component_load(component: str, elapsed_ms: float, dataset_token: str) -> None:
+def _record_lazy_component_load(
+    component: str,
+    elapsed_ms: float,
+    dataset_token: str | None,
+    *,
+    mount_latency_ms: float | None = None,
+) -> None:
     """Persist telemetry for a deferred component once it renders."""
 
+    if not dataset_token:
+        dataset_token = current_dataset_token() or "none"
     try:
+        payload = {
+            "lazy_loaded_component": component,
+            "lazy_visual_load_ms": max(float(elapsed_ms), 0.0),
+        }
+        if mount_latency_ms is not None:
+            payload["visual_mount_latency_ms"] = max(float(mount_latency_ms), 0.0)
         log_default_telemetry(
             phase="portfolio.lazy_component",
             elapsed_s=max(float(elapsed_ms), 0.0) / 1000.0,
             dataset_hash=dataset_token,
-            extra={
-                "lazy_loaded_component": component,
-                "lazy_load_ms": max(float(elapsed_ms), 0.0),
-            },
+            extra=payload,
         )
     except Exception:  # pragma: no cover - best-effort logging
         logger.debug(
@@ -1106,9 +1130,10 @@ def render_basic_tab(
             summary_entry["updated_at"] = summary_timestamp
             summary_entry["dataset_hash"] = dataset_token
             summary_refs["dataset_hash"] = dataset_token
-            visual_cache_entry["summary_placeholder"] = placeholder
-            visual_cache_entry["summary_rendered"] = True
-            visual_cache_entry["summary_timestamp"] = summary_timestamp
+            with _VISUAL_STATE_LOCK:
+                visual_cache_entry["summary_placeholder"] = placeholder
+                visual_cache_entry["summary_rendered"] = True
+                visual_cache_entry["summary_timestamp"] = summary_timestamp
             _store_component_metadata(
                 portfolio_id,
                 summary_filters,
@@ -1122,10 +1147,13 @@ def render_basic_tab(
             if summary_timestamp is None and summary_meta is not None:
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
-            visual_cache_entry.setdefault("summary_placeholder", summary_entry.get("placeholder"))
-            visual_cache_entry.setdefault("summary_rendered", True)
-            if summary_timestamp is not None:
-                visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
+            with _VISUAL_STATE_LOCK:
+                visual_cache_entry.setdefault(
+                    "summary_placeholder", summary_entry.get("placeholder")
+                )
+                visual_cache_entry.setdefault("summary_rendered", True)
+                if summary_timestamp is not None:
+                    visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
 
     table_signature = (portfolio_id, table_filters)
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
@@ -1176,25 +1204,43 @@ def render_basic_tab(
                     placeholder = table_placeholder
                     references = table_refs.get("references")
                     start_trigger = table_lazy.get("triggered_at")
-                    updated_refs = update_table_data(
-                        placeholder,
-                        render_fn=render_table_section,
-                        df_view=df_view,
-                        controls=controls,
-                        ccl_rate=ccl_rate,
-                        favorites=favorites,
-                        references=references,
+                    spinner_factory = getattr(st, "spinner", None)
+                    spinner_cm = (
+                        spinner_factory("Procesando tabla del portafolio…")
+                        if callable(spinner_factory)
+                        else nullcontext()
                     )
+                    mount_start = time.perf_counter()
+                    with spinner_cm:
+                        updated_refs = update_table_data(
+                            placeholder,
+                            render_fn=render_table_section,
+                            df_view=df_view,
+                            controls=controls,
+                            ccl_rate=ccl_rate,
+                            favorites=favorites,
+                            references=references,
+                        )
+                    mount_end = time.perf_counter()
                     table_refs["references"] = updated_refs
                     table_timestamp = time.time()
+                    mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
+                    elapsed_ms = mount_latency_ms
+                    if isinstance(start_trigger, (int, float)):
+                        elapsed_ms = max((mount_end - float(start_trigger)) * 1000.0, mount_latency_ms)
                     table_entry["signature"] = table_signature
                     table_entry["rendered"] = True
                     table_entry["updated_at"] = table_timestamp
                     table_entry["dataset_hash"] = dataset_token
+                    table_entry["lazy_load_ms"] = elapsed_ms
+                    table_entry["mount_latency_ms"] = mount_latency_ms
                     table_refs["dataset_hash"] = dataset_token
-                    visual_cache_entry["table_placeholder"] = placeholder
-                    visual_cache_entry["table_rendered"] = True
-                    visual_cache_entry["table_timestamp"] = table_timestamp
+                    with _VISUAL_STATE_LOCK:
+                        visual_cache_entry["table_placeholder"] = placeholder
+                        visual_cache_entry["table_rendered"] = True
+                        visual_cache_entry["table_timestamp"] = table_timestamp
+                        visual_cache_entry["table_lazy_load_ms"] = elapsed_ms
+                        visual_cache_entry["table_mount_latency_ms"] = mount_latency_ms
                     _store_component_metadata(
                         portfolio_id,
                         table_filters,
@@ -1202,21 +1248,38 @@ def render_basic_tab(
                         "table",
                         table_timestamp,
                     )
-                    if start_trigger is not None:
-                        elapsed_ms = (time.perf_counter() - start_trigger) * 1000.0
-                        table_lazy["triggered_at"] = None
-                        table_lazy["loaded_at"] = time.time()
-                        _record_lazy_component_load("table", elapsed_ms, dataset_token)
-                    elif not table_lazy.get("loaded_at"):
-                        table_lazy["loaded_at"] = time.time()
+                    completed_at = table_timestamp
+                    table_lazy["triggered_at"] = None
+                    table_lazy["loaded_at"] = completed_at
+                    table_lazy["lazy_load_ms"] = elapsed_ms
+                    table_lazy["mount_latency_ms"] = mount_latency_ms
+                    if mount_latency_ms > 100.0:
+                        logger.warning(
+                            "La visualización 'table' tardó %.1f ms en montarse (dataset=%s)",
+                            mount_latency_ms,
+                            dataset_token,
+                        )
+                    _record_lazy_component_load(
+                        "table",
+                        elapsed_ms,
+                        dataset_token,
+                        mount_latency_ms=mount_latency_ms,
+                    )
                 elif table_meta is not None:
                     table_entry.setdefault("updated_at", table_meta.get("computed_at"))
                     table_refs.setdefault("dataset_hash", dataset_token)
-                    visual_cache_entry.setdefault("table_placeholder", table_placeholder)
-                    visual_cache_entry.setdefault("table_rendered", True)
-                    visual_cache_entry.setdefault(
-                        "table_timestamp", table_entry.get("updated_at")
-                    )
+                    with _VISUAL_STATE_LOCK:
+                        visual_cache_entry.setdefault("table_placeholder", table_placeholder)
+                        visual_cache_entry.setdefault("table_rendered", True)
+                        visual_cache_entry.setdefault(
+                            "table_lazy_load_ms", table_entry.get("lazy_load_ms")
+                        )
+                        visual_cache_entry.setdefault(
+                            "table_mount_latency_ms", table_entry.get("mount_latency_ms")
+                        )
+                        visual_cache_entry.setdefault(
+                            "table_timestamp", table_entry.get("updated_at")
+                        )
 
         if table_ready:
             table_ctx.stop()
@@ -1264,27 +1327,45 @@ def render_basic_tab(
                             )
                     references = charts_refs.get("references")
                     start_trigger = charts_lazy.get("triggered_at")
-                    updated_refs = update_charts(
-                        placeholder,
-                        render_fn=render_charts_section,
-                        df_view=df_view,
-                        controls=controls,
-                        ccl_rate=ccl_rate,
-                        totals=totals,
-                        contribution_metrics=contributions,
-                        snapshot=snapshot,
-                        references=references,
+                    spinner_factory = getattr(st, "spinner", None)
+                    spinner_cm = (
+                        spinner_factory("Procesando gráficos del portafolio…")
+                        if callable(spinner_factory)
+                        else nullcontext()
                     )
+                    mount_start = time.perf_counter()
+                    with spinner_cm:
+                        updated_refs = update_charts(
+                            placeholder,
+                            render_fn=render_charts_section,
+                            df_view=df_view,
+                            controls=controls,
+                            ccl_rate=ccl_rate,
+                            totals=totals,
+                            contribution_metrics=contributions,
+                            snapshot=snapshot,
+                            references=references,
+                        )
+                    mount_end = time.perf_counter()
                     charts_refs["references"] = updated_refs
                     charts_timestamp = time.time()
+                    mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
+                    elapsed_ms = mount_latency_ms
+                    if isinstance(start_trigger, (int, float)):
+                        elapsed_ms = max((mount_end - float(start_trigger)) * 1000.0, mount_latency_ms)
                     charts_entry["signature"] = charts_signature
                     charts_entry["rendered"] = True
                     charts_entry["updated_at"] = charts_timestamp
                     charts_entry["dataset_hash"] = dataset_token
+                    charts_entry["lazy_load_ms"] = elapsed_ms
+                    charts_entry["mount_latency_ms"] = mount_latency_ms
                     charts_refs["dataset_hash"] = dataset_token
-                    visual_cache_entry["charts_placeholder"] = placeholder
-                    visual_cache_entry["charts_rendered"] = True
-                    visual_cache_entry["charts_timestamp"] = charts_timestamp
+                    with _VISUAL_STATE_LOCK:
+                        visual_cache_entry["charts_placeholder"] = placeholder
+                        visual_cache_entry["charts_rendered"] = True
+                        visual_cache_entry["charts_timestamp"] = charts_timestamp
+                        visual_cache_entry["charts_lazy_load_ms"] = elapsed_ms
+                        visual_cache_entry["charts_mount_latency_ms"] = mount_latency_ms
                     _store_component_metadata(
                         portfolio_id,
                         chart_filters,
@@ -1292,23 +1373,40 @@ def render_basic_tab(
                         "charts",
                         charts_timestamp,
                     )
-                    if start_trigger is not None:
-                        elapsed_ms = (time.perf_counter() - start_trigger) * 1000.0
-                        charts_lazy["triggered_at"] = None
-                        charts_lazy["loaded_at"] = time.time()
-                        _record_lazy_component_load("chart", elapsed_ms, dataset_token)
-                    elif not charts_lazy.get("loaded_at"):
-                        charts_lazy["loaded_at"] = time.time()
+                    completed_at = charts_timestamp
+                    charts_lazy["triggered_at"] = None
+                    charts_lazy["loaded_at"] = completed_at
+                    charts_lazy["lazy_load_ms"] = elapsed_ms
+                    charts_lazy["mount_latency_ms"] = mount_latency_ms
+                    if mount_latency_ms > 100.0:
+                        logger.warning(
+                            "La visualización 'charts' tardó %.1f ms en montarse (dataset=%s)",
+                            mount_latency_ms,
+                            dataset_token,
+                        )
+                    _record_lazy_component_load(
+                        "chart",
+                        elapsed_ms,
+                        dataset_token,
+                        mount_latency_ms=mount_latency_ms,
+                    )
                 elif charts_meta is not None:
                     charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
                     charts_refs.setdefault("dataset_hash", dataset_token)
-                    visual_cache_entry.setdefault(
-                        "charts_placeholder", charts_entry.get("placeholder")
-                    )
-                    visual_cache_entry.setdefault("charts_rendered", True)
-                    visual_cache_entry.setdefault(
-                        "charts_timestamp", charts_entry.get("updated_at")
-                    )
+                    with _VISUAL_STATE_LOCK:
+                        visual_cache_entry.setdefault(
+                            "charts_placeholder", charts_entry.get("placeholder")
+                        )
+                        visual_cache_entry.setdefault("charts_rendered", True)
+                        visual_cache_entry.setdefault(
+                            "charts_lazy_load_ms", charts_entry.get("lazy_load_ms")
+                        )
+                        visual_cache_entry.setdefault(
+                            "charts_mount_latency_ms", charts_entry.get("mount_latency_ms")
+                        )
+                        visual_cache_entry.setdefault(
+                            "charts_timestamp", charts_entry.get("updated_at")
+                        )
 
         if charts_ready:
             charts_ctx.stop()
@@ -1333,8 +1431,9 @@ def render_basic_tab(
     render_refs["dataset_hash"] = dataset_token
     render_refs["incremental_render"] = incremental_render
     render_refs["ui_partial_update_ms"] = partial_update_ms
-    visual_cache_entry["incremental_render"] = incremental_render
-    visual_cache_entry["ui_partial_update_ms"] = partial_update_ms
+    with _VISUAL_STATE_LOCK:
+        visual_cache_entry["incremental_render"] = incremental_render
+        visual_cache_entry["ui_partial_update_ms"] = partial_update_ms
     try:
         st.session_state["portfolio_incremental_render"] = incremental_render
         st.session_state["portfolio_ui_partial_update_ms"] = partial_update_ms
@@ -1807,8 +1906,9 @@ def render_portfolio_section(
             logger.debug("No se pudo actualizar el estado de caché visual", exc_info=True)
         visual_entry = _get_visual_cache_entry(dataset_hash)
         dataset_token = str(dataset_hash or "none")
-        visual_entry["dataset_hash"] = dataset_hash
-        visual_entry["last_seen"] = time.time()
+        with _VISUAL_STATE_LOCK:
+            visual_entry["dataset_hash"] = dataset_hash
+            visual_entry["last_seen"] = time.time()
 
         try:
             base_label = viewmodel.tab_options[tab_idx]
@@ -1888,8 +1988,9 @@ def render_portfolio_section(
                     render_refs["dataset_hash"] = dataset_token
                     render_refs["incremental_render"] = True
                     render_refs["ui_partial_update_ms"] = 0.0
-                visual_entry["incremental_render"] = True
-                visual_entry["ui_partial_update_ms"] = 0.0
+                with _VISUAL_STATE_LOCK:
+                    visual_entry["incremental_render"] = True
+                    visual_entry["ui_partial_update_ms"] = 0.0
 
             cache_entry["last_source"] = source
             _update_status_message(
@@ -2077,26 +2178,28 @@ def _ensure_tab_cache(cache: dict[str, dict[str, Any]], tab_slug: str) -> dict[s
 def _ensure_visual_cache() -> dict[str, dict[str, Any]]:
     """Return (and initialize) the dataset-level visual cache."""
 
-    cache = st.session_state.get(_VISUAL_CACHE_STATE_KEY)
-    if not isinstance(cache, dict):
-        cache = {}
-        try:
-            st.session_state[_VISUAL_CACHE_STATE_KEY] = cache
-        except Exception:  # pragma: no cover - defensive safeguard
-            pass
-    return cache
+    with _VISUAL_STATE_LOCK:
+        cache = st.session_state.get(_VISUAL_CACHE_STATE_KEY)
+        if not isinstance(cache, dict):
+            cache = {}
+            try:
+                st.session_state[_VISUAL_CACHE_STATE_KEY] = cache
+            except Exception:  # pragma: no cover - defensive safeguard
+                pass
+        return cache
 
 
 def _get_visual_cache_entry(dataset_hash: str | None) -> dict[str, Any]:
     """Return the cache bucket associated with ``dataset_hash``."""
 
-    cache = _ensure_visual_cache()
-    key = str(dataset_hash or "none")
-    entry = cache.get(key)
-    if not isinstance(entry, dict):
-        entry = {}
-        cache[key] = entry
-    return entry
+    with _VISUAL_STATE_LOCK:
+        cache = _ensure_visual_cache()
+        key = str(dataset_hash or "none")
+        entry = cache.get(key)
+        if not isinstance(entry, dict):
+            entry = {}
+            cache[key] = entry
+        return entry
 
 
 def _normalize_user_identifier(value: Any) -> str | None:
@@ -2131,28 +2234,29 @@ def _resolve_active_user_id() -> str | None:
 def _clear_visual_cache_state() -> None:
     """Remove cached visual state from ``st.session_state``."""
 
-    for key in (
-        _VISUAL_CACHE_STATE_KEY,
-        _DATASET_HASH_STATE_KEY,
-        _RENDER_REFS_STATE_KEY,
-        _LAZY_BLOCKS_STATE_KEY,
-        _VISUAL_CACHE_EVENT_STATE_KEY,
-        _UI_PERSIST_STATE_KEY,
-        "portfolio_incremental_render",
-        "portfolio_ui_partial_update_ms",
-    ):
+    with _VISUAL_STATE_LOCK:
+        for key in (
+            _VISUAL_CACHE_STATE_KEY,
+            _DATASET_HASH_STATE_KEY,
+            _RENDER_REFS_STATE_KEY,
+            _LAZY_BLOCKS_STATE_KEY,
+            _VISUAL_CACHE_EVENT_STATE_KEY,
+            _UI_PERSIST_STATE_KEY,
+            "portfolio_incremental_render",
+            "portfolio_ui_partial_update_ms",
+        ):
+            try:
+                if key in st.session_state:
+                    del st.session_state[key]
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo limpiar el estado %s", key, exc_info=True)
         try:
-            if key in st.session_state:
-                del st.session_state[key]
+            st.session_state.pop(_DATASET_REUSE_FLAG_KEY, None)
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo limpiar el estado %s", key, exc_info=True)
-    try:
-        st.session_state.pop(_DATASET_REUSE_FLAG_KEY, None)
-    except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug(
-            "No se pudo limpiar la bandera de reutilización de caché visual",
-            exc_info=True,
-        )
+            logger.debug(
+                "No se pudo limpiar la bandera de reutilización de caché visual",
+                exc_info=True,
+            )
 
 
 def _maybe_reset_visual_cache_state() -> bool:
@@ -2176,13 +2280,14 @@ def _maybe_reset_visual_cache_state() -> bool:
         session_logger.info("Visual cache cleared due to user change/logout")
 
     try:
-        if current_user is None:
-            state.pop(_PORTFOLIO_LAST_USER_STATE_KEY, None)
-        else:
-            state[_PORTFOLIO_LAST_USER_STATE_KEY] = current_user
-            legacy_user = _normalize_user_identifier(state.get("last_user_id"))
-            if legacy_user != current_user:
-                state["last_user_id"] = current_user
+        with _VISUAL_STATE_LOCK:
+            if current_user is None:
+                state.pop(_PORTFOLIO_LAST_USER_STATE_KEY, None)
+            else:
+                state[_PORTFOLIO_LAST_USER_STATE_KEY] = current_user
+                legacy_user = _normalize_user_identifier(state.get("last_user_id"))
+                if legacy_user != current_user:
+                    state["last_user_id"] = current_user
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug(
             "No se pudo actualizar el estado de usuario del portafolio",
