@@ -11,6 +11,7 @@ from services import snapshot_defer
 from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
 from shared.user_actions import log_user_action
+from shared.fragment_state import get_fragment_state_guardian
 
 
 @lru_cache(maxsize=1)
@@ -41,6 +42,12 @@ def render_portfolio_ui(
     }
     st.session_state["ui_idle"] = False
     snapshot_defer.mark_ui_busy()
+    guardian = get_fragment_state_guardian()
+    try:
+        current_dataset = st.session_state.get("dataset_hash")
+    except Exception:  # pragma: no cover - defensive safeguard
+        current_dataset = None
+    guardian.begin_cycle(str(current_dataset or ""))
     active_tab = st.session_state.get("active_tab")
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab

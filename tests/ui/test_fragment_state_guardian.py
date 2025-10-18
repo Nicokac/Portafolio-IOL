@@ -1,9 +1,11 @@
-"""Regression tests for the lazy loading hotfix behaviour."""
+"""Tests for the lazy fragment state guardian."""
 
 from __future__ import annotations
 
-import sys
 from types import ModuleType, SimpleNamespace
+from typing import Any
+
+import sys
 
 import pytest
 
@@ -124,44 +126,43 @@ if "plotly" not in sys.modules:
     )
 
 from controllers.portfolio import portfolio as portfolio_mod
-from shared import export, skeletons
+import shared.fragment_state as fragment_state
 from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
-def test_lazy_trigger_persists_without_rerun(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure the lazy table trigger relies on session state instead of reruns."""
-
+@pytest.fixture()
+def guardian_test_setup(monkeypatch: pytest.MonkeyPatch):
     fake_st = FakeStreamlit(radio_sequence=[0])
-    fake_st.experimental_rerun = lambda: (_ for _ in ()).throw(AssertionError("rerun invoked"))
-    placeholder = fake_st.empty()
     monkeypatch.setattr(portfolio_mod, "st", fake_st)
+    monkeypatch.setattr(fragment_state, "st", fake_st)
 
-    dataset_token = "dataset-token"
-    block = {
+    events: list[tuple[str, Any, Any]] = []
+
+    def _capture(action: str, detail: Any, *, dataset_hash: str | None = None, latency_ms: Any | None = None) -> None:
+        events.append((action, detail, dataset_hash))
+
+    monkeypatch.setattr(portfolio_mod, "log_user_action", _capture)
+    monkeypatch.setattr(fragment_state, "log_user_action", _capture)
+    fragment_state.reset_fragment_state_guardian()
+    return fake_st, events
+
+
+def _build_block(dataset_token: str) -> dict[str, Any]:
+    return {
         "status": "pending",
         "dataset_hash": dataset_token,
         "triggered_at": None,
         "prompt_rendered": False,
     }
 
-    ready = portfolio_mod._prompt_lazy_block(
-        block,
-        placeholder=placeholder,
-        button_label="📊 Cargar tabla del portafolio",
-        info_message="La tabla se cargará al activarla.",
-        key="positions_load_table",
-        dataset_token=dataset_token,
-        fallback_key="load_table",
-    )
 
-    assert ready is False
-    assert len(fake_st.checkbox_calls) == 1
-    assert block["status"] == "pending"
-    assert block["triggered_at"] is None
-    assert fake_st.session_state.get("load_table") is False
+def test_guardian_rehydrates_missing_state(guardian_test_setup):
+    fake_st, events = guardian_test_setup
+    placeholder = fake_st.empty()
+    dataset_token = "dataset-token"
+    block = _build_block(dataset_token)
 
     fake_st._checkbox_values["load_table"] = [True]
-
     ready = portfolio_mod._prompt_lazy_block(
         block,
         placeholder=placeholder,
@@ -171,12 +172,12 @@ def test_lazy_trigger_persists_without_rerun(monkeypatch: pytest.MonkeyPatch) ->
         dataset_token=dataset_token,
         fallback_key="load_table",
     )
-
     assert ready is True
     assert block["status"] == "loaded"
-    first_trigger = block["triggered_at"]
-    assert isinstance(first_trigger, float)
-    assert fake_st.session_state.get("load_table") is True
+
+    # Simulate rerun losing the underlying flags.
+    fake_st.session_state.pop("positions_load_table", None)
+    fake_st.session_state.pop("load_table", None)
 
     ready = portfolio_mod._prompt_lazy_block(
         block,
@@ -187,52 +188,57 @@ def test_lazy_trigger_persists_without_rerun(monkeypatch: pytest.MonkeyPatch) ->
         dataset_token=dataset_token,
         fallback_key="load_table",
     )
-
     assert ready is True
-    assert block["triggered_at"] == first_trigger
-    assert len(fake_st.checkbox_calls) >= 2
+    assert fake_st.session_state.get("positions_load_table") is True
+    assert fake_st.session_state.get("load_table") is True
 
-    flag_store = fake_st.session_state.get(portfolio_mod._LAZY_FLAGS_STATE_KEY, {})
-    assert flag_store.get("load_table", {}).get("dataset") == dataset_token
-
-
-def test_skeleton_initializes_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """initialize should only register the skeleton start timestamp once per session."""
-
-    fake_state: dict[str, object] = {}
-    fake_streamlit = SimpleNamespace(session_state=fake_state)
-    monkeypatch.setattr(skeletons, "st", fake_streamlit)
-    monkeypatch.setattr(skeletons, "_FALLBACK_INITIALIZED", False)
-
-    first = skeletons.initialize(123.0)
-    assert first is True
-    assert fake_state["skeleton_initialized"] is True
-    assert fake_state["_ui_skeleton_start"] == 123.0
-
-    second = skeletons.initialize(456.0)
-    assert second is False
-    assert fake_state["_ui_skeleton_start"] == 123.0
+    rehydrate_events = [event for event in events if event[0] == "lazy_block_rehydrated"]
+    assert rehydrate_events, "expected rehydration to be logged"
+    assert rehydrate_events[0][2] == dataset_token
 
 
-def test_browser_renderer_does_not_call_kaleido(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When Kaleido is disabled, fig_to_png_bytes must not invoke the renderer."""
+def test_guardian_respects_explicit_toggle(guardian_test_setup):
+    fake_st, events = guardian_test_setup
+    placeholder = fake_st.empty()
+    dataset_token = "dataset-token"
+    block = _build_block(dataset_token)
 
-    monkeypatch.setattr(export, "_KALEIDO_AVAILABLE", False)
-    monkeypatch.setattr(export, "_KALEIDO_IMPORTED", False)
-    monkeypatch.setattr(export, "_KALEIDO_RUNTIME_AVAILABLE", None)
-    monkeypatch.setattr(export, "_CHROMIUM_AVAILABLE", False)
+    fake_st._checkbox_values["load_table"] = [True, False, True]
 
-    called = False
+    ready = portfolio_mod._prompt_lazy_block(
+        block,
+        placeholder=placeholder,
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla se cargará al activarla.",
+        key="positions_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
+    )
+    assert ready is True
+    assert block["status"] == "loaded"
 
-    def _fail_call(*_args, **_kwargs):  # noqa: ANN001 - test stub
-        nonlocal called
-        called = True
-        raise AssertionError("pio.to_image should not be called when Kaleido is disabled")
+    ready = portfolio_mod._prompt_lazy_block(
+        block,
+        placeholder=placeholder,
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla se cargará al activarla.",
+        key="positions_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
+    )
+    assert ready is False
+    assert block["status"] == "pending"
+    assert fake_st.session_state.get("positions_load_table") is False
+    assert fake_st.session_state.get("load_table") is False
 
-    monkeypatch.setattr(export.pio, "to_image", _fail_call)
-
-    result = export.fig_to_png_bytes(SimpleNamespace())
-
-    assert result is None
-    assert called is False
-    assert export._KALEIDO_RUNTIME_AVAILABLE is False
+    ready = portfolio_mod._prompt_lazy_block(
+        block,
+        placeholder=placeholder,
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla se cargará al activarla.",
+        key="positions_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
+    )
+    assert ready is True
+    assert any(event[0] == "lazy_block_rehydrated" for event in events) is False

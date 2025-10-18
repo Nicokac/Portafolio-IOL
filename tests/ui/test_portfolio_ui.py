@@ -251,8 +251,11 @@ class FakeStreamlit:
             result = queue.pop(0)
             if not queue:
                 self._checkbox_values.pop(str(state_key), None)
+        elif key is not None and key in self.session_state:
+            result = bool(self.session_state[key])
         else:
-            result = value
+            stored = self.session_state.get(state_key)
+            result = bool(stored) if stored is not None else value
         if key is not None:
             self.session_state[key] = result
         return result

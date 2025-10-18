@@ -4,6 +4,7 @@ from .table_fragment import table_fragment
 from .charts_fragment import charts_fragment
 from .runtime import (
     FragmentContext,
+    current_component,
     current_scope,
     in_form_scope,
     lazy_fragment,
@@ -11,6 +12,7 @@ from .runtime import (
 
 __all__ = [
     "FragmentContext",
+    "current_component",
     "current_scope",
     "in_form_scope",
     "lazy_fragment",
