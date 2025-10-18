@@ -29,6 +29,7 @@ import uuid
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Sequence
 
 from services import health
+from shared.snapshot import compress_payload, decompress_payload
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,9 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
             with self.path.open("r", encoding="utf-8") as fh:
                 raw = json.load(fh)
                 if isinstance(raw, list):
+                    for row in raw:
+                        if isinstance(row, dict):
+                            row["payload"] = decompress_payload(row.get("payload"))
                     return raw
                 logger.warning("Formato inesperado en %s, se esperaba lista", self.path)
                 return []
@@ -193,7 +197,7 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
             "id": str(uuid.uuid4()),
             "kind": str(kind or "").strip() or "generic",
             "created_at": time.time(),
-            "payload": _to_plain_mapping(payload),
+            "payload": compress_payload(_to_plain_mapping(payload)),
             "metadata": _to_plain_mapping(metadata),
         }
         with self._lock:
@@ -203,6 +207,7 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
             if self._retention and len(rows) > self._retention:
                 rows_to_persist = rows[-self._retention :]
             self._dump(rows_to_persist)
+        entry["payload"] = decompress_payload(entry["payload"])
         return entry
 
     def load_snapshot(self, snapshot_id: str):
@@ -264,11 +269,12 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
             raise SnapshotStorageError(str(err)) from err
 
     def save_snapshot(self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None):
+        compressed_payload = compress_payload(_to_plain_mapping(payload))
         entry = {
             "id": str(uuid.uuid4()),
             "kind": str(kind or "").strip() or "generic",
             "created_at": time.time(),
-            "payload": json.dumps(_to_plain_mapping(payload), ensure_ascii=False),
+            "payload": json.dumps(compressed_payload, ensure_ascii=False),
             "metadata": json.dumps(_to_plain_mapping(metadata), ensure_ascii=False),
         }
         try:
@@ -286,7 +292,7 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
         except sqlite3.Error as err:
             logger.exception("No se pudo guardar snapshot %s: %s", kind, err)
             raise SnapshotStorageError(str(err)) from err
-        entry["payload"] = json.loads(entry["payload"])
+        entry["payload"] = decompress_payload(json.loads(entry["payload"]))
         entry["metadata"] = json.loads(entry["metadata"]) if entry["metadata"] else {}
         return entry
 
@@ -305,7 +311,7 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
             raise SnapshotStorageError(str(err)) from err
         if not row:
             return None
-        payload = json.loads(row[3]) if row[3] else {}
+        payload = decompress_payload(json.loads(row[3]) if row[3] else {})
         metadata = json.loads(row[4]) if row[4] else {}
         return {
             "id": row[0],
@@ -336,7 +342,7 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
             raise SnapshotStorageError(str(err)) from err
         records = []
         for row in rows:
-            payload = json.loads(row[3]) if row[3] else {}
+            payload = decompress_payload(json.loads(row[3]) if row[3] else {})
             metadata = json.loads(row[4]) if row[4] else {}
             records.append(
                 {

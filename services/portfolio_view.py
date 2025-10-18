@@ -28,6 +28,7 @@ from application.risk_service import (
     compute_returns,
     max_drawdown,
 )
+from shared import snapshot as snapshot_async
 from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -1183,18 +1184,16 @@ class PortfolioViewModelService:
         if not callable(backend):
             return None, None
 
-        payload = _serialize_snapshot_payload(
+        payload, metadata = self._snapshot_payload_and_metadata(
             df_view=df_view,
             totals=totals,
+            controls=controls,
+            dataset_key=dataset_key,
+            filters_key=filters_key,
             generated_at=generated_at,
-            history=historical_total,
             contribution_metrics=contribution_metrics,
+            historical_total=historical_total,
         )
-        metadata = {
-            "dataset_key": dataset_key,
-            "filters_key": filters_key,
-            "controls": _safe_asdict(controls),
-        }
 
         try:
             saved = backend(self._snapshot_kind, payload, metadata)
@@ -1225,6 +1224,32 @@ class PortfolioViewModelService:
 
         return storage_id, persisted_history
 
+    def _snapshot_payload_and_metadata(
+        self,
+        *,
+        df_view: pd.DataFrame,
+        totals: PortfolioTotals,
+        controls: Any,
+        dataset_key: str,
+        filters_key: str,
+        generated_at: float,
+        contribution_metrics: PortfolioContributionMetrics,
+        historical_total: pd.DataFrame,
+    ) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+        payload = _serialize_snapshot_payload(
+            df_view=df_view,
+            totals=totals,
+            generated_at=generated_at,
+            history=historical_total,
+            contribution_metrics=contribution_metrics,
+        )
+        metadata = {
+            "dataset_key": dataset_key,
+            "filters_key": filters_key,
+            "controls": _safe_asdict(controls),
+        }
+        return payload, metadata
+
     def _schedule_snapshot_persistence(
         self,
         *,
@@ -1233,38 +1258,79 @@ class PortfolioViewModelService:
         dataset_key: str,
         filters_key: str,
     ) -> None:
-        def _worker() -> None:
-            start = time.perf_counter()
-            try:
-                storage_id, persisted_history = self._persist_snapshot_sync(
-                    df_view=snapshot.df_view,
-                    totals=snapshot.totals,
-                    controls=controls,
-                    dataset_key=dataset_key,
-                    filters_key=filters_key,
-                    generated_at=snapshot.generated_at,
-                    contribution_metrics=snapshot.contribution_metrics,
-                    historical_total=snapshot.historical_total,
-                )
-            except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug(
-                    "No se pudo persistir el snapshot del portafolio en background",
-                    exc_info=True,
-                )
-                return
+        backend = getattr(self._snapshot_storage, "save_snapshot", None)
+        if not callable(backend):
+            return
 
-            elapsed = time.perf_counter() - start
+        list_fn = getattr(self._snapshot_storage, "list_snapshots", None)
+        history_fetcher: Callable[[], Sequence[Mapping[str, Any]]] | None = None
+        if callable(list_fn):
+            history_fetcher = lambda: list_fn(  # type: ignore[assignment]
+                self._snapshot_kind, limit=500, order="asc"
+            )
+
+        payload, metadata = self._snapshot_payload_and_metadata(
+            df_view=snapshot.df_view,
+            totals=snapshot.totals,
+            controls=controls,
+            dataset_key=dataset_key,
+            filters_key=filters_key,
+            generated_at=snapshot.generated_at,
+            contribution_metrics=snapshot.contribution_metrics,
+            historical_total=snapshot.historical_total,
+        )
+
+        def _telemetry_hook(
+            phase: str,
+            elapsed_s: float | None,
+            dataset_hash: str | None,
+            extra: Mapping[str, object] | None,
+        ) -> None:
+            if elapsed_s is None:
+                return
             try:
                 log_default_telemetry(
-                    phase="snapshot.persist_async",
-                    elapsed_s=elapsed,
-                    dataset_hash=dataset_key,
+                    phase=phase,
+                    elapsed_s=elapsed_s,
+                    dataset_hash=dataset_hash,
+                    extra=extra,
                 )
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug(
                     "No se pudo registrar telemetría para snapshot.persist_async",
                     exc_info=True,
                 )
+
+        def _on_complete(result: snapshot_async.SnapshotResult) -> None:
+            if result.error is not None:
+                self._record_snapshot_event(
+                    action="save",
+                    status="error",
+                    detail=str(result.error),
+                )
+                return
+            if result.skipped:
+                return
+
+            saved = result.saved or {}
+            storage_id = saved.get("id") if isinstance(saved, Mapping) else None
+            self._record_snapshot_event(
+                action="save",
+                status="saved",
+                storage_id=str(storage_id) if storage_id else None,
+            )
+
+            persisted_history: pd.DataFrame | None = None
+            if result.history:
+                try:
+                    persisted_history = _history_df_from_snapshot_records(result.history)
+                    if isinstance(persisted_history, pd.DataFrame) and persisted_history.empty:
+                        persisted_history = None
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo construir la historia persistida del portafolio",
+                        exc_info=True,
+                    )
 
             if storage_id or persisted_history is not None:
                 with self._snapshot_lock:
@@ -1288,12 +1354,16 @@ class PortfolioViewModelService:
                             dataset_hash=snapshot.dataset_hash,
                         )
 
-        worker = threading.Thread(
-            target=_worker,
-            name="portfolio-snapshot-persist",
-            daemon=True,
+        snapshot_async.persist_async(
+            kind=self._snapshot_kind,
+            payload=payload,
+            metadata=metadata,
+            persist_fn=backend,
+            list_fn=history_fetcher,
+            dataset_hash=dataset_key,
+            on_complete=_on_complete,
+            telemetry_fn=_telemetry_hook,
         )
-        worker.start()
 
     def invalidate_positions(self, dataset_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambia el dataset base."""
@@ -1306,6 +1376,12 @@ class PortfolioViewModelService:
             self._history_records = []
             self._incremental_cache = {}
             self._last_incremental_stats = None
+        adapter = self._dataset_cache_adapter
+        if adapter is not None:
+            try:
+                adapter.clear()
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo limpiar el dataset cache tras invalidate_positions", exc_info=True)
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "dataset_changed", detail=dataset_key
         )
@@ -1328,6 +1404,12 @@ class PortfolioViewModelService:
             self._filters_key = filters_key
             self._incremental_cache = {}
             self._last_incremental_stats = None
+        adapter = self._dataset_cache_adapter
+        if adapter is not None:
+            try:
+                adapter.clear()
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo limpiar el dataset cache tras invalidate_filters", exc_info=True)
         _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
             "filters_changed", detail=filters_key
         )
