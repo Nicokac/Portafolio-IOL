@@ -1668,7 +1668,13 @@ class PortfolioViewModelService:
         def _load_positions() -> tuple[pd.DataFrame, float]:
             if "df" not in positions_state:
                 start = time.perf_counter()
-                df = _apply_filters(df_pos, controls, cli, psvc)
+                df = _apply_filters(
+                    df_pos,
+                    controls,
+                    cli,
+                    psvc,
+                    dataset_hash=dataset_key,
+                )
                 positions_state["df"] = df
                 positions_state["elapsed"] = time.perf_counter() - start
             return (
@@ -1900,10 +1906,10 @@ def _coerce_json(value: Any) -> Any:
     return str(value)
 
 
-def _apply_filters(df_pos, controls, cli, psvc):
+def _apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = None):
     from controllers.portfolio.filters import apply_filters as _apply
 
-    return _apply(df_pos, controls, cli, psvc)
+    return _apply(df_pos, controls, cli, psvc, dataset_hash=dataset_hash)
 
 
 def _compute_contribution_metrics(df_view: pd.DataFrame) -> PortfolioContributionMetrics:

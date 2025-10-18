@@ -7,6 +7,10 @@ import streamlit as st
 from domain.adaptive_cache_lock import run_in_background
 from shared.config import settings
 from services.cache import fetch_quotes_bulk
+from services.data_fetch_service import (
+    _compute_dataset_hash as compute_dataset_hash,
+    get_portfolio_data_fetch_service,
+)
 from services.performance_timer import (
     ProfileBlockResult,
     performance_timer,
@@ -106,7 +110,7 @@ def _schedule_background_jobs(df_view: pd.DataFrame, telemetry: dict[str, object
         telemetry["background_jobs"] = scheduled
 
 
-def apply_filters(df_pos, controls, cli, psvc):
+def apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = None):
     """Apply user filters and enrich positions with quotes."""
 
     telemetry: dict[str, object] = {
@@ -152,10 +156,21 @@ def apply_filters(df_pos, controls, cli, psvc):
         )
         telemetry["pairs"] = int(len(pairs))
         fetch_stage: ProfileBlockResult | None = None
+        service = get_portfolio_data_fetch_service()
+        expected_hash = dataset_hash or compute_dataset_hash(df_pos)
+        dataset, metadata = service.peek_dataset()
+        quotes_map = None
+        if dataset is not None and dataset.dataset_hash == expected_hash:
+            quotes_map = dataset.quotes
+            if metadata and metadata.stale:
+                service.schedule_refresh(cli, psvc)
         try:
             with _profile_stage("fetch_quotes", pairs=len(pairs)) as stage_fetch:
                 fetch_stage = stage_fetch
-                quotes_map = fetch_quotes_bulk(cli, pairs)
+                if not quotes_map:
+                    quotes_map = fetch_quotes_bulk(cli, pairs)
+                    if expected_hash:
+                        service.update_quotes(expected_hash, quotes_map)
         except AppError as err:
             telemetry["status"] = "error"
             telemetry["detail"] = err.__class__.__name__
@@ -170,6 +185,7 @@ def apply_filters(df_pos, controls, cli, psvc):
         else:
             if fetch_stage is not None:
                 _record_stage("fetch_quotes", fetch_stage)
+        quotes_map = quotes_map or {}
 
         chg_cnt = sum(
             1

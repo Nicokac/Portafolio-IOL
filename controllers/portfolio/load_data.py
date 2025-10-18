@@ -10,7 +10,12 @@ from typing import Any, Iterable, Mapping, Sequence
 import pandas as pd
 import streamlit as st
 
-from services.cache import fetch_portfolio, fetch_quotes_bulk, set_active_dataset_hash
+from services.cache import fetch_quotes_bulk, set_active_dataset_hash
+from services.data_fetch_service import (
+    DatasetMetadata,
+    PortfolioDataset,
+    get_portfolio_data_fetch_service,
+)
 from services.cache.market_data_cache import (
     StaleWhileRevalidateCache,
     create_persistent_cache,
@@ -413,36 +418,46 @@ def _filters_active() -> bool:
 
 
 def load_portfolio_data(cli, psvc):
-    """Fetch and normalize portfolio positions."""
-    tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
-    payload = None
-    with st.spinner("Cargando y actualizando portafolio... ⏳"):
-        telemetry: dict[str, object] = {"status": "success", "source": "api"}
-        try:
-            with performance_timer("portfolio_load_data", extra=telemetry):
-                try:
-                    payload = fetch_portfolio(cli)
-                except AppError as err:
-                    telemetry["status"] = "error"
-                    telemetry["detail"] = err.__class__.__name__
-                    raise
-                except Exception:
-                    telemetry["status"] = "error"
-                    telemetry["detail"] = "exception"
-                    raise
-                if isinstance(payload, dict) and payload.get("_cached"):
-                    telemetry["source"] = "cache"
-        except AppError as err:
-            st.error(str(err))
-            st.stop()
-        except Exception:  # pragma: no cover - streamlit error path
-            logger.exception(
-                "Error al consultar portafolio",
-                extra={"tokens_file": tokens_path},
-            )
-            st.error("No se pudo cargar el portafolio, intente más tarde")
-            st.stop()
+    """Fetch and normalize portfolio positions using the background service."""
 
+    service = get_portfolio_data_fetch_service()
+    dataset: PortfolioDataset | None = None
+    metadata: DatasetMetadata | None = None
+    tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
+
+    dataset, metadata = service.peek_dataset()
+    if dataset is None:
+        with st.spinner("Cargando y actualizando portafolio... ⏳"):
+            telemetry: dict[str, object] = {"status": "success", "source": "api"}
+            try:
+                with performance_timer("portfolio_load_data", extra=telemetry):
+                    dataset, metadata = service.get_dataset(
+                        cli,
+                        psvc,
+                        force_refresh=True,
+                    )
+                    if metadata is not None:
+                        telemetry["source"] = metadata.source
+            except AppError as err:
+                st.error(str(err))
+                st.stop()
+            except Exception:  # pragma: no cover - streamlit error path
+                logger.exception(
+                    "Error al consultar portafolio",
+                    extra={"tokens_file": tokens_path},
+                )
+                st.error("No se pudo cargar el portafolio, intente más tarde")
+                st.stop()
+    else:
+        assert metadata is not None  # for type checkers
+        if metadata.stale:
+            service.schedule_refresh(cli, psvc)
+
+    if dataset is None or metadata is None:
+        st.error("No se pudo cargar el portafolio")
+        st.stop()
+
+    payload = dataset.raw_payload
     auth_error = False
     if isinstance(payload, dict):
         msg = str(payload.get("message", ""))
@@ -466,7 +481,7 @@ def load_portfolio_data(cli, psvc):
         st.info(f"ℹ️ Mensaje de IOL: \"{payload['message']}\"")
         st.stop()
 
-    df_pos = psvc.normalize_positions(payload)
+    df_pos = dataset.positions.copy()
     if df_pos.empty:
         logger.info(
             "Portafolio vacío pero API respondió correctamente",
@@ -483,14 +498,8 @@ def load_portfolio_data(cli, psvc):
             st.caption("Ejemplo de datos recibidos del portafolio")
         st.stop()
 
-    all_symbols = sorted(df_pos["simbolo"].astype(str).str.upper().unique())
-    available_types = sorted(
-        {
-            psvc.classify_asset_cached(s)
-            for s in all_symbols
-            if psvc.classify_asset_cached(s)
-        }
-    )
+    all_symbols = list(dataset.all_symbols)
+    available_types = list(dataset.available_types)
     try:
         st.session_state["portfolio_last_all_symbols"] = all_symbols
         st.session_state["portfolio_last_available_types"] = available_types

@@ -16,7 +16,7 @@ from services import portfolio_view
 def portfolio_service(monkeypatch):
     portfolio_view.reset_portfolio_cache_metrics()
 
-    def fake_apply_filters(df_pos, controls, cli, psvc):  # noqa: D401 - test stub
+    def fake_apply_filters(df_pos, controls, cli, psvc, *, dataset_hash=None):  # noqa: D401 - test stub
         return df_pos.copy()
 
     def fake_totals(df_view):
