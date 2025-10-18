@@ -35,6 +35,7 @@ _METRIC_COLUMNS = (
     "ui_rerun_scope",
     "reused_visual_cache",
     "visual_cache_cleared",
+    "visual_cache_prewarm_ms",
     "lazy_loaded_component",
     "lazy_load_ms",
 )
@@ -77,6 +78,7 @@ class TelemetryRow:
             "snapshot_write_ms": "",
             "reused_visual_cache": "",
             "visual_cache_cleared": "",
+            "visual_cache_prewarm_ms": "",
             "lazy_loaded_component": "",
             "lazy_load_ms": "",
         }

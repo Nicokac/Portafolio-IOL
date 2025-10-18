@@ -198,6 +198,12 @@ class Settings:
                 cfg.get("CACHE_TTL_YF_PORTFOLIO_FUNDAMENTALS", 14400),
             )
         )
+        self.VISUAL_CACHE_MAX_PRELOAD_COUNT: int = int(
+            os.getenv(
+                "VISUAL_CACHE_MAX_PRELOAD_COUNT",
+                cfg.get("VISUAL_CACHE_MAX_PRELOAD_COUNT", 3),
+            )
+        )
         self.MARKET_DATA_CACHE_BACKEND: str = str(
             os.getenv(
                 "MARKET_DATA_CACHE_BACKEND",

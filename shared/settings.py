@@ -49,6 +49,9 @@ legacy_login_max_retries: int = getattr(settings, "LEGACY_LOGIN_MAX_RETRIES", 1)
 legacy_login_backoff_base: float = getattr(settings, "LEGACY_LOGIN_BACKOFF_BASE", 0.5)
 notifications_url: str | None = getattr(settings, "NOTIFICATIONS_URL", None)
 notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
+visual_cache_max_preload_count: int = getattr(
+    settings, "VISUAL_CACHE_MAX_PRELOAD_COUNT", 3
+)
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
 log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
@@ -198,4 +201,5 @@ __all__ = [
     "polygon_base_url",
     "fastapi_tokens_key",
     "app_env",
+    "visual_cache_max_preload_count",
 ]
