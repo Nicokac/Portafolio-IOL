@@ -29,6 +29,7 @@ from application.risk_service import (
     max_drawdown,
 )
 from shared import snapshot as snapshot_async
+from services import snapshot_defer
 from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -1391,7 +1392,7 @@ class PortfolioViewModelService:
                             dataset_hash=snapshot.dataset_hash,
                         )
 
-        snapshot_async.persist_async(
+        snapshot_defer.queue_snapshot_persistence(
             kind=self._snapshot_kind,
             payload=payload,
             metadata=metadata,
