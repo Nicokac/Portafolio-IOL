@@ -9,6 +9,7 @@ import time
 import unicodedata
 from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
@@ -45,6 +46,7 @@ from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
 from shared.telemetry import log_default_telemetry, log_telemetry
+from shared.user_actions import log_user_action
 from shared.cache import visual_cache_registry
 from infrastructure.iol.auth import get_current_user_id
 
@@ -56,7 +58,6 @@ from .charts import (
     render_charts as render_charts_section,
     render_advanced_analysis,
 )
-from .risk import render_risk_analysis
 from .fundamentals import render_fundamental_analysis
 logger = logging.getLogger(__name__)
 session_logger = logging.getLogger("controllers.portfolio.session")
@@ -97,8 +98,24 @@ _LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
 _LAZY_FLAGS_STATE_KEY = "__portfolio_lazy_flag_tokens__"
 _VISUAL_CACHE_EVENT_STATE_KEY = "__portfolio_visual_cache_event__"
 _UI_PERSIST_STATE_KEY = "portfolio_ui_persist_ms"
+_CONTROLS_SNAPSHOT_STATE_KEY = "__portfolio_controls_snapshot__"
+_EMPTY_RENDER_LOG_KEY = "__portfolio_empty_render_hash__"
+_REFRESH_LOG_STATE_KEY = "__portfolio_last_refresh_hash__"
 
 _VISUAL_STATE_LOCK = threading.RLock()
+
+_RISK_MODULE: Any | None = None
+
+
+def _load_risk_module() -> Any:
+    global _RISK_MODULE
+    if _RISK_MODULE is None:
+        try:
+            from . import risk as risk_module
+        except Exception:  # pragma: no cover - defensive import guard
+            return None
+        _RISK_MODULE = risk_module
+    return _RISK_MODULE
 
 
 def _append_tab_metric(
@@ -344,6 +361,24 @@ def _hash_dataframe(df: Any) -> str:
         payload = json.loads(df.to_json(orient="split", date_format="iso"))
     data = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha1(data).hexdigest()
+
+
+def _current_dataset_hash() -> str:
+    """Return the dataset hash persisted in the session, if any."""
+
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:  # pragma: no cover - defensive safeguard
+        return ""
+    if state is None:
+        return ""
+    try:
+        dataset_hash = state.get(_DATASET_HASH_STATE_KEY)
+    except Exception:  # pragma: no cover - defensive safeguard
+        dataset_hash = None
+    if isinstance(dataset_hash, str):
+        return dataset_hash
+    return ""
 
 
 def _get_dataset_fingerprint_cache() -> "OrderedDict[str, dict[str, Any]]":
@@ -950,6 +985,15 @@ def _prompt_lazy_block(
 
     ready = bool(session_ready)
     scope = current_scope()
+    resolved_dataset = dataset_token or current_dataset_token() or _current_dataset_hash()
+    last_scope = block.get("__user_action_scope__")
+    if scope != last_scope:
+        block["__user_action_scope__"] = scope
+        log_user_action(
+            "scope_change",
+            {"key": key, "scope": scope or "global"},
+            dataset_hash=resolved_dataset,
+        )
     if not ready and scope == "global":
         ready = True
         block.setdefault("auto_loaded", True)
@@ -975,6 +1019,16 @@ def _prompt_lazy_block(
         trigger_state = _render_lazy_trigger(
             placeholder, label=button_label, session_key=session_key
         )
+        if trigger_state and not session_ready:
+            action = "lazy_block_trigger"
+            if "load_table" in (key or ""):
+                action = "load_portfolio_table"
+            elif "load_chart" in (key or ""):
+                action = "load_portfolio_charts"
+            detail: dict[str, Any] = {"key": key, "label": button_label}
+            if fallback_key:
+                detail["fallback_key"] = fallback_key
+            log_user_action(action, detail, dataset_hash=resolved_dataset)
         ready = ready or trigger_state
 
     if ready:
@@ -995,6 +1049,15 @@ def _prompt_lazy_block(
     block["status"] = "pending"
     block["prompt_rendered"] = False
     _record_ui_persist_visibility(block, visible=False)
+    if resolved_dataset:
+        marker = f"{resolved_dataset}:{key}"
+        if block.get("__user_action_not_loaded") != marker:
+            block["__user_action_not_loaded"] = marker
+            log_user_action(
+                "lazy_block_not_loaded",
+                {"key": key, "label": button_label},
+                dataset_hash=resolved_dataset,
+            )
     return False
 
 
@@ -1026,6 +1089,15 @@ def _record_lazy_component_load(
         logger.debug(
             "No se pudo registrar la telemetría diferida para %s", component, exc_info=True
         )
+
+
+def _log_quotes_refresh_event(dataset_hash: str | None, *, source: str, detail: Mapping[str, Any] | None = None) -> None:
+    """Persist a user action entry describing a quotes refresh."""
+
+    payload: dict[str, Any] = {"source": source}
+    if detail:
+        payload.update(detail)
+    log_user_action("quotes_refresh", payload, dataset_hash=str(dataset_hash or ""))
 
 
 def _render_updated_caption(timestamp: float | None) -> None:
@@ -1509,7 +1581,12 @@ def render_risk_tab(
 ) -> None:
     """Render risk analysis information for the given snapshot."""
 
-    render_risk_analysis(
+    risk_module = _load_risk_module()
+    if risk_module is None:
+        logger.debug("Risk module not available; skipping risk tab rendering")
+        return
+
+    risk_module.render_risk_analysis(
         df_view,
         tasvc,
         favorites=favorites,
@@ -1893,6 +1970,19 @@ def render_portfolio_section(
                 available_types,
             )
 
+        controls_snapshot = asdict(controls)
+        controls_changed = False
+        try:
+            previous_controls = st.session_state.get(_CONTROLS_SNAPSHOT_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            previous_controls = None
+        if not isinstance(previous_controls, dict) or previous_controls != controls_snapshot:
+            controls_changed = True
+        try:
+            st.session_state[_CONTROLS_SNAPSHOT_STATE_KEY] = dict(controls_snapshot)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo persistir el snapshot de controles", exc_info=True)
+
         refresh_secs = controls.refresh_secs
         precomputed_dataset_hash: str | None = None
         hash_helper = getattr(view_model_service, "_hash_dataset", None)
@@ -1953,10 +2043,18 @@ def render_portfolio_section(
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug("No se pudo calcular el hash del dataset del portafolio", exc_info=True)
                 dataset_hash = ""
+        dataset_hash = str(dataset_hash or "")
+        if controls_changed:
+            log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
         if previous_hash and dataset_hash and previous_hash != dataset_hash:
             visual_cache_registry.invalidate_dataset(
                 previous_hash, reason="dataset_hash_changed"
+            )
+            _log_quotes_refresh_event(
+                dataset_hash,
+                source="dataset_update",
+                detail={"previous_hash": previous_hash},
             )
         reused_visual_cache = bool(previous_hash) and previous_hash == dataset_hash
         try:
@@ -1970,6 +2068,15 @@ def render_portfolio_section(
             visual_entry["dataset_hash"] = dataset_hash
             visual_entry["last_seen"] = time.time()
 
+        if bool(st.session_state.get("refresh_pending")):
+            last_refresh = st.session_state.get(_REFRESH_LOG_STATE_KEY)
+            if last_refresh != dataset_hash:
+                _log_quotes_refresh_event(dataset_hash, source="manual_refresh")
+                try:
+                    st.session_state[_REFRESH_LOG_STATE_KEY] = dataset_hash
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug("No se pudo registrar el refresh manual", exc_info=True)
+
         try:
             base_label = viewmodel.tab_options[tab_idx]
         except (IndexError, TypeError):
@@ -1977,6 +2084,21 @@ def render_portfolio_section(
         tab_slug = _slugify_metric_label(base_label)
 
         _set_active_tab(tab_slug)
+        if isinstance(df_view, pd.DataFrame) and df_view.empty:
+            try:
+                last_empty = st.session_state.get(_EMPTY_RENDER_LOG_KEY)
+            except Exception:  # pragma: no cover - defensive safeguard
+                last_empty = None
+            if last_empty != dataset_hash:
+                log_user_action(
+                    "empty_dataframe_render",
+                    {"tab": tab_slug},
+                    dataset_hash=dataset_hash,
+                )
+                try:
+                    st.session_state[_EMPTY_RENDER_LOG_KEY] = dataset_hash
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug("No se pudo registrar el render vacío", exc_info=True)
         render_cache = _ensure_render_cache()
         cache_entry = _ensure_tab_cache(render_cache, tab_slug)
         tab_signature = _tab_signature(viewmodel, df_view, tab_slug)
@@ -2198,6 +2320,13 @@ def _set_active_tab(tab_slug: str) -> None:
     """Persist the currently active tab slug in the session state."""
 
     try:
+        previous = st.session_state.get("active_tab")
+    except Exception:  # pragma: no cover - defensive safeguard
+        previous = None
+    if previous != tab_slug:
+        detail = {"from": previous or "", "to": tab_slug}
+        log_user_action("tab_change", detail, dataset_hash=_current_dataset_hash())
+    try:
         st.session_state["active_tab"] = tab_slug
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo actualizar active_tab en session_state", exc_info=True)
@@ -2341,6 +2470,13 @@ def _maybe_reset_visual_cache_state() -> bool:
     if should_reset:
         _clear_visual_cache_state()
         session_logger.info("Visual cache cleared due to user change/logout")
+        try:
+            dataset_hash = state.get(_DATASET_HASH_STATE_KEY)
+        except Exception:  # pragma: no cover - defensive safeguard
+            dataset_hash = None
+        detail = {"previous_user": previous_user or "", "current_user": current_user or ""}
+        action = "logout" if current_user is None else "user_switch"
+        log_user_action(action, detail, dataset_hash=str(dataset_hash or ""))
 
     try:
         with _VISUAL_STATE_LOCK:
