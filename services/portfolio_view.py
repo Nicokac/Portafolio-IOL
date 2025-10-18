@@ -350,6 +350,7 @@ class PortfolioCacheMetricsSnapshot:
 
     portfolio_view_render_s: float
     portfolio_cache_hit_ratio: float
+    pipeline_cache_hit_ratio: float
     portfolio_cache_miss_count: int
     hits: int
     misses: int
@@ -380,6 +381,8 @@ class _PortfolioCacheTelemetry:
         self._render_invocations = 0
         self._hits = 0
         self._misses = 0
+        self._pipeline_hits = 0
+        self._pipeline_misses = 0
         self._invalidations: Counter[str] = Counter()
         self._miss_reasons: Counter[str] = Counter()
         self._recent_misses.clear()
@@ -452,13 +455,27 @@ class _PortfolioCacheTelemetry:
             self._invalidations[reason_key] += 1
             self._recent_invalidations.append(event)
 
+    def record_pipeline_event(self, *, hit: bool) -> None:
+        with self._lock:
+            if hit:
+                self._pipeline_hits += 1
+            else:
+                self._pipeline_misses += 1
+
     def snapshot(self) -> PortfolioCacheMetricsSnapshot:
         with self._lock:
             total = self._hits + self._misses
             hit_ratio = (self._hits / total) * 100.0 if total else 0.0
+            pipeline_total = self._pipeline_hits + self._pipeline_misses
+            pipeline_ratio = (
+                (self._pipeline_hits / pipeline_total) * 100.0
+                if pipeline_total
+                else 0.0
+            )
             return PortfolioCacheMetricsSnapshot(
                 portfolio_view_render_s=self._render_total,
                 portfolio_cache_hit_ratio=hit_ratio,
+                pipeline_cache_hit_ratio=pipeline_ratio,
                 portfolio_cache_miss_count=self._misses,
                 hits=self._hits,
                 misses=self._misses,
@@ -479,6 +496,18 @@ def reset_portfolio_cache_metrics() -> None:
     """Reinicia las métricas recopiladas del memoizador del portafolio."""
 
     _PORTFOLIO_CACHE_TELEMETRY.reset()
+    try:
+        adapter = _get_dataset_cache_adapter()
+    except Exception:  # pragma: no cover - defensive safeguard
+        adapter = None
+    if adapter is not None:
+        try:
+            adapter.clear()
+        except Exception:  # pragma: no cover - cache errors should not break flow
+            logger.debug(
+                "No se pudo limpiar el dataset cache tras reset_portfolio_cache_metrics",
+                exc_info=True,
+            )
 
 
 def get_portfolio_cache_metrics_snapshot() -> PortfolioCacheMetricsSnapshot:
@@ -1055,6 +1084,14 @@ class PortfolioViewModelService:
         self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = (
             _get_dataset_cache_adapter()
         )
+        if self._dataset_cache_adapter is not None:
+            try:
+                self._dataset_cache_adapter.clear()
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo limpiar el dataset cache durante la inicialización",
+                    exc_info=True,
+                )
         self.configure_snapshot_backend(snapshot_backend)
 
     def configure_snapshot_backend(self, snapshot_backend: Any | None) -> None:
@@ -1490,6 +1527,9 @@ class PortfolioViewModelService:
 
         render_start = time.perf_counter()
 
+        with self._snapshot_lock:
+            current_snapshot = self._snapshot
+
         fingerprints = _build_incremental_fingerprints(
             dataset_key, controls, filters_key
         )
@@ -1569,6 +1609,7 @@ class PortfolioViewModelService:
                         elapsed_s=cached_entry.snapshot.apply_elapsed,
                         dataset_hash=dataset_key,
                         memo_hit_ratio=1.0,
+                        pipeline_cache_hit_ratio=1.0,
                     )
                 except Exception:  # pragma: no cover - defensive safeguard
                     logger.debug(
@@ -1576,6 +1617,18 @@ class PortfolioViewModelService:
                         telemetry_phase,
                         exc_info=True,
                     )
+                if current_snapshot is None:
+                    stats = cached_entry.stats if isinstance(cached_entry.stats, Mapping) else {}
+                    apply_stat = float(stats.get("apply_elapsed", 0.0) or 0.0)
+                    totals_stat = float(stats.get("totals_elapsed", 0.0) or 0.0)
+                    _PORTFOLIO_CACHE_TELEMETRY.record_miss(
+                        elapsed_s=elapsed,
+                        dataset_changed=dataset_changed,
+                        filters_changed=filters_changed,
+                        apply_elapsed=apply_stat,
+                        totals_elapsed=totals_stat,
+                    )
+                _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=True)
                 return cached_entry.snapshot
 
             warm_entry = cached_entry
@@ -1591,6 +1644,8 @@ class PortfolioViewModelService:
 
         if dataset_changed:
             self.invalidate_positions(dataset_key)
+        elif filters_changed:
+            self.invalidate_filters(filters_key)
         with self._snapshot_lock:
             previous_snapshot = self._snapshot
 
@@ -1649,6 +1704,7 @@ class PortfolioViewModelService:
                         elapsed_s=previous_snapshot.apply_elapsed,
                         dataset_hash=dataset_key,
                         memo_hit_ratio=1.0,
+                        pipeline_cache_hit_ratio=1.0,
                     )
                 except Exception:  # pragma: no cover - defensive safeguard
                     logger.debug(
@@ -1656,6 +1712,7 @@ class PortfolioViewModelService:
                         telemetry_phase,
                         exc_info=True,
                     )
+            _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=True)
             self._record_snapshot_event(
                 action="load",
                 status="reused",
@@ -1722,6 +1779,7 @@ class PortfolioViewModelService:
 
         total_blocks = len(incremental.reused_blocks) + len(incremental.recomputed_blocks)
         hit_ratio = (len(incremental.reused_blocks) / total_blocks) if total_blocks else 0.0
+        pipeline_hit = "positions_df" in incremental.reused_blocks
 
         with self._snapshot_lock:
             self._snapshot = snapshot
@@ -1758,6 +1816,8 @@ class PortfolioViewModelService:
             include_extended=include_extended,
         )
 
+        _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=pipeline_hit)
+
         logger.info(
             "portfolio_view phase=%s dataset_changed=%s filters_changed=%s pending=%s reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
             telemetry_phase,
@@ -1771,7 +1831,12 @@ class PortfolioViewModelService:
         )
 
         total_elapsed = time.perf_counter() - render_start
-        if include_extended or not incremental.extended_computed:
+        previous_pending = tuple(
+            getattr(previous_snapshot, "pending_metrics", ()) or ()
+        )
+        follow_up_extended = include_extended and previous_pending == ("extended_metrics",)
+
+        if not follow_up_extended:
             _PORTFOLIO_CACHE_TELEMETRY.record_miss(
                 elapsed_s=total_elapsed,
                 dataset_changed=dataset_changed,
@@ -1780,7 +1845,7 @@ class PortfolioViewModelService:
                 totals_elapsed=incremental.totals_elapsed,
             )
 
-        if include_extended or not incremental.extended_computed:
+        if not follow_up_extended:
             _append_incremental_metric(
                 dataset_hash=dataset_key,
                 filters_changed=effective_filters_changed,
@@ -1796,6 +1861,7 @@ class PortfolioViewModelService:
                 elapsed_s=incremental.duration,
                 dataset_hash=dataset_key,
                 memo_hit_ratio=hit_ratio,
+                pipeline_cache_hit_ratio=1.0 if pipeline_hit else 0.0,
             )
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug(
@@ -1823,6 +1889,41 @@ class PortfolioViewModelService:
 
         return snapshot
 
+    def apply_dataset_pipeline(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash: str | None = None,
+        mode: str = "full",
+    ) -> PortfolioViewSnapshot:
+        """Ejecuta la canalización del dataset en el modo solicitado."""
+
+        normalized = str(mode or "full").strip().lower()
+        if normalized in {"basic", "minimal"}:
+            include_extended = False
+            telemetry_phase = "portfolio_view.apply_basic"
+            allow_pending_reuse = True
+        elif normalized in {"extended", "full"}:
+            include_extended = True
+            telemetry_phase = "portfolio_view.apply_extended"
+            allow_pending_reuse = False
+        else:
+            raise ValueError(f"Invalid pipeline mode: {mode!r}")
+
+        return self._compute_viewmodel_phase(
+            df_pos=df_pos,
+            controls=controls,
+            cli=cli,
+            psvc=psvc,
+            include_extended=include_extended,
+            telemetry_phase=telemetry_phase,
+            allow_pending_reuse=allow_pending_reuse,
+            dataset_hash=dataset_hash,
+        )
+
     def build_minimal_viewmodel(
         self,
         df_pos,
@@ -1834,15 +1935,13 @@ class PortfolioViewModelService:
     ) -> PortfolioViewSnapshot:
         """Construye el snapshot mínimo requerido para renderizar el portafolio."""
 
-        return self._compute_viewmodel_phase(
-            df_pos=df_pos,
-            controls=controls,
-            cli=cli,
-            psvc=psvc,
-            include_extended=False,
-            telemetry_phase="portfolio_view.apply_basic",
-            allow_pending_reuse=True,
+        return self.apply_dataset_pipeline(
+            df_pos,
+            controls,
+            cli,
+            psvc,
             dataset_hash=dataset_hash,
+            mode="basic",
         )
 
     def compute_extended_metrics(
@@ -1856,15 +1955,13 @@ class PortfolioViewModelService:
     ) -> PortfolioViewSnapshot:
         """Completa las métricas extendidas del snapshot cuando son necesarias."""
 
-        return self._compute_viewmodel_phase(
-            df_pos=df_pos,
-            controls=controls,
-            cli=cli,
-            psvc=psvc,
-            include_extended=True,
-            telemetry_phase="portfolio_view.apply_extended",
-            allow_pending_reuse=False,
+        return self.apply_dataset_pipeline(
+            df_pos,
+            controls,
+            cli,
+            psvc,
             dataset_hash=dataset_hash,
+            mode="extended",
         )
 
     def get_portfolio_view(

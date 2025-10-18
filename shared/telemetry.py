@@ -18,6 +18,7 @@ _METRIC_COLUMNS = (
     "elapsed_s",
     "dataset_hash",
     "memo_hit_ratio",
+    "pipeline_cache_hit_ratio",
     "subbatch_avg_s",
     "ui_total_load_ms",
     "tab_name",
@@ -47,6 +48,7 @@ class TelemetryRow:
     elapsed_s: float | None = None
     dataset_hash: str | None = None
     memo_hit_ratio: float | None = None
+    pipeline_cache_hit_ratio: float | None = None
     subbatch_avg_s: float | None = None
     ui_total_load_ms: float | None = None
     extra: Mapping[str, object] | None = None
@@ -59,6 +61,7 @@ class TelemetryRow:
             "elapsed_s": _format_seconds(self.elapsed_s),
             "dataset_hash": self.dataset_hash or "",
             "memo_hit_ratio": _format_ratio(self.memo_hit_ratio),
+            "pipeline_cache_hit_ratio": _format_ratio(self.pipeline_cache_hit_ratio),
             "subbatch_avg_s": _format_seconds(self.subbatch_avg_s),
             "ui_total_load_ms": _format_milliseconds(self.ui_total_load_ms),
             "tab_name": "",
@@ -135,6 +138,7 @@ def log_telemetry(
     elapsed_s: float | None = None,
     dataset_hash: str | None = None,
     memo_hit_ratio: float | None = None,
+    pipeline_cache_hit_ratio: float | None = None,
     subbatch_avg_s: float | None = None,
     ui_total_load_ms: float | None = None,
     extra: Mapping[str, object] | None = None,
@@ -146,6 +150,7 @@ def log_telemetry(
         elapsed_s=elapsed_s,
         dataset_hash=dataset_hash,
         memo_hit_ratio=memo_hit_ratio,
+        pipeline_cache_hit_ratio=pipeline_cache_hit_ratio,
         subbatch_avg_s=subbatch_avg_s,
         ui_total_load_ms=ui_total_load_ms,
         extra=extra,
