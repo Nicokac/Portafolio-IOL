@@ -1,9 +1,13 @@
 from __future__ import annotations
+
 import logging
 import math
+from collections.abc import MutableMapping
+
 import numpy as np
 import pandas as pd
 import streamlit as st
+
 from application.portfolio_service import calculate_totals, detect_currency
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from application.portfolio_service import calculate_totals, detect_currency, PortfolioTotals
@@ -18,6 +22,10 @@ from ui.lazy.runtime import (
     mark_fragment_ready,
     register_fragment_ready,
 )
+
+_SEARCH_WIDGET_KEY = "portfolio_table_search_input"
+_SEARCH_DATASET_STATE_KEY = "__portfolio_table_search_dataset__"
+_DATASET_HASH_STATE_KEY = "dataset_hash"
 from .palette import get_active_palette
 from .export import download_csv
 
@@ -99,7 +107,25 @@ def render_table(
         logging.getLogger(__name__).warning("Ordenamiento falló: %s", e)
         df_sorted = df_view.copy()
 
-    search = st.text_input("Buscar", "").strip().lower()
+    dataset_token = ""
+    try:  # pragma: no cover - defensive when session state not available
+        state = getattr(st, "session_state", None)
+    except Exception:
+        state = None
+    if isinstance(state, MutableMapping):
+        dataset_token = str(state.get(_DATASET_HASH_STATE_KEY) or "")
+        previous_dataset = state.get(_SEARCH_DATASET_STATE_KEY)
+        if previous_dataset != dataset_token:
+            try:
+                state.pop(_SEARCH_WIDGET_KEY, None)
+            except Exception:  # pragma: no cover - defensive when state immutable
+                pass
+            try:
+                state[_SEARCH_DATASET_STATE_KEY] = dataset_token
+            except Exception:  # pragma: no cover - defensive when state immutable
+                pass
+
+    search = st.text_input("Buscar", "", key=_SEARCH_WIDGET_KEY).strip().lower()
     if search:
         mask = (
             df_sorted["simbolo"].astype(str).str.lower().str.contains(search)
