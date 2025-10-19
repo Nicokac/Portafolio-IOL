@@ -16,6 +16,12 @@ from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
+fragment_context_ready: bool = True
+
+_FRAGMENT_CONTEXT_TIMEOUT_S = 0.25
+_FRAGMENT_CONTEXT_POLL_INTERVAL_S = 0.05
+_FRAGMENT_CONTEXT_RERUN_DATASETS: set[str] = set()
+
 _SCOPE: ContextVar[str | None] = ContextVar("ui_lazy_fragment_scope", default=None)
 _COMPONENT: ContextVar[str | None] = ContextVar("ui_lazy_fragment_component", default=None)
 _DATASET: ContextVar[str | None] = ContextVar("ui_lazy_fragment_dataset", default=None)
@@ -77,6 +83,7 @@ def lazy_fragment(
     hydration_ready = True
     hydration_wait_ms = 0
     dataset_marker = dataset_token or current_dataset_token()
+    dataset_hash = str(dataset_marker or "")
     guardian = None
     try:
         guardian = get_fragment_state_guardian()
@@ -104,8 +111,27 @@ def lazy_fragment(
             },
         )
 
-    fragment_factory = _fragment_factory()
-    form_callable = None if fragment_factory else _form_callable()
+    fragment_factory_builder = _fragment_factory()
+    form_callable = None if fragment_factory_builder else _form_callable()
+
+    if fragment_factory_builder is not None:
+        context_ready = _wait_for_fragment_context_ready(
+            fragment=name,
+            component=component,
+            dataset_hash=dataset_hash,
+            hydration_ready=hydration_ready,
+            timeout=_FRAGMENT_CONTEXT_TIMEOUT_S,
+            poll_interval=_FRAGMENT_CONTEXT_POLL_INTERVAL_S,
+        )
+        if not (hydration_ready and context_ready):
+            fragment_factory_builder = None
+        _record_fragment_visibility(
+            component=component,
+            dataset_hash=dataset_hash,
+            visible=bool(fragment_factory_builder),
+        )
+
+    fragment_factory = fragment_factory_builder
 
     if fragment_factory is not None:
         scope = "fragment"
@@ -265,3 +291,128 @@ def _log_scope(scope: str, component: str, dataset_token: str | None) -> None:
         )
     except Exception:  # pragma: no cover - defensive guard for telemetry failures
         logger.debug("No se pudo registrar ui_rerun_scope para %s", component, exc_info=True)
+
+
+def _wait_for_fragment_context_ready(
+    *,
+    fragment: str,
+    component: str,
+    dataset_hash: str,
+    hydration_ready: bool,
+    timeout: float,
+    poll_interval: float,
+) -> bool:
+    start = time.perf_counter()
+    logger.info(
+        "[LazyRuntime] wait_for_fragment_context_start",
+        extra={
+            "fragment": fragment,
+            "component": component,
+            "dataset_hash": dataset_hash,
+            "hydrated": hydration_ready,
+        },
+    )
+    if not hydration_ready:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.info(
+            "[LazyRuntime] wait_for_fragment_context_end",
+            extra={
+                "fragment": fragment,
+                "component": component,
+                "dataset_hash": dataset_hash,
+                "hydrated": hydration_ready,
+                "context_ready": False,
+                "duration_ms": duration_ms,
+            },
+        )
+        return False
+
+    wait_deadline = start + max(float(timeout), 0.0)
+    poll_delay = poll_interval if poll_interval > 0 else _FRAGMENT_CONTEXT_POLL_INTERVAL_S
+    if fragment_context_ready:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        logger.info(
+            "[LazyRuntime] wait_for_fragment_context_end",
+            extra={
+                "fragment": fragment,
+                "component": component,
+                "dataset_hash": dataset_hash,
+                "hydrated": hydration_ready,
+                "context_ready": True,
+                "duration_ms": duration_ms,
+            },
+        )
+        return True
+
+    while time.perf_counter() < wait_deadline:
+        remaining = wait_deadline - time.perf_counter()
+        sleep_for = poll_delay if remaining > poll_delay else max(remaining, 0.0)
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        if fragment_context_ready:
+            duration_ms = int((time.perf_counter() - start) * 1000)
+            logger.info(
+                "[LazyRuntime] wait_for_fragment_context_end",
+                extra={
+                    "fragment": fragment,
+                    "component": component,
+                    "dataset_hash": dataset_hash,
+                    "hydrated": hydration_ready,
+                    "context_ready": True,
+                    "duration_ms": duration_ms,
+                },
+            )
+            return True
+
+    ready = bool(fragment_context_ready)
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    logger.info(
+        "[LazyRuntime] wait_for_fragment_context_end",
+        extra={
+            "fragment": fragment,
+            "component": component,
+            "dataset_hash": dataset_hash,
+            "hydrated": hydration_ready,
+            "context_ready": ready,
+            "duration_ms": duration_ms,
+        },
+    )
+    if not ready:
+        _trigger_fragment_context_rerun(dataset_hash)
+    return ready
+
+
+def _trigger_fragment_context_rerun(dataset_hash: str) -> None:
+    token = dataset_hash or "__default__"
+    if token in _FRAGMENT_CONTEXT_RERUN_DATASETS:
+        return
+    rerun = getattr(st, "experimental_rerun", None)
+    if not callable(rerun):
+        return
+    _FRAGMENT_CONTEXT_RERUN_DATASETS.add(token)
+    try:
+        rerun()
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo solicitar experimental_rerun para el fragmento %s",
+            token,
+            exc_info=True,
+        )
+
+
+def _record_fragment_visibility(*, component: str, dataset_hash: str, visible: bool) -> None:
+    try:
+        log_default_telemetry(
+            phase="portfolio.fragment_visibility",
+            dataset_hash=dataset_hash,
+            extra={
+                "lazy_loaded_component": component,
+                "portfolio.fragment_visible": visible,
+            },
+        )
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug(
+            "No se pudo registrar portfolio.fragment_visible para %s",
+            component,
+            exc_info=True,
+        )
