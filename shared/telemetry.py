@@ -222,8 +222,15 @@ def log_default_telemetry(**kwargs) -> None:
     log_telemetry(DEFAULT_TELEMETRY_FILES, **kwargs)
 
 
+def log(event_name: str, **kwargs: object) -> None:
+    """Emit a simple structured telemetry event to the logger."""
+
+    logger.info("[Telemetry] %s %s", event_name, kwargs)
+
+
 __all__ = [
     "DEFAULT_TELEMETRY_FILES",
+    "log",
     "is_hydration_locked",
     "log_default_telemetry",
     "log_telemetry",

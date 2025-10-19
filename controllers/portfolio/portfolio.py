@@ -53,6 +53,7 @@ from shared.fragment_state import (
     FragmentGuardResult,
     fragment_state_soft_refresh,
     get_fragment_state_guardian,
+    should_auto_load_fragment,
 )
 
 from .load_data import load_portfolio_data
@@ -1043,7 +1044,11 @@ def _prompt_lazy_block(
             {"key": key, "scope": scope or "global"},
             dataset_hash=resolved_dataset,
         )
-    if not ready and scope == "global":
+    if (
+        not ready
+        and scope == "global"
+        and should_auto_load_fragment(scope)
+    ):
         ready = True
         block.setdefault("auto_loaded", True)
 

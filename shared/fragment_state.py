@@ -10,6 +10,7 @@ explicit user toggles.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextvars import ContextVar, Token
 import importlib
 import json
 import logging
@@ -46,6 +47,42 @@ class FragmentGuardResult:
 
     rehydrated: bool
     explicit_hide: bool
+
+
+_AUTO_LOAD_GUARD: ContextVar[bool] = ContextVar(
+    "fragment_state_auto_load_guard", default=True
+)
+
+
+def register_fragment_auto_load_context(
+    *, scope: str, fragment_factory_builder: Any | None, context_ready: bool
+) -> Token[bool]:
+    """Record whether the current fragment should auto load implicitly."""
+
+    allow_auto_load = True
+    if scope == "global" and (fragment_factory_builder is None or not context_ready):
+        # Evita marcar auto_loaded si el contexto no estuvo listo
+        allow_auto_load = False
+    return _AUTO_LOAD_GUARD.set(allow_auto_load)
+
+
+def reset_fragment_auto_load_context(token: Token[bool] | None) -> None:
+    """Restore the previous auto-load guard state after rendering a fragment."""
+
+    if token is None:
+        return
+    try:
+        _AUTO_LOAD_GUARD.reset(token)
+    except LookupError:
+        pass
+
+
+def should_auto_load_fragment(scope: str | None) -> bool:
+    """Return whether global-scope fragments should auto load by default."""
+
+    if scope != "global":
+        return False
+    return bool(_AUTO_LOAD_GUARD.get(True))
 
 
 class FragmentStateGuardian:
@@ -761,6 +798,9 @@ def _purge_user_persisted_state(user_id: str) -> None:
 __all__ = [
     "FragmentGuardResult",
     "FragmentStateGuardian",
+    "register_fragment_auto_load_context",
+    "reset_fragment_auto_load_context",
+    "should_auto_load_fragment",
     "fragment_state_soft_refresh",
     "get_fragment_state_guardian",
     "persist_fragment_state_snapshot",
