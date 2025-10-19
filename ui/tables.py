@@ -15,6 +15,7 @@ from shared.utils import (
 from ui.lazy.runtime import (
     emit_fragment_ready,
     ensure_fragment_ready_script,
+    mark_fragment_ready,
     register_fragment_ready,
 )
 from .palette import get_active_palette
@@ -285,6 +286,7 @@ def render_table(
         height=420,
         column_config=column_config,
     )
+    mark_fragment_ready("portfolio_table", source="backend_optimistic")
     emit_fragment_ready("portfolio_table")
 
     st.caption("Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo.")

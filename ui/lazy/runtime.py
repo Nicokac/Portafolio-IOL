@@ -13,6 +13,14 @@ from textwrap import dedent
 
 import streamlit as st
 
+try:  # pragma: no cover - optional dependency in tests
+    from streamlit_javascript import st_javascript
+except Exception as _js_import_error:  # pragma: no cover - dependency optional in tests
+    st_javascript = None  # type: ignore[assignment]
+else:  # pragma: no cover - informational placeholder for linting
+    _js_import_error = None
+
+from shared import telemetry
 from shared.fragment_state import (
     get_fragment_state_guardian,
     register_fragment_auto_load_context,
@@ -24,6 +32,118 @@ logger = logging.getLogger(__name__)
 
 fragment_context_ready: bool = True
 
+_FRAGMENT_READY_MAP_KEY = "_fragment_ready"
+_FRAGMENT_READY_EMITTED_KEY = "_fragment_ready_emitted"
+
+
+def _get_or_init_session_dict(key: str) -> tuple[dict[str, Any], bool]:
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:  # pragma: no cover - defensive guard when stubs lack session state
+        state = None
+
+    if state is None:
+        return {}, False
+
+    try:
+        mapping = state.setdefault(key, {})
+    except Exception:  # pragma: no cover - defensive safeguard for non-mutable state
+        logger.debug(
+            "[LazyRuntime] session_state_setdefault_failed key=%s", key, exc_info=True
+        )
+        return {}, False
+
+    if not isinstance(mapping, dict):
+        mapping = {}
+        try:
+            state[key] = mapping
+        except Exception:  # pragma: no cover - defensive safeguard when session state immutable
+            logger.debug(
+                "[LazyRuntime] session_state_not_dict key=%s", key, exc_info=True
+            )
+            return mapping, False
+
+    return mapping, True
+
+
+def _update_fragment_ready_state(fragment_id: str, ready: bool) -> bool:
+    if not fragment_id:
+        return False
+
+    ready_map, state_available = _get_or_init_session_dict(_FRAGMENT_READY_MAP_KEY)
+    previous = ready_map.get(fragment_id)
+    if previous is ready:
+        return False
+
+    if state_available:
+        try:
+            ready_map[fragment_id] = ready
+        except Exception:  # pragma: no cover - defensive safeguard for unexpected values
+            logger.debug(
+                "[LazyRuntime] failed_to_update_fragment_ready fragment=%s",
+                fragment_id,
+                exc_info=True,
+            )
+
+    return True
+
+
+def _is_fragment_marked_ready(fragment_id: str) -> bool:
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:  # pragma: no cover - defensive safeguard when stubs lack state
+        state = None
+
+    if state is None:
+        return False
+
+    try:
+        ready_map = state.get(_FRAGMENT_READY_MAP_KEY, {})
+    except Exception:  # pragma: no cover - defensive safeguard when session_state access fails
+        return False
+
+    if not isinstance(ready_map, dict):
+        return False
+
+    return bool(ready_map.get(fragment_id))
+
+
+def mark_fragment_ready(fragment_id: str, source: str = "backend_optimistic") -> None:
+    if not fragment_id:
+        return
+
+    state_changed = _update_fragment_ready_state(fragment_id, True)
+    if not state_changed:
+        return
+
+    global fragment_context_ready
+    fragment_context_ready = True
+
+    try:
+        telemetry.log(
+            "portfolio.fragment_ready_source",
+            fragment_id=fragment_id,
+            source=source,
+        )
+        telemetry.log(
+            "portfolio.fragment_visible",
+            fragment_id=fragment_id,
+            visible=True,
+        )
+    except Exception:  # pragma: no cover - telemetry is best-effort
+        logger.debug(
+            "[LazyRuntime] telemetry_log_failed fragment=%s source=%s",
+            fragment_id,
+            source,
+            exc_info=True,
+        )
+
+    logger.info(
+        "[LazyRuntime] fragment_context_ready=True source=%s fragment=%s",
+        source,
+        fragment_id,
+    )
+
 
 def emit_fragment_ready(fragment_id: str) -> None:
     """Emit a fragment_context_ready event via backend JS injection."""
@@ -32,44 +152,57 @@ def emit_fragment_ready(fragment_id: str) -> None:
         logger.debug("[LazyRuntime] emit_fragment_ready called without fragment_id")
         return
 
-    try:
-        from streamlit_javascript import st_javascript
-    except Exception as import_error:  # pragma: no cover - optional dependency in tests
+    emitted_registry, _ = _get_or_init_session_dict(_FRAGMENT_READY_EMITTED_KEY)
+    if emitted_registry.get(fragment_id):
+        return
+
+    if st_javascript is None:
         logger.warning(
             "[LazyRuntime] JS emit unavailable for %s: %s",
             fragment_id,
-            import_error,
+            _js_import_error,
             exc_info=True,
         )
         return
 
     js = f"""
-    if (window.parent && window.parent.postMessage) {{
+    try {{
+      if (window.parent && window.parent.postMessage) {{
         window.parent.postMessage({{
-            event: 'fragment_context_ready',
-            fragment_id: '{fragment_id}',
-            visible: true
+          event: 'fragment_context_ready',
+          fragment_id: '{fragment_id}',
+          visible: true
         }}, '*');
-    }} else if (window.Streamlit) {{
-        window.Streamlit.setComponentValue({{
-            event: 'fragment_context_ready',
-            fragment_id: '{fragment_id}',
-            visible: true
-        }});
-    }} else if (typeof Streamlit !== 'undefined') {{
+      }} else if (window.Streamlit) {{
         Streamlit.setComponentValue({{
-            event: 'fragment_context_ready',
-            fragment_id: '{fragment_id}',
-            visible: true
+          event: 'fragment_context_ready',
+          fragment_id: '{fragment_id}',
+          visible: true
         }});
-    }} else {{
+      }} else {{
         console.warn('No Streamlit bridge detected for fragment: {fragment_id}');
+      }}
+    }} catch (e) {{
+      console.warn('emit_fragment_ready error for {fragment_id}:', e);
     }}
     """
 
     try:
         st_javascript(js)
+        emitted_registry[fragment_id] = True
         logger.info("[LazyRuntime] JS emit success for %s", fragment_id)
+        try:
+            telemetry.log(
+                "portfolio.fragment_ready_source",
+                fragment_id=fragment_id,
+                source="frontend_js",
+            )
+        except Exception:  # pragma: no cover - telemetry is best-effort
+            logger.debug(
+                "[LazyRuntime] telemetry_log_failed fragment=%s source=frontend_js",
+                fragment_id,
+                exc_info=True,
+            )
     except Exception as exc:  # pragma: no cover - integration with frontend
         logger.warning(
             "[LazyRuntime] JS emit failed for %s: %s", fragment_id, exc, exc_info=True
@@ -506,6 +639,27 @@ def _wait_for_fragment_context_ready(
     timeout: float,
     poll_interval: float,
 ) -> bool:
+    if _is_fragment_marked_ready(fragment):
+        global fragment_context_ready
+        fragment_context_ready = True
+        logger.info(
+            "[LazyRuntime] context_ready short-circuit (backend_optimistic) fragment=%s",
+            fragment,
+        )
+        try:
+            telemetry.log(
+                "portfolio.fragment_visible",
+                fragment_id=fragment,
+                visible=True,
+            )
+        except Exception:  # pragma: no cover - telemetry best-effort
+            logger.debug(
+                "[LazyRuntime] telemetry_log_failed fragment=%s source=short_circuit",
+                fragment,
+                exc_info=True,
+            )
+        return True
+
     _update_fragment_ready_from_state(fragment, dataset_hash)
     start = time.perf_counter()
     logger.info(
@@ -636,6 +790,24 @@ def register_fragment_ready(
 
     global fragment_context_ready
     fragment_context_ready = bool(visible)
+
+    if visible:
+        mark_fragment_ready(fragment_id, source="frontend_js")
+    else:
+        state_changed = _update_fragment_ready_state(fragment_id, False)
+        if state_changed:
+            try:
+                telemetry.log(
+                    "portfolio.fragment_visible",
+                    fragment_id=fragment_id,
+                    visible=False,
+                )
+            except Exception:  # pragma: no cover - telemetry best-effort
+                logger.debug(
+                    "[LazyRuntime] telemetry_log_failed fragment=%s source=frontend_hide",
+                    fragment_id,
+                    exc_info=True,
+                )
 
     try:
         state = getattr(st, "session_state", None)
