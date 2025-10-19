@@ -154,3 +154,12 @@ def test_table_filters_only_rerender_table(monkeypatch):
     assert len(summary_calls) == 2
     assert len(table_calls) == 3
     assert len(chart_calls) == 2
+
+
+def test_should_reset_rendered_flag_requires_matching_dataset() -> None:
+    """Only reset the render flag when the dataset token matches the entry."""
+
+    assert portfolio._should_reset_rendered_flag("dataset-a", "dataset-a", "pending") is True
+    assert portfolio._should_reset_rendered_flag("dataset-a", "dataset-b", "pending") is False
+    assert portfolio._should_reset_rendered_flag(None, "dataset-a", "pending") is False
+    assert portfolio._should_reset_rendered_flag("dataset-a", "dataset-a", "loaded") is False
