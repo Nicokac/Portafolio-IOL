@@ -208,6 +208,27 @@ class FragmentStateGuardian:
             if entry.get("active"):
                 entry.setdefault("pending_restore", True)
 
+    def soft_refresh(self, dataset_hash: str | None = None) -> None:
+        """Record a dataset refresh that did not trigger a rerun."""
+
+        dataset_token = str(dataset_hash or self._resolve_dataset_hash() or "")
+        if not dataset_token:
+            return
+        now = time.time()
+        refreshed: list[str] = []
+        for key, entry in list(self._registry.items()):
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("dataset_hash") != dataset_token:
+                continue
+            entry.setdefault("active", True)
+            entry["last_seen"] = now
+            entry.pop("pending_restore", None)
+            refreshed.append(key)
+        if refreshed:
+            detail = {"dataset_hash": dataset_token, "fragments": sorted(refreshed)}
+            logger.info("[Guardian] Soft refresh: dataset revalidated without rerun", extra=detail)
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -525,6 +546,16 @@ def reset_fragment_state_guardian() -> None:
         logger.debug("No se pudo reiniciar el registro de fragmentos", exc_info=True)
 
 
+def fragment_state_soft_refresh(dataset_hash: str | None = None) -> None:
+    """Public helper to record a soft refresh in the active guardian."""
+
+    guardian = get_fragment_state_guardian()
+    try:
+        guardian.soft_refresh(dataset_hash)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo registrar el soft refresh del guardian", exc_info=True)
+
+
 def prepare_persistent_fragment_restore() -> None:
     """Best-effort helper to queue a persisted restore for the active user."""
 
@@ -640,6 +671,7 @@ def _purge_user_persisted_state(user_id: str) -> None:
 __all__ = [
     "FragmentGuardResult",
     "FragmentStateGuardian",
+    "fragment_state_soft_refresh",
     "get_fragment_state_guardian",
     "persist_fragment_state_snapshot",
     "prepare_persistent_fragment_restore",

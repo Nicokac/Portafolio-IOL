@@ -49,7 +49,11 @@ from shared.telemetry import log_default_telemetry, log_telemetry
 from shared.user_actions import log_user_action
 from shared.cache import visual_cache_registry
 from infrastructure.iol.auth import get_current_user_id
-from shared.fragment_state import FragmentGuardResult, get_fragment_state_guardian
+from shared.fragment_state import (
+    FragmentGuardResult,
+    fragment_state_soft_refresh,
+    get_fragment_state_guardian,
+)
 
 from .load_data import load_portfolio_data
 from .charts import (
@@ -2127,8 +2131,17 @@ def render_portfolio_section(
         dataset_hash = str(dataset_hash or "")
         if controls_changed:
             log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
+        manual_refresh_flag = bool(st.session_state.pop("refresh_pending", False))
+        skip_invalidation_flag = bool(
+            st.session_state.pop("_dataset_skip_invalidation", False)
+        )
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
-        if previous_hash and dataset_hash and previous_hash != dataset_hash:
+        if (
+            previous_hash
+            and dataset_hash
+            and previous_hash != dataset_hash
+            and not skip_invalidation_flag
+        ):
             visual_cache_registry.invalidate_dataset(
                 previous_hash, reason="dataset_hash_changed"
             )
@@ -2149,7 +2162,10 @@ def render_portfolio_section(
             visual_entry["dataset_hash"] = dataset_hash
             visual_entry["last_seen"] = time.time()
 
-        if bool(st.session_state.get("refresh_pending")):
+        if manual_refresh_flag and skip_invalidation_flag:
+            fragment_state_soft_refresh(dataset_hash=dataset_hash)
+
+        if manual_refresh_flag:
             last_refresh = st.session_state.get(_REFRESH_LOG_STATE_KEY)
             if last_refresh != dataset_hash:
                 _log_quotes_refresh_event(dataset_hash, source="manual_refresh")

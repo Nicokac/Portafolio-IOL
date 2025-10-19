@@ -56,6 +56,7 @@ class DatasetState:
     source: str
     error: str | None = None
     refresh_count: int = 0
+    skip_invalidation: bool = False
 
 
 @dataclass
@@ -70,6 +71,7 @@ class DatasetMetadata:
     duration: float
     cache_hit: bool
     error: str | None = None
+    skip_invalidation: bool = False
 
 
 def _compute_dataset_hash(df: pd.DataFrame | None) -> str:
@@ -214,6 +216,8 @@ class PortfolioDataFetchService:
             return None
         cached = self._cache.get(self._CACHE_KEY)
         if isinstance(cached, DatasetState):
+            if not hasattr(cached, "skip_invalidation"):
+                cached.skip_invalidation = False
             self._state = cached
         return self._state
 
@@ -233,6 +237,7 @@ class PortfolioDataFetchService:
             duration=state.duration,
             cache_hit=cache_hit,
             error=state.error,
+            skip_invalidation=state.skip_invalidation,
         )
 
     def _store_state(self, state: DatasetState) -> None:
@@ -297,6 +302,11 @@ class PortfolioDataFetchService:
             previous = self._ensure_state_loaded()
             if previous is not None:
                 state.refresh_count = previous.refresh_count + 1
+                previous_hash = getattr(previous.dataset, "dataset_hash", None)
+                if previous_hash == dataset.dataset_hash:
+                    state.skip_invalidation = True
+                else:
+                    state.skip_invalidation = False
             self._store_state(state)
         logger.info(
             "Dataset de portafolio actualizado (source=%s, duration=%.3fs, explicit=%s)",
