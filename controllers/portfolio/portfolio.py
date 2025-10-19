@@ -1044,11 +1044,7 @@ def _prompt_lazy_block(
             {"key": key, "scope": scope or "global"},
             dataset_hash=resolved_dataset,
         )
-    if (
-        not ready
-        and scope == "global"
-        and should_auto_load_fragment(scope)
-    ):
+    if not ready and should_auto_load_fragment(scope):
         ready = True
         block.setdefault("auto_loaded", True)
 
