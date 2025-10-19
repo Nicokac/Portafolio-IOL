@@ -1019,6 +1019,7 @@ def _prompt_lazy_block(
     key: str,
     dataset_token: str,
     fallback_key: str | None = None,
+    force_ready: bool = False,
 ) -> bool:
     """Render a persistent lazy trigger returning readiness."""
 
@@ -1031,6 +1032,11 @@ def _prompt_lazy_block(
     session_ready = primary_ready or fallback_ready
 
     ready = bool(session_ready)
+    if force_ready:
+        ready = True
+        session_ready = True
+        primary_ready = True
+        fallback_ready = True
     scope = current_scope()
     component = current_component() or ("charts" if "chart" in (key or "") else "table")
     resolved_dataset = dataset_token or current_dataset_token() or _current_dataset_hash()
@@ -1079,7 +1085,9 @@ def _prompt_lazy_block(
 
     trigger_state = False
     has_loaded_flag = block.get("status") == "loaded" or "loaded_at" in block
-    should_render_trigger = not ready or block.get("auto_loaded") is True or has_loaded_flag
+    should_render_trigger = (
+        not ready or block.get("auto_loaded") is True or has_loaded_flag
+    ) and not force_ready
     if should_render_trigger:
         trigger_state = _render_lazy_trigger(
             placeholder, label=button_label, session_key=session_key
@@ -1408,6 +1416,7 @@ def render_basic_tab(
             key=f"{tab_slug}_load_table",
             dataset_token=dataset_token,
             fallback_key="load_table",
+            force_ready=True,
         )
 
         should_render_table = False
@@ -1542,6 +1551,7 @@ def render_basic_tab(
             key=f"{tab_slug}_load_charts",
             dataset_token=dataset_token,
             fallback_key="load_charts",
+            force_ready=True,
         )
 
         should_render_charts = False
