@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import csv
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Mapping
+
+try:  # pragma: no cover - optional in certain tests
+    import streamlit as st  # type: ignore
+except Exception:  # pragma: no cover - defensive fallback
+    st = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +45,23 @@ _METRIC_COLUMNS = (
     "lazy_loaded_component",
     "lazy_load_ms",
 )
+
+_TELEMETRY_DEBOUNCE_SECONDS = 0.3
+_LAST_PHASE_LOG: dict[str, float] = {}
+
+
+def is_hydration_locked() -> bool:
+    """Return whether telemetry should be deferred until hydration completes."""
+
+    if st is None:
+        return False
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return False
+    try:
+        return bool(state.get("_hydration_lock"))
+    except Exception:  # pragma: no cover - defensive safeguard
+        return False
 
 
 @dataclass(frozen=True)
@@ -147,6 +170,22 @@ def log_telemetry(
 ) -> None:
     """Append a telemetry row to the provided CSV files."""
 
+    phase_key = str(phase or "")
+    if is_hydration_locked():
+        logger.debug("Telemetry locked; skipping phase %s", phase_key)
+        return
+
+    now = time.monotonic()
+    last_logged = _LAST_PHASE_LOG.get(phase_key)
+    if last_logged is not None and now - last_logged < _TELEMETRY_DEBOUNCE_SECONDS:
+        logger.debug(
+            "Telemetry debounce skipped phase %s (%.3f s since last)",
+            phase_key,
+            now - last_logged,
+        )
+        return
+    _LAST_PHASE_LOG[phase_key] = now
+
     row = TelemetryRow(
         phase=phase,
         elapsed_s=elapsed_s,
@@ -180,3 +219,11 @@ def log_default_telemetry(**kwargs) -> None:
     """Helper that logs telemetry to the default metric files."""
 
     log_telemetry(DEFAULT_TELEMETRY_FILES, **kwargs)
+
+
+__all__ = [
+    "DEFAULT_TELEMETRY_FILES",
+    "is_hydration_locked",
+    "log_default_telemetry",
+    "log_telemetry",
+]

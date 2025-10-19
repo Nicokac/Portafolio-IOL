@@ -40,18 +40,22 @@ def render_portfolio_ui(
         "status": "success",
         "has_cli": cli is not None,
     }
+    hydration_locked = bool(st.session_state.setdefault("_hydration_lock", True))
+    telemetry["hydration_locked"] = hydration_locked
     st.session_state["ui_idle"] = False
     snapshot_defer.mark_ui_busy()
     guardian = get_fragment_state_guardian()
-    try:
-        guardian.prepare_persistent_restore()
-    except Exception:  # pragma: no cover - defensive safeguard
-        pass
+    if not hydration_locked:
+        try:
+            guardian.prepare_persistent_restore()
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
     try:
         current_dataset = st.session_state.get("dataset_hash")
     except Exception:  # pragma: no cover - defensive safeguard
         current_dataset = None
-    guardian.begin_cycle(str(current_dataset or ""))
+    if not hydration_locked:
+        guardian.begin_cycle(str(current_dataset or ""))
     active_tab = st.session_state.get("active_tab")
     if isinstance(active_tab, str):
         telemetry["active_tab"] = active_tab

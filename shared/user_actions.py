@@ -22,7 +22,7 @@ except Exception:  # pragma: no cover - defensive fallback
     st = None  # type: ignore
 
 from infrastructure.iol.auth import get_current_user_id
-from shared.telemetry import log_default_telemetry
+from shared.telemetry import is_hydration_locked, log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +266,9 @@ def log_user_action(
 
     safe_action = str(action or "").strip()
     if not safe_action:
+        return
+    if is_hydration_locked():
+        logger.debug("Hydration locked; skipping user action %s", safe_action)
         return
     safe_detail = _coerce_detail(detail)
     resolved_dataset = _resolve_dataset_hash(dataset_hash)

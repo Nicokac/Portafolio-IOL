@@ -943,6 +943,16 @@ def main(argv: list[str] | None = None):
             render_ts = time.time()
             elapsed_ms = max(int((render_ts - login_ts) * 1000), 0)
             event_name = "startup.render_portfolio_complete"
+            hydration_was_locked = bool(st.session_state.get("_hydration_lock"))
+            should_request_rerun = False
+            if hydration_was_locked:
+                try:
+                    st.session_state["_hydration_lock"] = False
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug("No se pudo actualizar _hydration_lock", exc_info=True)
+                if not st.session_state.get("_hydration_unlock_rerun_triggered"):
+                    should_request_rerun = True
+                    st.session_state["_hydration_unlock_rerun_triggered"] = True
             payload = {
                 "event": event_name,
                 "elapsed_ms": elapsed_ms,
@@ -993,6 +1003,8 @@ def main(argv: list[str] | None = None):
                     exc_info=True,
                 )
             st.session_state["iol_startup_metric_logged"] = True
+            if should_request_rerun and hasattr(st, "experimental_rerun"):
+                st.experimental_rerun()
 
     render_footer()
 
