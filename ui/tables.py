@@ -253,13 +253,17 @@ def render_table(
                 format=column_format.get(label, "%.2f"),
             )
 
-    column_config["Intradía %"] = st.column_config.LineChartColumn(
-        label="Intradía %",
-        width="small",
-        y_min=y_min,
-        y_max=y_max,
-        help="Variación diaria (%) intradía — últimos puntos",
-    )
+    has_intraday_history = bool(all_spark_vals)
+    if has_intraday_history:
+        column_config["Intradía %"] = st.column_config.LineChartColumn(
+            label="Intradía %",
+            width="small",
+            y_min=y_min,
+            y_max=y_max,
+            help="Variación diaria (%) intradía — últimos puntos",
+        )
+    else:
+        df_tbl.drop(columns=["Intradía %"], inplace=True, errors="ignore")
 
     st.subheader("Detalle por símbolo")
     df_export = df_tbl.rename(columns=rename_map)
