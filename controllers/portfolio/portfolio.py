@@ -1994,6 +1994,7 @@ def render_portfolio_section(
     with container:
         psvc = get_portfolio_service()
         tasvc = get_ta_service()
+        guardian = get_fragment_state_guardian()
 
         view_model_service = get_portfolio_view_service(view_model_service_factory)
         notifications_service = get_notifications_service(notifications_service_factory)
@@ -2183,6 +2184,14 @@ def render_portfolio_section(
                 logger.debug("No se pudo calcular el hash del dataset del portafolio", exc_info=True)
                 dataset_hash = ""
         dataset_hash = str(dataset_hash or "")
+        hydration_wait_start = time.perf_counter()
+        guardian_hydrated = guardian.wait_for_hydration(dataset_hash)
+        guardian_wait_ms = max((time.perf_counter() - hydration_wait_start) * 1000.0, 0.0)
+        try:
+            st.session_state["portfolio_guardian_hydrated"] = bool(guardian_hydrated)
+            st.session_state["portfolio_guardian_wait_ms"] = round(guardian_wait_ms, 3)
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo registrar el estado de hidratación del guardian", exc_info=True)
         if controls_changed:
             log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
         manual_refresh_flag = bool(st.session_state.pop("refresh_pending", False))

@@ -128,6 +128,15 @@ from ui.lazy import table_fragment
 import ui.lazy.runtime as lazy_runtime
 
 
+class _GuardianStub:
+    def __init__(self) -> None:
+        self.calls: list[str | None] = []
+
+    def wait_for_hydration(self, dataset_hash: str | None = None, *, timeout: float = 0.25):
+        self.calls.append(dataset_hash)
+        return True
+
+
 class _FormStreamlit:
     def __init__(self, submit_sequence: list[bool]) -> None:
         self.session_state: dict[str, object] = {}
@@ -210,6 +219,8 @@ def test_lazy_fragment_uses_form_fallback(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(portfolio_mod, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "log_default_telemetry", _capture_telemetry, raising=False)
+    guardian = _GuardianStub()
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     block = {"status": "pending", "triggered_at": None}
     dataset_token = "token-123"
@@ -249,6 +260,7 @@ def test_lazy_fragment_uses_form_fallback(monkeypatch: pytest.MonkeyPatch) -> No
     extra = last_event.get("extra", {})
     assert extra.get("ui_rerun_scope") == "form"
     assert extra.get("lazy_loaded_component") == "table"
+    assert guardian.calls == [dataset_token, dataset_token]
 
 
 def test_lazy_fragment_prefers_streamlit_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,6 +277,8 @@ def test_lazy_fragment_prefers_streamlit_fragment(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(portfolio_mod, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "log_default_telemetry", _capture_telemetry, raising=False)
+    guardian = _GuardianStub()
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     block = {"status": "pending", "triggered_at": None}
     dataset_token = "token-456"
@@ -302,3 +316,4 @@ def test_lazy_fragment_prefers_streamlit_fragment(monkeypatch: pytest.MonkeyPatc
     extra = last_event.get("extra", {})
     assert extra.get("ui_rerun_scope") == "fragment"
     assert extra.get("lazy_loaded_component") == "table"
+    assert guardian.calls == [dataset_token, dataset_token]

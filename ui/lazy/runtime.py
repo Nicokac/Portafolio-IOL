@@ -6,10 +6,12 @@ import logging
 from contextlib import contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
+import time
 from typing import Iterator
 
 import streamlit as st
 
+from shared.fragment_state import get_fragment_state_guardian
 from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,36 @@ def lazy_fragment(
     dataset_token: str | None = None,
 ) -> Iterator[FragmentContext]:
     """Context manager that isolates reruns for lazy components."""
+
+    hydration_ready = True
+    hydration_wait_ms = 0
+    dataset_marker = dataset_token or current_dataset_token()
+    guardian = None
+    try:
+        guardian = get_fragment_state_guardian()
+    except Exception:  # pragma: no cover - defensive fallback for tests
+        guardian = None
+    wait_method = getattr(guardian, "wait_for_hydration", None) if guardian else None
+    if callable(wait_method):
+        wait_start = time.perf_counter()
+        try:
+            hydration_ready = bool(wait_method(dataset_marker))
+        except TypeError:
+            hydration_ready = bool(wait_method())  # type: ignore[misc]
+        except Exception:  # pragma: no cover - defensive safeguard
+            hydration_ready = True
+        hydration_wait_ms = int((time.perf_counter() - wait_start) * 1000)
+        log_level = logger.info if hydration_ready else logger.warning
+        log_level(
+            "[LazyRuntime] fragment_hydration_complete",
+            extra={
+                "fragment": name,
+                "component": component,
+                "dataset_hash": str(dataset_marker or ""),
+                "hydrated": hydration_ready,
+                "wait_ms": hydration_wait_ms,
+            },
+        )
 
     fragment_factory = _fragment_factory()
     form_callable = None if fragment_factory else _form_callable()

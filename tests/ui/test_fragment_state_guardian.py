@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
@@ -292,3 +293,23 @@ def test_guardian_soft_refresh_keeps_fragment_visible(guardian_test_setup):
 
     assert ready_after_soft_refresh is True
     assert rerun_block["status"] == "loaded"
+
+
+def test_guardian_wait_for_hydration_emits_events(
+    guardian_test_setup, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake_st, _events = guardian_test_setup
+    guardian = fragment_state.get_fragment_state_guardian()
+    dataset_token = "dataset-wait"
+    caplog.set_level(logging.INFO)
+    guardian.begin_cycle(dataset_token)
+    assert guardian.wait_for_hydration(dataset_token, timeout=0.0) is True
+    # Subsequent waits should not emit additional start/end logs.
+    assert guardian.wait_for_hydration(dataset_token, timeout=0.0) is True
+    start_records = [record for record in caplog.records if record.message == "[Guardian] hydration_wait_start"]
+    end_records = [record for record in caplog.records if record.message == "[Guardian] hydration_wait_end"]
+    assert len(start_records) == 1
+    assert len(end_records) == 1
+    assert getattr(start_records[0], "dataset_hash", None) == dataset_token
+    assert getattr(end_records[0], "dataset_hash", None) == dataset_token
+    assert getattr(end_records[0], "hydrated", None) is True

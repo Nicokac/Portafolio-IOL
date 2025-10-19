@@ -2,6 +2,14 @@ from __future__ import annotations
 
 import ui.lazy.runtime as lazy_runtime
 
+class _GuardianStub:
+    def __init__(self) -> None:
+        self.calls: list[str | None] = []
+
+    def wait_for_hydration(self, dataset_hash: str | None = None, *, timeout: float = 0.25):
+        self.calls.append(dataset_hash)
+        return True
+
 
 class _ContextManagerStub:
     def __enter__(self):
@@ -45,6 +53,8 @@ def test_lazy_fragment_logs_dataset_and_scope(monkeypatch):
     fake_st = _StubStreamlit(provide_fragment=True, provide_form=False)
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "log_default_telemetry", lambda **kwargs: events.append(kwargs))
+    guardian = _GuardianStub()
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     with lazy_runtime.lazy_fragment("portfolio_table", component="table", dataset_token="abc") as context:
         assert context.scope == "fragment"
@@ -56,6 +66,7 @@ def test_lazy_fragment_logs_dataset_and_scope(monkeypatch):
     extra = payload.get("extra", {})
     assert extra.get("ui_rerun_scope") == "fragment"
     assert extra.get("lazy_loaded_component") == "table"
+    assert guardian.calls == ["abc"]
 
 
 def test_lazy_fragment_falls_back_to_global_scope(monkeypatch):
@@ -63,6 +74,8 @@ def test_lazy_fragment_falls_back_to_global_scope(monkeypatch):
     fake_st = _StubStreamlit(provide_fragment=False, provide_form=False)
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "log_default_telemetry", lambda **kwargs: events.append(kwargs))
+    guardian = _GuardianStub()
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     with lazy_runtime.lazy_fragment("portfolio_table", component="table", dataset_token=None) as context:
         assert context.scope == "global"
@@ -71,3 +84,4 @@ def test_lazy_fragment_falls_back_to_global_scope(monkeypatch):
     payload = events[-1]
     extra = payload.get("extra", {})
     assert extra.get("ui_rerun_scope") == "global"
+    assert guardian.calls == [None]
