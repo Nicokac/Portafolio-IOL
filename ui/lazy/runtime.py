@@ -13,9 +13,12 @@ from textwrap import dedent
 
 import streamlit as st
 
+_js_import_error: Exception | None = None
+
 try:  # pragma: no cover - optional dependency in tests
     from streamlit_javascript import st_javascript
-except Exception as _js_import_error:  # pragma: no cover - dependency optional in tests
+except Exception as exc:  # pragma: no cover - dependency optional in tests
+    _js_import_error = exc
     st_javascript = None  # type: ignore[assignment]
 else:  # pragma: no cover - informational placeholder for linting
     _js_import_error = None
