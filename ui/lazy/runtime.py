@@ -11,7 +11,11 @@ from typing import Any, Iterator
 
 import streamlit as st
 
-from shared.fragment_state import get_fragment_state_guardian
+from shared.fragment_state import (
+    get_fragment_state_guardian,
+    register_fragment_auto_load_context,
+    reset_fragment_auto_load_context,
+)
 from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -169,24 +173,32 @@ def lazy_fragment(
     if not context_ready or fragment_factory is None:
         fallback_placeholder = _handle_fragment_fallback(name, context_ready, scope)
 
-    with _enter_scope(
-        name,
-        fragment_factory,
-        form_callable,
-        scope,
-        fallback_placeholder=fallback_placeholder,
-    ):
-        scope_token = _SCOPE.set(scope)
-        component_token = _COMPONENT.set(component)
-        dataset_token = dataset_token or None
-        dataset_token_var = _DATASET.set(dataset_token)
-        _log_scope(scope, component, dataset_token)
-        try:
-            yield FragmentContext(name=name, scope=scope)
-        finally:
-            _SCOPE.reset(scope_token)
-            _COMPONENT.reset(component_token)
-            _DATASET.reset(dataset_token_var)
+    auto_load_token = register_fragment_auto_load_context(
+        scope=scope,
+        fragment_factory_builder=fragment_factory,
+        context_ready=context_ready,
+    )
+    try:
+        with _enter_scope(
+            name,
+            fragment_factory,
+            form_callable,
+            scope,
+            fallback_placeholder=fallback_placeholder,
+        ):
+            scope_token = _SCOPE.set(scope)
+            component_token = _COMPONENT.set(component)
+            dataset_token = dataset_token or None
+            dataset_token_var = _DATASET.set(dataset_token)
+            _log_scope(scope, component, dataset_token)
+            try:
+                yield FragmentContext(name=name, scope=scope)
+            finally:
+                _SCOPE.reset(scope_token)
+                _COMPONENT.reset(component_token)
+                _DATASET.reset(dataset_token_var)
+    finally:
+        reset_fragment_auto_load_context(auto_load_token)
 
 
 _FRAGMENT_WARNING_EMITTED = False
