@@ -44,6 +44,10 @@ def render_portfolio_ui(
     snapshot_defer.mark_ui_busy()
     guardian = get_fragment_state_guardian()
     try:
+        guardian.prepare_persistent_restore()
+    except Exception:  # pragma: no cover - defensive safeguard
+        pass
+    try:
         current_dataset = st.session_state.get("dataset_hash")
     except Exception:  # pragma: no cover - defensive safeguard
         current_dataset = None

@@ -18,6 +18,7 @@ from infrastructure.iol.auth import IOLAuth
 from shared.errors import InvalidCredentialsError, NetworkError
 from shared.cache import cache
 from shared.config import settings
+from shared.fragment_state import persist_fragment_state_snapshot
 
 
 class AuthenticationError(Exception):
@@ -168,6 +169,13 @@ def login(user: str, password: str) -> dict:
 def logout(user: str = "", password: str = "") -> None:
     """Wrapper para el logout utilizando el proveedor registrado."""
 
+    try:
+        persist_fragment_state_snapshot()
+    except Exception:  # pragma: no cover - defensive safeguard
+        logging.getLogger(__name__).debug(
+            "No se pudo persistir el estado de fragmentos antes de logout",
+            exc_info=True,
+        )
     user = user or st.session_state.get("IOL_USERNAME", "")
     revoke_token(st.session_state.get("auth_token"))
     try:
