@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
 import time
-from typing import Iterator
+from typing import Any, Iterator
 
 import streamlit as st
 
@@ -21,10 +21,34 @@ fragment_context_ready: bool = True
 _FRAGMENT_CONTEXT_TIMEOUT_S = 0.25
 _FRAGMENT_CONTEXT_POLL_INTERVAL_S = 0.05
 _FRAGMENT_CONTEXT_RERUN_DATASETS: set[str] = set()
+_PERSISTENT_PLACEHOLDERS: dict[str, Any] = {}
 
 _SCOPE: ContextVar[str | None] = ContextVar("ui_lazy_fragment_scope", default=None)
 _COMPONENT: ContextVar[str | None] = ContextVar("ui_lazy_fragment_component", default=None)
 _DATASET: ContextVar[str | None] = ContextVar("ui_lazy_fragment_dataset", default=None)
+
+
+def _set_persistent_placeholder(fragment_id: str, placeholder: Any) -> None:
+    """Store a placeholder for future fallback renders."""
+
+    if not fragment_id or placeholder is None:
+        return
+    try:
+        _PERSISTENT_PLACEHOLDERS[fragment_id] = placeholder
+    except Exception:  # pragma: no cover - defensive safeguard for unexpected values
+        logger.debug(
+            "[LazyRuntime] failed_to_store_persistent_placeholder fragment=%s",
+            fragment_id,
+            exc_info=True,
+        )
+
+
+def _get_persistent_placeholder(fragment_id: str) -> Any | None:
+    """Return the previously stored placeholder if available."""
+
+    if not fragment_id:
+        return None
+    return _PERSISTENT_PLACEHOLDERS.get(fragment_id)
 
 
 @dataclass
@@ -113,6 +137,7 @@ def lazy_fragment(
 
     fragment_factory_builder = _fragment_factory()
     form_callable = None if fragment_factory_builder else _form_callable()
+    context_ready = True
 
     if fragment_factory_builder is not None:
         context_ready = _wait_for_fragment_context_ready(
@@ -140,7 +165,17 @@ def lazy_fragment(
     else:
         scope = "global"
 
-    with _enter_scope(name, fragment_factory, form_callable, scope):
+    fallback_placeholder = None
+    if not context_ready or fragment_factory is None:
+        fallback_placeholder = _handle_fragment_fallback(name, context_ready, scope)
+
+    with _enter_scope(
+        name,
+        fragment_factory,
+        form_callable,
+        scope,
+        fallback_placeholder=fallback_placeholder,
+    ):
         scope_token = _SCOPE.set(scope)
         component_token = _COMPONENT.set(component)
         dataset_token = dataset_token or None
@@ -252,17 +287,42 @@ def _form_callable():
 
 
 @contextmanager
-def _enter_scope(name: str, fragment_factory, form_callable, scope: str):
+def _enter_scope(
+    name: str,
+    fragment_factory,
+    form_callable,
+    scope: str,
+    *,
+    fallback_placeholder: Any | None = None,
+):
+    contexts = []
+
+    if fallback_placeholder is not None:
+        contexts.append(_ensure_context_manager(fallback_placeholder))
+
+    primary_context = None
     if scope == "fragment" and fragment_factory is not None:
-        with fragment_factory(name):
-            yield
-            return
-    if scope == "form" and form_callable is not None:
+        primary_context = _ensure_context_manager(fragment_factory(name))
+    elif scope == "form" and form_callable is not None:
         form_key = f"{name}__form"
-        with form_callable(form_key):
-            yield
-            return
-    with _container_context():
+        primary_context = _ensure_context_manager(form_callable(form_key))
+    elif not contexts:
+        primary_context = _container_context()
+
+    if primary_context is not None:
+        contexts.append(primary_context)
+
+    if not contexts:
+        contexts.append(nullcontext())
+
+    with ExitStack() as stack:
+        stored_placeholder: Any | None = None
+        for ctx in contexts:
+            entered = stack.enter_context(ctx)
+            if stored_placeholder is None and entered is not None:
+                stored_placeholder = entered
+        if stored_placeholder is not None:
+            _set_persistent_placeholder(name, stored_placeholder)
         yield
 
 
@@ -277,6 +337,81 @@ def _container_context():
         if callable(container_callable):
             return container_callable()
     return nullcontext()
+
+
+def _handle_fragment_fallback(
+    fragment_id: str, context_ready: bool, scope: str
+) -> Any | None:
+    """Resolve the container to use when fragment rendering falls back."""
+
+    try:  # pragma: no cover - optional telemetry hook
+        from shared.telemetry import log as telemetry_log  # type: ignore
+    except ImportError:  # pragma: no cover - telemetry helper may not exist
+        telemetry_log = None
+
+    reason = "context_not_ready" if not context_ready else "factory_none"
+    logger.info("[LazyRuntime] fallback_triggered reason=%s", reason)
+
+    placeholder = _get_persistent_placeholder(fragment_id)
+    reused = placeholder is not None
+    if placeholder is None:
+        logger.warning(
+            "[LazyRuntime] no_persistent_placeholder_found fragment=%s",
+            fragment_id,
+        )
+        container_fn = getattr(st, "container", None)
+        if callable(container_fn):
+            placeholder = container_fn()
+        else:
+            empty_fn = getattr(st, "empty", None)
+            if callable(empty_fn):
+                try:
+                    empty_placeholder = empty_fn()
+                    container_method = getattr(empty_placeholder, "container", None)
+                    if callable(container_method):
+                        placeholder = container_method()
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "[LazyRuntime] failed_to_create_fallback_container",
+                        exc_info=True,
+                    )
+        if placeholder is None:
+            placeholder = _container_context()
+
+    logger.info(
+        "[LazyRuntime] fallback_reuse_persistent_container=%s",
+        reused,
+    )
+    logger.info("[LazyRuntime] context_ready=%s scope=%s", context_ready, scope)
+
+    if telemetry_log is not None:
+        try:
+            telemetry_log(
+                "portfolio.fragment_visible",
+                fragment_id=fragment_id,
+                visible=bool(context_ready),
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "[LazyRuntime] telemetry_log_failed fragment=%s",
+                fragment_id,
+                exc_info=True,
+            )
+    else:
+        try:
+            log_default_telemetry(
+                phase="portfolio.fragment_visibility",
+                dataset_hash="",
+                extra={"portfolio.fragment_visible": bool(context_ready)},
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "[LazyRuntime] fallback_telemetry_log_failed fragment=%s",
+                fragment_id,
+                exc_info=True,
+            )
+
+    return placeholder
 
 
 def _log_scope(scope: str, component: str, dataset_token: str | None) -> None:
