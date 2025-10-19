@@ -12,6 +12,7 @@ from shared.utils import (
     _is_none_nan_inf,
     format_money,
 )
+from ui.lazy.runtime import ensure_fragment_ready_script, register_fragment_ready
 from .palette import get_active_palette
 from .export import download_csv
 
@@ -61,8 +62,22 @@ def render_table(
     *,
     favorites: FavoriteSymbols | None = None,
 ):
+    ensure_fragment_ready_script("portfolio_table")
+
+    def _register_visibility(visible: bool) -> None:
+        try:
+            dataset_hash = st.session_state.get("dataset_hash")
+        except Exception:  # pragma: no cover - session state may be missing in tests
+            dataset_hash = None
+        register_fragment_ready(
+            "portfolio_table",
+            dataset_hash=str(dataset_hash or "") or None,
+            visible=visible,
+        )
+
     if df_view is None or df_view.empty:
         st.info("Sin datos para mostrar.")
+        _register_visibility(False)
         return
 
     favorites = favorites or get_persistent_favorites()
@@ -89,6 +104,7 @@ def render_table(
 
     if df_sorted.empty:
         st.info("Sin datos para mostrar.")
+        _register_visibility(False)
         return
 
     quotes_hist: dict = st.session_state.get("quotes_hist", {})
@@ -270,3 +286,5 @@ def render_table(
 
     drop_cols = list(rename_map.keys()) + ["es_favorito"]
     df_tbl.drop(columns=drop_cols, inplace=True, errors="ignore")
+
+    _register_visibility(True)
