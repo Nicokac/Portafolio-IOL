@@ -1,4 +1,4 @@
-"""Tests ensuring the portfolio panel renders on the first toggle."""
+"""Tests ensuring the portfolio panel renders sin depender de un toggle."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
     return portfolio_ui._portfolio_setup._fixture_function(monkeypatch)
 
 
-def test_portfolio_panel_renders_on_first_toggle(
+def test_portfolio_panel_renders_without_lazy_toggle(
     monkeypatch: pytest.MonkeyPatch, _portfolio_setup
 ) -> None:
     telemetry_events: list[dict[str, object]] = []
@@ -27,13 +27,7 @@ def test_portfolio_panel_renders_on_first_toggle(
     def _capture_telemetry(**kwargs):
         telemetry_events.append(kwargs)
 
-    checkbox_defaults = {
-        "portafolio_load_table": [True],
-        "load_table": [True],
-        "portafolio_load_charts": [True],
-        "load_charts": [True],
-    }
-    fake_st = FakeStreamlit(radio_sequence=[0, 0], checkbox_values=checkbox_defaults)
+    fake_st = FakeStreamlit(radio_sequence=[0, 0])
     fake_st.experimental_rerun = MagicMock()
     fake_st.fragment_calls: list[str] = []
 
