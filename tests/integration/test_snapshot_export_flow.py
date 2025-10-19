@@ -84,7 +84,15 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     positions = _build_positions()
     view_outputs = [_portfolio_frame(1.0), _portfolio_frame(1.1)]
 
-    def fake_apply_filters(df, controls, cli, psvc, *, dataset_hash=None):  # noqa: ANN001 - signature mimic
+    def fake_apply_filters(
+        df,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash=None,
+        skip_invalidation=False,
+    ):  # noqa: ANN001 - signature mimic
         return view_outputs.pop(0)
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply_filters)

@@ -1517,14 +1517,29 @@ class PortfolioViewModelService:
         telemetry_phase: str,
         allow_pending_reuse: bool,
         dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
         dataset_key = str(dataset_hash) if dataset_hash else self._hash_dataset(df_pos)
         filters_key = self._filters_key_from(controls)
 
         timestamp_bucket = _extract_quotes_timestamp(cli, psvc)
 
-        dataset_changed = dataset_key != self._dataset_key
+        skip_invalidation = bool(skip_invalidation)
+        raw_dataset_changed = dataset_key != self._dataset_key
+        dataset_changed = raw_dataset_changed and not skip_invalidation
         filters_changed = filters_key != self._filters_key
+
+        if skip_invalidation and dataset_key:
+            logger.info(
+                "portfolio_view.skip_invalidation_applied event=\"skip_invalidation\" dataset=%s filters=%s",
+                dataset_key,
+                filters_key,
+            )
+            _log_dataset_cache_event(
+                "skip_invalidation_applied",
+                dataset_key,
+                filters_key=filters_key,
+            )
 
         render_start = time.perf_counter()
 
@@ -1732,6 +1747,7 @@ class PortfolioViewModelService:
                     cli,
                     psvc,
                     dataset_hash=dataset_key,
+                    skip_invalidation=skip_invalidation,
                 )
                 positions_state["df"] = df
                 positions_state["elapsed"] = time.perf_counter() - start
@@ -1899,6 +1915,7 @@ class PortfolioViewModelService:
         *,
         dataset_hash: str | None = None,
         mode: str = "full",
+        skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
         """Ejecuta la canalización del dataset en el modo solicitado."""
 
@@ -1923,6 +1940,7 @@ class PortfolioViewModelService:
             telemetry_phase=telemetry_phase,
             allow_pending_reuse=allow_pending_reuse,
             dataset_hash=dataset_hash,
+            skip_invalidation=skip_invalidation,
         )
 
     def build_minimal_viewmodel(
@@ -1933,6 +1951,7 @@ class PortfolioViewModelService:
         psvc,
         *,
         dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
         """Construye el snapshot mínimo requerido para renderizar el portafolio."""
 
@@ -1943,6 +1962,7 @@ class PortfolioViewModelService:
             psvc,
             dataset_hash=dataset_hash,
             mode="basic",
+            skip_invalidation=skip_invalidation,
         )
 
     def compute_extended_metrics(
@@ -1953,6 +1973,7 @@ class PortfolioViewModelService:
         psvc,
         *,
         dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
         """Completa las métricas extendidas del snapshot cuando son necesarias."""
 
@@ -1963,6 +1984,7 @@ class PortfolioViewModelService:
             psvc,
             dataset_hash=dataset_hash,
             mode="extended",
+            skip_invalidation=skip_invalidation,
         )
 
     def get_portfolio_view(
@@ -1974,6 +1996,7 @@ class PortfolioViewModelService:
         *,
         lazy_metrics: bool = False,
         dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
         """Devuelve el snapshot del portafolio aplicando métricas diferidas si es necesario."""
 
@@ -1983,6 +2006,7 @@ class PortfolioViewModelService:
             cli,
             psvc,
             dataset_hash=dataset_hash,
+            skip_invalidation=skip_invalidation,
         )
         if lazy_metrics and snapshot.pending_metrics:
             return snapshot
@@ -1993,6 +2017,7 @@ class PortfolioViewModelService:
                 cli,
                 psvc,
                 dataset_hash=dataset_hash,
+                skip_invalidation=skip_invalidation,
             )
         return snapshot
 
@@ -2004,10 +2029,25 @@ def _coerce_json(value: Any) -> Any:
     return str(value)
 
 
-def _apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = None):
+def _apply_filters(
+    df_pos,
+    controls,
+    cli,
+    psvc,
+    *,
+    dataset_hash: str | None = None,
+    skip_invalidation: bool = False,
+):
     from controllers.portfolio.filters import apply_filters as _apply
 
-    return _apply(df_pos, controls, cli, psvc, dataset_hash=dataset_hash)
+    return _apply(
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        dataset_hash=dataset_hash,
+        skip_invalidation=skip_invalidation,
+    )
 
 
 def _compute_contribution_metrics(df_view: pd.DataFrame) -> PortfolioContributionMetrics:

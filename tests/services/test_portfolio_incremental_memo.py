@@ -53,7 +53,15 @@ def _positions_frame() -> pd.DataFrame:
 
 
 def _fake_apply_factory(counter):
-    def _fake_apply(df_pos, controls, cli, psvc, *, dataset_hash=None):  # noqa: ANN001 - signature compatibility
+    def _fake_apply(
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash=None,
+        skip_invalidation=False,
+    ):  # noqa: ANN001 - signature compatibility
         counter["count"] += 1
         base = pd.DataFrame(
             {

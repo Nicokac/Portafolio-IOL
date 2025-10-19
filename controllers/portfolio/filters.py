@@ -110,7 +110,15 @@ def _schedule_background_jobs(df_view: pd.DataFrame, telemetry: dict[str, object
         telemetry["background_jobs"] = scheduled
 
 
-def apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = None):
+def apply_filters(
+    df_pos,
+    controls,
+    cli,
+    psvc,
+    *,
+    dataset_hash: str | None = None,
+    skip_invalidation: bool = False,
+):
     """Apply user filters and enrich positions with quotes."""
 
     telemetry: dict[str, object] = {
@@ -131,6 +139,8 @@ def apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = Non
         if extra:
             payload.update(extra)
         return profile_block(f"apply_filters.{name}", extra=payload)
+
+    skip_invalidation_flag = bool(skip_invalidation)
 
     with performance_timer("apply_filters", extra=telemetry):
         selected_syms = getattr(controls, "selected_syms", []) or []
@@ -160,6 +170,16 @@ def apply_filters(df_pos, controls, cli, psvc, *, dataset_hash: str | None = Non
         expected_hash = dataset_hash or compute_dataset_hash(df_pos)
         dataset, metadata = service.peek_dataset()
         quotes_map = None
+        if metadata is not None:
+            skip_invalidation_flag = skip_invalidation_flag or bool(
+                getattr(metadata, "skip_invalidation", False)
+            )
+        if skip_invalidation_flag:
+            telemetry["skip_invalidation"] = True
+            logger.info(
+                "portfolio_filters event=\"skip_invalidation\" dataset_hash=%s",
+                expected_hash,
+            )
         if dataset is not None and dataset.dataset_hash == expected_hash:
             quotes_map = dataset.quotes
             if metadata and metadata.stale:

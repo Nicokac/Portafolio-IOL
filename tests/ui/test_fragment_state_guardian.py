@@ -242,3 +242,53 @@ def test_guardian_respects_explicit_toggle(guardian_test_setup):
     )
     assert ready is True
     assert any(event[0] == "lazy_block_rehydrated" for event in events) is False
+
+
+def test_guardian_soft_refresh_keeps_fragment_visible(guardian_test_setup):
+    fake_st, _ = guardian_test_setup
+    dataset_token = "dataset-token"
+    block = _build_block(dataset_token)
+
+    fake_st._checkbox_values["load_table"] = [True]
+    placeholder = fake_st.empty()
+    ready = portfolio_mod._prompt_lazy_block(
+        block,
+        placeholder=placeholder,
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla se cargará al activarla.",
+        key="positions_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
+    )
+    assert ready is True
+
+    guardian = fragment_state.get_fragment_state_guardian()
+    guardian.mark_not_ready(
+        key="positions_load_table",
+        session_key="load_table",
+        dataset_hash=dataset_token,
+        explicit_hide=False,
+    )
+    entry = guardian._registry.get("positions_load_table", {})
+    assert entry.get("pending_restore") is True
+
+    fragment_state.fragment_state_soft_refresh(dataset_hash=dataset_token)
+    entry_after = guardian._registry.get("positions_load_table", {})
+    assert entry_after.get("pending_restore") is None
+    assert entry_after.get("last_value") is True
+
+    fake_st._checkbox_values["load_table"] = []
+    rerun_block = _build_block(dataset_token)
+    rerun_placeholder = fake_st.empty()
+    ready_after_soft_refresh = portfolio_mod._prompt_lazy_block(
+        rerun_block,
+        placeholder=rerun_placeholder,
+        button_label="📊 Cargar tabla del portafolio",
+        info_message="La tabla se cargará al activarla.",
+        key="positions_load_table",
+        dataset_token=dataset_token,
+        fallback_key="load_table",
+    )
+
+    assert ready_after_soft_refresh is True
+    assert rerun_block["status"] == "loaded"

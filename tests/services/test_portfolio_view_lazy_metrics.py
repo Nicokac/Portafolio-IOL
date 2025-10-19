@@ -67,7 +67,15 @@ def portfolio_service(monkeypatch: pytest.MonkeyPatch) -> PortfolioViewModelServ
 
 
 def _fake_apply(counter):
-    def _apply(df_pos, controls, cli, psvc, *, dataset_hash=None):  # noqa: ANN001 - signature compatibility
+    def _apply(
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash=None,
+        skip_invalidation=False,
+    ):  # noqa: ANN001 - signature compatibility
         counter["count"] += 1
         return df_pos.copy()
 

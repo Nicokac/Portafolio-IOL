@@ -222,6 +222,8 @@ class FragmentStateGuardian:
             if entry.get("dataset_hash") != dataset_token:
                 continue
             entry.setdefault("active", True)
+            entry.setdefault("was_loaded", True)
+            entry["last_value"] = True
             entry["last_seen"] = now
             entry.pop("pending_restore", None)
             refreshed.append(key)

@@ -956,12 +956,20 @@ def main(argv: list[str] | None = None):
                 if not st.session_state.get("_hydration_unlock_rerun_triggered"):
                     should_request_rerun = True
                     st.session_state["_hydration_unlock_rerun_triggered"] = True
+            try:
+                soft_refresh = bool(
+                    st.session_state.pop("_soft_refresh_applied", False)
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                soft_refresh = False
+
             payload = {
                 "event": event_name,
                 "elapsed_ms": elapsed_ms,
                 "login_ts": login_ts,
                 "render_ts": render_ts,
                 "session_id": st.session_state.get("session_id"),
+                "soft_refresh": soft_refresh,
             }
             logger.info(event_name, extra=payload)
             analysis_entry = dict(payload)

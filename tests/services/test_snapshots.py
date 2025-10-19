@@ -68,7 +68,15 @@ def test_snapshot_history_supports_comparisons(monkeypatch, totals, snapshot_sto
 
     frames = [_frame(initial_total), _frame(refreshed_total)]
 
-    def fake_apply(df, controls, cli, psvc, *, dataset_hash=None):  # noqa: ANN001 - signature mimic
+    def fake_apply(
+        df,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash=None,
+        skip_invalidation=False,
+    ):  # noqa: ANN001 - signature mimic
         return frames.pop(0)
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply)
