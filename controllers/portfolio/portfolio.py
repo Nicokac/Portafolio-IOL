@@ -722,6 +722,20 @@ def _ensure_component_entry(
     return entry
 
 
+def _should_reset_rendered_flag(
+    entry_dataset: str | None,
+    dataset_token: str,
+    status: str | None,
+) -> bool:
+    """Return whether the component render flag should reset for this dataset."""
+
+    if not dataset_token:
+        return False
+    if entry_dataset != dataset_token:
+        return False
+    return status != "loaded"
+
+
 def _ensure_render_refs() -> dict[str, Any]:
     """Return the persistent placeholder references stored in session state."""
 
@@ -1356,14 +1370,19 @@ def render_basic_tab(
         else:
             table_entry["skeleton_displayed"] = True
     table_refs["placeholder"] = table_placeholder
+    table_entry_dataset = table_entry.get("dataset_hash")
     if (
         has_positions
-        and table_entry.get("dataset_hash") == dataset_token
+        and table_entry_dataset == dataset_token
         and table_entry.get("rendered")
     ):
         if table_lazy.get("status") != "loaded":
             table_lazy["status"] = "loaded"
-    if table_lazy.get("status") != "loaded":
+    if _should_reset_rendered_flag(
+        table_entry_dataset,
+        dataset_token,
+        table_lazy.get("status"),
+    ):
         table_entry["rendered"] = False
         previously_rendered_table = False
 
@@ -1486,12 +1505,17 @@ def render_basic_tab(
     charts_signature = (portfolio_id, chart_filters)
     charts_meta = _get_component_metadata(portfolio_id, chart_filters, tab_slug, "charts")
     charts_entry_hash = charts_entry.get("dataset_hash")
+    charts_entry_dataset = charts_entry.get("dataset_hash")
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
     charts_placeholder = charts_entry.get("body_placeholder") or charts_entry["placeholder"]
     charts_trigger_placeholder = charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
     charts_refs["placeholder"] = charts_placeholder
     previously_rendered_charts = bool(charts_entry.get("rendered"))
-    if charts_lazy.get("status") != "loaded":
+    if _should_reset_rendered_flag(
+        charts_entry_dataset,
+        dataset_token,
+        charts_lazy.get("status"),
+    ):
         charts_entry["rendered"] = False
         previously_rendered_charts = False
 
