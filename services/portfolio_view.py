@@ -9,7 +9,7 @@ import pickle
 import threading
 import time
 from collections import Counter, deque
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, replace
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
 
@@ -1046,6 +1046,7 @@ class PortfolioViewSnapshot:
     storage_id: str | None = None
     pending_metrics: tuple[str, ...] = field(default_factory=tuple)
     dataset_hash: str = ""
+    soft_refresh_guard: bool = False
 
 
 @dataclass(frozen=True)
@@ -1076,6 +1077,7 @@ class PortfolioViewModelService:
     def __init__(self, *, snapshot_backend: Any | None = None) -> None:
         self._snapshot: PortfolioViewSnapshot | None = None
         self._dataset_key: str | None = None
+        self._current_dataset_hash: str | None = None
         self._filters_key: str | None = None
         self._history_records: list[dict[str, float]] = []
         self._incremental_cache: dict[str, Any] = {}
@@ -1085,6 +1087,7 @@ class PortfolioViewModelService:
         self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = (
             _get_dataset_cache_adapter()
         )
+        self._soft_refresh_guard_active = False
         if self._dataset_cache_adapter is not None:
             try:
                 self._dataset_cache_adapter.clear()
@@ -1174,6 +1177,51 @@ class PortfolioViewModelService:
             )
         except Exception:
             logger.debug("No se pudo registrar el evento de snapshot", exc_info=True)
+
+    def _should_invalidate_cache(
+        self, dataset_hash: str | None, skip_invalidation: bool
+    ) -> bool:
+        """Return whether cache invalidation should run for this cycle."""
+
+        skip_flag = bool(skip_invalidation)
+        current_hash = self._current_dataset_hash or self._dataset_key
+        candidate_hash: str | None = str(dataset_hash) if dataset_hash else None
+        same_dataset = bool(candidate_hash and current_hash and candidate_hash == current_hash)
+
+        if skip_flag or same_dataset:
+            self._soft_refresh_guard_active = True
+            logger.info("[PortfolioView] Skipped early invalidate (dataset stable)")
+            logger.info(
+                "portfolio_view.skip_invalidation_guarded event=\"skip_invalidation_guarded\" dataset=%s skip_invalidation=%s current=%s",
+                candidate_hash,
+                skip_flag,
+                current_hash,
+            )
+            _log_dataset_cache_event(
+                "skip_invalidation_guarded",
+                candidate_hash,
+                skip_invalidation=skip_flag,
+                previous_dataset=current_hash,
+            )
+            try:
+                log_default_telemetry(
+                    phase="portfolio_view.skip_invalidation_guarded",
+                    elapsed_s=0.0,
+                    dataset_hash=candidate_hash,
+                    extra={
+                        "skip_invalidation": skip_flag,
+                        "previous_dataset": current_hash,
+                    },
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar telemetría para portfolio_view.skip_invalidation_guarded",
+                    exc_info=True,
+                )
+            return False
+
+        self._soft_refresh_guard_active = False
+        return True
 
     def _update_history(self, totals: PortfolioTotals) -> pd.DataFrame:
         entry = _history_row(time.time(), totals)
@@ -1410,6 +1458,7 @@ class PortfolioViewModelService:
         with self._snapshot_lock:
             self._snapshot = None
             self._dataset_key = dataset_key
+            self._current_dataset_hash = dataset_key
             self._filters_key = None
             self._history_records = []
             self._incremental_cache = {}
@@ -1525,9 +1574,16 @@ class PortfolioViewModelService:
         timestamp_bucket = _extract_quotes_timestamp(cli, psvc)
 
         skip_invalidation = bool(skip_invalidation)
+        self._soft_refresh_guard_active = False
         raw_dataset_changed = dataset_key != self._dataset_key
         dataset_changed = raw_dataset_changed and not skip_invalidation
         filters_changed = filters_key != self._filters_key
+
+        should_invalidate_cache = self._should_invalidate_cache(
+            dataset_key, skip_invalidation
+        )
+        if not should_invalidate_cache:
+            dataset_changed = False
 
         if skip_invalidation and dataset_key:
             logger.info(
@@ -1588,9 +1644,14 @@ class PortfolioViewModelService:
                 reason = "pending_metrics"
 
             if can_reuse_entry:
+                snapshot = replace(
+                    cached_entry.snapshot,
+                    soft_refresh_guard=self._soft_refresh_guard_active,
+                )
                 with self._snapshot_lock:
-                    self._snapshot = cached_entry.snapshot
+                    self._snapshot = snapshot
                     self._dataset_key = dataset_key
+                    self._current_dataset_hash = dataset_key
                     self._filters_key = filters_key
                     self._incremental_cache = dict(cached_entry.incremental_cache)
                     self._incremental_cache.setdefault(
@@ -1645,7 +1706,7 @@ class PortfolioViewModelService:
                         totals_elapsed=totals_stat,
                     )
                 _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=True)
-                return cached_entry.snapshot
+                return snapshot
 
             warm_entry = cached_entry
             _log_dataset_cache_event(
@@ -1658,9 +1719,9 @@ class PortfolioViewModelService:
                 timestamp_bucket=timestamp_bucket,
             )
 
-        if dataset_changed:
+        if dataset_changed and should_invalidate_cache:
             self.invalidate_positions(dataset_key)
-        elif filters_changed:
+        elif filters_changed and should_invalidate_cache:
             self.invalidate_filters(filters_key)
         with self._snapshot_lock:
             previous_snapshot = self._snapshot
@@ -1729,12 +1790,21 @@ class PortfolioViewModelService:
                         exc_info=True,
                     )
             _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=True)
+            snapshot = replace(
+                previous_snapshot,
+                soft_refresh_guard=self._soft_refresh_guard_active,
+            )
+            with self._snapshot_lock:
+                self._snapshot = snapshot
+                self._dataset_key = dataset_key
+                self._current_dataset_hash = dataset_key
+                self._filters_key = filters_key
             self._record_snapshot_event(
                 action="load",
                 status="reused",
                 storage_id=previous_snapshot.storage_id,
             )
-            return previous_snapshot
+            return snapshot
 
         positions_state: dict[str, Any] = {}
 
@@ -1792,6 +1862,7 @@ class PortfolioViewModelService:
             storage_id=storage_id,
             pending_metrics=pending_metrics,
             dataset_hash=dataset_key,
+            soft_refresh_guard=self._soft_refresh_guard_active,
         )
 
         total_blocks = len(incremental.reused_blocks) + len(incremental.recomputed_blocks)
@@ -1801,6 +1872,7 @@ class PortfolioViewModelService:
         with self._snapshot_lock:
             self._snapshot = snapshot
             self._dataset_key = dataset_key
+            self._current_dataset_hash = dataset_key
             self._filters_key = filters_key
             self._incremental_cache = {
                 "positions_df": incremental.df_view,

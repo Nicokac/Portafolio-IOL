@@ -117,6 +117,8 @@ def test_skip_invalidation_preserves_snapshot(monkeypatch):
     assert apply_calls == [False, True]
     assert len(invalidations) == 1, "no additional invalidations expected on soft refresh"
     assert ("skip_invalidation_applied", "hash-1") in events
+    assert ("skip_invalidation_guarded", "hash-1") in events
     assert snapshot_b.dataset_hash == "hash-1"
+    assert getattr(snapshot_b, "soft_refresh_guard", False) is True
 
     portfolio_view.reset_portfolio_cache_metrics()

@@ -69,7 +69,7 @@ class _DummySidebar:
         self.captions.append(value)
         self.elements.append({"type": "caption", "text": value})
 
-    def markdown(self, text: object) -> None:
+    def markdown(self, text: object, **_: Any) -> None:
         value = str(text)
         self.markdowns.append(value)
         self.elements.append({"type": "markdown", "text": value})
