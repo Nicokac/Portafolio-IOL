@@ -25,6 +25,7 @@ except Exception:  # pragma: no cover - defensive import fallback
     st = None  # type: ignore
 
 from infrastructure.iol.auth import get_current_user_id
+from shared.telemetry import is_hydration_locked
 from shared.user_actions import log_user_action
 
 logger = logging.getLogger(__name__)
@@ -63,11 +64,18 @@ class FragmentStateGuardian:
         """Record the dataset hash associated with the current render cycle."""
 
         self._cycle_dataset = str(dataset_hash or "")
+        if is_hydration_locked():
+            logger.debug("Hydration locked; deferring fragment restore for %s", self._cycle_dataset)
+            return
         self._maybe_restore_from_persistence()
 
     def prepare_persistent_restore(self) -> None:
         """Load persisted state for the current user into session memory."""
 
+        if is_hydration_locked():
+            logger.debug("Hydration locked; skipping persistent fragment restore preload")
+            self._clear_pending_restore()
+            return
         payload = self._load_persisted_snapshot()
         if payload is None:
             self._clear_pending_restore()
@@ -118,7 +126,7 @@ class FragmentStateGuardian:
         )
 
         rehydrated = False
-        if should_rehydrate:
+        if should_rehydrate and not is_hydration_locked():
             logger.debug(
                 "Fragment guardian rehydrating %s (component=%s, scope=%s)",
                 key,
@@ -520,6 +528,9 @@ def reset_fragment_state_guardian() -> None:
 def prepare_persistent_fragment_restore() -> None:
     """Best-effort helper to queue a persisted restore for the active user."""
 
+    if is_hydration_locked():
+        logger.debug("Hydration locked; skipping top-level fragment restore preparation")
+        return
     guardian = get_fragment_state_guardian()
     guardian.prepare_persistent_restore()
 
