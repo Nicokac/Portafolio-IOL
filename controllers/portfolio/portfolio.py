@@ -1372,14 +1372,12 @@ def render_basic_tab(
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
     table_entry_hash = table_entry.get("dataset_hash")
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
-    if soft_refresh_guard:
+    previously_rendered_table = bool(table_entry.get("rendered"))
+    table_guard_active = soft_refresh_guard and previously_rendered_table
+    if table_guard_active:
         table_entry["dataset_hash"] = dataset_token
-        table_entry["rendered"] = True
     table_placeholder = table_entry.get("body_placeholder") or table_entry["placeholder"]
     table_trigger_placeholder = table_entry.get("trigger_placeholder") or table_entry["placeholder"]
-    previously_rendered_table = bool(table_entry.get("rendered"))
-    if soft_refresh_guard:
-        previously_rendered_table = True
     table_entry.setdefault("signature", table_signature)
     if not previously_rendered_table and not table_entry.get("skeleton_displayed"):
         skeletons.mark_placeholder("table", placeholder=table_placeholder)
@@ -1402,7 +1400,7 @@ def render_basic_tab(
         table_entry_dataset,
         dataset_token,
         table_lazy.get("status"),
-        soft_refresh_guard=soft_refresh_guard,
+        soft_refresh_guard=table_guard_active,
     ):
         table_entry["rendered"] = False
         previously_rendered_table = False
