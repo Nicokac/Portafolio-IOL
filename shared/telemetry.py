@@ -44,6 +44,7 @@ _METRIC_COLUMNS = (
     "visual_cache_prewarm_ms",
     "lazy_loaded_component",
     "lazy_load_ms",
+    "portfolio.fragment_visible",
 )
 
 _TELEMETRY_DEBOUNCE_SECONDS = 0.3
