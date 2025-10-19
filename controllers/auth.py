@@ -10,6 +10,7 @@ from application.auth_service import get_auth_provider
 from infrastructure.iol.auth import InvalidCredentialsError
 from shared.visual_cache_prewarm import prewarm_visual_cache
 from shared.user_actions import log_user_action
+from shared.fragment_state import prepare_persistent_fragment_restore
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,10 @@ def build_iol_client() -> IIOLProvider | None:
             "user": _mask_username(session_user),
         },
     )
+    try:
+        prepare_persistent_fragment_restore()
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo preparar la restauración persistente de fragmentos", exc_info=True)
     return cli
 
 
