@@ -8,15 +8,14 @@ logger = logging.getLogger(__name__)
 
 
 def _as_float_or_none(x, log: bool = True) -> float | None:
-    try:
-        f = float(x)
-        if not np.isfinite(f):
-            return None
-        return f
-    except (TypeError, ValueError):
-        if log:
-            logger.debug("No se pudo convertir a float: %s", x)
+    """Convert the input to ``float`` if possible, handling localized formats."""
+
+    f = _to_float(x, log=log)
+    if f is None:
         return None
+    if not np.isfinite(f):
+        return None
+    return f
 
 def _is_none_nan_inf(x) -> bool:
     return _as_float_or_none(x) is None

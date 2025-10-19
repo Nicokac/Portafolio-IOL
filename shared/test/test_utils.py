@@ -7,6 +7,8 @@ import logging
 import pytest
 
 class _NumpyStub:
+    bool_ = bool
+
     @staticmethod
     def isfinite(x):
         try:
@@ -14,6 +16,10 @@ class _NumpyStub:
         except (TypeError, ValueError):
             return False
         return not (x != x or x in (float('inf'), float('-inf')))
+
+    @staticmethod
+    def isscalar(x):
+        return isinstance(x, (int, float))
 
 sys.modules.setdefault('numpy', _NumpyStub())
 
@@ -68,6 +74,10 @@ def test_to_float_invalid_no_log(caplog):
 
 def test_as_float_or_none_invalid_no_log():
     assert utils._as_float_or_none('abc', log=False) is None
+
+
+def test_as_float_or_none_handles_european_format():
+    assert utils._as_float_or_none('1.234,56') == pytest.approx(1234.56)
 
 
 def test_as_float_or_none_inf():
