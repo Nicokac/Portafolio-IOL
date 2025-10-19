@@ -63,6 +63,8 @@ def test_lazy_fragment_handles_decorator_api(monkeypatch: pytest.MonkeyPatch) ->
     fake_st = _DecoratorFragmentStreamlit()
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "_FRAGMENT_WARNING_EMITTED", False)
+    guardian = SimpleNamespace(wait_for_hydration=lambda *_, **__: True)
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     with lazy_runtime.lazy_fragment("portfolio_table", component="table") as fragment_ctx:
         assert fragment_ctx.scope == "fragment"
@@ -77,6 +79,8 @@ def test_lazy_fragment_fallback_without_fragment_api(
     fake_st = _NoFragmentStreamlit()
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "_FRAGMENT_WARNING_EMITTED", False)
+    guardian = SimpleNamespace(wait_for_hydration=lambda *_, **__: True)
+    monkeypatch.setattr(lazy_runtime, "get_fragment_state_guardian", lambda: guardian)
 
     caplog.set_level(logging.WARNING)
 

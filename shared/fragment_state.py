@@ -17,6 +17,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+from threading import Event, Lock
 from typing import Any, Dict, Tuple
 
 try:  # pragma: no cover - optional dependency during tests
@@ -56,6 +57,12 @@ class FragmentStateGuardian:
         self._pending_restore: Dict[str, Any] | None = self._load_pending_restore()
         self._pending_restore_consumed = False
         self._lazy_signature = _compute_lazy_modules_signature()
+        self._hydration_event: Event = Event()
+        self._hydration_event.set()
+        self._hydration_dataset: str = ""
+        self._hydration_started_at: float | None = None
+        self._hydration_log_emitted = False
+        self._hydration_state_lock: Lock = Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -63,11 +70,17 @@ class FragmentStateGuardian:
     def begin_cycle(self, dataset_hash: str | None) -> None:
         """Record the dataset hash associated with the current render cycle."""
 
-        self._cycle_dataset = str(dataset_hash or "")
+        dataset_token = str(dataset_hash or "")
+        self._cycle_dataset = dataset_token
+        self._start_hydration_cycle(dataset_token)
         if is_hydration_locked():
             logger.debug("Hydration locked; deferring fragment restore for %s", self._cycle_dataset)
+            self._mark_hydration_complete(dataset_token)
             return
-        self._maybe_restore_from_persistence()
+        try:
+            self._maybe_restore_from_persistence()
+        finally:
+            self._mark_hydration_complete(dataset_token)
 
     def prepare_persistent_restore(self) -> None:
         """Load persisted state for the current user into session memory."""
@@ -177,6 +190,8 @@ class FragmentStateGuardian:
         entry["dismissed"] = False
         entry["last_value"] = True
         entry["last_seen"] = time.time()
+        if dataset_hash:
+            self._mark_hydration_complete(str(dataset_hash))
 
     def mark_not_ready(
         self,
@@ -230,6 +245,62 @@ class FragmentStateGuardian:
         if refreshed:
             detail = {"dataset_hash": dataset_token, "fragments": sorted(refreshed)}
             logger.info("[Guardian] Soft refresh: dataset revalidated without rerun", extra=detail)
+        self._mark_hydration_complete(dataset_token)
+
+    def is_hydrated(self, dataset_hash: str | None = None) -> bool:
+        """Return whether the current cycle finished the hydration stage."""
+
+        dataset_token = str(dataset_hash or "")
+        with self._hydration_state_lock:
+            if dataset_token and dataset_token != self._hydration_dataset:
+                return self._hydration_event.is_set()
+        return self._hydration_event.is_set()
+
+    def wait_for_hydration(
+        self,
+        dataset_hash: str | None = None,
+        *,
+        timeout: float = 0.25,
+    ) -> bool:
+        """Block briefly until the guardian marks the fragment as hydrated."""
+
+        dataset_token = str(dataset_hash or "")
+        if not dataset_token:
+            dataset_token = self._resolve_dataset_hash()
+        event = self._hydration_event
+        should_wait = not event.is_set() and timeout > 0.0
+        should_log = False
+        with self._hydration_state_lock:
+            if dataset_token and dataset_token == self._hydration_dataset and not self._hydration_log_emitted:
+                should_log = True
+                self._hydration_log_emitted = True
+            elif not dataset_token and not self._hydration_log_emitted:
+                should_log = True
+                self._hydration_log_emitted = True
+            log_dataset = dataset_token or self._hydration_dataset
+        if should_log:
+            logger.info(
+                "[Guardian] hydration_wait_start",
+                extra={
+                    "dataset_hash": log_dataset,
+                    "timeout_ms": int(max(timeout, 0.0) * 1000),
+                },
+            )
+        start = time.perf_counter()
+        if should_wait:
+            event.wait(timeout)
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        hydrated = event.is_set()
+        if should_log:
+            logger.info(
+                "[Guardian] hydration_wait_end",
+                extra={
+                    "dataset_hash": log_dataset,
+                    "elapsed_ms": elapsed_ms,
+                    "hydrated": hydrated,
+                },
+            )
+        return hydrated
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -277,6 +348,23 @@ class FragmentStateGuardian:
         entry["scope"] = scope or "global"
         entry["fallback_key"] = fallback_key
         return entry
+
+    def _start_hydration_cycle(self, dataset_token: str) -> None:
+        with self._hydration_state_lock:
+            self._hydration_dataset = dataset_token
+            self._hydration_started_at = time.time()
+            self._hydration_log_emitted = False
+            if dataset_token:
+                self._hydration_event.clear()
+            else:
+                self._hydration_event.set()
+
+    def _mark_hydration_complete(self, dataset_token: str) -> None:
+        with self._hydration_state_lock:
+            if dataset_token and dataset_token != self._hydration_dataset:
+                self._hydration_dataset = dataset_token
+            self._hydration_event.set()
+            self._hydration_started_at = None
 
     def _read_flag(self, name: str | None) -> Tuple[bool, bool]:
         if not name or st is None:
