@@ -21,7 +21,15 @@ def _reset_metrics() -> None:
 def portfolio_service(monkeypatch):
     counter = {"apply_calls": 0}
 
-    def _fake_apply_filters(df_pos, controls, cli, psvc, *, dataset_hash=None):  # noqa: ANN001
+    def _fake_apply_filters(
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash=None,
+        skip_invalidation=False,
+    ):  # noqa: ANN001
         counter["apply_calls"] += 1
         df = df_pos.copy()
         df["valor_actual"] = 100.0

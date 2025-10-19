@@ -305,6 +305,10 @@ class PortfolioDataFetchService:
                 previous_hash = getattr(previous.dataset, "dataset_hash", None)
                 if previous_hash == dataset.dataset_hash:
                     state.skip_invalidation = True
+                    logger.info(
+                        "portfolio_data_fetch event=\"skip_invalidation\" dataset_hash=%s",
+                        dataset.dataset_hash,
+                    )
                 else:
                     state.skip_invalidation = False
             self._store_state(state)

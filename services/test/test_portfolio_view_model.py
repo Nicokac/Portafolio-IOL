@@ -23,7 +23,7 @@ def test_get_portfolio_view_caches_apply_filters(monkeypatch):
 
     calls = {"count": 0}
 
-    def fake_apply(df, controls, cli, psvc):
+    def fake_apply(df, controls, cli, psvc, *, dataset_hash=None, skip_invalidation=False):
         calls["count"] += 1
         return df_view
 
@@ -60,7 +60,7 @@ def test_dataset_change_invalidates_cache(monkeypatch):
         }),
     ]
 
-    def fake_apply(df, controls, cli, psvc):
+    def fake_apply(df, controls, cli, psvc, *, dataset_hash=None, skip_invalidation=False):
         return outputs.pop(0)
 
     monkeypatch.setattr("services.portfolio_view._apply_filters", fake_apply)
@@ -87,7 +87,7 @@ def test_filter_change_triggers_recomputation(monkeypatch):
 
     calls = {"count": 0}
 
-    def fake_apply(df, controls, cli, psvc):
+    def fake_apply(df, controls, cli, psvc, *, dataset_hash=None, skip_invalidation=False):
         calls["count"] += 1
         return df_view
 

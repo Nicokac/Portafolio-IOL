@@ -2080,6 +2080,10 @@ def render_portfolio_section(
                     exc_info=True,
                 )
                 precomputed_dataset_hash = None
+        skip_invalidation_flag = bool(
+            st.session_state.pop("_dataset_skip_invalidation", False)
+        )
+
         with _record_stage("build_viewmodel", timings):
             snapshot = view_model_service.get_portfolio_view(
                 df_pos=df_pos,
@@ -2088,6 +2092,7 @@ def render_portfolio_section(
                 psvc=psvc,
                 lazy_metrics=lazy_metrics,
                 dataset_hash=precomputed_dataset_hash,
+                skip_invalidation=skip_invalidation_flag,
             )
 
             viewmodel = build_portfolio_viewmodel(
@@ -2132,9 +2137,6 @@ def render_portfolio_section(
         if controls_changed:
             log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
         manual_refresh_flag = bool(st.session_state.pop("refresh_pending", False))
-        skip_invalidation_flag = bool(
-            st.session_state.pop("_dataset_skip_invalidation", False)
-        )
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
         if (
             previous_hash
@@ -2162,8 +2164,26 @@ def render_portfolio_section(
             visual_entry["dataset_hash"] = dataset_hash
             visual_entry["last_seen"] = time.time()
 
-        if manual_refresh_flag and skip_invalidation_flag:
+        if skip_invalidation_flag:
+            if dataset_hash:
+                logger.info(
+                    "[Guardian] Soft refresh intercepted before UI reset",
+                    extra={"dataset_hash": dataset_hash},
+                )
             fragment_state_soft_refresh(dataset_hash=dataset_hash)
+            try:
+                st.session_state["_soft_refresh_applied"] = True
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar el soft refresh activo", exc_info=True
+                )
+        else:
+            try:
+                st.session_state.pop("_soft_refresh_applied", None)
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo limpiar la marca de soft refresh", exc_info=True
+                )
 
         if manual_refresh_flag:
             last_refresh = st.session_state.get(_REFRESH_LOG_STATE_KEY)
