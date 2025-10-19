@@ -726,9 +726,13 @@ def _should_reset_rendered_flag(
     entry_dataset: str | None,
     dataset_token: str,
     status: str | None,
+    *,
+    soft_refresh_guard: bool = False,
 ) -> bool:
     """Return whether the component render flag should reset for this dataset."""
 
+    if soft_refresh_guard:
+        return False
     if not dataset_token:
         return False
     if entry_dataset != dataset_token:
@@ -1238,6 +1242,7 @@ def render_basic_tab(
     ccl_rate = getattr(metrics, "ccl_rate", None)
     pending_metrics = tuple(getattr(viewmodel, "pending_metrics", ()) or ())
     pending_extended = "extended_metrics" in pending_metrics
+    soft_refresh_guard = bool(getattr(snapshot, "soft_refresh_guard", False))
 
     if lazy_metrics and pending_extended:
         with st.spinner("Calculando métricas extendidas del portafolio..."):
@@ -1358,9 +1363,15 @@ def render_basic_tab(
     table_meta = _get_component_metadata(portfolio_id, table_filters, tab_slug, "table")
     table_entry_hash = table_entry.get("dataset_hash")
     table_entry.setdefault("dataset_hash", table_entry_hash or dataset_token)
+    if soft_refresh_guard:
+        table_entry["dataset_hash"] = dataset_token
+        table_entry["rendered"] = True
     table_placeholder = table_entry.get("body_placeholder") or table_entry["placeholder"]
     table_trigger_placeholder = table_entry.get("trigger_placeholder") or table_entry["placeholder"]
     previously_rendered_table = bool(table_entry.get("rendered"))
+    if soft_refresh_guard:
+        previously_rendered_table = True
+    table_entry.setdefault("signature", table_signature)
     if not previously_rendered_table and not table_entry.get("skeleton_displayed"):
         skeletons.mark_placeholder("table", placeholder=table_placeholder)
         try:
@@ -1382,6 +1393,7 @@ def render_basic_tab(
         table_entry_dataset,
         dataset_token,
         table_lazy.get("status"),
+        soft_refresh_guard=soft_refresh_guard,
     ):
         table_entry["rendered"] = False
         previously_rendered_table = False
@@ -1515,6 +1527,7 @@ def render_basic_tab(
         charts_entry_dataset,
         dataset_token,
         charts_lazy.get("status"),
+        soft_refresh_guard=soft_refresh_guard,
     ):
         charts_entry["rendered"] = False
         previously_rendered_charts = False
@@ -2108,6 +2121,14 @@ def render_portfolio_section(
             st.session_state.pop("_dataset_skip_invalidation", False)
         )
 
+        if skip_invalidation_flag:
+            logger.info(
+                "[Guardian] Prevented pre-render cache invalidation",
+                extra={"dataset_hash": precomputed_dataset_hash},
+            )
+
+        soft_refresh_guard = False
+
         with _record_stage("build_viewmodel", timings):
             snapshot = view_model_service.get_portfolio_view(
                 df_pos=df_pos,
@@ -2117,6 +2138,10 @@ def render_portfolio_section(
                 lazy_metrics=lazy_metrics,
                 dataset_hash=precomputed_dataset_hash,
                 skip_invalidation=skip_invalidation_flag,
+            )
+
+            soft_refresh_guard = bool(
+                getattr(snapshot, "soft_refresh_guard", False)
             )
 
             viewmodel = build_portfolio_viewmodel(
@@ -2188,7 +2213,7 @@ def render_portfolio_section(
             visual_entry["dataset_hash"] = dataset_hash
             visual_entry["last_seen"] = time.time()
 
-        if skip_invalidation_flag:
+        if soft_refresh_guard:
             if dataset_hash:
                 logger.info(
                     "[Guardian] Soft refresh intercepted before UI reset",
