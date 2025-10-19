@@ -26,6 +26,10 @@ def mock_st(monkeypatch):
         LineChartColumn=lambda *a, **k: None,
     )
     monkeypatch.setattr(tables, "st", mock)
+    monkeypatch.setattr(tables, "ensure_fragment_ready_script", MagicMock())
+    monkeypatch.setattr(tables, "register_fragment_ready", MagicMock())
+    monkeypatch.setattr(tables, "mark_fragment_ready", MagicMock())
+    monkeypatch.setattr(tables, "emit_fragment_ready", MagicMock())
     return mock
 
 
@@ -121,6 +125,43 @@ def test_render_table_search_and_usd_projection(mock_st):
     assert len(df_rendered) == 1
     assert "val_usd_num" in df_rendered.columns
     assert df_rendered.iloc[0]["val_usd_num"] == 10
+
+
+def test_render_table_resets_search_on_dataset_change(mock_st):
+    df = pd.DataFrame({
+        "simbolo": ["ALUA"],
+        "tipo": ["ACC"],
+        "cantidad": [1],
+        "ultimo": [100.0],
+        "valor_actual": [100.0],
+        "costo": [90.0],
+        "pl": [10.0],
+        "pl_%": [11.1],
+        "pl_d": [1.0],
+        "chg_%": [0.5],
+    })
+    mock_st.session_state = {
+        tables._DATASET_HASH_STATE_KEY: "hash-new",
+        tables._SEARCH_DATASET_STATE_KEY: "hash-old",
+        tables._SEARCH_WIDGET_KEY: "alua",
+    }
+    mock_st.text_input.return_value = ""
+    palette = SimpleNamespace(
+        bg="",
+        text="",
+        highlight_bg="",
+        highlight_text="",
+        negative="red",
+        positive="green",
+    )
+    with patch.object(tables, "get_active_palette", return_value=palette), \
+         patch.object(tables, "download_csv"):
+        tables.render_table(df, order_by="simbolo", desc=False)
+    assert tables._SEARCH_WIDGET_KEY not in mock_st.session_state
+    assert mock_st.session_state.get(tables._SEARCH_DATASET_STATE_KEY) == "hash-new"
+    mock_st.text_input.assert_called_once_with(
+        "Buscar", "", key=tables._SEARCH_WIDGET_KEY
+    )
 
 
 def test_color_pl_styles(mock_st):
