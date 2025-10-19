@@ -60,8 +60,7 @@ def register_fragment_auto_load_context(
     """Record whether the current fragment should auto load implicitly."""
 
     allow_auto_load = True
-    if scope == "global" and (fragment_factory_builder is None or not context_ready):
-        # Evita marcar auto_loaded si el contexto no estuvo listo
+    if scope == "fragment" and fragment_factory_builder is not None and context_ready:
         allow_auto_load = False
     return _AUTO_LOAD_GUARD.set(allow_auto_load)
 
@@ -78,9 +77,9 @@ def reset_fragment_auto_load_context(token: Token[bool] | None) -> None:
 
 
 def should_auto_load_fragment(scope: str | None) -> bool:
-    """Return whether global-scope fragments should auto load by default."""
+    """Return whether fallback fragments should auto load by default."""
 
-    if scope != "global":
+    if scope not in {"global", "form"}:
         return False
     return bool(_AUTO_LOAD_GUARD.get(True))
 
