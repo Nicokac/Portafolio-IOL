@@ -9,6 +9,8 @@ from dataclasses import dataclass
 import time
 from typing import Any, Iterator
 
+from textwrap import dedent
+
 import streamlit as st
 
 from shared.fragment_state import (
@@ -26,6 +28,8 @@ _FRAGMENT_CONTEXT_TIMEOUT_S = 0.25
 _FRAGMENT_CONTEXT_POLL_INTERVAL_S = 0.05
 _FRAGMENT_CONTEXT_RERUN_DATASETS: set[str] = set()
 _PERSISTENT_PLACEHOLDERS: dict[str, Any] = {}
+_FRAGMENT_READY_STATE_KEY = "_lazy_fragment_ready_state"
+_FRONTEND_HOOK_KEY_PREFIX = "_lazy_fragment_hook::"
 
 _SCOPE: ContextVar[str | None] = ContextVar("ui_lazy_fragment_scope", default=None)
 _COMPONENT: ContextVar[str | None] = ContextVar("ui_lazy_fragment_component", default=None)
@@ -142,6 +146,8 @@ def lazy_fragment(
     fragment_factory_builder = _fragment_factory()
     form_callable = None if fragment_factory_builder else _form_callable()
     context_ready = True
+
+    _ensure_frontend_hook(name)
 
     if fragment_factory_builder is not None:
         context_ready = _wait_for_fragment_context_ready(
@@ -449,6 +455,7 @@ def _wait_for_fragment_context_ready(
     timeout: float,
     poll_interval: float,
 ) -> bool:
+    _update_fragment_ready_from_state(fragment, dataset_hash)
     start = time.perf_counter()
     logger.info(
         "[LazyRuntime] wait_for_fragment_context_start",
@@ -563,3 +570,188 @@ def _record_fragment_visibility(*, component: str, dataset_hash: str, visible: b
             component,
             exc_info=True,
         )
+
+
+def register_fragment_ready(
+    fragment_id: str,
+    *,
+    dataset_hash: str | None = None,
+    visible: bool = True,
+) -> None:
+    """Record that a front-end fragment finished hydrating."""
+
+    if not fragment_id:
+        return
+
+    global fragment_context_ready
+    fragment_context_ready = bool(visible)
+
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:
+        state = None
+
+    if state is None:
+        return
+
+    try:
+        registry = state.setdefault(_FRAGMENT_READY_STATE_KEY, {})
+        if not isinstance(registry, dict):
+            registry = {}
+            state[_FRAGMENT_READY_STATE_KEY] = registry
+    except Exception:  # pragma: no cover - defensive safeguard for session state
+        return
+
+    payload: dict[str, Any] = {"visible": bool(visible), "timestamp": time.time()}
+    if dataset_hash:
+        payload["dataset_hash"] = str(dataset_hash)
+
+    try:
+        registry[fragment_id] = payload
+    except Exception:  # pragma: no cover - defensive safeguard for unexpected values
+        logger.debug(
+            "[LazyRuntime] failed_to_store_fragment_ready fragment=%s", fragment_id, exc_info=True
+        )
+
+
+def ensure_fragment_ready_script(fragment_id: str) -> None:
+    """Inject the JS hook allowing fragments to notify readiness."""
+
+    if not fragment_id:
+        return
+
+    state_key = f"{_FRONTEND_HOOK_KEY_PREFIX}{fragment_id}"
+    try:
+        state = getattr(st, "session_state", None)
+        if state is not None and state.get(state_key):
+            return
+    except Exception:  # pragma: no cover - defensive safeguard for session state access
+        state = None
+
+    script = dedent(
+        f"""
+        <script>
+        (function() {{
+          const fragmentId = {fragment_id!r};
+
+          function resolveStreamlit() {{
+            if (window.Streamlit && typeof window.Streamlit.setComponentValue === "function") {{
+              return window.Streamlit;
+            }}
+            if (window.parent && window.parent.Streamlit &&
+                typeof window.parent.Streamlit.setComponentValue === "function") {{
+              return window.parent.Streamlit;
+            }}
+            return null;
+          }}
+
+          function installHook() {{
+            if (typeof window.streamlitSendFragmentReady === "function") {{
+              return;
+            }}
+            const bridge = resolveStreamlit();
+            if (!bridge) {{
+              return;
+            }}
+            window.streamlitSendFragmentReady = function(fragment) {{
+              if (!fragment) {{
+                return;
+              }}
+              try {{
+                bridge.setComponentValue({{
+                  event: "fragment_context_ready",
+                  fragment_id: fragment,
+                  visible: true,
+                }});
+              }} catch (err) {{
+                console.debug("[lazy_runtime] setComponentValue failed", err);
+              }}
+            }};
+          }}
+
+          function notifyReady() {{
+            if (typeof window.streamlitSendFragmentReady === "function") {{
+              window.streamlitSendFragmentReady(fragmentId);
+            }}
+          }}
+
+          if (document.readyState === "loading") {{
+            document.addEventListener("DOMContentLoaded", function onReady() {{
+              installHook();
+              notifyReady();
+            }}, {{ once: true }});
+          }} else {{
+            installHook();
+            notifyReady();
+          }}
+        }})();
+        </script>
+        """
+    )
+
+    _render_html_script(script, key=state_key)
+
+    if state is not None:
+        try:
+            state[state_key] = True
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+
+
+def _render_html_script(script: str, *, key: str) -> None:
+    try:
+        from streamlit.components.v1 import html
+    except Exception:  # pragma: no cover - Streamlit components optional during tests
+        html = None
+
+    if html is not None:
+        try:
+            html(script, height=0, key=key)
+            return
+        except Exception:  # pragma: no cover - fallback to markdown injection
+            logger.debug("[LazyRuntime] html_component_injection_failed", exc_info=True)
+
+    try:
+        st.markdown(script, unsafe_allow_html=True)
+    except Exception:  # pragma: no cover - defensive safeguard when stubs lack markdown
+        logger.debug("[LazyRuntime] markdown_injection_failed", exc_info=True)
+
+
+def _ensure_frontend_hook(fragment_id: str) -> None:
+    try:
+        ensure_fragment_ready_script(fragment_id)
+    except Exception:  # pragma: no cover - defensive safeguard for optional frontend
+        logger.debug("[LazyRuntime] unable_to_inject_frontend_hook", exc_info=True)
+
+
+def _update_fragment_ready_from_state(fragment: str, dataset_hash: str) -> None:
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:
+        state = None
+
+    if state is None:
+        return
+
+    try:
+        registry = state.get(_FRAGMENT_READY_STATE_KEY)
+    except Exception:  # pragma: no cover - defensive safeguard
+        registry = None
+
+    if not isinstance(registry, dict):
+        return
+
+    payload = registry.get(fragment)
+    if not isinstance(payload, dict):
+        return
+
+    visible = payload.get("visible")
+    if not isinstance(visible, bool):
+        return
+
+    stored_dataset = payload.get("dataset_hash")
+    if stored_dataset and str(stored_dataset) != str(dataset_hash or ""):
+        return
+
+    global fragment_context_ready
+    fragment_context_ready = visible
