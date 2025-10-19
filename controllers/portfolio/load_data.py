@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import time
 from collections import OrderedDict, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -425,9 +426,16 @@ def load_portfolio_data(cli, psvc):
     metadata: DatasetMetadata | None = None
     tokens_path = getattr(getattr(cli, "auth", None), "tokens_path", None)
 
+    silent_refresh = bool(st.session_state.pop("ui_refresh_silent", False))
+
     dataset, metadata = service.peek_dataset()
-    if dataset is None:
-        with st.spinner("Cargando y actualizando portafolio... ⏳"):
+    if dataset is None or metadata is None or silent_refresh:
+        spinner_label = (
+            "Actualizando datos del portafolio... ⏳"
+            if (dataset is not None and metadata is not None)
+            else "Cargando y actualizando portafolio... ⏳"
+        )
+        with st.spinner(spinner_label):
             telemetry: dict[str, object] = {"status": "success", "source": "api"}
             try:
                 with performance_timer("portfolio_load_data", extra=telemetry):
@@ -448,10 +456,22 @@ def load_portfolio_data(cli, psvc):
                 )
                 st.error("No se pudo cargar el portafolio, intente más tarde")
                 st.stop()
+        if silent_refresh:
+            try:
+                st.session_state["last_refresh"] = time.time()
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo actualizar last_refresh tras refresh silencioso", exc_info=True)
+            st.session_state["show_refresh_toast"] = True
     else:
         assert metadata is not None  # for type checkers
         if metadata.stale:
             service.schedule_refresh(cli, psvc)
+
+    skip_invalidation = bool(getattr(metadata, "skip_invalidation", False))
+    try:
+        st.session_state["_dataset_skip_invalidation"] = skip_invalidation
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo persistir el flag de invalidación del dataset", exc_info=True)
 
     if dataset is None or metadata is None:
         st.error("No se pudo cargar el portafolio")

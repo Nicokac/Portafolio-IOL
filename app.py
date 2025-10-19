@@ -904,6 +904,20 @@ def main(argv: list[str] | None = None):
         recommendations_tab = main_col
         monitoring_tab = main_col
 
+    config_panel = st.sidebar.expander("⚙️ Configuración general", expanded=False)
+    with config_panel:
+        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+        st.markdown("### 🎛️ Panel de control")
+        st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
+        st.markdown(f"**🕒 {TimeProvider.now()}**")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        render_action_menu(container=config_panel)
+
+        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
+        render_ui_controls(container=config_panel)
+        st.markdown("</div>", unsafe_allow_html=True)
+
     refresh_secs = render_portfolio_ui(
         portfolio_tab,
         cli,
@@ -920,19 +934,8 @@ def main(argv: list[str] | None = None):
         render_recommendations_tab()
         render_health_monitor_tab(main_col, metrics=health_metrics)
 
-    config_panel = st.sidebar.expander("⚙️ Configuración general", expanded=False)
-    with config_panel:
-        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
-        st.markdown("### 🎛️ Panel de control")
-        st.caption("Consulta el estado de la sesión y ejecuta acciones clave.")
-        st.markdown(f"**🕒 {TimeProvider.now()}**")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        render_action_menu(container=config_panel)
-
-        st.markdown("<div class='control-panel__section'>", unsafe_allow_html=True)
-        render_ui_controls(container=config_panel)
-        st.markdown("</div>", unsafe_allow_html=True)
+    if st.session_state.pop("show_refresh_toast", False):
+        st.toast("Datos actualizados", icon="✅")
     if not st.session_state.get("iol_startup_metric_logged"):
         login_ts_raw = st.session_state.get("iol_login_ok_ts")
         try:

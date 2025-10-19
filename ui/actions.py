@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 import streamlit as st
 
 from application import auth_service
@@ -25,7 +24,7 @@ def render_action_menu(container=None) -> None:
         c1, c2 = st.columns(2)
         if c1.button("⟳ Refrescar", width="stretch", type="secondary"):
             st.session_state["refresh_pending"] = True
-            st.rerun()
+            st.session_state["ui_refresh_silent"] = True
         if c2.button(
             "🔒 Cerrar sesión",
             width="stretch",
@@ -35,12 +34,6 @@ def render_action_menu(container=None) -> None:
             st.session_state["logout_pending"] = True
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-
-    if st.session_state.pop("refresh_pending", False):
-        with st.spinner("Actualizando datos..."):
-            st.session_state["last_refresh"] = time.time()
-        st.session_state["show_refresh_toast"] = True
-        st.rerun()
 
     if st.session_state.get("logout_pending", False):
         st.markdown(
@@ -60,9 +53,6 @@ def render_action_menu(container=None) -> None:
             logger.exception("Error inesperado al cerrar sesión")
             st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
             st.stop()
-
-    if st.session_state.pop("show_refresh_toast", False):
-        st.toast("Datos actualizados", icon="✅")
 
     if st.session_state.pop("logout_done", False):
         st.success("Sesión cerrada")
