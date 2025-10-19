@@ -24,6 +24,57 @@ logger = logging.getLogger(__name__)
 
 fragment_context_ready: bool = True
 
+
+def emit_fragment_ready(fragment_id: str) -> None:
+    """Emit a fragment_context_ready event via backend JS injection."""
+
+    if not fragment_id:
+        logger.debug("[LazyRuntime] emit_fragment_ready called without fragment_id")
+        return
+
+    try:
+        from streamlit_javascript import st_javascript
+    except Exception as import_error:  # pragma: no cover - optional dependency in tests
+        logger.warning(
+            "[LazyRuntime] JS emit unavailable for %s: %s",
+            fragment_id,
+            import_error,
+            exc_info=True,
+        )
+        return
+
+    js = f"""
+    if (window.parent && window.parent.postMessage) {{
+        window.parent.postMessage({{
+            event: 'fragment_context_ready',
+            fragment_id: '{fragment_id}',
+            visible: true
+        }}, '*');
+    }} else if (window.Streamlit) {{
+        window.Streamlit.setComponentValue({{
+            event: 'fragment_context_ready',
+            fragment_id: '{fragment_id}',
+            visible: true
+        }});
+    }} else if (typeof Streamlit !== 'undefined') {{
+        Streamlit.setComponentValue({{
+            event: 'fragment_context_ready',
+            fragment_id: '{fragment_id}',
+            visible: true
+        }});
+    }} else {{
+        console.warn('No Streamlit bridge detected for fragment: {fragment_id}');
+    }}
+    """
+
+    try:
+        st_javascript(js)
+        logger.info("[LazyRuntime] JS emit success for %s", fragment_id)
+    except Exception as exc:  # pragma: no cover - integration with frontend
+        logger.warning(
+            "[LazyRuntime] JS emit failed for %s: %s", fragment_id, exc, exc_info=True
+        )
+
 _FRAGMENT_CONTEXT_TIMEOUT_S = 0.25
 _FRAGMENT_CONTEXT_POLL_INTERVAL_S = 0.05
 _FRAGMENT_CONTEXT_RERUN_DATASETS: set[str] = set()

@@ -1,6 +1,7 @@
 # This file is auto-generated from pyproject.toml.
 # Run `python scripts/sync_requirements.py` after editing [project.dependencies].
 streamlit>=1.49.1
+streamlit-javascript
 fastapi>=0.115.0
 uvicorn>=0.30.1
 python-multipart>=0.0.6
