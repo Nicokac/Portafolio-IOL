@@ -1,98 +1,33 @@
-import importlib
-import logging
-import time
-from functools import lru_cache
+"""Controller for authentication orchestration."""
 
-import streamlit as st
+from __future__ import annotations
 
 from infrastructure.iol.client import IIOLProvider
-from application.auth_service import get_auth_provider
-from infrastructure.iol.auth import InvalidCredentialsError
-from shared.visual_cache_prewarm import prewarm_visual_cache
-from shared.user_actions import log_user_action
-from shared.fragment_state import prepare_persistent_fragment_restore
 
-logger = logging.getLogger(__name__)
+from services.auth_client import build_client, get_auth_provider
+from ui.adapters import auth_ui
 
 LOGIN_AUTH_TIMESTAMP_KEY = "_login_authenticated_at"
 
 
-@lru_cache(maxsize=1)
-def _get_performance_timer():
-    module = importlib.import_module("services.performance_timer")
-    return getattr(module, "performance_timer")
-
-
-def _mask_username(value: str | None) -> str:
-    username = (value or "").strip()
-    if not username:
-        return "anon"
-    if len(username) <= 3:
-        return username[:1] + "**"
-    return f"{username[:3]}***"
-
-
 def build_iol_client() -> IIOLProvider | None:
+    """Coordinate between the auth client service and the UI adapter."""
+
+    session_user = auth_ui.get_session_username()
     provider = get_auth_provider()
-    telemetry: dict[str, object] = {
-        "provider": provider.__class__.__name__,
-        "status": "success",
-    }
-    session_user = st.session_state.get("IOL_USERNAME")
-    if session_user:
-        telemetry["user"] = _mask_username(str(session_user))
-    with _get_performance_timer()("token_refresh", extra=telemetry):
-        try:
-            cli, error = provider.build_client()
-        except Exception:
-            telemetry["status"] = "error"
-            raise
-        if error is not None:
-            telemetry["status"] = "error"
-    if error:
-        logger.exception("build_iol_client failed", exc_info=error)
-        if isinstance(error, InvalidCredentialsError):
-            st.session_state["login_error"] = "Credenciales inválidas"
-            log_user_action(
-                "session_timeout",
-                {
-                    "provider": telemetry["provider"],
-                    "user": _mask_username(session_user),
-                },
-            )
-        else:
-            st.session_state["login_error"] = "Error de conexión"
-            log_user_action(
-                "login_error",
-                {
-                    "provider": telemetry["provider"],
-                    "user": _mask_username(session_user),
-                },
-            )
-        st.session_state["force_login"] = True
-        st.rerun()
+    result = build_client(session_user, provider=provider)
+
+    if result.error:
+        auth_ui.set_login_error(result.error_message)
+        if result.should_force_login:
+            auth_ui.set_force_login(True)
+        auth_ui.rerun()
         return None
-    st.session_state["authenticated"] = True
-    try:
-        st.session_state[LOGIN_AUTH_TIMESTAMP_KEY] = time.perf_counter()
-    except Exception:  # pragma: no cover - session_state may be read-only in tests
-        logger.debug("No se pudo registrar el timestamp de autenticación", exc_info=True)
-    try:
-        prewarm_visual_cache()
-    except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug("No se pudo precalentar la caché visual tras el login", exc_info=True)
-    log_user_action(
-        "login_success",
-        {
-            "provider": telemetry["provider"],
-            "user": _mask_username(session_user),
-        },
-    )
-    try:
-        prepare_persistent_fragment_restore()
-    except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug("No se pudo preparar la restauración persistente de fragmentos", exc_info=True)
-    return cli
+
+    auth_ui.mark_authenticated()
+    auth_ui.record_auth_timestamp(LOGIN_AUTH_TIMESTAMP_KEY)
+    auth_ui.set_login_error(None)
+    return result.client
 
 
 __all__ = ["build_iol_client", "LOGIN_AUTH_TIMESTAMP_KEY"]
