@@ -8,357 +8,82 @@ import math
 from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 import time
 
-import streamlit as st
-
-from shared.settings import cache_ttl_fx
-
-
-_HEALTH_KEY = "health_metrics"
-_MARKET_DATA_INCIDENTS_KEY = "market_data_incidents"
-_MARKET_DATA_INCIDENT_LIMIT = 20
-_LATENCY_FAST_THRESHOLD_MS = 250.0
-_LATENCY_MEDIUM_THRESHOLD_MS = 750.0
-_PROVIDER_HISTORY_LIMIT = 8
-_TAB_LATENCIES_KEY = "tab_latencies"
-_TAB_LATENCY_HISTORY_LIMIT = 32
-_ADAPTER_FALLBACK_KEY = "adapter_fallbacks"
-_RISK_INCIDENTS_KEY = "risk_incidents"
-_RISK_INCIDENT_HISTORY_LIMIT = 50
-_QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"
-_SNAPSHOT_EVENT_KEY = "snapshot_event"
-_ENVIRONMENT_SNAPSHOT_KEY = "environment_snapshot"
-_DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"
-_PORTFOLIO_HISTORY_LIMIT = 32
-_QUOTE_HISTORY_LIMIT = 32
-_FX_API_HISTORY_LIMIT = 32
-_FX_CACHE_HISTORY_LIMIT = 32
-_DIAGNOSTICS_SNAPSHOT_KEY = "diagnostics_snapshot"
-_SESSION_MONITORING_KEY = "session_monitoring"
-_ACTIVE_SESSIONS_KEY = "active_sessions"
-_LOGIN_TO_RENDER_STATS_KEY = "login_to_render"
-_LAST_HTTP_ERROR_KEY = "last_http_error"
-_SESSION_MONITORING_TTL_SECONDS = 300.0
-_DEPENDENCIES_KEY = "dependencies"
+from .constants import (
+    _ACTIVE_SESSIONS_KEY,
+    _ADAPTER_FALLBACK_KEY,
+    _DEPENDENCIES_KEY,
+    _DIAGNOSTICS_SNAPSHOT_KEY,
+    _ENVIRONMENT_SNAPSHOT_KEY,
+    _FX_API_HISTORY_LIMIT,
+    _FX_CACHE_HISTORY_LIMIT,
+    _HEALTH_KEY,
+    _LAST_HTTP_ERROR_KEY,
+    _LATENCY_FAST_THRESHOLD_MS,
+    _LATENCY_MEDIUM_THRESHOLD_MS,
+    _LOGIN_TO_RENDER_STATS_KEY,
+    _MARKET_DATA_INCIDENT_LIMIT,
+    _MARKET_DATA_INCIDENTS_KEY,
+    _PORTFOLIO_HISTORY_LIMIT,
+    _PROVIDER_HISTORY_LIMIT,
+    _PROVIDER_LABELS,
+    _QUOTE_HISTORY_LIMIT,
+    _QUOTE_PROVIDER_HISTORY_LIMIT,
+    _QUOTE_RATE_LIMIT_KEY,
+    _RISK_INCIDENTS_KEY,
+    _RISK_INCIDENT_HISTORY_LIMIT,
+    _SESSION_MONITORING_KEY,
+    _SESSION_MONITORING_TTL_SECONDS,
+    _SNAPSHOT_EVENT_KEY,
+    _TAB_LATENCIES_KEY,
+    _TAB_LATENCY_HISTORY_LIMIT,
+)
+from .metrics_fx import (
+    fx_metrics_snapshot,
+    record_fx_api_response,
+    record_fx_cache_usage,
+)
+from .metrics_portfolio import (
+    portfolio_metrics_snapshot,
+    record_portfolio_load,
+)
+from .session_adapter import (
+    ensure_session_monitoring_store as _ensure_session_monitoring_store,
+    get_store as _store,
+    record_http_error,
+    record_login_to_render,
+    record_session_started,
+    st,
+)
+from .snapshots import (
+    record_environment_snapshot,
+    record_snapshot_event,
+    snapshot_event_summary,
+)
+from .telemetry import log_analysis_event as _log_analysis_event
+from .utils import (
+    _as_optional_float,
+    _as_optional_int,
+    _clean_detail,
+    _compute_ratio_map,
+    _ensure_event_history,
+    _ensure_history_deque,
+    _ensure_latency_history,
+    _ensure_sequence,
+    _merge_entry,
+    _normalize_backend_details,
+    _normalize_counter_map,
+    _normalize_environment_snapshot,
+    _normalize_metadata,
+    _serialize_event_history,
+    _summarize_metric_block,
+)
 
 
 logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
 
-_PROVIDER_LABELS = {
-    "alpha_vantage": "Alpha Vantage",
-    "av": "Alpha Vantage",
-    "polygon": "Polygon",
-    "fred": "FRED",
-    "worldbank": "World Bank",
-    "iol": "IOL v2",
-    "legacy": "IOL Legacy",
-    "stale": "Cache persistente",
-    "cache": "Caché en memoria",
-}
 
-_QUOTE_PROVIDER_HISTORY_LIMIT = 12
-
-
-def _store() -> Dict[str, Any]:
-    """Return the mutable health metrics store from the session state."""
-    return st.session_state.setdefault(_HEALTH_KEY, {})
-
-
-def _ensure_session_monitoring_store(store: Dict[str, Any]) -> Dict[str, Any]:
-    raw_monitoring = store.get(_SESSION_MONITORING_KEY)
-    if isinstance(raw_monitoring, Mapping):
-        monitoring = dict(raw_monitoring)
-    else:
-        monitoring = {}
-    if monitoring is not raw_monitoring:
-        store[_SESSION_MONITORING_KEY] = monitoring
-    return monitoring
-
-
-def _clean_detail(detail: Optional[str]) -> Optional[str]:
-    if detail is None:
-        return None
-    text = str(detail).strip()
-    return text or None
-
-
-def _normalize_backend_details(raw_backend: Any) -> Dict[str, Any]:
-    if not isinstance(raw_backend, Mapping):
-        return {}
-
-    details: Dict[str, Any] = {}
-    for key, value in raw_backend.items():
-        key_text = str(key).strip()
-        if not key_text:
-            continue
-        if value is None:
-            continue
-        if isinstance(value, (str, bytes)):
-            text = str(value).strip()
-            if not text:
-                continue
-            details[key_text] = text
-        elif isinstance(value, (int, float, bool)):
-            details[key_text] = value
-        else:
-            details[key_text] = str(value)
-    return details
-
-
-def _normalize_metadata(raw_metadata: Any) -> Dict[str, Any]:
-    if not isinstance(raw_metadata, Mapping):
-        return {}
-
-    normalized: Dict[str, Any] = {}
-    for key, value in raw_metadata.items():
-        key_text = str(key or "").strip()
-        if not key_text:
-            continue
-        if value is None:
-            continue
-        if isinstance(value, (bool, int, float)):
-            normalized[key_text] = value
-        elif isinstance(value, (str, bytes)):
-            text = str(value).strip()
-            if text:
-                normalized[key_text] = text
-        else:
-            normalized[key_text] = str(value)
-    return normalized
-
-
-def _normalize_environment_value(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Mapping):
-        normalized_map: Dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key or "").strip()
-            if not key_text:
-                continue
-            normalized_item = _normalize_environment_value(item)
-            if normalized_item is None:
-                continue
-            if isinstance(normalized_item, Mapping) and not normalized_item:
-                continue
-            if isinstance(normalized_item, (list, tuple)) and not normalized_item:
-                continue
-            normalized_map[key_text] = normalized_item
-        return normalized_map
-    if isinstance(value, (list, tuple, set)):
-        normalized_list = [
-            item
-            for item in (
-                _normalize_environment_value(entry)
-                for entry in value
-            )
-            if item is not None and (not isinstance(item, (list, tuple, Mapping)) or item)
-        ]
-        return normalized_list
-    return str(value)
-
-
-def _normalize_environment_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, Any]:
-    normalized: Dict[str, Any] = {}
-    for key, value in snapshot.items():
-        key_text = str(key or "").strip()
-        if not key_text:
-            continue
-        normalized_value = _normalize_environment_value(value)
-        if normalized_value is None:
-            continue
-        if isinstance(normalized_value, Mapping) and not normalized_value:
-            continue
-        if isinstance(normalized_value, (list, tuple)) and not normalized_value:
-            continue
-        normalized[key_text] = normalized_value
-    return normalized
-
-
-def record_snapshot_event(
-    *,
-    kind: str,
-    status: str,
-    action: Optional[str] = None,
-    storage_id: Optional[str] = None,
-    detail: Optional[str] = None,
-    backend: Optional[Mapping[str, Any]] = None,
-) -> None:
-    """Persist information about the latest snapshot interaction."""
-
-    kind_text = str(kind or "generic").strip() or "generic"
-    status_text = str(status or "unknown").strip() or "unknown"
-    action_text = str(action or "").strip()
-    storage_id_text = str(storage_id or "").strip()
-    detail_text = _clean_detail(detail)
-
-    event: Dict[str, Any] = {"kind": kind_text, "status": status_text, "ts": time.time()}
-    if action_text:
-        event["action"] = action_text
-    if storage_id_text:
-        event["storage_id"] = storage_id_text
-    if detail_text:
-        event["detail"] = detail_text
-
-    backend_details = _normalize_backend_details(backend or {})
-    if backend_details:
-        event["backend"] = backend_details
-
-    store = _store()
-    store[_SNAPSHOT_EVENT_KEY] = event
-
-
-def record_environment_snapshot(snapshot: Mapping[str, Any]) -> None:
-    """Persist the latest environment snapshot for diagnostics."""
-
-    if not isinstance(snapshot, Mapping):
-        return
-
-    normalized_snapshot = _normalize_environment_snapshot(snapshot)
-    entry: Dict[str, Any] = {"ts": time.time(), "snapshot": normalized_snapshot}
-
-    store = _store()
-    store[_ENVIRONMENT_SNAPSHOT_KEY] = entry
-
-    metrics: Dict[str, Any] = {}
-    cpu_info = normalized_snapshot.get("cpu")
-    if isinstance(cpu_info, Mapping):
-        logical = cpu_info.get("logical_count")
-        if isinstance(logical, (int, float)):
-            metrics["cpu_logical"] = logical
-    memory_info = normalized_snapshot.get("memory")
-    if isinstance(memory_info, Mapping):
-        total_mb = memory_info.get("total_mb")
-        if isinstance(total_mb, (int, float)):
-            metrics["memory_total_mb"] = total_mb
-
-    if metrics:
-        _log_analysis_event("environment_snapshot", entry, metrics)
-
-
-def record_session_started(
-    session_id: str,
-    *,
-    metadata: Optional[Mapping[str, Any]] = None,
-) -> None:
-    """Track the start of an interactive session for health dashboards."""
-
-    session_key = str(session_id or "unknown").strip() or "unknown"
-    now = time.time()
-    store = _store()
-    monitoring = _ensure_session_monitoring_store(store)
-
-    active_raw = monitoring.get(_ACTIVE_SESSIONS_KEY)
-    if isinstance(active_raw, Mapping):
-        active_sessions = dict(active_raw)
-    else:
-        active_sessions = {}
-
-    entry: Dict[str, Any] = {"session_id": session_key, "ts": now}
-    metadata_dict = _normalize_metadata(metadata)
-    if metadata_dict:
-        entry["metadata"] = metadata_dict
-
-    active_sessions[session_key] = entry
-    monitoring[_ACTIVE_SESSIONS_KEY] = active_sessions
-    monitoring["total_session_starts"] = int(
-        monitoring.get("total_session_starts", 0) or 0
-    ) + 1
-    monitoring["active_sessions_ts"] = now
-
-    _log_analysis_event(
-        "session_started",
-        entry,
-        {
-            "active_sessions": len(active_sessions),
-            "total_session_starts": monitoring["total_session_starts"],
-        },
-    )
-
-
-def record_login_to_render(
-    elapsed_seconds: float,
-    *,
-    session_id: Optional[str] = None,
-) -> None:
-    """Record timing from login to first render for UX monitoring."""
-
-    elapsed_value = _as_optional_float(elapsed_seconds)
-    if elapsed_value is None or elapsed_value < 0:
-        return
-
-    now = time.time()
-    store = _store()
-    monitoring = _ensure_session_monitoring_store(store)
-    stats_raw = monitoring.get(_LOGIN_TO_RENDER_STATS_KEY)
-    if isinstance(stats_raw, Mapping):
-        stats = dict(stats_raw)
-    else:
-        stats = {"count": 0, "sum": 0.0, "sum_sq": 0.0}
-
-    stats["count"] = int(stats.get("count", 0) or 0) + 1
-    stats["sum"] = float(stats.get("sum", 0.0) or 0.0) + elapsed_value
-    stats["sum_sq"] = float(stats.get("sum_sq", 0.0) or 0.0) + elapsed_value * elapsed_value
-    stats["last_value"] = elapsed_value
-    stats["last_ts"] = now
-    if session_id is not None:
-        stats["last_session_id"] = str(session_id)
-
-    monitoring[_LOGIN_TO_RENDER_STATS_KEY] = stats
-
-    avg = stats["sum"] / stats["count"] if stats["count"] else None
-    latest: Dict[str, Any] = {"value": stats["last_value"], "ts": now}
-    session_ref = stats.get("last_session_id")
-    if isinstance(session_ref, str) and session_ref.strip():
-        latest["session_id"] = session_ref.strip()
-    metrics: Dict[str, Any] = {"count": stats["count"]}
-    if avg is not None:
-        metrics["avg"] = avg
-    _log_analysis_event(
-        "login_to_render",
-        latest,
-        metrics,
-    )
-
-
-def record_http_error(
-    status_code: int,
-    *,
-    method: Optional[str] = None,
-    url: Optional[str] = None,
-    detail: Optional[str] = None,
-) -> None:
-    """Track the latest HTTP error encountered by the UI."""
-
-    code_value = _as_optional_int(status_code)
-    if code_value is None:
-        return
-
-    now = time.time()
-    store = _store()
-    monitoring = _ensure_session_monitoring_store(store)
-
-    entry: Dict[str, Any] = {"status_code": code_value, "ts": now}
-    method_text = str(method or "").strip()
-    if method_text:
-        entry["method"] = method_text
-    url_text = str(url or "").strip()
-    if url_text:
-        entry["url"] = url_text
-    detail_text = _clean_detail(detail)
-    if detail_text:
-        entry["detail"] = detail_text
-
-    monitoring[_LAST_HTTP_ERROR_KEY] = entry
-    monitoring["http_error_count"] = int(monitoring.get("http_error_count", 0) or 0) + 1
-
-    _log_analysis_event(
-        "http_error",
-        entry,
-        {"http_error_count": monitoring["http_error_count"]},
-    )
+ 
 
 
 def _normalize_diagnostics_snapshot_entry(
@@ -756,134 +481,6 @@ def _summarize_quote_stats(stats: Any) -> Dict[str, Any]:
     return summary
 
 
-def _summarize_fx_api_stats(stats: Any) -> Dict[str, Any]:
-    if not isinstance(stats, Mapping):
-        return {}
-
-    summary: Dict[str, Any] = {}
-
-    try:
-        invocations = int(stats.get("invocations", 0) or 0)
-    except (TypeError, ValueError):
-        invocations = 0
-    if invocations:
-        summary["invocations"] = invocations
-
-    latency_block = _summarize_metric_block(stats, "latency")
-    if latency_block:
-        summary["latency"] = latency_block
-
-    statuses = _normalize_counter_map(stats.get("status_counts"))
-    if statuses:
-        total = sum(statuses.values())
-        status_payload: Dict[str, Any] = {"counts": statuses}
-        if total:
-            status_payload["ratios"] = _compute_ratio_map(statuses, total)
-        summary["status"] = status_payload
-
-    errors = _normalize_counter_map(stats.get("error_counts"))
-    if errors:
-        summary["errors"] = errors
-
-    last_error = stats.get("last_error")
-    if isinstance(last_error, str) and last_error:
-        summary["last_error"] = last_error
-
-    events = _serialize_event_history(stats.get("event_history"))
-    if events:
-        summary["events"] = events
-
-    return summary
-
-
-def _summarize_fx_cache_stats(stats: Any) -> Dict[str, Any]:
-    if not isinstance(stats, Mapping):
-        return {}
-
-    summary: Dict[str, Any] = {}
-
-    try:
-        invocations = int(stats.get("invocations", 0) or 0)
-    except (TypeError, ValueError):
-        invocations = 0
-    if invocations:
-        summary["invocations"] = invocations
-
-    modes = _normalize_counter_map(stats.get("mode_counts"))
-    if modes:
-        total_modes = sum(modes.values())
-        mode_payload: Dict[str, Any] = {"counts": modes}
-        if total_modes:
-            mode_payload["ratios"] = _compute_ratio_map(modes, total_modes)
-        summary["modes"] = mode_payload
-
-    labels = _normalize_counter_map(stats.get("label_counts"))
-    if labels:
-        total_labels = sum(labels.values())
-        label_payload: Dict[str, Any] = {"counts": labels}
-        if total_labels:
-            label_payload["ratios"] = _compute_ratio_map(labels, total_labels)
-        summary["labels"] = label_payload
-
-    age_block = _summarize_metric_block(stats, "age")
-    if age_block:
-        summary["age"] = age_block
-
-    last_label = stats.get("last_label")
-    if isinstance(last_label, str) and last_label:
-        summary["last_label"] = last_label
-
-    events = _serialize_event_history(stats.get("event_history"))
-    if events:
-        summary["events"] = events
-
-    return summary
-
-
-def _classify_fx_cache_event(
-    mode: str,
-    age: Optional[float],
-    stats: Mapping[str, Any],
-) -> str:
-    normalized_mode = str(mode or "unknown").strip().casefold() or "unknown"
-    age_value = _as_optional_float(age)
-    has_data = bool(stats.get("has_data"))
-
-    if normalized_mode == "hit":
-        if age_value is None:
-            return "empty"
-        if not math.isfinite(age_value):
-            return "unknown"
-        if age_value > cache_ttl_fx:
-            return "stale"
-        return "fresh"
-
-    if normalized_mode == "refresh":
-        return "stale" if has_data else "empty"
-
-    return "unknown"
-
-
-def _log_analysis_event(
-    event: str,
-    latest: Mapping[str, Any],
-    metrics: Mapping[str, Any],
-) -> None:
-    if not metrics:
-        return
-
-    analysis_logger.info(
-        "%s updated",
-        event,
-        extra={
-            "analysis": {
-                "event": event,
-                "latest": dict(latest),
-                "metrics": dict(metrics),
-            }
-        },
-    )
-
 def record_yfinance_usage(
     source: str,
     *,
@@ -1180,91 +777,6 @@ def record_risk_incident(
     store[_RISK_INCIDENTS_KEY] = risk_data
 
 
-def record_fx_api_response(
-    *, error: Optional[str] = None, elapsed_ms: Optional[float] = None
-) -> None:
-    """Persist metadata about the latest FX API call."""
-    store = _store()
-    status_text = "success" if not error else "error"
-    error_text = _clean_detail(error)
-    numeric_latency = _as_optional_float(elapsed_ms)
-    now = time.time()
-
-    summary: Dict[str, Any] = {
-        "status": status_text,
-        "error": error_text,
-        "elapsed_ms": float(numeric_latency) if numeric_latency is not None else None,
-        "ts": now,
-    }
-
-    stats_raw = store.get("fx_api_stats")
-    stats: Dict[str, Any]
-    if isinstance(stats_raw, Mapping):
-        stats = dict(stats_raw)
-    else:
-        stats = {}
-
-    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
-
-    status_counts_raw = stats.get("status_counts")
-    if isinstance(status_counts_raw, Mapping):
-        status_counts = dict(status_counts_raw)
-    else:
-        status_counts = {}
-    status_counts[status_text] = int(status_counts.get(status_text, 0) or 0) + 1
-    stats["status_counts"] = status_counts
-
-    if error_text:
-        error_counts_raw = stats.get("error_counts")
-        if isinstance(error_counts_raw, Mapping):
-            error_counts = dict(error_counts_raw)
-        else:
-            error_counts = {}
-        error_counts[error_text] = int(error_counts.get(error_text, 0) or 0) + 1
-        stats["error_counts"] = error_counts
-        stats["last_error"] = error_text
-
-    if numeric_latency is not None and math.isfinite(numeric_latency):
-        value = float(numeric_latency)
-        stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
-        stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
-        stats["latency_sum_sq"] = (
-            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
-        )
-        current_min = _as_optional_float(stats.get("latency_min"))
-        stats["latency_min"] = value if current_min is None else min(current_min, value)
-        current_max = _as_optional_float(stats.get("latency_max"))
-        stats["latency_max"] = value if current_max is None else max(current_max, value)
-        latency_history = _ensure_latency_history(
-            stats.get("latency_history"), limit=_FX_API_HISTORY_LIMIT
-        )
-        latency_history.append(value)
-        stats["latency_history"] = latency_history
-        stats["last_elapsed_ms"] = value
-    else:
-        stats["missing_latency"] = int(stats.get("missing_latency", 0) or 0) + 1
-
-    stats["last_status"] = status_text
-    stats["last_ts"] = now
-
-    latest_event = dict(summary)
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_FX_API_HISTORY_LIMIT
-    )
-    event_history.append(latest_event)
-    stats["event_history"] = event_history
-
-    store["fx_api_stats"] = stats
-
-    metrics_summary = _summarize_fx_api_stats(stats)
-    if metrics_summary:
-        summary["stats"] = metrics_summary
-
-    store["fx_api"] = summary
-
-    _log_analysis_event("fx.api", latest_event, metrics_summary)
-
-
 def record_macro_api_usage(
     *,
     attempts: Iterable[Mapping[str, Any]],
@@ -1486,170 +998,6 @@ def record_macro_api_usage(
     if overall:
         macro_data["overall"] = overall
     store["macro_api"] = macro_data
-
-
-def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
-    """Persist information about session cache usage for FX rates."""
-    store = _store()
-
-    mode_text = str(mode or "unknown").strip() or "unknown"
-    mode_key = mode_text.casefold()
-    numeric_age = _as_optional_float(age)
-    now = time.time()
-
-    entry: Dict[str, Any] = {
-        "mode": mode_text,
-        "age": float(numeric_age) if numeric_age is not None else None,
-        "ts": now,
-    }
-
-    stats_raw = store.get("fx_cache_stats")
-    stats: Dict[str, Any]
-    if isinstance(stats_raw, Mapping):
-        stats = dict(stats_raw)
-    else:
-        stats = {}
-
-    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
-
-    mode_counts_raw = stats.get("mode_counts")
-    if isinstance(mode_counts_raw, Mapping):
-        mode_counts = dict(mode_counts_raw)
-    else:
-        mode_counts = {}
-    mode_counts[mode_key] = int(mode_counts.get(mode_key, 0) or 0) + 1
-    stats["mode_counts"] = mode_counts
-
-    classification = _classify_fx_cache_event(mode_text, numeric_age, stats)
-    if classification:
-        entry["label"] = classification
-        label_counts_raw = stats.get("label_counts")
-        if isinstance(label_counts_raw, Mapping):
-            label_counts = dict(label_counts_raw)
-        else:
-            label_counts = {}
-        label_counts[classification] = int(label_counts.get(classification, 0) or 0) + 1
-        stats["label_counts"] = label_counts
-        stats["last_label"] = classification
-
-    if mode_key in {"hit", "refresh"}:
-        stats["has_data"] = True
-
-    stats["last_mode"] = mode_key
-    if numeric_age is not None and math.isfinite(numeric_age):
-        stats["age_count"] = int(stats.get("age_count", 0) or 0) + 1
-        stats["age_sum"] = float(stats.get("age_sum", 0.0) or 0.0) + numeric_age
-        stats["age_sum_sq"] = (
-            float(stats.get("age_sum_sq", 0.0) or 0.0) + numeric_age * numeric_age
-        )
-        current_min = _as_optional_float(stats.get("age_min"))
-        stats["age_min"] = (
-            numeric_age if current_min is None else min(current_min, numeric_age)
-        )
-        current_max = _as_optional_float(stats.get("age_max"))
-        stats["age_max"] = (
-            numeric_age if current_max is None else max(current_max, numeric_age)
-        )
-        age_history = _ensure_latency_history(
-            stats.get("age_history"), limit=_FX_CACHE_HISTORY_LIMIT
-        )
-        age_history.append(numeric_age)
-        stats["age_history"] = age_history
-
-    stats["last_age"] = numeric_age
-
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_FX_CACHE_HISTORY_LIMIT
-    )
-    latest_event = dict(entry)
-    event_history.append(latest_event)
-    stats["event_history"] = event_history
-
-    store["fx_cache_stats"] = stats
-
-    summary = _summarize_fx_cache_stats(stats)
-    if summary:
-        entry["stats"] = summary
-
-    store["fx_cache"] = entry
-
-    _log_analysis_event("fx.cache", latest_event, summary)
-
-
-def record_portfolio_load(
-    elapsed_ms: Optional[float], *, source: str, detail: Optional[str] = None
-) -> None:
-    """Persist response time and source for the latest portfolio load."""
-    store = _store()
-    source_text = str(source or "unknown").strip() or "unknown"
-    detail_text = _clean_detail(detail)
-    numeric_latency = _as_optional_float(elapsed_ms)
-    now = time.time()
-
-    summary: Dict[str, Any] = {
-        "elapsed_ms": float(numeric_latency) if numeric_latency is not None else None,
-        "source": source_text,
-        "detail": detail_text,
-        "ts": now,
-    }
-
-    stats_raw = store.get("portfolio_stats")
-    stats: Dict[str, Any]
-    if isinstance(stats_raw, Mapping):
-        stats = dict(stats_raw)
-    else:
-        stats = {}
-
-    stats["invocations"] = int(stats.get("invocations", 0) or 0) + 1
-
-    source_counts_raw = stats.get("sources")
-    if isinstance(source_counts_raw, Mapping):
-        source_counts = dict(source_counts_raw)
-    else:
-        source_counts = {}
-    source_counts[source_text] = int(source_counts.get(source_text, 0) or 0) + 1
-    stats["sources"] = source_counts
-
-    if numeric_latency is not None and math.isfinite(numeric_latency):
-        value = float(numeric_latency)
-        stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
-        stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
-        stats["latency_sum_sq"] = (
-            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
-        )
-        current_min = _as_optional_float(stats.get("latency_min"))
-        stats["latency_min"] = value if current_min is None else min(current_min, value)
-        current_max = _as_optional_float(stats.get("latency_max"))
-        stats["latency_max"] = value if current_max is None else max(current_max, value)
-        latency_history = _ensure_latency_history(
-            stats.get("latency_history"), limit=_PORTFOLIO_HISTORY_LIMIT
-        )
-        latency_history.append(value)
-        stats["latency_history"] = latency_history
-        stats["last_elapsed_ms"] = value
-    else:
-        stats["missing_latency"] = int(stats.get("missing_latency", 0) or 0) + 1
-
-    stats["last_source"] = source_text
-    stats["last_detail"] = detail_text
-    stats["last_ts"] = now
-
-    latest_event = dict(summary)
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_PORTFOLIO_HISTORY_LIMIT
-    )
-    event_history.append(latest_event)
-    stats["event_history"] = event_history
-
-    store["portfolio_stats"] = stats
-
-    metrics_summary = _summarize_portfolio_stats(stats)
-    if metrics_summary:
-        summary["stats"] = metrics_summary
-
-    store["portfolio"] = summary
-
-    _log_analysis_event("portfolio.load", latest_event, metrics_summary)
 
 
 def record_tab_latency(
@@ -3445,15 +2793,11 @@ def get_health_metrics() -> Dict[str, Any]:
         store.get(_SESSION_MONITORING_KEY), now=now
     )
 
-    fx_api_data = _merge_entry(
-        store.get("fx_api"), _summarize_fx_api_stats(store.get("fx_api_stats"))
-    )
-    fx_cache_data = _merge_entry(
-        store.get("fx_cache"), _summarize_fx_cache_stats(store.get("fx_cache_stats"))
-    )
-    portfolio_data = _merge_entry(
-        store.get("portfolio"), _summarize_portfolio_stats(store.get("portfolio_stats"))
-    )
+    fx_metrics = fx_metrics_snapshot(store)
+    portfolio_metrics = portfolio_metrics_snapshot(store)
+    fx_api_data = fx_metrics.get("fx_api")
+    fx_cache_data = fx_metrics.get("fx_cache")
+    portfolio_data = portfolio_metrics.get("portfolio")
     quotes_data = _merge_entry(
         store.get("quotes"), _summarize_quote_stats(store.get("quotes_stats"))
     )
@@ -3501,7 +2845,6 @@ __all__ = [
     "record_quote_provider_usage",
     "record_quote_rate_limit_wait",
     "record_snapshot_event",
-    "record_diagnostics_snapshot",
     "record_market_data_incident",
     "record_risk_incident",
     "record_yfinance_usage",
