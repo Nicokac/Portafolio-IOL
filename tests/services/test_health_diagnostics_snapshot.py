@@ -12,17 +12,7 @@ if str(ROOT) not in sys.path:
 
 
 from services import health  # noqa: E402
-
-
-class FakeTime:
-    def __init__(self, start: float) -> None:
-        self.value = start
-
-    def time(self) -> float:
-        return self.value
-
-    def advance(self, delta: float) -> None:
-        self.value += delta
+from tests.fixtures.time import FakeTime
 
 
 class ExplodingStr:
