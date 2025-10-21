@@ -19,6 +19,7 @@ from services.auth import (
     revoke_token,
     verify_token,
 )
+from tests.fixtures.time import FakeTime
 
 
 @pytest.fixture(autouse=True)
@@ -83,19 +84,6 @@ def test_revoked_token_cannot_be_verified() -> None:
 
 def test_refresh_rejects_nonce_reuse(monkeypatch: pytest.MonkeyPatch) -> None:
     base_time = 1_800_000_000
-
-    class FakeTime:
-        def __init__(self, value: int) -> None:
-            self.value = value
-
-        def __call__(self) -> int:
-            return self.value
-
-        def set(self, value: int) -> None:
-            self.value = value
-
-        def advance(self, delta: int) -> None:
-            self.value += delta
 
     fake_time = FakeTime(base_time)
     monkeypatch.setattr(auth_module.time, "time", fake_time)

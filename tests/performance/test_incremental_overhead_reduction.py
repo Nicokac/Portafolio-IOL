@@ -1,10 +1,13 @@
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 import pytest
+
+from tests.fixtures.common import DummyCtx
+from tests.fixtures.streamlit import UIFakeStreamlit
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -13,56 +16,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 from controllers.portfolio import portfolio as portfolio_mod
 from domain.models import Controls
 from services.notifications import NotificationFlags
-
-
-class _NoopContext:
-    def __enter__(self) -> "_NoopContext":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        return None
-
-
-class _Placeholder:
-    def __init__(self, owner: "FakeStreamlit", name: str) -> None:
-        self.owner = owner
-        self.name = name
-        self.container_calls = 0
-
-    def container(self) -> _NoopContext:
-        self.container_calls += 1
-        return _NoopContext()
-
-    def empty(self) -> "_Placeholder":
-        return self
-
-
-class FakeStreamlit:
-    def __init__(self, radio_sequence: Iterable[int]) -> None:
-        self.session_state: dict[str, Any] = {}
-        self._radio_iter = iter(radio_sequence)
-        self.placeholders: list[_Placeholder] = []
-        self.captions: list[str] = []
-
-    def empty(self) -> _Placeholder:
-        placeholder = _Placeholder(self, f"ph{len(self.placeholders)}")
-        self.placeholders.append(placeholder)
-        return placeholder
-
-    def spinner(self, *_: Any, **__: Any) -> _NoopContext:
-        return _NoopContext()
-
-    def caption(self, text: str) -> None:
-        self.captions.append(text)
-
-    def radio(self, *_: Any, **__: Any) -> int:
-        return next(self._radio_iter)
-
-    def warning(self, *_: Any, **__: Any) -> None:
-        return None
-
-    def info(self, *_: Any, **__: Any) -> None:
-        return None
 
 
 class _FavoritesStub:
@@ -115,11 +68,11 @@ class _ViewServiceStub:
 
 
 @pytest.fixture()
-def fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> FakeStreamlit:
-    fake = FakeStreamlit(radio_sequence=[0, 0])
+def fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> UIFakeStreamlit:
+    fake = UIFakeStreamlit(radio_sequence=[0, 0])
     monkeypatch.setattr(portfolio_mod, "st", fake)
-    monkeypatch.setattr(portfolio_mod, "measure_execution", lambda *_: _NoopContext())
-    monkeypatch.setattr(portfolio_mod, "profile_block", lambda *_: _NoopContext())
+    monkeypatch.setattr(portfolio_mod, "measure_execution", lambda *_: DummyCtx())
+    monkeypatch.setattr(portfolio_mod, "profile_block", lambda *_: DummyCtx())
     return fake
 
 
@@ -180,7 +133,11 @@ def _prepare_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(portfolio_mod, "_maybe_reset_visual_cache_state", lambda: False)
 
 
-def test_incremental_overhead_metrics(monkeypatch: pytest.MonkeyPatch, fake_streamlit: FakeStreamlit, view_service: _ViewServiceStub) -> None:
+def test_incremental_overhead_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_streamlit: UIFakeStreamlit,
+    view_service: _ViewServiceStub,
+) -> None:
     _prepare_environment(monkeypatch)
     render_calls: dict[str, int] = {}
     _patch_render_helpers(monkeypatch, render_calls)
@@ -206,7 +163,7 @@ def test_incremental_overhead_metrics(monkeypatch: pytest.MonkeyPatch, fake_stre
         lambda slug, value, status: tab_latency.append((slug, value, status)),
     )
 
-    container = _NoopContext()
+    container = DummyCtx()
     portfolio_mod.render_portfolio_section(container, cli=None, fx_rates=None, timings={})
 
     assert tab_metrics and tab_metrics[0][1] > 0

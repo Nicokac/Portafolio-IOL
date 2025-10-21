@@ -9,8 +9,18 @@ class FakeTime:
     def __init__(self, start: float = 1000.0) -> None:
         self.now = float(start)
 
+    def __call__(self) -> float:
+        """Allow using the instance as a callable time source."""
+
+        return self.time()
+
     def time(self) -> float:
         return self.now
+
+    def set(self, value: float) -> None:
+        """Set the fake clock to an explicit timestamp."""
+
+        self.now = float(value)
 
     def sleep(self, seconds: float) -> None:
         self.now += float(seconds)
