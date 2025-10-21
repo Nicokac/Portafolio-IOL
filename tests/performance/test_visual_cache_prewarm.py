@@ -3,6 +3,7 @@ import importlib
 import logging
 import sys
 import types
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,10 +33,6 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
     stub_st = _StubStreamlit()
     sys.modules["streamlit"] = stub_st
 
-    stub_services_auth = types.ModuleType("services.auth")
-    stub_services_auth.revoke_token = lambda *_args, **_kwargs: None
-    sys.modules["services.auth"] = stub_services_auth
-
     stub_timer = types.ModuleType("services.performance_timer")
     stub_timer.performance_timer = lambda *_, **__: nullcontext()
     sys.modules["services.performance_timer"] = stub_timer
@@ -47,18 +44,49 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
     stub_client.IOLClient = object
     sys.modules["infrastructure.iol.client"] = stub_client
 
-    stub_auth = types.ModuleType("infrastructure.iol.auth")
-    class _InvalidCredentialsError(Exception):
-        ...
-    stub_auth.InvalidCredentialsError = _InvalidCredentialsError
-    sys.modules["infrastructure.iol.auth"] = stub_auth
-
     app_pkg = types.ModuleType("application")
     app_pkg.__path__ = []  # type: ignore[attr-defined]
     sys.modules["application"] = app_pkg
     stub_app_auth = types.ModuleType("application.auth_service")
     stub_app_auth.get_auth_provider = lambda: DummyProvider()
     sys.modules["application.auth_service"] = stub_app_auth
+
+    auth_client_stub = types.ModuleType("services.auth_client")
+
+    class _Result(SimpleNamespace):
+        def __init__(self, client=None, error=None):
+            super().__init__(
+                client=client,
+                error=error,
+                error_message=None,
+                should_force_login=False,
+                telemetry={},
+            )
+
+    auth_client_stub.AuthClientResult = _Result
+    auth_client_stub.get_auth_provider = lambda: DummyProvider()
+    auth_client_stub.build_client = (
+        lambda session_user, provider=None: _Result(
+            client=(provider or DummyProvider()).build_client()[0],
+            error=None,
+        )
+    )
+    sys.modules["services.auth_client"] = auth_client_stub
+
+    auth_ui_stub = types.ModuleType("ui.adapters.auth_ui")
+    auth_ui_stub.get_session_username = lambda: "test-user"
+    auth_ui_stub.set_login_error = lambda *_args, **_kwargs: None
+    auth_ui_stub.set_force_login = lambda *_args, **_kwargs: None
+
+    def _mark_authenticated():
+        stub_st.session_state["authenticated"] = True
+
+    auth_ui_stub.mark_authenticated = _mark_authenticated
+    auth_ui_stub.record_auth_timestamp = (
+        lambda key: stub_st.session_state.__setitem__(key, 123.0)
+    )
+    auth_ui_stub.rerun = lambda *_args, **_kwargs: None
+    sys.modules["ui.adapters.auth_ui"] = auth_ui_stub
 
     auth_mod = importlib.import_module("controllers.auth")
     fake_st = stub_st
@@ -84,12 +112,12 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
     finally:
         for name in (
             "streamlit",
-            "services.auth",
             "services.performance_timer",
             "infrastructure.iol.client",
-            "infrastructure.iol.auth",
             "application.auth_service",
             "application",
             "controllers.auth",
+            "services.auth_client",
+            "ui.adapters.auth_ui",
         ):
             sys.modules.pop(name, None)

@@ -9,7 +9,7 @@ from application.backtesting_service import (
     BacktestingService,
     load_prices_from_fixture,
 )
-from services.cache import CacheService
+from services.cache.core import CacheService
 
 
 def test_backtesting_service_runs_fixture_success() -> None:

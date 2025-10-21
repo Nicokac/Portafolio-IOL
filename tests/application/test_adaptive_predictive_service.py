@@ -20,7 +20,7 @@ from application.adaptive_predictive_service import (  # noqa: E402
     update_model,
 )
 from application.predictive_core.state import PredictiveCacheState  # noqa: E402
-from services.cache import CacheService  # noqa: E402
+from services.cache.core import CacheService  # noqa: E402
 from shared.settings import ADAPTIVE_TTL_HOURS  # noqa: E402
 from predictive_engine.models import AdaptiveState  # noqa: E402
 
