@@ -1,4 +1,4 @@
-"""Test package to ensure deterministic import paths during collection."""
+"""UI test package compatibility helpers."""
 
 from __future__ import annotations
 
@@ -8,20 +8,18 @@ import sys
 from pathlib import Path
 
 
-def _ensure_ui_settings_compat() -> None:
-    """Restore critical attributes when tests stub ui.ui_settings."""
-
+def _ensure_ui_settings_exports() -> None:
     try:
         module = importlib.import_module("ui.ui_settings")
-    except ModuleNotFoundError:  # pragma: no cover - best-effort guard
+    except ModuleNotFoundError:  # pragma: no cover
         return
 
     if getattr(module, "apply_settings", None) is not None:
         return
 
-    module_path = Path(__file__).resolve().parents[1] / "ui" / "ui_settings.py"
-    spec = importlib.util.spec_from_file_location("ui._ui_settings_compat", module_path)
-    if not spec or not spec.loader:  # pragma: no cover - filesystem missing
+    module_path = Path(__file__).resolve().parents[1] / "ui_settings.py"
+    spec = importlib.util.spec_from_file_location("ui._ui_settings_test_patch", module_path)
+    if not spec or not spec.loader:  # pragma: no cover
         return
 
     compat_module = importlib.util.module_from_spec(spec)
@@ -34,5 +32,4 @@ def _ensure_ui_settings_compat() -> None:
             setattr(module, attr, value)
 
 
-_ensure_ui_settings_compat()
-
+_ensure_ui_settings_exports()

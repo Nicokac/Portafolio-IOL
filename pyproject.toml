@@ -57,3 +57,18 @@ omit = [
 [tool.bandit]
 exclude_dirs = ["tests", "docs", "infrastructure"]
 targets = ["application", "controllers", "services", "shared", "noxfile.py"]
+
+[tool.setuptools]
+packages = [
+  "api",
+  "application",
+  "bootstrap",
+  "controllers",
+  "domain",
+  "infrastructure",
+  "predictive_engine",
+  "services",
+  "shared",
+  "ui",
+]
+include-package-data = true
