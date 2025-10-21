@@ -16,6 +16,7 @@ from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
 from infrastructure.iol.client import IIOLProvider, build_iol_client as _build_iol_client
 from services.health import record_fx_cache_usage, record_iol_refresh
 from shared.cache import cache
+from shared.qa_profiler import track_cache_load
 from shared.settings import cache_ttl_fx, settings
 
 
@@ -68,7 +69,8 @@ def get_fx_rates_cached():
     if "fx_rates" not in st.session_state or now - last > ttl:
         from services import cache as cache_module
 
-        data, error = cache_module.fetch_fx_rates()
+        with track_cache_load():
+            data, error = cache_module.fetch_fx_rates()
         st.session_state["fx_rates"] = data
         st.session_state["fx_rates_error"] = error
         st.session_state["fx_rates_ts"] = now

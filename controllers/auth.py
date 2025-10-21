@@ -6,6 +6,7 @@ from infrastructure.iol.client import IIOLProvider
 
 from services.auth_client import build_client, get_auth_provider
 from ui.adapters import auth_ui
+from shared.qa_profiler import track_auth_latency
 
 LOGIN_AUTH_TIMESTAMP_KEY = "_login_authenticated_at"
 
@@ -15,7 +16,8 @@ def build_iol_client() -> IIOLProvider | None:
 
     session_user = auth_ui.get_session_username()
     provider = get_auth_provider()
-    result = build_client(session_user, provider=provider)
+    with track_auth_latency():
+        result = build_client(session_user, provider=provider)
 
     if result.error:
         auth_ui.set_login_error(result.error_message)
