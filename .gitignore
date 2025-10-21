@@ -11,6 +11,11 @@ __pycache__/
 *.pyd
 *.log
 
+# --- Archivos temporales adicionales
+*.tmp
+*.bak
+*.old
+
 # --- IDEs
 .idea/
 
@@ -31,7 +36,19 @@ Thumbs.db
 .env
 *.env
 tokens_iol.json
-tokens/
+archive/*
+banners/*
+tokens/*
+.streamlit/secrets.toml
+!archive/.gitkeep
+!archive/*.md
+!banners/README
+!banners/*.png
+!banners/*.jpg
+!banners/*.jpeg
+!banners/*.svg
+!tokens/.gitkeep
+!tokens/tokens_iol.json
 
 # --- Datos locales (ajusta según uso)
 data/
@@ -42,7 +59,8 @@ data/
 *.xlsx
 
 # --- Logs y builds
-logs/
+logs/*
+!logs/.gitkeep
 dist/
 build/
 
