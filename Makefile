@@ -20,3 +20,7 @@ typecheck:
 	mypy --ignore-missing-imports .
 
 qa: lint typecheck test
+
+.PHONY: test_fast
+test_fast:
+	pytest -q -m "not slow and not live_yahoo"
