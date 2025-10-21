@@ -22,7 +22,14 @@ from .utils import (
 )
 
 
-def _summarize_portfolio_stats(stats: Any) -> Dict[str, Any]:
+def summarize_portfolio_stats(
+    stats: Any,
+    *,
+    include_success: bool = True,
+    include_latency: bool = True,
+) -> Dict[str, Any]:
+    """Return a consolidated summary of portfolio metrics."""
+
     if not isinstance(stats, Mapping):
         return {}
 
@@ -34,13 +41,23 @@ def _summarize_portfolio_stats(stats: Any) -> Dict[str, Any]:
     if invocations:
         summary["invocations"] = invocations
 
-    latency_block = _summarize_metric_block(stats, "latency")
-    if latency_block:
-        summary["latency"] = latency_block
+    if include_latency:
+        latency_block = _summarize_metric_block(stats, "latency")
+        if latency_block:
+            summary["latency"] = latency_block
 
-    success_block = _summarize_metric_block(stats, "success")
-    if success_block:
-        summary["success"] = success_block
+        try:
+            latency_count = int(stats.get("latency_count", 0) or 0)
+        except (TypeError, ValueError):
+            latency_count = 0
+        missing = invocations - latency_count
+        if missing > 0:
+            summary["missing_latency"] = missing
+
+    if include_success:
+        success_block = _summarize_metric_block(stats, "success")
+        if success_block:
+            summary["success"] = success_block
 
     sources = _normalize_counter_map(stats.get("sources"))
     if sources:
@@ -55,6 +72,9 @@ def _summarize_portfolio_stats(stats: Any) -> Dict[str, Any]:
         summary["events"] = events
 
     return summary
+
+
+_summarize_portfolio_stats = summarize_portfolio_stats
 
 
 def record_portfolio_load(
@@ -145,4 +165,5 @@ def portfolio_metrics_snapshot(store: Mapping[str, Any]) -> Dict[str, Any]:
 __all__ = [
     "portfolio_metrics_snapshot",
     "record_portfolio_load",
+    "summarize_portfolio_stats",
 ]

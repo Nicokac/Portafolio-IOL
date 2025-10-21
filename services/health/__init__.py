@@ -45,6 +45,7 @@ from .metrics_fx import (
 from .metrics_portfolio import (
     portfolio_metrics_snapshot,
     record_portfolio_load,
+    summarize_portfolio_stats as _summarize_portfolio_stats,
 )
 from .session_adapter import (
     ensure_session_monitoring_store as _ensure_session_monitoring_store,
@@ -352,42 +353,6 @@ def _normalize_counter_map(raw_map: Any) -> Dict[str, int]:
             continue
         counters[name] = numeric
     return counters
-
-
-def _summarize_portfolio_stats(stats: Any) -> Dict[str, Any]:
-    if not isinstance(stats, Mapping):
-        return {}
-
-    summary: Dict[str, Any] = {}
-    try:
-        invocations = int(stats.get("invocations", 0) or 0)
-    except (TypeError, ValueError):
-        invocations = 0
-    if invocations:
-        summary["invocations"] = invocations
-
-    latency_block = _summarize_metric_block(stats, "latency")
-    if latency_block:
-        summary["latency"] = latency_block
-
-    latency_count = int(stats.get("latency_count", 0) or 0)
-    missing = invocations - latency_count
-    if missing > 0:
-        summary["missing_latency"] = missing
-
-    sources = _normalize_counter_map(stats.get("sources"))
-    if sources:
-        total = sum(sources.values())
-        source_data: Dict[str, Any] = {"counts": sources}
-        if total:
-            source_data["ratios"] = _compute_ratio_map(sources, total)
-        summary["sources"] = source_data
-
-    events = _serialize_event_history(stats.get("event_history"))
-    if events:
-        summary["events"] = events
-
-    return summary
 
 
 def _summarize_quote_stats(stats: Any) -> Dict[str, Any]:
@@ -2772,4 +2737,5 @@ __all__ = [
     "record_yfinance_usage",
     "_serialize_event_history",
     "_summarize_metric_block",
+    "_summarize_portfolio_stats",
 ]
