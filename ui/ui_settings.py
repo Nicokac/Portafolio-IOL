@@ -36,7 +36,6 @@ def _ensure_page_config(layout: str) -> None:
         st.set_page_config(
             page_title="IOL — Portafolio en vivo (solo lectura)",
             layout=layout or "wide",
-            initial_sidebar_state="expanded",
         )
     except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
         return
@@ -119,21 +118,46 @@ def render_ui_controls(container=None) -> UISettings:
     except Exception:  # pragma: no cover - session state may be read-only
         pass
 
-    host.radio(
-        "Layout",
-        ("wide", "centered"),
-        index=0 if current.layout == "wide" else 1,
-        key=_LAYOUT_WIDGET_KEY,
-        on_change=_sync_setting,
-        args=(_LAYOUT_WIDGET_KEY, "ui_layout"),
-    )
-    host.radio(
-        "Tema",
-        ("light", "dark"),
-        index=0 if current.theme == "light" else 1,
-        key=_THEME_WIDGET_KEY,
-        on_change=_sync_setting,
-        args=(_THEME_WIDGET_KEY, "ui_theme"),
-    )
+    try:
+        host.radio(
+            "Layout",
+            ("wide", "centered"),
+            index=0 if current.layout == "wide" else 1,
+            key=_LAYOUT_WIDGET_KEY,
+            on_change=_sync_setting,
+            args=(_LAYOUT_WIDGET_KEY, "ui_layout"),
+        )
+    except TypeError:
+        selection = host.radio(
+            "Layout",
+            ("wide", "centered"),
+            index=0 if current.layout == "wide" else 1,
+        )
+        try:
+            st.session_state[_LAYOUT_WIDGET_KEY] = selection
+        except Exception:
+            pass
+        _sync_setting(_LAYOUT_WIDGET_KEY, "ui_layout")
+
+    try:
+        host.radio(
+            "Tema",
+            ("light", "dark"),
+            index=0 if current.theme == "light" else 1,
+            key=_THEME_WIDGET_KEY,
+            on_change=_sync_setting,
+            args=(_THEME_WIDGET_KEY, "ui_theme"),
+        )
+    except TypeError:
+        selection = host.radio(
+            "Tema",
+            ("light", "dark"),
+            index=0 if current.theme == "light" else 1,
+        )
+        try:
+            st.session_state[_THEME_WIDGET_KEY] = selection
+        except Exception:
+            pass
+        _sync_setting(_THEME_WIDGET_KEY, "ui_theme")
 
     return get_settings()
