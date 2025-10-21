@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 import threading
 import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable, Mapping, Sequence
 
 import streamlit as st
 
@@ -62,6 +63,23 @@ def _iter_recent_rows(path: Path, *, max_rows: int = 500) -> Iterable[dict[str, 
     return tuple(window)
 
 
+def _row_context(row: Mapping[str, str]) -> dict[str, object]:
+    raw_context = row.get("context", "")
+    if raw_context:
+        try:
+            parsed = json.loads(raw_context)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            logger.debug(
+                "No se pudo decodificar el contexto de telemetría: %s", raw_context
+            )
+    dataset = row.get("dataset_hash")
+    if dataset:
+        return {"dataset_hash": dataset}
+    return {}
+
+
 def resolve_top_datasets(
     *,
     max_preload_count: int | None = None,
@@ -81,7 +99,8 @@ def resolve_top_datasets(
             continue
         path = Path(file_path)
         for row in _iter_recent_rows(path):
-            dataset = (row.get("dataset_hash") or "").strip()
+            context = _row_context(row)
+            dataset = str(context.get("dataset_hash", "")).strip()
             if not dataset or dataset.lower() == "none":
                 continue
             bucket = stats.setdefault(dataset, {"count": 0, "last_ts": 0.0})

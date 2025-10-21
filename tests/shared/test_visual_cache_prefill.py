@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -15,37 +16,23 @@ class _StubStreamlit:
 def _write_telemetry_sample(path: Path, rows: list[tuple[str, str]]) -> None:
     header = [
         "timestamp",
-        "phase",
-        "elapsed_s",
-        "dataset_hash",
-        "memo_hit_ratio",
-        "pipeline_cache_hit_ratio",
-        "subbatch_avg_s",
-        "ui_total_load_ms",
-        "tab_name",
-        "portfolio_tab_render_s",
-        "streamlit_overhead_ms",
-        "profile_block_total_ms",
-        "incremental_render",
-        "ui_partial_update_ms",
-        "reused_visual_cache",
-        "visual_cache_cleared",
-        "visual_cache_prewarm_ms",
-        "lazy_loaded_component",
-        "lazy_load_ms",
+        "metric_name",
+        "duration_ms",
+        "status",
+        "context",
     ]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         handle.write(",".join(header) + "\n")
         for timestamp, dataset in rows:
+            context = json.dumps({"dataset_hash": dataset})
             values = [
                 timestamp,
                 "portfolio.visual_cache",
-                "0.001",
-                dataset,
+                "1.00",
+                "ok",
+                context,
             ]
-            # Pad the remaining columns with empty values.
-            values.extend([""] * (len(header) - len(values)))
             handle.write(",".join(values) + "\n")
 
 
