@@ -36,6 +36,9 @@ _QA_METRIC_COLUMNS = (
     "ui_render_time_ms",
     "cache_load_time_ms",
     "auth_latency_ms",
+    "peak_ram_mb",
+    "active_threads",
+    "cached_objects",
 )
 
 _TELEMETRY_DEBOUNCE_SECONDS = 0.3

@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 
 from services.system_diagnostics import get_system_diagnostics_snapshot
+from shared import telemetry
 
 
 def _format_ms(value: float | None) -> str:
@@ -34,6 +38,7 @@ def render_system_diagnostics_panel() -> None:
     """Render aggregated system diagnostics within the UI."""
 
     snapshot = get_system_diagnostics_snapshot()
+    qa_metrics = _load_qa_metrics()
 
     st.header("🔎 Diagnóstico del sistema")
     st.caption("Benchmarks periódicos sobre endpoints críticos y salud operativa.")
@@ -58,6 +63,12 @@ def render_system_diagnostics_panel() -> None:
         "`ui_startup_load_ms` refleja el tiempo hasta que el login queda interactivo;"
         " `ui_total_load_ms` cubre el render completo tras autenticar."
     )
+
+    st.subheader("📈 Memoria y carga QA")
+    _render_memory_diagnostics(qa_metrics)
+
+    st.subheader("📊 Métricas QA promedio")
+    _render_qa_metrics_table(qa_metrics)
 
     st.subheader("⏱️ Latencias promedio")
     if snapshot.endpoints:
@@ -126,3 +137,66 @@ def render_system_diagnostics_panel() -> None:
 
 
 __all__ = ["render_system_diagnostics_panel"]
+
+
+def _load_qa_metrics() -> pd.DataFrame:
+    path = telemetry._QA_METRICS_FILE
+    if not isinstance(path, Path):
+        path = Path(path)
+    try:
+        if not path.exists():
+            return pd.DataFrame(columns=telemetry._QA_METRIC_COLUMNS)
+        frame = pd.read_csv(path)
+    except Exception:
+        return pd.DataFrame(columns=telemetry._QA_METRIC_COLUMNS)
+    return frame
+
+
+def _render_memory_diagnostics(frame: pd.DataFrame) -> None:
+    if frame.empty:
+        st.caption("No hay métricas QA registradas todavía.")
+        return
+
+    column = "peak_ram_mb"
+    if column not in frame.columns:
+        st.caption("El archivo de métricas QA no contiene mediciones de memoria.")
+        return
+
+    timestamp_series = pd.to_datetime(frame.get("timestamp"), errors="coerce")
+    memory_series = pd.to_numeric(frame[column], errors="coerce")
+    chart_data = pd.DataFrame({
+        "timestamp": timestamp_series,
+        "peak_ram_mb": memory_series,
+    }).dropna()
+
+    if chart_data.empty:
+        st.caption("Aún no hay registros de memoria para graficar.")
+        return
+
+    fig = px.bar(
+        chart_data,
+        x="timestamp",
+        y="peak_ram_mb",
+        labels={"timestamp": "Evento", "peak_ram_mb": "Memoria máxima (MB)"},
+        title="Uso de memoria por evento QA",
+    )
+    fig.update_layout(margin=dict(t=60, l=10, r=10, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def _render_qa_metrics_table(frame: pd.DataFrame) -> None:
+    metrics: list[dict[str, object]] = []
+    for field in telemetry._QA_METRIC_COLUMNS[2:]:
+        series = pd.to_numeric(frame.get(field), errors="coerce") if field in frame else None
+        if series is None or series.dropna().empty:
+            display_value: object = "s/d"
+        else:
+            average = float(series.dropna().mean())
+            display_value = f"{average:.3f}"
+        metrics.append({"Métrica": field, "Promedio": display_value})
+
+    if not metrics:
+        st.caption("No hay métricas QA disponibles para resumir.")
+        return
+
+    st.dataframe(pd.DataFrame(metrics), width="stretch", hide_index=True)
