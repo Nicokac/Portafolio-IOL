@@ -4,8 +4,16 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault(
+    "FASTAPI_TOKENS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+)
+os.environ.setdefault(
+    "IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE="
+)
 
 
 def _ensure_ui_settings_compat() -> None:

@@ -3,6 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Legacy FX controller tests are deprecated in v0.7"
+)
 
 # NOTE: Suite legacy mantenida sólo para auditorías puntuales del flujo antiguo
 # de FX. La cobertura activa se encuentra en `tests/controllers/` y estos casos

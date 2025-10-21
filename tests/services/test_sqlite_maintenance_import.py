@@ -59,8 +59,32 @@ def test_app_import_triggers_sqlite_maintenance(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "controllers.auth",
-        _make_stub("controllers.auth", build_iol_client=lambda: None),
+        "services.auth_client",
+        _make_stub(
+            "services.auth_client",
+            AuthClientResult=SimpleNamespace,
+            build_client=lambda *_, **__: SimpleNamespace(
+                client=None,
+                error=None,
+                error_message=None,
+                should_force_login=False,
+                telemetry={},
+            ),
+            get_auth_provider=lambda: SimpleNamespace(build_client=lambda: (None, None)),
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "ui.adapters.auth_ui",
+        _make_stub(
+            "ui.adapters.auth_ui",
+            get_session_username=lambda: None,
+            set_login_error=lambda *_args, **_kwargs: None,
+            set_force_login=lambda *_args, **_kwargs: None,
+            mark_authenticated=lambda *_args, **_kwargs: None,
+            record_auth_timestamp=lambda *_args, **_kwargs: None,
+            rerun=lambda *_args, **_kwargs: None,
+        ),
     )
     monkeypatch.setitem(
         sys.modules,
@@ -91,17 +115,43 @@ def test_app_import_triggers_sqlite_maintenance(monkeypatch):
 
     cache_service_cls = _StubCacheService
     predictive_state_cls = _StubPredictiveState
-    monkeypatch.setitem(
-        sys.modules,
-        "services.cache",
-        _make_stub(
-            "services.cache",
-            __path__=[],
-            get_fx_rates_cached=lambda: {},
-            CacheService=cache_service_cls,
-            PredictiveCacheState=predictive_state_cls,
-        ),
+    portfolio_cache_stub = _make_stub(
+        "services.cache.portfolio_cache",
+        fetch_portfolio=lambda _cli: {},
     )
+    fx_cache_stub = _make_stub(
+        "services.cache.fx_cache",
+        fetch_fx_rates=lambda: ({}, None),
+        get_fx_provider=lambda: SimpleNamespace(close=lambda: None, get_rates=lambda: ({}, None)),
+    )
+    quotes_stub = _make_stub(
+        "services.cache.quotes",
+        fetch_quotes_bulk=lambda *_args, **_kwargs: {},
+        set_active_dataset_hash=lambda *_args, **_kwargs: None,
+    )
+    ui_adapter_stub = _make_stub(
+        "services.cache.ui_adapter",
+        get_fx_rates_cached=lambda: ({}, None),
+    )
+    cache_module_stub = _make_stub(
+        "services.cache",
+        __path__=[],
+        CacheService=cache_service_cls,
+        PredictiveCacheState=predictive_state_cls,
+        portfolio_cache=portfolio_cache_stub,
+        fx_cache=fx_cache_stub,
+        quotes=quotes_stub,
+        ui_adapter=ui_adapter_stub,
+        fetch_portfolio=portfolio_cache_stub.fetch_portfolio,
+        fetch_fx_rates=fx_cache_stub.fetch_fx_rates,
+        fetch_quotes_bulk=quotes_stub.fetch_quotes_bulk,
+        get_fx_rates_cached=ui_adapter_stub.get_fx_rates_cached,
+    )
+    monkeypatch.setitem(sys.modules, "services.cache", cache_module_stub)
+    monkeypatch.setitem(sys.modules, "services.cache.portfolio_cache", portfolio_cache_stub)
+    monkeypatch.setitem(sys.modules, "services.cache.fx_cache", fx_cache_stub)
+    monkeypatch.setitem(sys.modules, "services.cache.quotes", quotes_stub)
+    monkeypatch.setitem(sys.modules, "services.cache.ui_adapter", ui_adapter_stub)
     monkeypatch.setitem(
         sys.modules,
         "services.cache.core",

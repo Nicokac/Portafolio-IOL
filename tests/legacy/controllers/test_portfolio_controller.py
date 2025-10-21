@@ -5,6 +5,10 @@ from unittest.mock import MagicMock, patch, ANY
 import pandas as pd
 import pytest
 
+pytestmark = pytest.mark.skip(
+    reason="Legacy portfolio controller coverage is deprecated in v0.7"
+)
+
 # NOTE: Casos heredados previos a la refactorización de `tests/controllers/`.
 # Se conservan aquí para comparaciones manuales hasta completar la migración
 # definitiva del controlador de portafolio.

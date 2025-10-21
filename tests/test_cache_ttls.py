@@ -14,23 +14,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 @contextmanager
-def reload_cache_with(monkeypatch, setting_name: str, value: int):
-    """Reload ``services.cache`` after patching a TTL setting value."""
+def reload_cache_with(
+    monkeypatch,
+    setting_name: str,
+    value: int,
+    *,
+    module_path: str,
+    attrs: tuple[str, ...],
+):
+    """Reload a cache submodule after patching a TTL setting value."""
 
-    import services.cache as cache_module
+    module = importlib.import_module(module_path)
 
     with monkeypatch.context() as mp:
         mp.setattr(f"shared.settings.{setting_name}", value)
-        module = importlib.reload(cache_module)
+        module = importlib.reload(module)
         try:
             yield module, mp
         finally:
-            for attr in ("fetch_portfolio", "fetch_quotes_bulk", "fetch_fx_rates"):
+            for attr in attrs:
                 func = getattr(module, attr, None)
-                if func and hasattr(func, "clear"):
-                    func.clear()
+                clear = getattr(func, "clear", None) if func is not None else None
+                if callable(clear):
+                    clear()
 
-    importlib.reload(cache_module)
+    importlib.reload(module)
 
 
 @contextmanager
@@ -61,7 +69,13 @@ def reload_ta_with(monkeypatch, setting_name: str, value: int):
 def test_fetch_portfolio_respects_monkeypatched_ttl(monkeypatch):
     """``fetch_portfolio`` should honour TTL overrides from ``shared.settings``."""
 
-    with reload_cache_with(monkeypatch, "cache_ttl_portfolio", 0) as (cache_module, mp):
+    with reload_cache_with(
+        monkeypatch,
+        "cache_ttl_portfolio",
+        0,
+        module_path="services.cache.portfolio_cache",
+        attrs=("fetch_portfolio",),
+    ) as (cache_module, mp):
         mp.setattr(cache_module, "record_portfolio_load", lambda *_, **__: None)
 
         class DummyClient:
@@ -87,7 +101,13 @@ def test_fetch_portfolio_respects_monkeypatched_ttl(monkeypatch):
 def test_fetch_quotes_bulk_respects_monkeypatched_ttl(monkeypatch):
     """``fetch_quotes_bulk`` should honour TTL overrides from ``shared.settings``."""
 
-    with reload_cache_with(monkeypatch, "cache_ttl_quotes", 0) as (cache_module, mp):
+    with reload_cache_with(
+        monkeypatch,
+        "cache_ttl_quotes",
+        0,
+        module_path="services.cache.quotes",
+        attrs=("fetch_quotes_bulk",),
+    ) as (cache_module, mp):
         mp.setattr(cache_module, "record_quote_load", lambda *_, **__: None)
 
         class DummyClient:
@@ -116,7 +136,13 @@ def test_fetch_quotes_bulk_respects_monkeypatched_ttl(monkeypatch):
 def test_fetch_fx_rates_respects_monkeypatched_ttl(monkeypatch):
     """``fetch_fx_rates`` should honour TTL overrides from ``shared.settings``."""
 
-    with reload_cache_with(monkeypatch, "cache_ttl_fx", 0) as (cache_module, mp):
+    with reload_cache_with(
+        monkeypatch,
+        "cache_ttl_fx",
+        0,
+        module_path="services.cache.fx_cache",
+        attrs=("fetch_fx_rates",),
+    ) as (cache_module, mp):
         mp.setattr(cache_module, "record_fx_api_response", lambda *_, **__: None)
 
         class DummyProvider:

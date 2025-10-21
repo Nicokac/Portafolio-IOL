@@ -84,7 +84,27 @@ def main_app(monkeypatch: pytest.MonkeyPatch):
         default_view_model_service_factory=lambda *a, **k: None,
         default_notifications_service_factory=lambda *a, **k: None,
     )
-    install_stub("controllers.auth", build_iol_client=lambda: None)
+    install_stub(
+        "services.auth_client",
+        AuthClientResult=types.SimpleNamespace,
+        get_auth_provider=lambda: types.SimpleNamespace(build_client=lambda: (None, None)),
+        build_client=lambda *_a, **_k: types.SimpleNamespace(
+            client=None,
+            error=None,
+            error_message=None,
+            should_force_login=False,
+            telemetry={},
+        ),
+    )
+    install_stub(
+        "ui.adapters.auth_ui",
+        get_session_username=lambda: None,
+        set_login_error=lambda *_a, **_k: None,
+        set_force_login=lambda *_a, **_k: None,
+        mark_authenticated=lambda *_a, **_k: None,
+        record_auth_timestamp=lambda *_a, **_k: None,
+        rerun=lambda *_a, **_k: None,
+    )
     install_stub("services.health", get_health_metrics=lambda: {}, record_dependency_status=lambda *a, **k: None)
     settings_stub = types.SimpleNamespace(
         cache_ttl_portfolio=3600,

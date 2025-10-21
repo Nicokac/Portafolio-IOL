@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import pytest
 
-from services.cache import CacheService
+from services.cache.core import CacheService
 
 from predictive_engine.adapters import run_adaptive_forecast
 from predictive_engine.storage import load_forecast_history, save_forecast_history

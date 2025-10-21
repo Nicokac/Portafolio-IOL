@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.cache import CacheService
+from services.cache.core import CacheService
 
 
 class _FakeClock:

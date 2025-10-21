@@ -79,20 +79,40 @@ def _build_controllers_stub() -> None:
     portfolio_module.default_view_model_service_factory = lambda: None
     portfolio_module.render_portfolio_section = lambda *a, **k: None
 
-    auth_module = ModuleType("controllers.auth")
-    auth_module.build_iol_client = lambda: None
-
     portfolio_package.portfolio = portfolio_module
     controllers_module.portfolio = portfolio_package
-    controllers_module.auth = auth_module
     recommendations_module = ModuleType("controllers.recommendations_controller")
     controllers_module.recommendations_controller = recommendations_module
 
     sys.modules['controllers'] = controllers_module
     sys.modules['controllers.portfolio'] = portfolio_package
     sys.modules['controllers.portfolio.portfolio'] = portfolio_module
-    sys.modules['controllers.auth'] = auth_module
     sys.modules['controllers.recommendations_controller'] = recommendations_module
+
+    auth_client_stub = ModuleType("services.auth_client")
+    auth_client_stub.AuthClientResult = SimpleNamespace
+    auth_client_stub.get_auth_provider = lambda: SimpleNamespace(
+        build_client=lambda: (None, None)
+    )
+    auth_client_stub.build_client = (
+        lambda *_args, **_kwargs: SimpleNamespace(
+            client=None,
+            error=None,
+            error_message=None,
+            should_force_login=False,
+            telemetry={},
+        )
+    )
+    sys.modules['services.auth_client'] = auth_client_stub
+
+    auth_ui_stub = ModuleType("ui.adapters.auth_ui")
+    auth_ui_stub.get_session_username = lambda: None
+    auth_ui_stub.set_login_error = lambda *_args, **_kwargs: None
+    auth_ui_stub.set_force_login = lambda *_args, **_kwargs: None
+    auth_ui_stub.mark_authenticated = lambda *_args, **_kwargs: None
+    auth_ui_stub.record_auth_timestamp = lambda *_args, **_kwargs: None
+    auth_ui_stub.rerun = lambda *_args, **_kwargs: None
+    sys.modules['ui.adapters.auth_ui'] = auth_ui_stub
 
 
 def test_total_load_time_is_recorded_and_rendered(monkeypatch) -> None:

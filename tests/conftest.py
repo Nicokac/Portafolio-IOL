@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import os
 import sys
 from types import ModuleType, SimpleNamespace
 from typing import Any
@@ -797,6 +798,25 @@ sys.modules.setdefault("altair", _altair_module)
 
 
 import pytest
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _tokens_env() -> None:
+    previous_fastapi = os.environ.get("FASTAPI_TOKENS_KEY")
+    previous_iol = os.environ.get("IOL_TOKENS_KEY")
+    os.environ["FASTAPI_TOKENS_KEY"] = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
+    os.environ["IOL_TOKENS_KEY"] = "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE="
+    try:
+        yield
+    finally:
+        if previous_fastapi is not None:
+            os.environ["FASTAPI_TOKENS_KEY"] = previous_fastapi
+        else:
+            os.environ.pop("FASTAPI_TOKENS_KEY", None)
+        if previous_iol is not None:
+            os.environ["IOL_TOKENS_KEY"] = previous_iol
+        else:
+            os.environ.pop("IOL_TOKENS_KEY", None)
 
 
 @pytest.fixture(autouse=True)

@@ -1,5 +1,9 @@
 import pandas as pd
 import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="Legacy portfolio helper coverage is deprecated in v0.7"
+)
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 import plotly.express as px
