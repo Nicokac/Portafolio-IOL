@@ -9,6 +9,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import Field
 
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
@@ -26,24 +27,15 @@ from services.auth import get_current_user
 from services.performance_metrics import measure_execution
 from shared.version import __build_signature__, __version__
 
-try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
-    from pydantic import Field, model_validator
-except ImportError:  # pragma: no cover
-    from pydantic import Field
-
-    try:  # pragma: no cover - fallback for Pydantic v1
-        from pydantic import root_validator  # type: ignore[attr-defined]
-    except ImportError:  # pragma: no cover
-        root_validator = None  # type: ignore[assignment]
-    else:
-        model_validator = None  # type: ignore[assignment]
-else:  # pragma: no cover - ensure root_validator name exists for type checkers
-    try:
-        from pydantic import root_validator  # type: ignore[attr-defined]
-    except ImportError:  # pragma: no cover
-        root_validator = None  # type: ignore[assignment]
-
 from api.routers.base_models import _BaseModel
+from api.schemas.predictive import (
+    AdaptiveForecastRequest as BaseAdaptiveForecastRequest,
+    AdaptiveHistoryEntry,
+    OpportunityPayload,
+    PredictRequest,
+    PredictResponse as BasePredictResponse,
+    SectorPrediction,
+)
 
 logger = logging.getLogger(__name__)
 logger.info("Initialising engine router")
@@ -110,37 +102,8 @@ def _coerce_float(value: Any, default: float = 0.0) -> float:
 router = APIRouter(prefix="/engine", tags=["engine"])
 
 
-class OpportunityPayload(_BaseModel):
-    symbol: str
-    sector: str
-
-
-class PredictRequest(_BaseModel):
-    opportunities: Sequence[OpportunityPayload] = Field(default_factory=list)
-    span: int = Field(10, ge=1, description="EMA span applied during smoothing.")
-
-
-class SectorPredictionRow(_BaseModel):
-    sector: str
-    predicted_return: float
-    sample_size: int | None = None
-    avg_correlation: float | None = None
-    confidence: float | None = None
-
-
-class PredictResponse(_BaseModel):
-    predictions: Sequence[SectorPredictionRow] = Field(default_factory=list)
-
-
-class AdaptiveHistoryEntry(_BaseModel):
-    timestamp: datetime | str | None = Field(default=None, description="Timestamp for the observation.")
-    sector: str
-    predicted_return: float
-    actual_return: float
-    symbol: str | None = Field(
-        default=None,
-        description="Optional symbol associated with the observation.",
-    )
+class PredictResponse(BasePredictResponse):
+    """Engine predictive response wrapper."""
 
 
 class AdaptivePredictionEntry(_BaseModel):
@@ -155,13 +118,9 @@ class AdaptiveActualEntry(_BaseModel):
     actual_return: float
 
 
-class AdaptiveForecastRequest(_BaseModel):
-    history: Sequence[AdaptiveHistoryEntry] = Field(default_factory=list)
+class AdaptiveForecastRequest(BaseAdaptiveForecastRequest):
     predictions: Sequence[AdaptivePredictionEntry] = Field(default_factory=list)
     actuals: Sequence[AdaptiveActualEntry] = Field(default_factory=list)
-    ema_span: int = Field(5, ge=1, description="EMA span for adaptive updates.")
-    rolling_window: int = Field(20, ge=2, description="Window size for rolling correlations.")
-    ttl_hours: float | None = Field(default=None, ge=0.0, description="Override TTL for cached adaptive state.")
     max_history_rows: int = Field(720, ge=1, description="Maximum history rows to persist in memory.")
     persist: bool = Field(True, description="Whether to persist adaptive state between requests.")
     persist_history: bool = Field(False, description="Whether to persist history snapshots to disk.")
@@ -175,57 +134,6 @@ class AdaptiveForecastRequest(_BaseModel):
         description="Optional timestamp override for incremental updates.",
     )
 
-    @classmethod
-    def _validate_limits(
-        cls, data: "AdaptiveForecastRequest" | dict[str, Any]
-    ) -> "AdaptiveForecastRequest" | dict[str, Any]:
-        if isinstance(data, cls):
-            history_items = list(data.history or [])
-        else:
-            history_items = list(data.get("history", []) or [])
-
-        if len(history_items) > 10_000:
-            raise ValueError("Se admiten hasta 10 000 observaciones en history")
-
-        symbols: set[str] = set()
-        for entry in history_items:
-            symbol = getattr(entry, "symbol", None)
-            if symbol is None and isinstance(entry, Mapping):
-                symbol = entry.get("symbol")
-            if symbol is not None:
-                symbol_str = str(symbol).strip().upper()
-                if symbol_str:
-                    symbols.add(symbol_str)
-                    continue
-            sector = getattr(entry, "sector", None)
-            if sector is None and isinstance(entry, Mapping):
-                sector = entry.get("sector")
-            sector_str = str(sector).strip().upper() if sector is not None else ""
-            if sector_str:
-                symbols.add(sector_str)
-
-        if len(symbols) > 30:
-            raise ValueError("Se admiten hasta 30 símbolos únicos en history")
-
-        return data
-
-    if model_validator is not None:  # pragma: no branch
-
-        @model_validator(mode="after")
-        def _check_limits(  # type: ignore[override]
-            cls, model: "AdaptiveForecastRequest"
-        ) -> "AdaptiveForecastRequest":
-            cls._validate_limits(model)
-            return model
-
-    elif root_validator is not None:  # pragma: no cover - fallback for Pydantic v1
-
-        @root_validator(skip_on_failure=True)  # type: ignore[misc]
-        def _check_limits_v1(
-            cls, values: dict[str, Any]
-        ) -> dict[str, Any]:
-            cls._validate_limits(values)
-            return values
 
 
 class AdaptiveUpdateResponse(_BaseModel):
@@ -319,7 +227,7 @@ async def engine_predict(
         predictions_frame = pd.DataFrame(result or [])
 
     records = to_records(predictions_frame)
-    parsed = [SectorPredictionRow(**record) for record in records]
+    parsed = [SectorPrediction(**record) for record in records]
     return PredictResponse(predictions=parsed)
 
 
