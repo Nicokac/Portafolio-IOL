@@ -7,6 +7,7 @@ from typing import Mapping
 import numpy as np
 
 from shared.settings import CACHE_HIT_THRESHOLDS
+from shared.utils import format_percent  # legacy alias
 
 __all__ = [
     "format_currency",
@@ -24,12 +25,6 @@ def format_currency(value: float) -> str:
     if not np.isfinite(value):
         return "-"
     return f"${value:,.0f}".replace(",", ".")
-
-
-def format_percent(value: float) -> str:
-    if not np.isfinite(value):
-        return "-"
-    return f"{value:.2f}%"
 
 
 def format_float(value: float) -> str:
