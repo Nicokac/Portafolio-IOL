@@ -12,6 +12,13 @@ Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 >
 > Estado de calidad **v0.7.0**: todas las superficies (UI, API y CLI) leen el mismo identificador de versión/build, la telemetría anota el contexto `app_version` y `build_signature`, y el panel de diagnósticos expone la metadata de release junto al resto de métricas operativas.
 
+## 🧱 Arquitectura modular (v0.7.0)
+
+- El arranque de la aplicación se divide en módulos autocontenidos dentro de `bootstrap/`: `startup.py` orquesta la inicialización temprana de cachés, telemetría y componentes compartidos, mientras que `config.py` expone perfiles reutilizables para UI, API y trabajos batch.
+- El healthcheck se desacopla en componentes (`ui/health_sidebar.py`, `ui/health_sidebar_monitoring.py`, `ui/health_sidebar_history.py`) que consumen los nuevos providers de `services.health`, habilitando aislamiento por módulo y telemetría consistente en los tabs.
+- Se formaliza el esquema de telemetría (`shared/telemetry.py`, `shared/visual_cache_prewarm.py`) con columnas fijas para build, dataset y métricas diferidas, simplificando la ingesta en Prometheus y la normalización para dashboards externos.
+- Las capas de autenticación, caché y runtime de UI adoptan factories explícitas (`controllers/auth/`, `services/cache/`, `ui/lazy/`), permitiendo reemplazos granulares sin modificar imports globales.
+
 ## ⚡ Performance Improvements (v0.6.4-patch1)
 
 - Nueva capa de cache (`services/cache/market_data_cache.py`) que reutiliza históricos de precios y fundamentos entre pestañas durante 6 horas, reduciendo descargas repetidas.
@@ -603,7 +610,7 @@ python scripts/export_analysis.py \
 - Se adjunta además `summary.csv` en la raíz con los KPIs crudos (`raw_value`) de cada snapshot para facilitar comparaciones rápidas o integraciones en pipelines.
 - En modo CLI la caché que reutiliza Kaleido es local al proceso y se reinicia en cada ejecución (la app mantiene la caché compartida vía Streamlit).
 
-> Dependencias: asegurate de instalar `kaleido` y `XlsxWriter` (ambos incluidos en `requirements.txt`) para que el script pueda renderizar los gráficos y escribir el Excel correctamente.
+> Dependencias: asegurate de instalar `kaleido==0.2.1`, `plotly==6.3.1`, `streamlit-vega-lite==0.1.0` (incluye runtime de Vega-Lite 5.x) y `XlsxWriter==3.2.0`, todos presentes en `requirements.txt`, para que el script pueda renderizar los gráficos y escribir el Excel correctamente.
 
 Cada registro respeta los principios de la estrategia Andy: payout y P/E saludables, rachas y CAGR positivos, EPS forward por encima del trailing, buybacks y crecimiento de ingresos cuando corresponde. En la release actual, ese set determinista permite verificar que `score_compuesto` se mantenga estable tanto en modo `yahoo` como `stub`, sosteniendo la comparabilidad del ranking.
 
@@ -716,6 +723,15 @@ pip install -r requirements.txt
 ```
 
 > El archivo `requirements.txt` se genera con `python scripts/sync_requirements.py` a partir de `[project.dependencies]` en `pyproject.toml`. Cualquier ajuste debe aplicarse en ese archivo y luego sincronizarse para mantener la lista plana que consumen los despliegues.
+
+### Dependencias clave (v0.7.0)
+
+- `streamlit-javascript==0.1.5`: componente oficial para incrustar scripts aislados dentro del runtime modularizado.
+- `streamlit-vega-lite==0.1.0`: expone gráficos declarativos con el bundle de Vega/Vega-Lite 5.x que consume la nueva telemetría visual.
+- `plotly==6.3.1` + `kaleido==0.2.1`: stack validado para la exportación de gráficos y los análisis enriquecidos.
+- `requirements.lock`: generado desde un entorno virtual limpio (`python -m venv .venv`) para instalaciones reproducibles en CI/CD.
+
+> Si necesitás clavar versiones exactas en despliegues inmutables, preferí `pip install -r requirements.lock`.
 
 > If you only run the Streamlit UI, FastAPI dependencies are optional and safely bypassed.
 
