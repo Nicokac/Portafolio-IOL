@@ -58,9 +58,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run cache endpoint smoke-test
         run: bash scripts/test_smoke_endpoints.sh "$CACHE_SMOKE_REPORT"
       - name: Upload cache smoke report
@@ -133,9 +131,7 @@ PY
           python-version: '3.x'
       - name: Install dependencies
         if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt
       - name: Run live Yahoo Finance smoke-test
         if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         run: pytest -m live_yahoo
