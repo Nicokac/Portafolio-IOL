@@ -7,6 +7,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 
 from api.main import app
+from shared.version import __build_signature__, __version__
 
 
 def test_engine_info_endpoint_returns_expected_payload() -> None:
@@ -18,7 +19,8 @@ def test_engine_info_endpoint_returns_expected_payload() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["engine_version"] == "v0.6.3"
+    assert payload["engine_version"] == f"v{__version__}"
+    assert payload["build_signature"] == __build_signature__
     assert "timestamp" in payload
 
     # Validate ISO 8601 compatibility.

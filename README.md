@@ -1,16 +1,16 @@
-# Portafolio IOL — v0.6.4-perf-diagnostics
+# Portafolio IOL — v0.7.0
 
 ![Cobertura ~88%](https://img.shields.io/badge/Coverage-88%25-olive)
 
 Aplicación Streamlit para consultar y analizar carteras de inversión en IOL.
 
-> v0.6.4-perf-diagnostics — Telemetría granular con `services.performance_timer`, logs unificados de CPU/RAM por bloque crítico y tablero "⏱️ Performance" en Streamlit para QA.
+> v0.7.0 — Versionamiento unificado con telemetría enriquecida, build signatures y diagnósticos sincronizados.
 
 > Nota: todos los timestamps visibles provienen de `shared.time_provider.TimeProvider` y se muestran
 > en formato `YYYY-MM-DD HH:MM:SS` (UTC-3). El footer de la aplicación se actualiza en cada
 > renderizado con la hora de Argentina.
 >
-> Estado de calidad **v0.6.4-perf-diagnostics**: suma instrumentación con `services.performance_timer`, registra CPU/RAM en login, refresco de tokens, carga de portafolio, filtros y predicciones, e incorpora el tablero “⏱️ Performance” accesible desde la barra lateral.
+> Estado de calidad **v0.7.0**: todas las superficies (UI, API y CLI) leen el mismo identificador de versión/build, la telemetría anota el contexto `app_version` y `build_signature`, y el panel de diagnósticos expone la metadata de release junto al resto de métricas operativas.
 
 ## ⚡ Performance Improvements (v0.6.4-patch1)
 

@@ -22,6 +22,7 @@ from application.predictive_service import PredictiveSnapshot, get_cache_stats
 from services.performance_metrics import MetricSummary, get_recent_metrics
 from shared.settings import app_env
 from shared.time_provider import TimeProvider
+from shared.version import __build_signature__, __version__, get_version_info
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -134,6 +135,26 @@ class EnvironmentStatus:
 
 
 @dataclass(frozen=True)
+class VersionMetadata:
+    """Version metadata mirrored into diagnostics payloads."""
+
+    version: str
+    build_signature: str
+    release_date: str | None
+    codename: str | None
+    stability: str | None
+
+    def as_dict(self) -> dict[str, object | None]:
+        return {
+            "version": self.version,
+            "build_signature": self.build_signature,
+            "release_date": self.release_date,
+            "codename": self.codename,
+            "stability": self.stability,
+        }
+
+
+@dataclass(frozen=True)
 class SystemDiagnosticsSnapshot:
     """Aggregate payload consumed by the diagnostics UI and logs."""
 
@@ -142,6 +163,7 @@ class SystemDiagnosticsSnapshot:
     cache: CacheHealthSnapshot | None
     keys: Sequence[FernetKeyStatus]
     environment: EnvironmentStatus
+    version: VersionMetadata
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -176,6 +198,7 @@ class SystemDiagnosticsSnapshot:
                 "python_version": self.environment.python_version,
                 "platform": self.environment.platform,
             },
+            "version": self.version.as_dict(),
         }
 
 
@@ -366,6 +389,17 @@ def _log_snapshot(snapshot: SystemDiagnosticsSnapshot) -> None:
     _LOGGER.info(json.dumps(payload, ensure_ascii=False))
 
 
+def _build_version_metadata() -> VersionMetadata:
+    data = get_version_info()
+    return VersionMetadata(
+        version=str(data.get("version", __version__)),
+        build_signature=str(data.get("build_signature", __build_signature__)),
+        release_date=data.get("release_date"),
+        codename=data.get("codename"),
+        stability=data.get("stability"),
+    )
+
+
 def run_system_diagnostics_once(now: float | None = None) -> SystemDiagnosticsSnapshot:
     """Execute a diagnostics cycle and persist the snapshot."""
 
@@ -386,6 +420,7 @@ def run_system_diagnostics_once(now: float | None = None) -> SystemDiagnosticsSn
             cache=cache_snapshot,
             keys=key_statuses,
             environment=environment,
+            version=_build_version_metadata(),
         )
         global _LAST_SNAPSHOT
         _LAST_SNAPSHOT = snapshot
@@ -476,6 +511,7 @@ __all__ = [
     "FernetKeyStatus",
     "SystemDiagnosticsConfiguration",
     "SystemDiagnosticsSnapshot",
+    "VersionMetadata",
     "configure_system_diagnostics",
     "ensure_system_diagnostics_started",
     "get_system_diagnostics_snapshot",

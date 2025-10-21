@@ -15,6 +15,7 @@ from services.startup_logger import log_startup_event
 from shared import skeletons
 from shared.config import configure_logging, ensure_tokens_key
 from shared.security_env_validator import validate_security_environment
+from shared.version import __build_signature__, __version__
 from ui.ui_settings import init_ui
 
 logger = logging.getLogger(__name__)
@@ -78,6 +79,12 @@ def init_app(argv: list[str] | None = None) -> argparse.Namespace:
     ensure_tokens_key()
     validate_security_environment()
     init_ui()
+
+    message = (
+        f"App initialized — version={__version__} — build={__build_signature__}"
+    )
+    log_startup_event(message)
+    logger.info(message)
 
     return args
 

@@ -1,5 +1,8 @@
 """Predictive engine package consolidating statistical routines."""
 
+from shared.version import __build_signature__ as _APP_BUILD_SIGNATURE
+from shared.version import __version__ as _APP_VERSION
+
 from .base import (
     compute_sector_predictions,
     calculate_adaptive_forecast,
@@ -17,6 +20,7 @@ from .models import (
 
 __all__ = [
     "__version__",
+    "__build_signature__",
     "compute_sector_predictions",
     "calculate_adaptive_forecast",
     "evaluate_model_metrics",
@@ -29,4 +33,5 @@ __all__ = [
     "SectorPredictionSet",
 ]
 
-__version__ = "0.6.3-part2"
+__version__ = _APP_VERSION
+__build_signature__ = _APP_BUILD_SIGNATURE

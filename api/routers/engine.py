@@ -24,6 +24,7 @@ from predictive_engine.storage import load_forecast_history
 from predictive_engine.utils import series_to_dict, to_native, to_records
 from services.auth import get_current_user
 from services.performance_metrics import measure_execution
+from shared.version import __build_signature__, __version__
 
 try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
     from pydantic import BaseModel, Field, ConfigDict, model_validator
@@ -281,7 +282,8 @@ async def engine_info() -> dict[str, str]:
     timestamp = datetime.now(timezone.utc).isoformat()
     return {
         "status": "ok",
-        "engine_version": "v0.6.3",
+        "engine_version": f"v{__version__}",
+        "build_signature": __build_signature__,
         "timestamp": timestamp,
     }
 

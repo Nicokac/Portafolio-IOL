@@ -38,6 +38,11 @@ def render_system_diagnostics_panel() -> None:
     st.header("🔎 Diagnóstico del sistema")
     st.caption("Benchmarks periódicos sobre endpoints críticos y salud operativa.")
 
+    version = snapshot.version
+    st.caption(
+        f"Versión v{version.version} · Build {version.build_signature} · Release {version.release_date or 's/d'}"
+    )
+
     try:
         startup_ms = st.session_state.get("ui_startup_load_ms")
         total_ms = st.session_state.get("total_load_ms")

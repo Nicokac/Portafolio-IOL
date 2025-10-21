@@ -12,13 +12,17 @@ from services.system_diagnostics import (
     ensure_system_diagnostics_started,
 )
 from shared.security_env_validator import validate_security_environment
-from shared.version import __version__
+from shared.version import __build_signature__, __version__
 
 from .middleware.refresh_rate_limit import RefreshRateLimitMiddleware
 from .routers import auth, cache, engine, metrics, predictive, profile
 
 logger = logging.getLogger(__name__)
-logger.info("Starting FastAPI backend - version %s", __version__)
+logger.info(
+    "Starting FastAPI backend - version=%s - build=%s",
+    __version__,
+    __build_signature__,
+)
 
 validate_security_environment()
 ensure_sqlite_maintenance_started()

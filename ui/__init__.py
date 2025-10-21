@@ -1,5 +1,11 @@
 """Módulo de interfaz de usuario para Portafolio-IOL."""
 
+from shared.version import __build_signature__ as _APP_BUILD_SIGNATURE
+from shared.version import __version__ as _APP_VERSION
+
+__version__ = _APP_VERSION
+__build_signature__ = _APP_BUILD_SIGNATURE
+
 __all__ = [
     "header",
     "tables",
@@ -10,6 +16,8 @@ __all__ = [
     "actions",
     "palette",
     "footer",
+    "__version__",
+    "__build_signature__",
 ]
 
 from .header import render_header
