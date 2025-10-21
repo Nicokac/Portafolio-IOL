@@ -7,7 +7,7 @@ lint:
 	ruff check .
 
 format:
-	ruff format
+	ruff format .
 
 test:
 	pytest -q -o addopts=''

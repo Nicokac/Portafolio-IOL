@@ -35,6 +35,7 @@ markers = [
     "slow: Performance-sensitive tests that may take several seconds to finish",
 ]
 # Legacy suite retained únicamente para auditorías del cliente antiguo.
+addopts = "-q"
 norecursedirs = [
     "tests/legacy",
 ]
