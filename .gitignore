@@ -26,7 +26,16 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# --- Config y secretos (¡no subir!)
+# --- Streamlit (permite excepciones)
+.streamlit/*
+!.streamlit/config.toml
+!.streamlit/bootstrap.css
+.streamlit/secrets.toml
+
+# --- Caches genéricas
+.cache/
+
+# --- Config y secretos
 .env
 *.env
 tokens_iol.json
@@ -44,16 +53,11 @@ tokens/*
 !tokens/.gitkeep
 !tokens/tokens_iol.json
 
-# --- Datos locales (ajusta según uses)
+# --- Datos locales (ajusta según uso)
 data/
 *.csv
 !docs/fixtures/default/*.csv
 !infrastructure/cache/ta_fallback.csv
-!performance_metrics_10.csv
-!performance_metrics_11.csv
-!performance_metrics_13.csv
-!performance_metrics_14.csv
-!performance_metrics_15.csv
 *.parquet
 *.xlsx
 
@@ -63,6 +67,6 @@ logs/*
 dist/
 build/
 
-# --- Generated version file
+# --- Versionado generado
 version.py
 !shared/version.py
