@@ -11,13 +11,7 @@ import app as main_app
 import ui.footer
 from unittest.mock import MagicMock
 from shared.time_provider import TIMEZONE, TIME_FORMAT, TimeProvider, TimeSnapshot
-
-
-class DummyCtx:
-    def __enter__(self):
-        return None
-    def __exit__(self, *exc):
-        return False
+from tests.fixtures.common import DummyCtx
 
 
 class FixedTimeProvider:

@@ -5,13 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-
-class DummyCtx:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
+from tests.fixtures.common import DummyCtx
 
 
 def _make_streamlit():

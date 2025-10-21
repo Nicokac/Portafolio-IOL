@@ -2,16 +2,7 @@ import streamlit as st
 from ui.actions import render_action_menu
 from unittest.mock import patch
 
-
-class DummyCtx:
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def button(self, *args, **kwargs):
-        return False
+from tests.fixtures.common import DummyCtx
 
 
 def test_logout_forces_login_page(monkeypatch):

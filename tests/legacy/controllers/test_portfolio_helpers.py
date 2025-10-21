@@ -19,14 +19,7 @@ import controllers.portfolio.risk as risk_mod
 import controllers.portfolio.fundamentals as fund_mod
 from shared.favorite_symbols import FavoriteSymbols
 from domain.models import Controls
-
-
-class DummyCtx:
-    def __enter__(self):
-        return None
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
+from tests.fixtures.common import DummyCtx
 
 
 def test_load_portfolio_data(monkeypatch):

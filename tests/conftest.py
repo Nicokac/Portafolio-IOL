@@ -7,6 +7,9 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 import warnings
 
+import pytest
+
+from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
 
 warnings.filterwarnings(
@@ -14,6 +17,13 @@ warnings.filterwarnings(
     message="`infrastructure.iol.legacy` está deprecado",
     category=DeprecationWarning,
 )
+
+
+@pytest.fixture
+def dummy_ctx_fixture() -> DummyCtx:
+    """Provide a reusable no-op context manager for tests."""
+
+    return DummyCtx()
 
 
 class _DummyStreamlitSecretNotFoundError(KeyError):

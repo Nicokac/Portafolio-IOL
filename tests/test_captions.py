@@ -14,13 +14,7 @@ from ui.fx_panels import render_spreads
 import ui.fx_panels as fx_panels
 import ui.tables as tables_mod
 from shared.favorite_symbols import FavoriteSymbols
-
-
-class DummyCtx:
-    def __enter__(self):
-        return None
-    def __exit__(self, *exc):
-        return False
+from tests.fixtures.common import DummyCtx
 
 
 def test_render_basic_section_captions(monkeypatch):
