@@ -1,0 +1,59 @@
+name: validate ignores
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-ignores:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ensure .gitignore keeps Streamlit config tracked
+        run: |
+          set -euo pipefail
+          if git check-ignore -q .streamlit/config.toml; then
+            git check-ignore -v .streamlit/config.toml || true
+            echo "::error file=.gitignore::.streamlit/config.toml debe estar versionado" >&2
+            exit 1
+          fi
+          if git check-ignore -q .streamlit/bootstrap.css; then
+            git check-ignore -v .streamlit/bootstrap.css || true
+            echo "::error file=.gitignore::.streamlit/bootstrap.css debe estar versionado" >&2
+            exit 1
+          fi
+          grep -Fq '.streamlit/*' .gitignore || {
+            echo "::error file=.gitignore::.streamlit/* debe estar ignorado salvo excepciones" >&2
+            exit 1
+          }
+          grep -Fq '!.streamlit/config.toml' .gitignore || {
+            echo "::error file=.gitignore::falta re-incluir .streamlit/config.toml" >&2
+            exit 1
+          }
+          grep -Fq '!.streamlit/bootstrap.css' .gitignore || {
+            echo "::error file=.gitignore::falta re-incluir .streamlit/bootstrap.css" >&2
+            exit 1
+          }
+
+      - name: Ensure .dockerignore keeps Streamlit overrides available
+        run: |
+          set -euo pipefail
+          grep -Fq '.streamlit/*' .dockerignore || {
+            echo "::error file=.dockerignore::.streamlit/* debe estar ignorado en builds" >&2
+            exit 1
+          }
+          grep -Fq '!.streamlit/config.toml' .dockerignore || {
+            echo "::error file=.dockerignore::falta re-incluir .streamlit/config.toml" >&2
+            exit 1
+          }
+          grep -Fq '!.streamlit/bootstrap.css' .dockerignore || {
+            echo "::error file=.dockerignore::falta re-incluir .streamlit/bootstrap.css" >&2
+            exit 1
+          }
+          if grep -Fxq '.streamlit/' .dockerignore; then
+            echo "::error file=.dockerignore::.dockerignore no debe contener la línea exacta .streamlit/" >&2
+            exit 1
+          fi
