@@ -7,6 +7,8 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 import warnings
 
+from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
+
 warnings.filterwarnings(
     "ignore",
     message="`infrastructure.iol.legacy` está deprecado",
@@ -827,3 +829,24 @@ def _reset_streamlit_stub() -> None:
 @pytest.fixture
 def streamlit_stub() -> _DummyStreamlitCore:
     return _streamlit_core
+
+
+@pytest.fixture(params=("base", "logging", "ui"))
+def fake_st(request: pytest.FixtureRequest) -> BaseFakeStreamlit:
+    param = request.param
+    config: dict[str, Any]
+    if isinstance(param, tuple):
+        variant, config = param
+    elif isinstance(param, dict):
+        variant, config = "ui", param
+    else:
+        variant, config = str(param), {}
+
+    if variant == "logging":
+        return FakeStreamlit()
+
+    if variant == "ui":
+        kwargs = {**config}
+        return UIFakeStreamlit(**kwargs)
+
+    return BaseFakeStreamlit()

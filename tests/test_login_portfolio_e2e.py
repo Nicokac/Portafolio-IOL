@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
@@ -10,60 +9,14 @@ from application.portfolio_service import PortfolioService
 from controllers.portfolio import filters, load_data
 from domain.models import Controls
 from services import cache as services_cache
+from tests.fixtures.streamlit import BaseFakeStreamlit
 
 
-class FakeStreamlit:
-    """Minimal streamlit replacement used throughout the test."""
-
-    @dataclass
-    class _Spinner:
-        owner: "FakeStreamlit"
-        message: str
-
-        def __enter__(self):  # pragma: no cover - trivial
-            self.owner._spinner_messages.append(self.message)
-            return self
-
-        def __exit__(self, exc_type, exc, tb):  # pragma: no cover - trivial
-            return False
-
-    def __init__(self) -> None:
-        self.session_state: dict = {}
-        self._warnings: list[str] = []
-        self._errors: list[str] = []
-        self._infos: list[str] = []
-        self._spinner_messages: list[str] = []
-        self._rerun_called = False
-
-    # --- Helpers mimicking streamlit API used by the application ---
-    def spinner(self, message: str) -> "FakeStreamlit._Spinner":
-        return FakeStreamlit._Spinner(self, message)
-
-    def warning(self, message: str) -> None:
-        self._warnings.append(message)
-
-    def error(self, message: str) -> None:  # pragma: no cover - defensive
-        self._errors.append(message)
-
-    def info(self, message: str) -> None:  # pragma: no cover - defensive
-        self._infos.append(message)
-
-    def dataframe(self, *args, **kwargs) -> None:  # pragma: no cover - noop
-        return None
-
-    def caption(self, *args, **kwargs) -> None:  # pragma: no cover - noop
-        return None
-
-    def rerun(self) -> None:  # pragma: no cover - defensive
-        self._rerun_called = True
-
-    def stop(self) -> None:  # pragma: no cover - defensive
-        raise RuntimeError("streamlit.stop() should not be invoked in tests")
+pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 
 
 @pytest.fixture
-def fake_streamlit(monkeypatch) -> FakeStreamlit:
-    fake_st = FakeStreamlit()
+def fake_streamlit(monkeypatch, fake_st: BaseFakeStreamlit) -> BaseFakeStreamlit:
     for module in (auth_service, load_data, filters, services_cache):
         monkeypatch.setattr(module, "st", fake_st)
     return fake_st
