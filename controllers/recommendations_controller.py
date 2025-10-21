@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import pandas as pd
 
 from application.adaptive_predictive_service import simulate_adaptive_forecast
 from application.predictive_service import (
+    PredictiveCacheSnapshot,
     PredictiveSnapshot,
     build_adaptive_history,
     get_cache_stats,
@@ -89,11 +90,15 @@ class AdaptiveForecastViewModel:
         }
 
 
-def _snapshot_to_view(snapshot: PredictiveSnapshot | Mapping[str, Any] | None) -> PredictiveCacheViewModel:
+def _snapshot_to_view(
+    snapshot: PredictiveCacheSnapshot | PredictiveSnapshot | Mapping[str, Any] | None,
+) -> PredictiveCacheViewModel:
     if snapshot is None:
         return PredictiveCacheViewModel()
-    if isinstance(snapshot, PredictiveSnapshot):
-        data = asdict(snapshot)
+    if isinstance(snapshot, PredictiveCacheSnapshot):
+        data = snapshot.to_dict()
+    elif isinstance(snapshot, PredictiveSnapshot):
+        data = snapshot.as_dict()
     elif isinstance(snapshot, Mapping):
         data = dict(snapshot)
     else:

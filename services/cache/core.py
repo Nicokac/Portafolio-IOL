@@ -6,7 +6,10 @@ import time
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any, Callable, Dict, Mapping
+from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from application.predictive_service import PredictiveCacheSnapshot
 
 
 @dataclass
@@ -294,6 +297,7 @@ def get_cache_stats(cache: CacheService | None = None) -> Dict[str, Any]:
         return _normalise_core_stats(cache.stats())
     try:
         from application.predictive_service import (  # pylint: disable=import-outside-toplevel
+            PredictiveCacheSnapshot,
             get_cache_stats as _predictive_cache_stats,
         )
     except Exception:  # pragma: no cover - defensive guard
@@ -301,6 +305,8 @@ def get_cache_stats(cache: CacheService | None = None) -> Dict[str, Any]:
     snapshot = _predictive_cache_stats()
     if snapshot is None:
         return _default_stats_payload()
+    if isinstance(snapshot, PredictiveCacheSnapshot):
+        return _normalise_snapshot(snapshot.to_dict())
     if isinstance(snapshot, Mapping):
         return _normalise_snapshot(snapshot)
     if is_dataclass(snapshot):

@@ -18,7 +18,11 @@ from pathlib import Path
 from datetime import datetime
 from typing import Deque, Iterable, Mapping, Sequence
 
-from application.predictive_service import PredictiveSnapshot, get_cache_stats
+from application.predictive_service import (
+    PredictiveCacheSnapshot,
+    PredictiveSnapshot,
+    get_cache_stats,
+)
 from services.performance_metrics import MetricSummary, get_recent_metrics
 from shared.settings import app_env
 from shared.time_provider import TimeProvider
@@ -89,16 +93,20 @@ class CacheHealthSnapshot:
     remaining_ttl: float | None
 
     @classmethod
-    def from_predictive(cls, snapshot: PredictiveSnapshot) -> "CacheHealthSnapshot":
+    def from_predictive(
+        cls, snapshot: PredictiveSnapshot | PredictiveCacheSnapshot
+    ) -> "CacheHealthSnapshot":
+        if isinstance(snapshot, PredictiveCacheSnapshot):
+            base = snapshot.as_predictive_snapshot()
+        else:
+            base = snapshot
         return cls(
-            hits=int(snapshot.hits),
-            misses=int(snapshot.misses),
-            hit_ratio=float(snapshot.hit_ratio),
-            last_updated=str(snapshot.last_updated),
-            ttl_hours=None if snapshot.ttl_hours is None else float(snapshot.ttl_hours),
-            remaining_ttl=None
-            if snapshot.remaining_ttl is None
-            else float(snapshot.remaining_ttl),
+            hits=int(base.hits),
+            misses=int(base.misses),
+            hit_ratio=float(base.hit_ratio),
+            last_updated=str(base.last_updated),
+            ttl_hours=None if base.ttl_hours is None else float(base.ttl_hours),
+            remaining_ttl=None if base.remaining_ttl is None else float(base.remaining_ttl),
         )
 
     def as_dict(self) -> dict[str, float | int | str | None]:
