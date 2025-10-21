@@ -18,6 +18,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## [0.7.0] — 2025-10-21
+
+### Added
+- Bootstrap modular en `bootstrap/startup.py` y `bootstrap/config.py` que prepara cachés, telemetría y factories compartidas para UI, API y jobs batch.
+- Panel de health modularizado (`ui/health_sidebar*.py`) con proveedores dedicados en `services.health` y métricas diferenciadas por superficie.
+- Esquema de telemetría unificado en `shared/telemetry.py`, `shared/visual_cache_prewarm.py` y `shared/snapshot.py`, incluyendo `build_signature`, `dataset_hash` y métricas lazy de UI.
+
+### Changed
+- Flujo de autenticación reorganizado en `controllers/auth` y `services/auth` para desacoplar la emisión de tokens y el refresco incremental del runtime UI.
+- Layout del caché reestructurado: `services/cache/*` delega en factories por dominio y documenta TTL consistentes con el bootstrap.
+- Runtime de UI desacoplado en `ui/lazy/` y `ui/controllers/` con factories específicas para fragmentos (ej. `ui/lazy/table_fragment`).
+- Dependencias clave fijadas: `streamlit-javascript==0.1.5`, `plotly==6.3.1`, `kaleido==0.2.1`, `streamlit-vega-lite==0.1.0` y sincronizadas en `pyproject.toml`, `requirements.txt` y `requirements.lock`.
+
+### Fixed
+- Visibilidad de fragmentos lazy al sincronizar `st.session_state` con los nuevos factories, evitando renderizados en blanco en tablas y gráficos.
+- Advertencias de Kaleido/Plotly al forzar el renderer correcto durante exportaciones y documentar el fallback en la UI.
+
+### Removed
+- Se oficializa la retirada de alias legacy y reexports redundantes en `controllers/__init__`, `ui/__init__` y capas intermedias, alineando la documentación con el estado del código.
+- Imports implícitos del runtime antiguo en `app.py` y `application/__init__.py`, reemplazados por inicialización explícita vía bootstrap.
+
+### Testing
+- `pip install -r requirements.txt`
+- Instalación reproducible con entorno virtual (`python -m venv .venv`) y regeneración de `requirements.lock`.
+- Imports de `streamlit`, `plotly`, `streamlit_javascript`, `streamlit_vega_lite` y `kaleido.scopes.plotly` verificados en modo bare.
+
+### Known Issues
+- El flujo lazy de Streamlit puede mostrar el warning `missing ScriptRunContext` al ejecutar scripts en modo bare; el bootstrap lo documenta pero no lo oculta automáticamente.
+- Exportaciones Plotly dependen de Chromium cuando se usa el renderer `browser`; Kaleido sigue siendo el camino recomendado y queda monitoreado en el healthcheck.
+
+### Environment
+- Python 3.10+ con `streamlit-javascript==0.1.5`, `streamlit-vega-lite==0.1.0`, `plotly==6.3.1`, `kaleido==0.2.1` y `vega-lite` provisto por el bundle de `streamlit-vega-lite`.
+- Usar `requirements.lock` para despliegues inmutables y evitar drift de dependencias en CI/CD.
+
 ## 🩹 Portafolio IOL v0.6.22-patch2 — Fix lazy reruns & Skeleton singleton (Febrero 2026)
 
 ### 🚑 Hotfix
