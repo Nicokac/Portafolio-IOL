@@ -1,5 +1,6 @@
 # --- Python / bytecode
 __pycache__/
+*.pyc
 *.py[cod]
 *.pyo
 *.pyd
@@ -17,7 +18,8 @@ venv/
 Thumbs.db
 
 # --- Streamlit / caches locales
- .streamlit/*
+.streamlit/
+!.streamlit/bootstrap.css
 !.streamlit/config.toml
 .cache/
 
