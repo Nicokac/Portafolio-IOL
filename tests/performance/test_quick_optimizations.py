@@ -41,10 +41,11 @@ def test_telemetry_appends_rows_to_metrics_files() -> None:
             rows = list(csv.DictReader(handle))
         assert len(rows) == 1
         row = rows[0]
-        assert row["phase"] == "quotes_refresh"
-        assert row["dataset_hash"] == "hash123"
-        assert row["ui_total_load_ms"] == "1234.00"
-        assert row["subbatch_avg_s"] == "0.050000"
+        assert row["metric_name"] == "quotes_refresh"
+        payload = json.loads(row["context"])
+        assert payload.get("dataset_hash") == "hash123"
+        assert payload.get("ui_total_load_ms") == 1234.0
+        assert payload.get("subbatch_avg_s") == 0.05
 
 
 def test_warm_start_reduces_first_fetch(monkeypatch, tmp_path) -> None:

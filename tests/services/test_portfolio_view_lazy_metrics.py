@@ -154,6 +154,6 @@ def test_lazy_metrics_phases_logged(
         assert path.exists(), f"Missing telemetry file {path}"
         with path.open("r", encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
-        phases = [row["phase"] for row in rows]
+        phases = [row["metric_name"] for row in rows]
         assert "portfolio_view.apply_basic" in phases
         assert "portfolio_view.apply_extended" in phases

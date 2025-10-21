@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 from shared.telemetry import log_telemetry
@@ -39,13 +40,16 @@ def test_visual_metrics_under_threshold(tmp_path: Path) -> None:
     assert len(rows) == 2
 
     ui_row = rows[0]
-    assert "ui_total_load_ms" in ui_row
-    assert float(ui_row["ui_total_load_ms"]) < 10_000
-    assert float(ui_row["ui_first_paint_ms"]) < 10_000
-    assert ui_row["lazy_loaded_component"] == "chart"
-    assert float(ui_row["lazy_load_ms"]) >= 0.0
+    assert ui_row["metric_name"] == "startup.render_portfolio_complete"
+    ui_context = json.loads(ui_row["context"])
+    assert ui_context.get("lazy_loaded_component") == "chart"
+    assert float(ui_context["ui_total_load_ms"]) < 10_000
+    assert float(ui_context["ui_first_paint_ms"]) < 10_000
+    assert float(ui_context["lazy_load_ms"]) >= 0.0
 
     lazy_row = rows[1]
-    assert lazy_row["lazy_loaded_component"] == "table"
-    assert float(lazy_row["lazy_load_ms"]) >= 0.0
-    assert lazy_row["ui_total_load_ms"] == ""
+    assert lazy_row["metric_name"] == "portfolio.lazy_component"
+    lazy_context = json.loads(lazy_row["context"])
+    assert lazy_context.get("lazy_loaded_component") == "table"
+    assert float(lazy_context["lazy_load_ms"]) >= 0.0
+    assert "ui_total_load_ms" not in lazy_context
