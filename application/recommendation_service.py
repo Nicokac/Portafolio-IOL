@@ -220,7 +220,6 @@ class RecommendationService:
         if self._analysis is not None:
             return self._analysis
 
-        portfolio = self._merge_fundamentals()
         type_dist = self._distribution("tipo")
         sector_dist = self._distribution("sector")
         currency_dist = self._distribution("moneda")

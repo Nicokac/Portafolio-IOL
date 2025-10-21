@@ -214,12 +214,9 @@ def _validate_invalidate_targets(
 
 
 try:  # pragma: no cover - support both Pydantic branches
-    from pydantic import ConfigDict, model_validator
-    root_validator = None
+    from pydantic import ConfigDict
 except ImportError:  # pragma: no cover
     ConfigDict = None  # type: ignore[assignment]
-    model_validator = None  # type: ignore[assignment]
-    from pydantic import root_validator
 
 
 class CacheStatusResponse(_BaseModel):
