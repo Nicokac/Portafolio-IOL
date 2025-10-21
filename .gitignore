@@ -1,9 +1,6 @@
 # --- Artefactos temporales y entornos
 .cache/
 .pytest_cache/
-.streamlit/
-!.streamlit/bootstrap.css
-!.streamlit/config.toml
 .vscode/
 env/
 .venv/

@@ -1,4 +1,4 @@
-# --- Tests (excluidos del contexto de build)
+# --- Tests (excluidos del contexto de build por builds ligeros de UI)
 test/
 */test/
 **/test/
@@ -29,6 +29,11 @@ __pycache__/
 *.env
 tokens/
 tokens_iol.json
+
+# --- Streamlit (permite excepciones)
+.streamlit/*
+!.streamlit/config.toml
+!.streamlit/bootstrap.css
 
 # === Datos locales (ajusta según uso) ===
 data/

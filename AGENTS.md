@@ -75,10 +75,10 @@
 - No agregues secretos en el repositorio; utiliza `.env` y validadores (`python -m shared.security_env_validator`).
 
 ## 6. Convenciones de ramas y PRs (con checklist)
-- **Ramas:** TODO: confirmar convención de nombres (no se encontró política explícita).
+- **Ramas:** usar `main` como rama base salvo indicación contraria; nombra feature branches como `feature/<descripcion-corta>` o `fix/<bug>`.
 - **PRs:** Usa el formato de título `[módulo] corto y claro`. Describe **por qué**, **cómo** y **pruebas** en el cuerpo.
 - **Checklist sugerido antes de abrir PR:**
-  - [ ] Confirmar que la rama está actualizada respecto a `main` (o rama base) — TODO: confirmar rama principal.
+  - [ ] Confirmar que la rama está actualizada respecto a `main` (o rama base indicada).
   - [ ] Ejecutar `pytest -q` o documentar la causa de fallo.
   - [ ] Ejecutar `ruff check .` o justificar excepciones.
   - [ ] Ejecutar `mypy --ignore-missing-imports .` cuando aplique.
@@ -87,14 +87,14 @@
   - [ ] Verificar que no se incluyan archivos generados o secretos.
 
 ## 7. Makefile/Pre-commit sugeridos
-- No se encontró `Makefile` ni configuración `pre-commit`. TODO: confirmar si existen en ramas privadas.
-- **Sugerencia de targets útiles:**
-  - `make install`: `pip install -r requirements.txt -r requirements-dev.txt`.
-  - `make test`: `pytest -q` (permitir override de `PYTEST_ADDOPTS`).
+- **Makefile disponible:**
+  - `make install`: instala dependencias (`requirements.txt` + `requirements-dev.txt`).
   - `make lint`: `ruff check .`.
+  - `make format`: `ruff format .`.
+  - `make test`: `pytest -q -o addopts=''`.
   - `make typecheck`: `mypy --ignore-missing-imports .`.
-  - `make format`: `ruff format`.
-- **Hook pre-commit recomendado:** ejecutar `ruff check --fix`, `ruff format` y `mypy --ignore-missing-imports .` sobre cambios staged para detectar issues tempranos.
+  - `make qa`: ejecuta lint + typecheck + test.
+- **Hooks pre-commit:** no hay configuración en repo; se sugiere combinar `ruff check --fix`, `ruff format` y `mypy --ignore-missing-imports .` sobre cambios staged.
 
 ## 8. Comandos de desarrollo
 - **Instalación local completa:** `pip install -r requirements.txt -r requirements-dev.txt`.
@@ -114,7 +114,7 @@
 - Workflow principal `ci.yml`: ejecuta pytest con cobertura, smoke de caché y (cuando aplica) smoke Yahoo Finance; publica artefactos.
 - Workflow `dependency-update.yml`: corre `scripts/update_dependencies.sh` programado o manual.
 - Workflow `validate_secrets.yml`: valida claves Fernet con `python -m shared.security_env_validator`.
-- TODO: confirmar si hay despliegues automatizados fuera de los workflows listados.
+- Agrega `validate-ignores.yml` para proteger reglas de `.gitignore`/`.dockerignore` cuando se requiera endurecer controles.
 
 ## 11. Troubleshooting
 - **Pytest falla por `--cov` obligatorio:** la opción proviene de `pyproject.toml`; usa `pytest --override-ini addopts=''` para aislar casos.
