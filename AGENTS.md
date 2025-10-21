@@ -118,6 +118,7 @@
 
 ## 11. Troubleshooting
 - **Pytest falla por `--cov` obligatorio:** la opción proviene de `pyproject.toml`; usa `pytest --override-ini addopts=''` para aislar casos.
+- **Tip rápido Pytest:** ejecuta `pytest -q -o addopts=''` para validar localmente sin depender de cobertura forzada.
 - **Streamlit en modo headless:** los tests muestran advertencias `missing ScriptRunContext` y Kaleido deshabilitado; son esperadas.
 - **Ruff reporta >400 issues:** prioriza módulos críticos o utiliza `--select` para abordar familias específicas.
 - **Mypy:** corrige comentarios `type: ignore` inválidos en `services/cache/market_data_cache.py` y `services/maintenance/sqlite_maintenance.py` antes de habilitar CI estricto.

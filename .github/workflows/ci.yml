@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - name: full-suite
-            pytest-command: "pytest --cov --cov-report=xml"
+            pytest-command: "pytest --cov=application --cov=controllers --cov=services --cov-report=xml"
             upload-coverage: 'true'
     name: ${{ matrix.name }}
     steps:
@@ -37,8 +37,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install -r requirements.txt -r requirements-dev.txt
       - name: Run tests (${{ matrix.name }})
         run: ${{ matrix.pytest-command }}
       - name: Upload coverage report
@@ -137,8 +136,7 @@ PY
         if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements.txt -r requirements-dev.txt
       - name: Run live Yahoo Finance smoke-test
         if: github.event_name != 'schedule' || steps.schedule_guard.outputs.should-run == 'true'
         run: pytest -m live_yahoo
