@@ -42,5 +42,6 @@ def _ensure_ui_settings_compat() -> None:
             setattr(module, attr, value)
 
 
-_ensure_ui_settings_compat()
+if not os.environ.get("FAST_TEST_STUBS"):
+    _ensure_ui_settings_compat()
 
