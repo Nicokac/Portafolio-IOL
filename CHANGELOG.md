@@ -18,6 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - `portfolio_comparison` module y controles de comparación de snapshots del portafolio.
 
+## [0.7.1] — 2025-10-21
+### Changed
+- Pulido final de la infraestructura de tests tras consolidación de stubs (v0.7.0).
+- Refactor menor en api/routers/__init__.py con loader lazy para evitar ciclos.
+- Normalización de imports en suite de UI e integración.
+- Documentación y naming consistentes en tests/fixtures/.
+
+### Fixed
+- IndentationError en tests/ui/test_portfolio_ui.py tras limpieza global.
+- Warnings de import y duplicación de fixtures resueltos.
+
+### Notes
+- La suite de pruebas ahora es modular, determinística y totalmente reutilizable.
+- Próximo objetivo: extender cobertura hacia controladores de datos y endpoints externos.
+
 ## [0.7.0] — 2025-10-21
 
 ### Added
