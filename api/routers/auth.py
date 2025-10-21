@@ -3,26 +3,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from services.auth import AuthTokenError, refresh_active_token, get_current_user
+from api.routers.base_models import _BaseModel
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-try:  # pragma: no cover - compatibility across Pydantic versions
-    from pydantic import ConfigDict
-except ImportError:  # pragma: no cover
-    ConfigDict = None  # type: ignore[assignment]
-
-
-class _BaseModel(BaseModel):
-    if ConfigDict is not None:  # pragma: no branch
-        model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-    else:  # pragma: no cover - fallback for Pydantic v1
-        class Config:  # type: ignore[override]
-            extra = "ignore"
-
 
 class RefreshTokenResponse(_BaseModel):
     """Standard response payload for refreshed tokens."""

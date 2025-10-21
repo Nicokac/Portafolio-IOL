@@ -5,25 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from services.auth import get_current_user
+from api.routers.base_models import _BaseModel
 
 router = APIRouter(prefix="/profile", tags=["profile"], dependencies=[Depends(get_current_user)])
-
-
-try:  # pragma: no cover - compatibility across Pydantic versions
-    from pydantic import ConfigDict
-except ImportError:  # pragma: no cover
-    ConfigDict = None  # type: ignore[assignment]
-
-
-class _BaseModel(BaseModel):
-    if ConfigDict is not None:  # pragma: no branch
-        model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-    else:  # pragma: no cover - fallback for Pydantic v1
-        class Config:  # type: ignore[override]
-            extra = "ignore"
 
 
 class ProfileSummaryResponse(_BaseModel):

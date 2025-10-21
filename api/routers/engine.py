@@ -27,11 +27,10 @@ from services.performance_metrics import measure_execution
 from shared.version import __build_signature__, __version__
 
 try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
-    from pydantic import BaseModel, Field, ConfigDict, model_validator
+    from pydantic import Field, model_validator
 except ImportError:  # pragma: no cover
-    from pydantic import BaseModel, Field
+    from pydantic import Field
 
-    ConfigDict = None  # type: ignore[assignment]
     try:  # pragma: no cover - fallback for Pydantic v1
         from pydantic import root_validator  # type: ignore[attr-defined]
     except ImportError:  # pragma: no cover
@@ -44,19 +43,10 @@ else:  # pragma: no cover - ensure root_validator name exists for type checkers
     except ImportError:  # pragma: no cover
         root_validator = None  # type: ignore[assignment]
 
+from api.routers.base_models import _BaseModel
+
 logger = logging.getLogger(__name__)
 logger.info("Initialising engine router")
-
-
-class _BaseModel(BaseModel):
-    """Base model tolerant to extra fields across Pydantic versions."""
-
-    if ConfigDict is not None:  # pragma: no branch
-        model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-    else:  # pragma: no cover - fallback for Pydantic v1
-        class Config:  # type: ignore[override]
-            extra = "ignore"
-
 
 def _model_dump(model: _BaseModel) -> dict[str, Any]:
     if hasattr(model, "model_dump"):

@@ -8,12 +8,13 @@ import time
 from typing import Any, Mapping
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from services import performance_timer as perf_timer
 from services.auth import get_current_user
 from services.cache.market_data_cache import MarketDataCache, get_market_data_cache
 from shared.errors import CacheUnavailableError, TimeoutError
+from api.routers.base_models import _BaseModel
 
 try:  # pragma: no cover - optional dependency
     from prometheus_client import Counter, Summary
@@ -219,14 +220,6 @@ except ImportError:  # pragma: no cover
     ConfigDict = None  # type: ignore[assignment]
     model_validator = None  # type: ignore[assignment]
     from pydantic import root_validator
-
-
-class _BaseModel(BaseModel):
-    if ConfigDict is not None:  # pragma: no branch
-        model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-    else:  # pragma: no cover - fallback for Pydantic v1
-        class Config:  # type: ignore[override]
-            extra = "ignore"
 
 
 class CacheStatusResponse(_BaseModel):

@@ -8,7 +8,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
     from pydantic import model_validator
@@ -20,24 +20,9 @@ else:  # pragma: no cover - ensure name exists for type checkers
 
 from application.adaptive_predictive_service import simulate_adaptive_forecast
 from application.predictive_service import predict_sector_performance
+from api.routers.base_models import _BaseModel
 
 router = APIRouter(prefix="/predictive", tags=["predictive"])
-
-
-try:  # pragma: no cover - compatibility shim for Pydantic v1/v2
-    from pydantic import ConfigDict
-except ImportError:  # pragma: no cover
-    ConfigDict = None  # type: ignore[assignment]
-
-
-class _BaseModel(BaseModel):
-    """Base model that tolerates extra fields across Pydantic versions."""
-
-    if ConfigDict is not None:  # pragma: no branch
-        model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
-    else:  # pragma: no cover - fallback for Pydantic v1
-        class Config:  # type: ignore[override]
-            extra = "ignore"
 
 
 class OpportunityPayload(_BaseModel):
