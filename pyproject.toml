@@ -70,6 +70,15 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.mypy]
+files = [
+  "api",
+  "application",
+  "controllers",
+  "services",
+  "shared",
+  "ui",
+]
+exclude = "(?x)(^tests/|^docs/|^scripts/|^legacy/|^examples/|^playground/)"
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
 warn_unused_ignores = true

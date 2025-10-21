@@ -1,4 +1,4 @@
-.PHONY: install lint format lint-tests-fix test typecheck qa
+.PHONY: install lint format lint-tests-fix test typecheck typecheck_fast qa
 
 install:
 	pip install -r requirements.txt -r requirements-dev.txt
@@ -18,6 +18,9 @@ test:
 
 typecheck:
 	mypy --ignore-missing-imports .
+
+typecheck_fast:
+	mypy --config-file pyproject.toml
 
 qa: lint typecheck test
 
