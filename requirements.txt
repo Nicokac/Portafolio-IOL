@@ -1,4 +1,5 @@
 # This file is auto-generated from pyproject.toml.
+# Portafolio IOL dependencies — synchronized with v0.7.0.
 # Run `python scripts/sync_requirements.py` after editing [project.dependencies].
 streamlit>=1.49.1
 streamlit-javascript

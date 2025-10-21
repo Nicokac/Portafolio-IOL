@@ -16,6 +16,8 @@ try:  # pragma: no cover - optional in certain tests
 except Exception:  # pragma: no cover - defensive fallback
     st = None  # type: ignore
 
+from shared.version import __build_signature__, __version__
+
 logger = logging.getLogger(__name__)
 
 
@@ -244,6 +246,9 @@ def log_telemetry(
     _merge_context(merged_context, extra)
     _merge_context(merged_context, context)
     _merge_context(merged_context, legacy_context)
+
+    merged_context.setdefault("app_version", __version__)
+    merged_context.setdefault("build_signature", __build_signature__)
 
     row = TelemetryRow(
         metric_name=metric,

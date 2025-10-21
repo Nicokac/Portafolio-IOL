@@ -1,14 +1,49 @@
 """Project version and release metadata."""
 from __future__ import annotations
 
-VERSION = "0.6.20"
-RELEASE_NAME = "Portafolio IOL v0.6.20"
-RELEASE_DATE = "2025-12-05"
-CHANGELOG_REF = ("Render diferido de tabla y gráficos en el portafolio",)
+import os
+import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+VERSION = "0.7.0"
+RELEASE_NAME = "Portafolio IOL v0.7.0"
+RELEASE_DATE = "2026-03-24"
+CHANGELOG_REF = (
+    "Versionamiento unificado con telemetría y diagnósticos enriquecidos",
+)
+
+
+def _resolve_build_signature() -> str:
+    env_signature = os.getenv("PORTAFOLIO_BUILD_SIGNATURE")
+    if env_signature:
+        return env_signature
+
+    project_root = Path(__file__).resolve().parents[1]
+    try:
+        result = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=project_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+    except Exception:
+        result = ""
+
+    if result:
+        return result
+
+    timestamp = datetime.now(timezone.utc).strftime("ts-%Y%m%d%H%M%S")
+    return timestamp
+
+
+BUILD_SIGNATURE = _resolve_build_signature()
 
 __version__ = VERSION
 __codename__ = RELEASE_NAME
 __release_date__ = RELEASE_DATE
+__build_signature__ = BUILD_SIGNATURE
 __changelog_ref__ = CHANGELOG_REF
 __stability__ = "stable"
 # Keep in sync with ``pyproject.toml``'s ``project.version``.
@@ -22,6 +57,7 @@ def get_version_info() -> dict[str, str]:
         "version": __version__,
         "codename": __codename__,
         "release_date": __release_date__,
+        "build_signature": __build_signature__,
         "changelog_ref": __changelog_ref__,
         "stability": __stability__,
     }
@@ -31,10 +67,12 @@ __all__ = [
     "VERSION",
     "RELEASE_NAME",
     "RELEASE_DATE",
+    "BUILD_SIGNATURE",
     "CHANGELOG_REF",
     "__version__",
     "__codename__",
     "__release_date__",
+    "__build_signature__",
     "__changelog_ref__",
     "__stability__",
     "DEFAULT_VERSION",

@@ -1,5 +1,15 @@
 """Public services exposed by the application layer."""
 
+from shared.version import __build_signature__ as _APP_BUILD_SIGNATURE
+from shared.version import __version__ as _APP_VERSION
+
 from .notifications import build_notification_badges
 
-__all__ = ["build_notification_badges"]
+__version__ = _APP_VERSION
+__build_signature__ = _APP_BUILD_SIGNATURE
+
+__all__ = [
+    "build_notification_badges",
+    "__version__",
+    "__build_signature__",
+]
