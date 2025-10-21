@@ -11,6 +11,7 @@ import pytest
 
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
+from tests.fixtures.time import FakeTime
 
 warnings.filterwarnings(
     "ignore",
@@ -24,6 +25,13 @@ def dummy_ctx_fixture() -> DummyCtx:
     """Provide a reusable no-op context manager for tests."""
 
     return DummyCtx()
+
+
+@pytest.fixture
+def fake_time() -> FakeTime:
+    """Provide a deterministic fake clock for time-sensitive tests."""
+
+    return FakeTime()
 
 
 class _DummyStreamlitSecretNotFoundError(KeyError):

@@ -11,17 +11,7 @@ if str(ROOT) not in sys.path:
 
 
 from services import health  # noqa: E402
-
-
-class FakeTime:
-    def __init__(self, start: float) -> None:
-        self.value = start
-
-    def advance(self, delta: float) -> None:
-        self.value += delta
-
-    def time(self) -> float:
-        return self.value
+from tests.fixtures.time import FakeTime
 
 
 def test_quote_provider_summary_handles_mixed_data(monkeypatch):
@@ -107,11 +97,11 @@ def test_session_monitoring_metrics(monkeypatch):
     monkeypatch.setattr(health.time, "time", clock.time)
 
     health.record_session_started("sess-1", metadata={"user": "alice", "empty": "  "})
-    clock.advance(2.0)
+    clock.sleep(2.0)
     health.record_login_to_render(1.5, session_id="sess-1")
-    clock.advance(1.0)
+    clock.sleep(1.0)
     health.record_http_error(500, method="GET", url="/api", detail=" boom ")
-    clock.advance(5.0)
+    clock.sleep(5.0)
 
     metrics = health.get_health_metrics()
     monitoring = metrics["session_monitoring"]
@@ -143,7 +133,7 @@ def test_diagnostics_snapshot_summary(monkeypatch):
     monkeypatch.setattr(health.time, "time", clock.time)
 
     health.record_diagnostics_snapshot({"status": "ok", " empty ": ""}, source="engine")
-    clock.advance(10.0)
+    clock.sleep(10.0)
 
     metrics = health.get_health_metrics()["diagnostics"]
 
