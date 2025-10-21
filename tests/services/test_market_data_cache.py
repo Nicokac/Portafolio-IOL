@@ -7,30 +7,18 @@ import pytest
 
 from services.cache.core import CacheService
 from services.cache.market_data_cache import MarketDataCache
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self._now = 0.0
-
-    def __call__(self) -> float:
-        return self._now
-
-    def advance(self, seconds: float) -> None:
-        self._now += float(seconds)
-
+from tests.fixtures.clock import FakeClock
 
 @pytest.fixture()
-def market_cache() -> MarketDataCache:
-    clock = FakeClock()
-    history = CacheService(namespace="test_history", monotonic=clock)
-    fundamentals = CacheService(namespace="test_fund", monotonic=clock)
+def market_cache(fake_clock: FakeClock) -> MarketDataCache:
+    history = CacheService(namespace="test_history", monotonic=fake_clock)
+    fundamentals = CacheService(namespace="test_fund", monotonic=fake_clock)
     cache = MarketDataCache(
         history_cache=history,
         fundamentals_cache=fundamentals,
         default_ttl=2.0,
     )
-    cache._clock = clock  # type: ignore[attr-defined]
+    cache._clock = fake_clock  # type: ignore[attr-defined]
     return cache
 
 
