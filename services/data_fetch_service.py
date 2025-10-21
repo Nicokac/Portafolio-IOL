@@ -27,6 +27,7 @@ from typing import Any, Callable, Mapping
 import pandas as pd
 
 from services.cache import CacheService, fetch_portfolio, fetch_quotes_bulk
+from shared.portfolio_utils import unique_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +86,6 @@ def _compute_dataset_hash(df: pd.DataFrame | None) -> str:
             df.to_dict(orient="list"), sort_keys=True, default=str
         ).encode("utf-8")
         return hashlib.sha1(payload).hexdigest()
-
-
-def _unique_symbols(df: pd.DataFrame) -> tuple[str, ...]:
-    if df.empty or "simbolo" not in df.columns:
-        return ()
-    series = df["simbolo"].astype(str).str.upper()
-    symbols = [symbol for symbol in series.unique() if symbol]
-    return tuple(sorted(symbols))
 
 
 def _available_types(psvc: Any, symbols: tuple[str, ...]) -> tuple[str, ...]:
@@ -330,7 +323,10 @@ class PortfolioDataFetchService:
             df_pos = pd.DataFrame(df_pos)
         df_pos = df_pos.copy()
         dataset_hash = _compute_dataset_hash(df_pos)
-        symbols = _unique_symbols(df_pos)
+        if isinstance(df_pos, pd.DataFrame) and "simbolo" in df_pos.columns:
+            symbols = unique_symbols(df_pos["simbolo"])
+        else:
+            symbols = ()
         types = _available_types(psvc, symbols)
         pairs = _quote_pairs(df_pos)
         quotes = fetch_quotes_bulk(cli, pairs) if pairs else {}

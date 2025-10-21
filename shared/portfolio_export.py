@@ -16,6 +16,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from shared.export import fig_to_png_bytes
+from shared.portfolio_utils import unique_symbols
+
+_unique_symbols = unique_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -254,12 +257,6 @@ def _compute_ratio(numerator: float | None, denominator: float | None) -> float 
     return float(numerator) / float(denominator)
 
 
-def _unique_symbols(df: pd.DataFrame) -> int:
-    if df is None or df.empty or "simbolo" not in df.columns:
-        return 0
-    return int(df["simbolo"].astype(str).nunique())
-
-
 def _normalize_history(history: pd.DataFrame) -> pd.DataFrame:
     if history is None or history.empty:
         return pd.DataFrame(columns=["timestamp", "total_value", "total_cost", "total_pl"])
@@ -302,7 +299,11 @@ def _num_positions(snapshot: PortfolioSnapshotExport) -> int:
 
 
 def _num_symbols(snapshot: PortfolioSnapshotExport) -> int:
-    return _unique_symbols(snapshot.positions)
+    if snapshot.positions is None:
+        return 0
+    if isinstance(snapshot.positions, pd.DataFrame) and "simbolo" in snapshot.positions.columns:
+        return int(unique_symbols(snapshot.positions["simbolo"], return_count=True))
+    return 0
 
 
 def _avg_position(snapshot: PortfolioSnapshotExport) -> float | None:
