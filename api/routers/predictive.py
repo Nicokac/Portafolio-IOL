@@ -13,6 +13,7 @@ from pydantic import Field
 from application.adaptive_predictive_service import simulate_adaptive_forecast
 from application.predictive_service import predict_sector_performance
 from api.routers.base_models import _BaseModel
+from api.schemas.adaptive_utils import validate_adaptive_limits
 from api.schemas.predictive import (
     AdaptiveForecastRequest,
     AdaptiveHistoryEntry,
@@ -111,6 +112,7 @@ async def predict_sector(payload: PredictRequest) -> PredictResponse:
 async def forecast_adaptive(payload: AdaptiveForecastRequest) -> AdaptiveForecastResponse:
     """Execute the adaptive forecasting workflow and normalise the output."""
 
+    validate_adaptive_limits(payload.history)
     history = [entry.dict() for entry in payload.history]
     frame = pd.DataFrame(history) if history else None
     result = simulate_adaptive_forecast(

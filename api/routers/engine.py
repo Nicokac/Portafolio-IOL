@@ -28,6 +28,7 @@ from services.performance_metrics import measure_execution
 from shared.version import __build_signature__, __version__
 
 from api.routers.base_models import _BaseModel
+from api.schemas.adaptive_utils import validate_adaptive_limits
 from api.schemas.predictive import (
     AdaptiveForecastRequest as BaseAdaptiveForecastRequest,
     AdaptiveHistoryEntry,
@@ -248,6 +249,8 @@ async def engine_forecast_adaptive(
         len(payload.predictions),
         len(payload.actuals),
     )
+
+    validate_adaptive_limits(payload.history, max_size=payload.max_history_rows)
 
     history_frame = _frame_or_none(
         _build_frame(payload.history, ["timestamp", "sector", "predicted_return", "actual_return"])
