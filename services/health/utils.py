@@ -113,13 +113,10 @@ def _ensure_history_deque(
     history: Any, *, limit: int = 32
 ) -> Deque[Mapping[str, Any]]:
     if isinstance(history, deque):
-        copy = deque(history, maxlen=limit)
-    elif isinstance(history, Iterable):
-        copy = deque(history, maxlen=limit)
-    else:
-        copy = deque(maxlen=limit)
-    copy.maxlen = limit
-    return copy
+        return deque(history, maxlen=limit)
+    if isinstance(history, Iterable):
+        return deque(history, maxlen=limit)
+    return deque(maxlen=limit)
 
 
 def _ensure_event_history(
@@ -130,13 +127,10 @@ def _ensure_event_history(
 
 def _ensure_latency_history(history: Any, *, limit: int = 32) -> Deque[float]:
     if isinstance(history, deque):
-        copy = deque(history, maxlen=limit)
-    elif isinstance(history, Iterable):
-        copy = deque((float(value) for value in history), maxlen=limit)
-    else:
-        copy = deque(maxlen=limit)
-    copy.maxlen = limit
-    return copy
+        return deque(history, maxlen=limit)
+    if isinstance(history, Iterable):
+        return deque((float(value) for value in history), maxlen=limit)
+    return deque(maxlen=limit)
 
 
 def _merge_entry(
