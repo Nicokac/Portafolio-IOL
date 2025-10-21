@@ -45,11 +45,14 @@ def format_price(value: float | int | None, currency: str = "ARS") -> str:
     prefix = "US$ " if currency.upper() == "USD" else "$ "
     return prefix + s
 
-def format_percent(value: float | None) -> str:
+def format_percent(value: float | None, spaced: bool = False) -> str:
+    """Format ``value`` as a percentage string with two decimals."""
+
     v = _as_float_or_none(value)
     if v is None:
         return "—"
-    return f"{v:.2f} %"
+    suffix = " %" if spaced else "%"
+    return f"{v:.2f}{suffix}"
 
 def _to_float(x, log: bool = True) -> float | None:
     if x is None:
