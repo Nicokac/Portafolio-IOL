@@ -6,55 +6,15 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from tests.fixtures.common import DummyCtx
+from tests.fixtures.streamlit import UIFakeStreamlit
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from controllers.portfolio import portfolio as portfolio_mod
 from domain.models import Controls
-
-
-class _NoopContext:
-    def __enter__(self) -> "_NoopContext":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        return None
-
-
-class _Placeholder:
-    def __init__(self, owner: "FakeStreamlit", name: str) -> None:
-        self.owner = owner
-        self.name = name
-        self.container_calls = 0
-
-    def container(self) -> _NoopContext:
-        self.container_calls += 1
-        return _NoopContext()
-
-    def markdown(self, *_: Any, **__: Any) -> None:
-        return None
-
-    def caption(self, *_: Any, **__: Any) -> None:
-        return None
-
-
-class FakeStreamlit:
-    def __init__(self) -> None:
-        self.session_state: dict[str, Any] = {}
-        self.placeholders: list[_Placeholder] = []
-        self.captions: list[str] = []
-
-    def empty(self) -> _Placeholder:
-        placeholder = _Placeholder(self, f"ph{len(self.placeholders)}")
-        self.placeholders.append(placeholder)
-        return placeholder
-
-    def spinner(self, *_: Any, **__: Any) -> _NoopContext:
-        return _NoopContext()
-
-    def caption(self, text: str) -> None:
-        self.captions.append(text)
 
 
 class _FavoritesStub:
@@ -71,10 +31,10 @@ class _FavoritesStub:
 
 
 @pytest.fixture(name="fake_streamlit")
-def _fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> FakeStreamlit:
-    fake = FakeStreamlit()
+def _fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> UIFakeStreamlit:
+    fake = UIFakeStreamlit()
     monkeypatch.setattr(portfolio_mod, "st", fake)
-    monkeypatch.setattr(portfolio_mod, "measure_execution", lambda *_: _NoopContext())
+    monkeypatch.setattr(portfolio_mod, "measure_execution", lambda *_: DummyCtx())
     return fake
 
 
@@ -109,7 +69,9 @@ def _make_viewmodel(df: pd.DataFrame) -> SimpleNamespace:
     )
 
 
-def test_incremental_render_reuses_placeholders(monkeypatch: pytest.MonkeyPatch, fake_streamlit: FakeStreamlit) -> None:
+def test_incremental_render_reuses_placeholders(
+    monkeypatch: pytest.MonkeyPatch, fake_streamlit: UIFakeStreamlit
+) -> None:
     calls: dict[str, list[int]] = {}
     _patch_render_helpers(monkeypatch, calls)
     monkeypatch.setattr(portfolio_mod, "_get_cached_favorites", lambda: _FavoritesStub())

@@ -15,20 +15,7 @@ from services.auth import (
     generate_token,
     verify_token,
 )
-
-
-class FakeTime:
-    def __init__(self, value: float) -> None:
-        self.value = value
-
-    def __call__(self) -> float:
-        return self.value
-
-    def set(self, value: float) -> None:
-        self.value = value
-
-    def advance(self, delta: float) -> None:
-        self.value += delta
+from tests.fixtures.time import FakeTime
 
 
 @pytest.fixture(autouse=True)
