@@ -1,17 +1,10 @@
+# --- Tests (excluidos del contexto de build)
 test/
 */test/
 **/test/
 **/tests/
 
-# Python cache and temporary files
-*.pyc
-*.pyo
-__pycache__/
-*.log
-*.tmp
-*.swp
-
-# Caches
+# --- Artefactos temporales y entornos
 .cache/
 **/.cache/
 .pytest_cache/
@@ -20,8 +13,17 @@ __pycache__/
 !.streamlit/config.toml
 .vscode/
 env/
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.swp
 
-# Environment and tokens
+# --- Environment y tokens sensibles
 .env
 *.env
 tokens/
