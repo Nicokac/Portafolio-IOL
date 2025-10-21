@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import hashlib
 from typing import Any, Mapping
 
@@ -122,6 +123,39 @@ _ADAPTIVE_DEFAULT_SPAN = 5
 _SYNTHETIC_DEFAULT_PERIODS = 6
 
 
+def _safe_int(value: Any, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except Exception:  # pragma: no cover - defensive
+        return default
+
+
+def _safe_float(value: Any, *, default: float | None = None) -> float | None:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:  # pragma: no cover - defensive
+        return default
+
+
+def _count_cache_entries(cache_obj: Any) -> int:
+    for attribute in ("_store", "data", "store"):
+        storage = getattr(cache_obj, attribute, None)
+        if storage is None:
+            continue
+        try:
+            return len(storage)
+        except Exception:  # pragma: no cover - defensive len
+            continue
+    if hasattr(cache_obj, "__len__"):
+        try:
+            return len(cache_obj)
+        except Exception:  # pragma: no cover - defensive len
+            return 0
+    return 0
+
+
 def _cache_last_updated(cache: CacheService) -> str | None:
     try:
         value = getattr(cache, "last_updated_human", "-")
@@ -130,6 +164,57 @@ def _cache_last_updated(cache: CacheService) -> str | None:
     if not value or value == "-":
         return None
     return str(value)
+
+
+@dataclass(frozen=True)
+class PredictiveCacheSnapshot:
+    """Normalised snapshot exposing predictive cache statistics."""
+
+    timestamp: datetime
+    namespace: str
+    total_entries: int
+    ttl_seconds: float | None
+    remaining_ttl: float | None
+    hits: int
+    misses: int
+    errors: int = 0
+    last_updated: str = "-"
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialise snapshot data into a mapping for JSON payloads."""
+
+        payload = asdict(self)
+        payload.update(
+            {
+                "ttl_hours": self.ttl_hours,
+                "hit_ratio": self.hit_ratio,
+            }
+        )
+        return payload
+
+    @property
+    def ttl_hours(self) -> float | None:
+        if self.ttl_seconds is None:
+            return None
+        return float(self.ttl_seconds) / 3600.0
+
+    @property
+    def hit_ratio(self) -> float:
+        total = self.hits + self.misses
+        if total <= 0:
+            return 0.0
+        return float(self.hits) / float(total)
+
+    def as_predictive_snapshot(self) -> "PredictiveSnapshot":
+        """Adapt snapshot into the legacy PredictiveSnapshot container."""
+
+        return PredictiveSnapshot(
+            hits=self.hits,
+            misses=self.misses,
+            last_updated=self.last_updated,
+            ttl_hours=self.ttl_hours,
+            remaining_ttl=self.remaining_ttl,
+        )
 
 
 @dataclass(frozen=True)
@@ -155,7 +240,7 @@ class PredictiveSnapshot:
             return 0.0
         return float(self.hits) / float(total)
 
-    def as_dict(self) -> dict[str, float | int | str]:
+    def as_dict(self) -> dict[str, float | int | str | None]:
         """Expose snapshot information as a serialisable mapping."""
 
         return {
@@ -166,6 +251,18 @@ class PredictiveSnapshot:
             "ttl_hours": self.ttl_hours,
             "remaining_ttl": self.remaining_ttl,
         }
+
+    @classmethod
+    def from_cache_snapshot(cls, snapshot: PredictiveCacheSnapshot) -> "PredictiveSnapshot":
+        """Build a legacy snapshot from a normalised cache snapshot."""
+
+        return cls(
+            hits=snapshot.hits,
+            misses=snapshot.misses,
+            last_updated=snapshot.last_updated,
+            ttl_hours=snapshot.ttl_hours,
+            remaining_ttl=snapshot.remaining_ttl,
+        )
 
 
 def _prepare_opportunities(opportunities: pd.DataFrame | None) -> pd.DataFrame:
@@ -805,40 +902,83 @@ def update_cache_metrics(cache: CacheService | None = None) -> PredictiveSnapsho
     return snapshot
 
 
-def get_cache_stats() -> PredictiveSnapshot:
-    """Expose current cache counters for predictive workloads."""
+def get_cache_stats(cache: CacheService | None = None) -> PredictiveCacheSnapshot:
+    """Return a normalised predictive cache snapshot for diagnostics."""
+
+    active_cache: CacheService | None = cache if cache is not None else _CACHE
+    timestamp = datetime.now(timezone.utc)
+    namespace = _CACHE_NAMESPACE
+    hits = _CACHE_STATE.hits
+    misses = _CACHE_STATE.misses
+    last_updated = _CACHE_STATE.last_updated or "-"
+    ttl_hours = _CACHE_STATE.ttl_hours
+    ttl_seconds = float(ttl_hours) * 3600.0 if ttl_hours is not None else None
+    remaining_ttl: float | None = None
+    errors = 0
+    total_entries = 0
 
     with adaptive_cache_lock:
-        last_updated = _CACHE_STATE.last_updated
-        if not last_updated or last_updated == "-":
-            cache_last = _cache_last_updated(_CACHE)
-            if cache_last:
-                last_updated = cache_last
-            else:
-                last_updated = "-"
-
-        ttl_hours = _CACHE_STATE.ttl_hours
-        if ttl_hours is None:
+        if isinstance(active_cache, CacheService):
+            namespace = str(getattr(active_cache, "_namespace", namespace) or namespace)
+            hits = _safe_int(getattr(active_cache, "hits", hits), default=hits)
+            misses = _safe_int(getattr(active_cache, "misses", misses), default=misses)
+            last_candidate = getattr(active_cache, "last_updated_human", None)
+            if last_candidate:
+                last_updated = str(last_candidate)
             try:
-                effective_ttl = _CACHE.get_effective_ttl()
-            except Exception:  # pragma: no cover - defensive
-                effective_ttl = None
-            if effective_ttl is not None:
-                ttl_hours = float(effective_ttl) / 3600.0
+                ttl_candidate = active_cache.get_effective_ttl()
+            except Exception:  # pragma: no cover - defensive ttl
+                ttl_candidate = None
+            if ttl_candidate is not None:
+                ttl_seconds = _safe_float(ttl_candidate, default=ttl_seconds)
+            remaining_candidate: float | None = None
+            try:
+                expires_at = getattr(active_cache, "_last_expiration", None)
+                monotonic = getattr(active_cache, "_monotonic", None)
+                if callable(monotonic) and expires_at is not None:
+                    remaining_candidate = float(expires_at - monotonic())
+            except Exception:  # pragma: no cover - defensive ttl
+                remaining_candidate = None
+            if remaining_candidate is not None and remaining_candidate > 0:
+                remaining_ttl = remaining_candidate
+            total_entries = _count_cache_entries(active_cache)
+            errors = _safe_int(getattr(active_cache, "errors", errors), default=errors)
+        else:
+            # Fallback to predictive cache defaults when no cache instance is provided.
+            namespace = _CACHE_NAMESPACE
 
-        remaining_ttl: float | None = None
-        try:
-            remaining_ttl = _CACHE.remaining_ttl()
-        except Exception:  # pragma: no cover - defensive safeguard
-            remaining_ttl = None
+        if ttl_seconds is None:
+            try:
+                ttl_candidate = _CACHE.get_effective_ttl()
+            except Exception:  # pragma: no cover - defensive ttl
+                ttl_candidate = None
+            if ttl_candidate is not None:
+                ttl_seconds = _safe_float(ttl_candidate, default=ttl_seconds)
 
-        snapshot = PredictiveSnapshot(
-            hits=_CACHE_STATE.hits,
-            misses=_CACHE_STATE.misses,
-            last_updated=last_updated,
-            ttl_hours=ttl_hours,
-            remaining_ttl=remaining_ttl,
-        )
+        if remaining_ttl is None:
+            try:
+                remaining_candidate = _CACHE.remaining_ttl()
+            except Exception:  # pragma: no cover - defensive ttl
+                remaining_candidate = None
+            if remaining_candidate is not None:
+                remaining_ttl = _safe_float(remaining_candidate, default=remaining_ttl)
+
+    if ttl_seconds is not None and ttl_seconds < 0:
+        ttl_seconds = 0.0
+    if remaining_ttl is not None:
+        remaining_ttl = max(float(remaining_ttl), 0.0)
+
+    snapshot = PredictiveCacheSnapshot(
+        timestamp=timestamp,
+        namespace=namespace,
+        total_entries=max(int(total_entries), 0),
+        ttl_seconds=ttl_seconds,
+        remaining_ttl=remaining_ttl,
+        hits=hits,
+        misses=misses,
+        errors=errors,
+        last_updated=last_updated,
+    )
     return snapshot
 
 
@@ -855,6 +995,7 @@ def reset_cache() -> None:
 
 
 __all__ = [
+    "PredictiveCacheSnapshot",
     "PredictiveSnapshot",
     "predict_sector_performance",
     "predictive_job_status",
