@@ -10,6 +10,7 @@ import warnings
 import pytest
 
 from tests.fixtures.common import DummyCtx
+from tests.fixtures.clock import FakeClock
 from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
 from tests.fixtures.time import FakeTime
 
@@ -32,6 +33,13 @@ def fake_time() -> FakeTime:
     """Provide a deterministic fake clock for time-sensitive tests."""
 
     return FakeTime()
+
+
+@pytest.fixture
+def fake_clock() -> FakeClock:
+    """Provide a deterministic monotonic clock for cache expiry tests."""
+
+    return FakeClock()
 
 
 class _DummyStreamlitSecretNotFoundError(KeyError):

@@ -17,6 +17,7 @@ from services.auth import generate_token
 from services.cache.core import CacheService
 from services.cache.market_data_cache import MarketDataCache
 from shared.errors import CacheUnavailableError
+from tests.fixtures.clock import FakeClock
 
 
 _STRUCTURED_LOGGER_NAMES = {"performance", "performance_test"}
@@ -48,18 +49,6 @@ def _prepare_performance_logger(
     caplog.set_level(logging.INFO, logger="performance_test")
     caplog.set_level(logging.INFO, logger="performance")
 
-
-class FakeClock:
-    def __init__(self) -> None:
-        self._now = 0.0
-
-    def __call__(self) -> float:
-        return self._now
-
-    def advance(self, seconds: float) -> None:
-        self._now += float(seconds)
-
-
 @pytest.fixture()
 def auth_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     key = Fernet.generate_key().decode()
@@ -75,18 +64,19 @@ def client() -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture()
-def market_cache(monkeypatch: pytest.MonkeyPatch) -> MarketDataCache:
-    clock = FakeClock()
-    history = CacheService(namespace="cache_history", monotonic=clock)
-    fundamentals = CacheService(namespace="cache_fund", monotonic=clock)
-    predictions = CacheService(namespace="cache_pred", monotonic=clock)
+def market_cache(
+    monkeypatch: pytest.MonkeyPatch, fake_clock: FakeClock
+) -> MarketDataCache:
+    history = CacheService(namespace="cache_history", monotonic=fake_clock)
+    fundamentals = CacheService(namespace="cache_fund", monotonic=fake_clock)
+    predictions = CacheService(namespace="cache_pred", monotonic=fake_clock)
     cache = MarketDataCache(
         history_cache=history,
         fundamentals_cache=fundamentals,
         prediction_cache=predictions,
         default_ttl=120.0,
     )
-    cache._clock = clock  # type: ignore[attr-defined]
+    cache._clock = fake_clock  # type: ignore[attr-defined]
     monkeypatch.setattr("api.routers.cache.get_market_data_cache", lambda: cache)
     return cache
 
