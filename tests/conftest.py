@@ -9,6 +9,7 @@ import warnings
 
 import pytest
 
+from tests.fixtures.auth import FakeAuth
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.clock import FakeClock
 from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
@@ -40,6 +41,13 @@ def fake_clock() -> FakeClock:
     """Provide a deterministic monotonic clock for cache expiry tests."""
 
     return FakeClock()
+
+
+@pytest.fixture
+def fake_auth() -> FakeAuth:
+    """Provide a reusable fake authentication object."""
+
+    return FakeAuth()
 
 
 class _DummyStreamlitSecretNotFoundError(KeyError):

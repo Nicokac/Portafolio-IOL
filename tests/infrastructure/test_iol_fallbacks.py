@@ -8,6 +8,8 @@ import pandas as pd
 import pytest
 import requests
 
+from tests.fixtures.auth import FakeAuth
+
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -20,22 +22,6 @@ from services import ohlc_adapter as ohlc_module
 
 
 ORIGINAL_PERSIST_QUOTE = cache_module._persist_quote
-
-
-class FakeAuth:
-    """Minimal auth stub exposing preloaded tokens."""
-
-    def __init__(self) -> None:
-        self.tokens = {
-            "access_token": "access",
-            "refresh_token": "refresh",
-        }
-
-    def auth_header(self) -> dict:
-        raise AssertionError("auth_header should not be called in these tests")
-
-    def refresh(self) -> None:
-        raise AssertionError("refresh should not be called in these tests")
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +41,9 @@ def client(monkeypatch: pytest.MonkeyPatch) -> iol_client_module.IOLClient:
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
     monkeypatch.setattr(iol_client_module, "st", SimpleNamespace(session_state={}))
-    return iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    return iol_client_module.IOLClient(
+        "user", "", auth=FakeAuth(access="access", refresh="refresh")
+    )
 
 
 def _http_error(status: int) -> requests.HTTPError:

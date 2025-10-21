@@ -13,6 +13,8 @@ import pytest
 import requests
 import types
 
+from tests.fixtures.auth import FakeAuth
+
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -20,22 +22,6 @@ if str(ROOT) not in sys.path:
 
 from infrastructure.iol import client as iol_client_module
 from infrastructure.iol.legacy import iol_client as legacy_module
-
-
-class FakeAuth:
-    """Minimal auth stub exposing preloaded tokens."""
-
-    def __init__(self) -> None:
-        self.tokens = {
-            "access_token": "access",
-            "refresh_token": "refresh",
-        }
-
-    def auth_header(self) -> dict:
-        raise AssertionError("auth_header should not be called in this test")
-
-    def refresh(self) -> None:
-        raise AssertionError("refresh should not be called in this test")
 
 
 class StreamlitStub:
@@ -110,7 +96,9 @@ def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware
     monkeypatch.setattr(iol_client_module, "Iol", StubIol)
     monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
 
-    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    client = iol_client_module.IOLClient(
+        "user", "", auth=FakeAuth(access="access", refresh="refresh")
+    )
 
     assert isinstance(client.iol_market, StubIol)
     assert client.iol_market.bearer == "access"
@@ -152,7 +140,9 @@ def test_get_quote_returns_last_and_chg_pct(
     monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
 
-    client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
+    client = iol_client_module.IOLClient(
+        "user", "", auth=FakeAuth(access="access", refresh="refresh")
+    )
 
     result = client.get_quote("bcba", "AAPL")
 
