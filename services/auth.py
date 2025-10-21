@@ -18,11 +18,8 @@ try:  # pragma: no cover - exercised indirectly via integration tests
     from fastapi import Depends, HTTPException, status
     from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-    FASTAPI_AVAILABLE = True
     logger.info("FastAPI active ✅")
 except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
-    FASTAPI_AVAILABLE = False
-
     class _StatusStub:
         HTTP_401_UNAUTHORIZED = 401
 

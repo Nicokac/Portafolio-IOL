@@ -1673,27 +1673,6 @@ def _normalize_sectors(value: Any) -> Optional[list[str]]:
     return None
 
 
-def _normalize_origin_counts(value: Any) -> Optional[Dict[str, int | float]]:
-    if value is None:
-        return None
-    if not isinstance(value, Mapping):
-        return None
-
-    normalized: Dict[str, int | float] = {}
-    for raw_key, raw_value in value.items():
-        key = str(raw_key).strip()
-        if not key:
-            continue
-        numeric = _as_optional_float(raw_value)
-        if numeric is None:
-            continue
-        if float(numeric).is_integer():
-            normalized[key] = int(numeric)
-        else:
-            normalized[key] = float(numeric)
-    return normalized or None
-
-
 def _classify_latency_bucket(value: Optional[float]) -> str:
     if value is None:
         return "missing"
