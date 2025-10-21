@@ -336,84 +336,6 @@ def _ensure_event_history(raw_history: Any, *, limit: int) -> Deque[Dict[str, An
     return history
 
 
-def _normalize_numeric(value: float) -> float | int:
-    numeric = float(value)
-    if numeric.is_integer():
-        return int(numeric)
-    return numeric
-
-
-def _serialize_event_history(raw_history: Any) -> list[Dict[str, Any]]:
-    if isinstance(raw_history, deque):
-        iterable = raw_history
-    elif isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
-        iterable = raw_history
-    else:
-        return []
-
-    serialized: list[Dict[str, Any]] = []
-    for entry in iterable:
-        if isinstance(entry, Mapping):
-            serialized.append(dict(entry))
-    return serialized
-
-
-def _summarize_metric_block(
-    stats: Mapping[str, Any],
-    prefix: str,
-) -> Optional[Dict[str, Any]]:
-    if not isinstance(stats, Mapping):
-        return None
-
-    try:
-        count = int(stats.get(f"{prefix}_count", 0) or 0)
-    except (TypeError, ValueError):
-        count = 0
-    if count <= 0:
-        return None
-
-    try:
-        sum_value = float(stats.get(f"{prefix}_sum", 0.0) or 0.0)
-    except (TypeError, ValueError):
-        sum_value = 0.0
-
-    try:
-        sum_sq_value = float(stats.get(f"{prefix}_sum_sq", 0.0) or 0.0)
-    except (TypeError, ValueError):
-        sum_sq_value = 0.0
-
-    avg = sum_value / count
-    variance = max(sum_sq_value / count - avg * avg, 0.0)
-    block: Dict[str, Any] = {
-        "count": count,
-        "avg": avg,
-        "stdev": math.sqrt(variance),
-    }
-
-    min_value = _as_optional_float(stats.get(f"{prefix}_min"))
-    if min_value is not None and math.isfinite(min_value):
-        block["min"] = float(min_value)
-    max_value = _as_optional_float(stats.get(f"{prefix}_max"))
-    if max_value is not None and math.isfinite(max_value):
-        block["max"] = float(max_value)
-
-    history_key = f"{prefix}_history"
-    history_raw = stats.get(history_key)
-    if isinstance(history_raw, deque):
-        samples: list[float | int] = []
-        for value in history_raw:
-            numeric = _as_optional_float(value)
-            if numeric is None or not math.isfinite(numeric):
-                continue
-            samples.append(_normalize_numeric(numeric))
-        if samples:
-            block["samples"] = samples
-
-    return block
-
-
 def _normalize_counter_map(raw_map: Any) -> Dict[str, int]:
     if not isinstance(raw_map, Mapping):
         return {}
@@ -2848,4 +2770,6 @@ __all__ = [
     "record_market_data_incident",
     "record_risk_incident",
     "record_yfinance_usage",
+    "_serialize_event_history",
+    "_summarize_metric_block",
 ]
