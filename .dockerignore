@@ -1,14 +1,12 @@
-# === Tests (comentar para incluirlos en la imagen de test) ===
-# **/tests/**
+# --- Tests (excluidos del contexto de build)
+test/
+*/test/
+**/test/
+**/tests/
 
-# === Python / caches ===
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.log
-*.tmp
-*.swp
+# --- Artefactos temporales y entornos
+.cache/
+**/.cache/
 .pytest_cache/
 .cache/
 
@@ -18,15 +16,15 @@ __pycache__/
 env/
 .venv/
 venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.log
+*.tmp
+*.swp
 
-# === Streamlit (ignora contenido, re-incluye config necesaria) ===
-.streamlit/*
-!.streamlit/config.toml
-!.streamlit/bootstrap.css
-# NUNCA ignores ".streamlit/" sin * si necesitas re-incluir archivos
-.streamlit/secrets.toml
-
-# === Config / secretos ===
+# --- Environment y tokens sensibles
 .env
 *.env
 tokens/

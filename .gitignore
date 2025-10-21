@@ -1,16 +1,20 @@
-# --- Python / bytecode
-__pycache__/
-*.pyc
-*.py[cod]
-*.pyo
-*.pyd
+# --- Artefactos temporales y entornos
+.cache/
 .pytest_cache/
-
-# --- Entornos / IDE
+.streamlit/
+!.streamlit/bootstrap.css
+!.streamlit/config.toml
+.vscode/
 env/
 .venv/
 venv/
-.vscode/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# --- IDEs
 .idea/
 
 # --- SO / varios
@@ -41,7 +45,6 @@ data/
 *.xlsx
 
 # --- Logs y builds
-*.log
 logs/
 dist/
 build/
