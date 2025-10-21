@@ -1,28 +1,41 @@
-test/
-*/test/
-**/test/
-**/tests/
+# === Tests (comentar para incluirlos en la imagen de test) ===
+# **/tests/**
 
-# Python cache and temporary files
+# === Python / caches ===
+__pycache__/
 *.pyc
 *.pyo
-__pycache__/
+*.pyd
 *.log
 *.tmp
 *.swp
-
-# Caches
-.cache/
-**/.cache/
 .pytest_cache/
-.streamlit/
-!.streamlit/bootstrap.css
-!.streamlit/config.toml
-.vscode/
-env/
+.cache/
 
-# Environment and tokens
+# === Entornos / IDE ===
+.vscode/
+.idea/
+env/
+.venv/
+venv/
+
+# === Streamlit (ignora contenido, re-incluye config necesaria) ===
+.streamlit/*
+!.streamlit/config.toml
+!.streamlit/bootstrap.css
+# NUNCA ignores ".streamlit/" sin * si necesitas re-incluir archivos
+.streamlit/secrets.toml
+
+# === Config / secretos ===
 .env
 *.env
 tokens/
 tokens_iol.json
+
+# === Datos locales (ajusta según uso) ===
+data/
+*.csv
+!docs/fixtures/default/*.csv
+!infrastructure/cache/ta_fallback.csv
+*.parquet
+*.xlsx
