@@ -1,4 +1,4 @@
-.PHONY: install lint format test typecheck qa
+.PHONY: install lint format lint-tests-fix test typecheck qa
 
 install:
 	pip install -r requirements.txt -r requirements-dev.txt
@@ -8,6 +8,10 @@ lint:
 
 format:
 	ruff format .
+
+lint-tests-fix:
+	ruff check tests --select I,F401 --fix
+	ruff format tests
 
 test:
 	pytest -q -o addopts=''

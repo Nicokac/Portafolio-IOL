@@ -72,6 +72,8 @@ line-ending = "lf"
 [tool.mypy]
 ignore_missing_imports = true
 disable_error_code = ["import-untyped"]
+warn_unused_ignores = true
+namespace_packages = true
 
 [tool.setuptools]
 packages = [
