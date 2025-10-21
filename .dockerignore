@@ -8,10 +8,11 @@ test/
 .cache/
 **/.cache/
 .pytest_cache/
-.streamlit/
-!.streamlit/bootstrap.css
-!.streamlit/config.toml
+.cache/
+
+# === Entornos / IDE ===
 .vscode/
+.idea/
 env/
 .venv/
 venv/
@@ -28,3 +29,11 @@ __pycache__/
 *.env
 tokens/
 tokens_iol.json
+
+# === Datos locales (ajusta según uso) ===
+data/
+*.csv
+!docs/fixtures/default/*.csv
+!infrastructure/cache/ta_fallback.csv
+*.parquet
+*.xlsx
