@@ -14,6 +14,7 @@ import streamlit as st
 from services.startup_logger import log_startup_event
 from shared import skeletons
 from shared.config import configure_logging, ensure_tokens_key
+from shared.qa_profiler import record_startup_complete
 from shared.security_env_validator import validate_security_environment
 from shared.version import __build_signature__, __version__
 from ui.ui_settings import init_ui
@@ -85,6 +86,11 @@ def init_app(argv: list[str] | None = None) -> argparse.Namespace:
     )
     log_startup_event(message)
     logger.info(message)
+
+    try:
+        record_startup_complete()
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("Unable to record QA startup metric", exc_info=True)
 
     return args
 

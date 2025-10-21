@@ -29,8 +29,18 @@ _METRIC_COLUMNS = (
     "context",
 )
 
+_QA_METRIC_COLUMNS = (
+    "timestamp",
+    "event_name",
+    "startup_time_ms",
+    "ui_render_time_ms",
+    "cache_load_time_ms",
+    "auth_latency_ms",
+)
+
 _TELEMETRY_DEBOUNCE_SECONDS = 0.3
 _LAST_PHASE_LOG: dict[str, float] = {}
+_QA_METRICS_FILE = Path("qa_metrics.csv")
 
 
 def is_hydration_locked() -> bool:
@@ -154,6 +164,34 @@ def _ensure_schema(path: Path) -> bool:
     return False
 
 
+def _ensure_qa_schema(path: Path) -> bool:
+    """Ensure the QA metrics file contains the expected header."""
+
+    if not path.exists():
+        return False
+    try:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            header = next(reader, None)
+    except Exception:  # pragma: no cover - defensive safeguard
+        header = None
+    if header == list(_QA_METRIC_COLUMNS):
+        return True
+    backup = path.with_suffix(path.suffix + ".legacy")
+    try:
+        if backup.exists():
+            backup.unlink()
+        path.rename(backup)
+        logger.warning(
+            "QA metrics schema changed for %s; previous data moved to %s",
+            path,
+            backup,
+        )
+    except OSError:  # pragma: no cover - fallback when rename fails
+        path.unlink(missing_ok=True)
+    return False
+
+
 def _merge_context(
     target: MutableMapping[str, object], source: Mapping[str, object] | None
 ) -> None:
@@ -192,6 +230,16 @@ def _normalize_duration(
         return max(float(elapsed_s), 0.0) * 1000.0
     except (TypeError, ValueError):
         return None
+
+
+def _format_qa_value(value: object | None) -> str:
+    if value is None:
+        return ""
+    try:
+        coerced = max(float(value), 0.0)
+    except (TypeError, ValueError):
+        return ""
+    return f"{coerced:.3f}"
 
 
 def log_telemetry(
@@ -286,7 +334,34 @@ def log_default_telemetry(**kwargs) -> None:
 def log(event_name: str, **kwargs: object) -> None:
     """Emit a simple structured telemetry event to the logger."""
 
+    qa_enabled = bool(kwargs.pop("qa", False))
     logger.info("[Telemetry] %s %s", event_name, kwargs)
+
+    if not qa_enabled:
+        return
+
+    try:
+        _append_qa_metrics(event_name, kwargs)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("Unable to append QA metrics", exc_info=True)
+
+
+def _append_qa_metrics(event_name: str, metrics: Mapping[str, object]) -> None:
+    path = _QA_METRICS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    file_exists = _ensure_qa_schema(path)
+    row = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event_name": event_name,
+    }
+    for column in _QA_METRIC_COLUMNS[2:]:
+        row[column] = _format_qa_value(metrics.get(column))
+
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=_QA_METRIC_COLUMNS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 __all__ = [

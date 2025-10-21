@@ -17,6 +17,7 @@ from bootstrap.startup import (
     resume_preload_worker,
     start_preload_worker,
 )
+from shared.qa_profiler import track_ui_render
 
 
 def _get_startup_module():
@@ -43,7 +44,8 @@ def _get_orchestrator_module():
 
 
 def render_main_ui() -> None:
-    _get_orchestrator_module().render_main_ui()
+    with track_ui_render():
+        _get_orchestrator_module().render_main_ui()
 
 
 def _render_login_phase() -> None:
