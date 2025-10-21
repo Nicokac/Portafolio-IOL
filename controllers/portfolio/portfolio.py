@@ -1,4 +1,3 @@
-import csv
 import hashlib
 import json
 import logging
@@ -41,7 +40,6 @@ from services import snapshots as snapshot_service
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from ui.lazy import charts_fragment, current_component, current_scope, in_form_scope, table_fragment
 from ui.lazy.runtime import current_dataset_token
-from shared.utils import _as_float_or_none, format_money
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block, record_stage as log_performance_stage
 from services.cache import CacheService
@@ -58,7 +56,6 @@ from shared.fragment_state import (
 
 from .load_data import load_portfolio_data
 from .charts import (
-    render_basic_section,
     render_summary as render_summary_section,
     render_table as render_table_section,
     render_charts as render_charts_section,

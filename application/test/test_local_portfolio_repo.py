@@ -1,4 +1,3 @@
-import json
 import pytest
 
 from infrastructure.local_portfolio import LocalPortfolioRepository

@@ -1,8 +1,9 @@
 # application\ta_service.py
 from __future__ import annotations
+
 import logging
-from pathlib import Path
 from typing import List
+
 from .portfolio_service import clean_symbol, map_to_us_ticker
 from shared.cache import cache
 from shared.settings import (
@@ -12,13 +13,12 @@ from shared.settings import (
     yahoo_quotes_ttl,
 )
 from shared.utils import _to_float
-from services.health import record_yfinance_usage
 from services.fmp_client import get_fmp_client
 from services.ohlc_adapter import get_ohlc_adapter
 
 import numpy as np
 import pandas as pd
-from requests.exceptions import HTTPError, Timeout
+from requests.exceptions import HTTPError
 
 # yfinance para históricos
 try:

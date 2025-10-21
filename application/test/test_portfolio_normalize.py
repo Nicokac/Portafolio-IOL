@@ -1,5 +1,3 @@
-import pandas as pd
-
 from application.portfolio_service import normalize_positions
 
 

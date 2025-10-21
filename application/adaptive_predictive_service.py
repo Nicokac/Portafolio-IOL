@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, Sequence
-import time
 
 import numpy as np
 import pandas as pd
 
 from application.backtesting_service import BacktestingService
-from application.predictive_core import (
-    PredictiveCacheState,
-    run_backtest,
-)
+from application.predictive_core import PredictiveCacheState
 from application.predictive_service import build_adaptive_history
 from services.cache import CacheService
 from services.performance_metrics import track_function

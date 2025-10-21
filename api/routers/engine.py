@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
-import logging
-from typing import Any, Mapping
+from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 
+from api.routers.base_models import _BaseModel
+from api.schemas.adaptive_utils import validate_adaptive_limits
+from api.schemas.predictive import (
+    AdaptiveForecastRequest as BaseAdaptiveForecastRequest,
+    PredictRequest,
+    PredictResponse as BasePredictResponse,
+    SectorPrediction,
+)
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
     average_correlation,
@@ -26,17 +34,6 @@ from predictive_engine.utils import series_to_dict, to_native, to_records
 from services.auth import get_current_user
 from services.performance_metrics import measure_execution
 from shared.version import __build_signature__, __version__
-
-from api.routers.base_models import _BaseModel
-from api.schemas.adaptive_utils import validate_adaptive_limits
-from api.schemas.predictive import (
-    AdaptiveForecastRequest as BaseAdaptiveForecastRequest,
-    AdaptiveHistoryEntry,
-    OpportunityPayload,
-    PredictRequest,
-    PredictResponse as BasePredictResponse,
-    SectorPrediction,
-)
 
 logger = logging.getLogger(__name__)
 logger.info("Initialising engine router")

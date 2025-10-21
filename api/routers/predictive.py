@@ -16,8 +16,6 @@ from api.routers.base_models import _BaseModel
 from api.schemas.adaptive_utils import validate_adaptive_limits
 from api.schemas.predictive import (
     AdaptiveForecastRequest,
-    AdaptiveHistoryEntry,
-    OpportunityPayload,
     PredictRequest,
     PredictResponse,
     SectorPrediction,

@@ -462,7 +462,6 @@ def build_adaptive_history(
     sectors = selected["sector"].tolist()
 
     ttl_seconds = _MARKET_CACHE.resolve_prediction_ttl(ttl_hours=ttl_hours)
-    effective_ttl_hours = float(ttl_seconds) / 3600.0 if ttl_seconds > 0 else 0.0
 
     active_cache = cache if cache is not None else _CACHE
     if isinstance(active_cache, CacheService):

@@ -1,6 +1,3 @@
-import requests
-import pytest
-import sys
 import sys
 import types
 from types import SimpleNamespace
