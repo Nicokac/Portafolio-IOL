@@ -3,41 +3,11 @@ from types import SimpleNamespace
 import pandas as pd
 
 from ui.panels import diagnostics as panel
-
-
-class FakeStreamlit:
-    def __init__(self):
-        self.session_state = {}
-        self.headers = []
-        self.subheaders = []
-        self.dataframes = []
-        self.captions = []
-        self.downloads = []
-
-    def header(self, label: str) -> None:
-        self.headers.append(label)
-
-    def subheader(self, label: str) -> None:
-        self.subheaders.append(label)
-
-    def dataframe(self, frame: pd.DataFrame, **kwargs) -> None:
-        self.dataframes.append((frame, kwargs))
-
-    def caption(self, text: str) -> None:
-        self.captions.append(text)
-
-    def columns(self, count: int):
-        return [SimpleNamespace(metric=lambda *a, **k: None) for _ in range(count)]
-
-    def download_button(self, *args, **kwargs):
-        self.downloads.append((args, kwargs))
-
-    def divider(self):
-        return None
+from tests.fixtures.streamlit import UIFakeStreamlit
 
 
 def test_diagnostics_panel_renders_stage_timings(monkeypatch):
-    fake_st = FakeStreamlit()
+    fake_st = UIFakeStreamlit()
     monkeypatch.setattr(panel, "st", fake_st)
     monkeypatch.setattr(panel, "get_recent_metrics", lambda: [])
     monkeypatch.setattr(

@@ -7,7 +7,7 @@ import sys
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Sequence
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -31,165 +31,15 @@ from services.portfolio_view import (
     PortfolioViewSnapshot,
 )
 from shared.portfolio_export import PortfolioSnapshotExport
+from tests.fixtures.streamlit import (
+    UIFakeStreamlit,
+    _ContextManager,
+    _DummyContainer,
+    _Placeholder,
+)
 
 
-class _DummyContainer:
-    def __enter__(self) -> "_DummyContainer":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - standard context signature
-        return None
-
-
-class _ContextManager:
-    def __init__(self, owner: "FakeStreamlit") -> None:
-        self._owner = owner
-
-    def __enter__(self) -> "_ContextManager":  # noqa: D401 - thin wrapper
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - thin wrapper
-        return None
-
-    def number_input(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.number_input(*args, **kwargs)
-
-    def selectbox(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.selectbox(*args, **kwargs)
-
-    def plotly_chart(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.plotly_chart(*args, **kwargs)
-
-    def info(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.info(*args, **kwargs)
-
-    def metric(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.metric(*args, **kwargs)
-
-    def line_chart(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.line_chart(*args, **kwargs)
-
-    def bar_chart(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.bar_chart(*args, **kwargs)
-
-    def empty(self) -> _Placeholder:
-        return self._owner.empty()
-
-
-class _Placeholder:
-    def __init__(self, owner: "FakeStreamlit") -> None:
-        self._owner = owner
-
-    def empty(self) -> None:
-        return None
-
-    def container(self) -> _ContextManager:
-        return _ContextManager(self._owner)
-
-    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
-        self._owner.markdowns.append({
-            "body": body,
-            "unsafe": unsafe_allow_html,
-            "placeholder": True,
-        })
-
-    def info(self, message: str) -> None:
-        self._owner.info(message)
-
-    def caption(self, text: str) -> None:
-        self._owner.caption(text)
-
-    def write(self, body: str) -> None:
-        self._owner.markdowns.append(
-            {"body": body, "unsafe": False, "placeholder": True, "write": True}
-        )
-
-    def checkbox(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.checkbox(*args, **kwargs)
-
-    def toggle(self, *args: Any, **kwargs: Any) -> Any:
-        return self._owner.toggle(*args, **kwargs)
-
-
-class FakeStreamlit:
-    """Minimal Streamlit stub capturing the interactions we care about."""
-
-    def __init__(
-        self,
-        radio_sequence: Iterable[int],
-        selectbox_defaults: dict[str, Any] | None = None,
-        *,
-        multiselect_responses: dict[str, Sequence[Any]] | None = None,
-        checkbox_values: dict[str, bool] | None = None,
-        slider_values: dict[str, Any] | None = None,
-        button_clicks: dict[str, Sequence[bool] | bool] | None = None,
-    ) -> None:
-        self.session_state: dict[str, Any] = {}
-        self._radio_iter: Iterator[int] = iter(radio_sequence)
-        self._selectbox_defaults = selectbox_defaults or {}
-        self._multiselect_responses = {
-            key: list(value) for key, value in (multiselect_responses or {}).items()
-        }
-        self._checkbox_values: dict[str, list[bool]] = {}
-        for raw_key, value in (checkbox_values or {}).items():
-            key = str(raw_key)
-            if isinstance(value, (list, tuple)):
-                self._checkbox_values[key] = [bool(item) for item in value]
-            else:
-                self._checkbox_values[key] = [bool(value)]
-        self._slider_values = dict(slider_values or {})
-        self._button_clicks: dict[str, list[bool]] = {}
-        for raw_key, value in (button_clicks or {}).items():
-            key = str(raw_key)
-            if isinstance(value, (list, tuple)):
-                self._button_clicks[key] = [bool(item) for item in value]
-            else:
-                self._button_clicks[key] = [bool(value)]
-        self.radio_calls: list[dict[str, Any]] = []
-        self.selectbox_calls: list[dict[str, Any]] = []
-        self.multiselect_calls: list[dict[str, Any]] = []
-        self.number_input_calls: list[dict[str, Any]] = []
-        self.subheaders: list[str] = []
-        self.warnings: list[str] = []
-        self.errors: list[str] = []
-        self.successes: list[str] = []
-        self.plot_calls: list[dict[str, Any]] = []
-        self.line_charts: list[pd.DataFrame] = []
-        self.bar_charts: list[dict[str, Any]] = []
-        self.metrics: list[tuple[Any, Any, Any, dict[str, Any]]] = []
-        self.markdowns: list[dict[str, Any]] = []
-        self.captions: list[str] = []
-        self.checkbox_calls: list[dict[str, Any]] = []
-        self.slider_calls: list[dict[str, Any]] = []
-        self.download_buttons: list[dict[str, Any]] = []
-        self.button_calls: list[dict[str, Any]] = []
-        self._placeholders: list[_Placeholder] = []
-
-    # ---- Core widgets -------------------------------------------------
-    def radio(
-        self,
-        label: str,
-        *,
-        options: Sequence[int],
-        format_func,
-        index: int = 0,
-        horizontal: bool,
-        **kwargs: Any,
-    ) -> int:
-        value = next(self._radio_iter)
-        display_labels = [format_func(opt) for opt in options]
-        record = {
-            "label": label,
-            "options": list(options),
-            "index": index,
-            "display_labels": display_labels,
-        }
-        key = kwargs.get("key")
-        if key is not None:
-            record["key"] = key
-            self.session_state[key] = value
-        self.radio_calls.append(record)
-        return value
+FakeStreamlit = UIFakeStreamlit
 
     def selectbox(self, label: str, options: Sequence[Any], index: int = 0, key: str | None = None, **_: Any) -> Any:
         self.selectbox_calls.append({"label": label, "options": list(options), "key": key})

@@ -17,6 +17,7 @@ from domain.models import Controls
 from infrastructure.iol import client as iol_client_module
 from services import cache as cache_module
 from services.portfolio_view import PortfolioViewModelService
+from tests.fixtures.streamlit import BaseFakeStreamlit
 
 
 def _http_error(status: int) -> requests.HTTPError:
@@ -24,24 +25,13 @@ def _http_error(status: int) -> requests.HTTPError:
     return requests.HTTPError(response=response)
 
 
-class FakeStreamlit:
-    def __init__(self) -> None:
-        self.session_state: dict = {}
-        self.errors: list[str] = []
-
-    def error(self, message: str) -> None:  # pragma: no cover - defensive
-        self.errors.append(str(message))
-
-    def warning(self, message: str) -> None:  # pragma: no cover - defensive
-        self.errors.append(str(message))
-
-    def stop(self) -> None:  # pragma: no cover - defensive
-        raise AssertionError("stop() should not be called in tests")
+pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 
 
 @pytest.fixture
-def fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> FakeStreamlit:
-    fake_st = FakeStreamlit()
+def fake_streamlit(
+    monkeypatch: pytest.MonkeyPatch, fake_st: BaseFakeStreamlit
+) -> BaseFakeStreamlit:
     for module in (filters, cache_module, iol_client_module):
         monkeypatch.setattr(module, "st", fake_st)
     monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
