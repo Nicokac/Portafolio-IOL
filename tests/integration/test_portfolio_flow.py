@@ -18,6 +18,7 @@ from infrastructure.iol import client as iol_client_module
 from services import cache as cache_module
 from services.portfolio_view import PortfolioViewModelService
 from tests.fixtures.streamlit import BaseFakeStreamlit
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def _http_error(status: int) -> requests.HTTPError:

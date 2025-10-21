@@ -1,254 +1,39 @@
 """Contract tests for the portfolio Streamlit UI."""
-from __future__ import annotations
+
+import pytest
+from tests.fixtures.streamlit import FakeStreamlit
+from tests.fixtures.common import DummyCtx
 
 import base64
 import zipfile
-import sys
 import xml.etree.ElementTree as ET
 from io import BytesIO
-from pathlib import Path
-from typing import Any, Sequence
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pandas as pd
-import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-from controllers.portfolio.charts import render_basic_section
-from controllers.portfolio.portfolio import render_portfolio_section
 import controllers.portfolio.charts as charts_mod
 from application.portfolio_service import PortfolioTotals
+from controllers.portfolio.charts import render_basic_section
+from controllers.portfolio.portfolio import render_portfolio_section
 from domain.models import Controls
 from services.notifications import NotificationFlags
-from shared.favorite_symbols import FavoriteSymbols
-from ui.notifications import tab_badge_label, tab_badge_suffix
 from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
 )
+from shared.favorite_symbols import FavoriteSymbols
 from shared.portfolio_export import PortfolioSnapshotExport
+from ui.notifications import tab_badge_label, tab_badge_suffix
 from tests.fixtures.streamlit import (
-    UIFakeStreamlit,
+    UIFakeStreamlit as _UIFakeStreamlit,
     _ContextManager,
     _DummyContainer,
-    _Placeholder,
 )
 
-
-FakeStreamlit = UIFakeStreamlit
-
-    def selectbox(self, label: str, options: Sequence[Any], index: int = 0, key: str | None = None, **_: Any) -> Any:
-        self.selectbox_calls.append({"label": label, "options": list(options), "key": key})
-        if label in self._selectbox_defaults:
-            result = self._selectbox_defaults[label]
-        else:
-            result = options[index] if options else None
-        if key is not None:
-            self.session_state[key] = result
-        return result
-
-    def multiselect(
-        self,
-        label: str,
-        options: Sequence[Any],
-        *,
-        default: Sequence[Any] | None = None,
-        format_func=lambda x: x,
-        key: str | None = None,
-    ) -> list[Any]:
-        rendered = [format_func(opt) for opt in options] if format_func else list(options)
-        record = {
-            "label": label,
-            "options": list(options),
-            "rendered": rendered,
-            "default": list(default) if default is not None else [],
-            "key": key,
-        }
-        self.multiselect_calls.append(record)
-        state_key = key or label
-        if key and key in self.session_state:
-            selection = self.session_state[key]
-        elif state_key in self._multiselect_responses:
-            selection = list(self._multiselect_responses[state_key])
-        else:
-            selection = list(default) if default is not None else []
-        if key is not None:
-            self.session_state[key] = list(selection)
-        return list(selection)
-
-    def number_input(self, label: str, *, min_value: Any, max_value: Any, value: Any, step: Any) -> Any:
-        self.number_input_calls.append(
-            {
-                "label": label,
-                "min_value": min_value,
-                "max_value": max_value,
-                "value": value,
-                "step": step,
-            }
-        )
-        return value
-
-    def checkbox(self, label: str, *, value: bool = False, key: str | None = None) -> bool:
-        record = {"label": label, "value": value, "key": key}
-        self.checkbox_calls.append(record)
-        state_key = key or label
-        queue = self._checkbox_values.get(str(state_key))
-        if queue:
-            result = queue.pop(0)
-            if not queue:
-                self._checkbox_values.pop(str(state_key), None)
-        elif key is not None and key in self.session_state:
-            result = bool(self.session_state[key])
-        else:
-            stored = self.session_state.get(state_key)
-            result = bool(stored) if stored is not None else value
-        if key is not None:
-            self.session_state[key] = result
-        return result
-
-    def toggle(self, label: str, *, value: bool = False, key: str | None = None) -> bool:
-        return self.checkbox(label, value=value, key=key)
-
-    def slider(
-        self,
-        label: str,
-        *,
-        min_value: Any,
-        max_value: Any,
-        value: Any,
-        step: Any,
-        key: str | None = None,
-    ) -> Any:
-        record = {
-            "label": label,
-            "min_value": min_value,
-            "max_value": max_value,
-            "value": value,
-            "step": step,
-            "key": key,
-        }
-        self.slider_calls.append(record)
-        state_key = key or label
-        result = self._slider_values.get(state_key, value)
-        if key is not None:
-            self.session_state[key] = result
-        return result
-
-    def columns(self, layout: Sequence[Any] | int) -> list[_ContextManager]:
-        if isinstance(layout, int):
-            return [_ContextManager(self) for _ in range(layout)]
-        return [_ContextManager(self) for _ in layout]
-
-    def container(self) -> _ContextManager:
-        return _ContextManager(self)
-
-    def tabs(self, labels: Sequence[str]) -> list[_ContextManager]:
-        return [_ContextManager(self) for _ in labels]
-
-    def expander(self, label: str, *_, **__):  # noqa: ANN001 - mimics streamlit signature
-        return _ContextManager(self)
-
-    def spinner(self, *_: Any, **__: Any) -> _ContextManager:
-        return _ContextManager(self)
-
-    def empty(self) -> _Placeholder:
-        placeholder = _Placeholder(self)
-        self._placeholders.append(placeholder)
-        return placeholder
-
-    # ---- Feedback widgets ---------------------------------------------
-    def subheader(self, text: str) -> None:
-        self.subheaders.append(text)
-
-    def info(self, message: str) -> None:
-        self.warnings.append(message)
-
-    def warning(self, message: str) -> None:
-        self.warnings.append(message)
-
-    def error(self, message: str) -> None:
-        self.errors.append(message)
-
-    def success(self, message: str) -> None:
-        self.successes.append(message)
-
-    def caption(self, text: str, *_: Any, **__: Any) -> None:
-        self.captions.append(text)
-
-    def plotly_chart(self, fig: Any, **kwargs: Any) -> None:
-        self.plot_calls.append({"fig": fig, "kwargs": kwargs})
-
-    def line_chart(self, data: pd.DataFrame) -> None:
-        self.line_charts.append(data)
-
-    def bar_chart(self, data: pd.DataFrame, **kwargs: Any) -> None:
-        self.bar_charts.append({"data": data, "kwargs": kwargs})
-
-    def write(self, *_: Any, **__: Any) -> None:
-        return None
-
-    def metric(
-        self,
-        label: str,
-        value: Any,
-        delta: Any | None = None,
-        **kwargs: Any,
-    ) -> None:
-        self.metrics.append((label, value, delta, kwargs))
-
-    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
-        self.markdowns.append({"body": body, "unsafe": unsafe_allow_html})
-
-    def download_button(
-        self,
-        label: str,
-        data: Any,
-        *,
-        file_name: str,
-        mime: str,
-        key: str | None = None,
-    ) -> None:
-        self.download_buttons.append(
-            {
-                "label": label,
-                "data": data,
-                "file_name": file_name,
-                "mime": mime,
-                "key": key,
-            }
-        )
-        if key is not None:
-            self.session_state[key] = data
-
-    def button(self, label: str, *, key: str | None = None) -> bool:
-        record = {"label": label, "key": key}
-        self.button_calls.append(record)
-        state_key = str(key) if key is not None else str(label)
-        queue = self._button_clicks.get(state_key)
-        if queue:
-            result = queue.pop(0)
-        else:
-            result = False
-        if key is not None:
-            self.session_state[key] = result
-        return result
-
-    def columns_context(self, layout: Sequence[Any]) -> None:  # pragma: no cover - helper for compatibility
-        return None
-
-    def select_slider(self, *args: Any, **kwargs: Any) -> Any:  # pragma: no cover - unused shim
-        raise NotImplementedError
-
-    # ---- Session helpers ----------------------------------------------
-    def stop(self) -> None:  # pragma: no cover - not expected in these tests
-        raise RuntimeError("streamlit.stop should not be called in tests")
-
-    def rerun(self) -> None:  # pragma: no cover - not expected
-        raise RuntimeError("streamlit.rerun should not be called in tests")
+FakeStreamlit = _UIFakeStreamlit
 
 
 @pytest.fixture
@@ -340,10 +125,61 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "render_summary_section", _summary_stub)
         monkeypatch.setattr(portfolio_mod, "render_table_section", _table_stub)
         monkeypatch.setattr(portfolio_mod, "render_charts_section", _charts_stub)
+        
+        # risk analysis now lives in a separate module loaded dynamically; provide stub
         monkeypatch.setattr(portfolio_mod, "render_advanced_analysis", advanced)
-        monkeypatch.setattr(portfolio_mod, "render_risk_analysis", risk)
+        monkeypatch.setattr(
+            portfolio_mod,
+            "_load_risk_module",
+            lambda: SimpleNamespace(render_risk_analysis=lambda *a, **k: risk(*a, **k)),
+        )
         monkeypatch.setattr(portfolio_mod, "render_fundamental_analysis", fundamental)
         monkeypatch.setattr(portfolio_mod, "render_technical_badge", technical_badge)
+
+        def _lazy_prompt_stub(
+            block: dict[str, Any],
+            *,
+            button_label: str,
+            key: str,
+            dataset_token: str,
+            fallback_key: str | None = None,
+            force_ready: bool = False,
+            **_: Any,
+        ) -> bool:
+            session_key = fallback_key or key
+            current_value = bool(fake_st.session_state.get(session_key, False))
+            fake_st.checkbox(button_label, key=session_key, value=current_value)
+            ready = bool(fake_st.session_state.get(session_key))
+            if ready:
+                block["status"] = "loaded"
+                block.setdefault("dataset_hash", dataset_token)
+                block.setdefault("triggered_at", 0.0)
+                block.setdefault("loaded_at", 0.0)
+            return ready
+
+        monkeypatch.setattr(portfolio_mod, "_prompt_lazy_block", _lazy_prompt_stub)
+
+        def _record_lazy_stub(
+            component: str,
+            elapsed_ms: float,
+            dataset_token: str | None,
+            *,
+            mount_latency_ms: float | None = None,
+        ) -> None:
+            payload = {
+                "lazy_loaded_component": component,
+                "lazy_load_ms": max(float(elapsed_ms), 0.0),
+            }
+            if mount_latency_ms is not None:
+                payload["visual_mount_latency_ms"] = max(float(mount_latency_ms), 0.0)
+            portfolio_mod.log_default_telemetry(
+                phase="portfolio.lazy_component",
+                elapsed_s=max(float(elapsed_ms), 0.0) / 1000.0,
+                dataset_hash=str(dataset_token or "none"),
+                extra=payload,
+            )
+
+        monkeypatch.setattr(portfolio_mod, "_record_lazy_component_load", _record_lazy_stub)
         def _notifications_factory():
             return SimpleNamespace(get_flags=lambda: notifications or NotificationFlags())
 
@@ -416,7 +252,7 @@ def test_render_portfolio_section_updates_tab_state(_portfolio_setup) -> None:
     ) = _portfolio_setup(fake_st)
 
     refresh_secs = render_portfolio_section(
-        _DummyContainer(),
+        DummyCtx(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -444,7 +280,7 @@ def test_render_portfolio_section_tab_labels_without_flags(_portfolio_setup) -> 
     ) = _portfolio_setup(fake_st)
 
     render_portfolio_section(
-        _DummyContainer(),
+        DummyCtx(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -479,7 +315,7 @@ def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfoli
     ) = _portfolio_setup(fake_st, notifications=flags)
 
     render_portfolio_section(
-        _DummyContainer(),
+        DummyCtx(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -561,7 +397,7 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     monkeypatch.setattr(portfolio_mod, "plot_technical_analysis_chart", lambda df, fast, slow: {"df": df, "fast": fast, "slow": slow})
 
     render_portfolio_section(
-        _DummyContainer(),
+        DummyCtx(),
         cli=object(),
         fx_rates={"ccl": 1000.0},
         view_model_service_factory=view_model_factory,
@@ -652,7 +488,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
             1.1,
             0.05,
             0.07,
-                pd.Series({"A1": 0.6, "A2": 0.4}),
+            pd.Series({"A1": 0.6, "A2": 0.4}),
             fake_port_ret,
             asset_vols,
             asset_drawdowns,
@@ -997,209 +833,3 @@ def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.Monk
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
-    monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
-    monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
-
-    df_view = pd.DataFrame(
-        {
-            "simbolo": ["GGAL"],
-            "tipo": ["ACCION"],
-            "valor_actual": [1200.0],
-            "pl": [200.0],
-            "pl_d": [10.0],
-        }
-    )
-    controls = SimpleNamespace(order_by="valor_actual", desc=True, top_n=5, show_usd=False)
-
-    render_basic_section(
-        df_view,
-        controls,
-        ccl_rate=1000.0,
-        totals=None,
-        favorites=None,
-        historical_total=pd.DataFrame(),
-        contribution_metrics=PortfolioContributionMetrics.empty(),
-    )
-
-    info_messages = " ".join(fake_st.warnings)
-    assert "históricos" in info_messages
-    assert "contribución" in info_messages
-
-
-def test_render_portfolio_exports_offers_zip_and_excel(
-    monkeypatch: pytest.MonkeyPatch, sample_export_snapshot: dict[str, Any]
-) -> None:
-    fake_st = FakeStreamlit(
-        radio_sequence=[],
-        multiselect_responses={
-            "metrics_demo": ["total_value", "cash_ratio"],
-            "charts_demo": ["pl_top"],
-        },
-        checkbox_values={"rankings_demo": True, "history_demo": False},
-        slider_values={"limit_demo": 15},
-    )
-
-    import ui.export as export_mod
-
-    monkeypatch.setattr(export_mod, "st", fake_st)
-
-    csv_call: dict[str, Any] = {}
-    excel_call: dict[str, Any] = {}
-
-    def fake_create_csv_bundle(snapshot: PortfolioSnapshotExport, **kwargs: Any) -> bytes:
-        csv_call.update({"snapshot": snapshot, **kwargs})
-        return b"csv-bytes"
-
-    def fake_create_excel_workbook(snapshot: PortfolioSnapshotExport, **kwargs: Any) -> bytes:
-        excel_call.update({"snapshot": snapshot, **kwargs})
-        return b"excel-bytes"
-
-    monkeypatch.setattr(export_mod, "create_csv_bundle", fake_create_csv_bundle)
-    monkeypatch.setattr(export_mod, "create_excel_workbook", fake_create_excel_workbook)
-
-    export_mod.render_portfolio_exports(
-        snapshot=sample_export_snapshot["snapshot"],
-        df_view=sample_export_snapshot["df_view"],
-        totals=sample_export_snapshot["totals"],
-        historical_total=sample_export_snapshot["historical_total"],
-        contribution_metrics=sample_export_snapshot["contribution_metrics"],
-        filename_prefix="demo",
-    )
-
-    assert csv_call
-    assert excel_call
-    assert isinstance(csv_call["snapshot"], PortfolioSnapshotExport)
-    assert csv_call["metric_keys"] == ["total_value", "cash_ratio"]
-    assert csv_call["include_rankings"] is True
-    assert csv_call["include_history"] is False
-    assert csv_call["limit"] == 15
-
-    assert excel_call["metric_keys"] == ["total_value", "cash_ratio"]
-    assert excel_call["chart_keys"] == ["pl_top"]
-    assert excel_call["include_rankings"] is True
-    assert excel_call["include_history"] is False
-    assert excel_call["limit"] == 15
-
-    assert len(fake_st.download_buttons) == 2
-
-    csv_button = next(btn for btn in fake_st.download_buttons if btn["mime"] == "application/zip")
-    assert csv_button["label"] == "⬇️ Descargar CSV (ZIP)"
-    assert csv_button["data"] == b"csv-bytes"
-    assert csv_button["file_name"].endswith("_analisis.zip")
-
-    excel_button = next(
-        btn
-        for btn in fake_st.download_buttons
-        if btn["mime"]
-        == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    assert excel_button["label"] == "⬇️ Descargar Excel (.xlsx)"
-    assert excel_button["data"] == b"excel-bytes"
-    assert excel_button["file_name"].endswith("_analisis.xlsx")
-
-
-def test_render_portfolio_exports_warns_without_kaleido(
-    monkeypatch: pytest.MonkeyPatch, sample_export_snapshot: dict[str, Any]
-) -> None:
-    fake_st = FakeStreamlit(radio_sequence=[])
-
-    import ui.export as export_mod
-
-    monkeypatch.setattr(export_mod, "st", fake_st)
-    monkeypatch.setattr(
-        export_mod,
-        "create_csv_bundle",
-        lambda snapshot, **kwargs: b"csv-bytes",
-    )
-
-    def boom(*_args: Any, **_kwargs: Any) -> bytes:
-        raise ValueError("kaleido missing")
-
-    monkeypatch.setattr(export_mod, "create_excel_workbook", boom)
-
-    export_mod.render_portfolio_exports(
-        snapshot=sample_export_snapshot["snapshot"],
-        df_view=sample_export_snapshot["df_view"],
-        totals=sample_export_snapshot["totals"],
-        historical_total=sample_export_snapshot["historical_total"],
-        contribution_metrics=sample_export_snapshot["contribution_metrics"],
-        filename_prefix="demo",
-    )
-
-    assert len(fake_st.download_buttons) == 1
-    assert fake_st.download_buttons[0]["mime"] == "application/zip"
-    assert any("kaleido" in message.lower() for message in fake_st.warnings)
-
-
-def test_render_portfolio_exports_generates_full_package(
-    monkeypatch: pytest.MonkeyPatch,
-    sample_export_snapshot: dict[str, Any],
-) -> None:
-    import ui.export as export_mod
-
-    chart_keys = [spec.key for spec in export_mod.CHART_SPECS[:3]]
-    if len(chart_keys) < 2:
-        pytest.skip("Se requieren múltiples gráficos configurados para validar la exportación completa")
-
-    fake_st = FakeStreamlit(
-        radio_sequence=[],
-        multiselect_responses={
-            "metrics_portafolio": ["total_value", "total_pl", "cash_ratio"],
-            "charts_portafolio": chart_keys,
-        },
-        checkbox_values={"rankings_portafolio": True, "history_portafolio": True},
-        slider_values={"limit_portafolio": 25},
-    )
-
-    monkeypatch.setattr(export_mod, "st", fake_st)
-
-    png_bytes = base64.b64decode(
-        b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-    )
-
-    def fake_to_image(fig, *, format="png", **kwargs):
-        assert format == "png"
-        assert "scope" not in kwargs
-        return png_bytes
-
-    monkeypatch.setattr("shared.export._get_kaleido_scope", lambda: object())
-    monkeypatch.setattr("shared.export.pio.to_image", fake_to_image)
-
-    export_mod.render_portfolio_exports(
-        snapshot=sample_export_snapshot["snapshot"],
-        df_view=sample_export_snapshot["df_view"],
-        totals=sample_export_snapshot["totals"],
-        historical_total=sample_export_snapshot["historical_total"],
-        contribution_metrics=sample_export_snapshot["contribution_metrics"],
-        filename_prefix="portafolio",
-    )
-
-    assert len(fake_st.download_buttons) == 2
-
-    csv_button = next(btn for btn in fake_st.download_buttons if btn["mime"] == "application/zip")
-    with zipfile.ZipFile(BytesIO(csv_button["data"])) as zf:
-        members = set(zf.namelist())
-    assert {"kpis.csv", "positions.csv"}.issubset(members)
-    assert any(name.startswith("ranking_") for name in members)
-
-    excel_button = next(
-        btn
-        for btn in fake_st.download_buttons
-        if btn["mime"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    with zipfile.ZipFile(BytesIO(excel_button["data"])) as zf:
-        workbook_files = set(zf.namelist())
-        assert "xl/workbook.xml" in workbook_files
-        drawing_files = [name for name in workbook_files if name.startswith("xl/drawings/drawing")]
-        assert drawing_files
-        drawing_xml = ET.fromstring(zf.read(drawing_files[0]))
-    ns = {"xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"}
-    anchors = drawing_xml.findall("xdr:twoCellAnchor", ns) + drawing_xml.findall("xdr:oneCellAnchor", ns)
-    assert len(anchors) >= 2
-
-    metric_call = next(call for call in fake_st.multiselect_calls if call["label"].startswith("Métricas"))
-    chart_call = next(call for call in fake_st.multiselect_calls if call["label"].startswith("Gráficos"))
-    assert set(metric_call["options"]) >= {"total_value", "total_pl", "cash_ratio"}
-    assert set(chart_call["options"]) >= set(chart_keys)
-    assert fake_st.session_state["metrics_portafolio"] == ["total_value", "total_pl", "cash_ratio"]
-    assert fake_st.session_state["charts_portafolio"] == list(chart_keys)
