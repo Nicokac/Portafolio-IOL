@@ -26,13 +26,6 @@ def render_footer() -> None:
                     <p>&copy; {year} Portafolio IOL · Datos provistos en modo lectura.</p>
                 </div>
             </div>
-            <div class='footer-column'>
-                <div class='footer-title'>Resumen de release</div>
-                <div class='footer-meta'>
-                    <p><strong>v0.3.4.3</strong> Layout consolidado y controles unificados.</p>
-                    <p>Explorá el tab Monitoreo para revisar el healthcheck completo.</p>
-                </div>
-            </div>
             <div class='footer-links-card-wrapper'>
                 <div class='footer-links-card'>
                     <div class='footer-links-card__title'>Enlaces útiles</div>
