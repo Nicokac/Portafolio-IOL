@@ -1,0 +1,162 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link rel="stylesheet" type="text/css" href="../../../mypy-html.css">
+</head>
+<body>
+<h2>services.health.constants</h2>
+<table>
+<caption>services/health/constants.py</caption>
+<tbody><tr>
+<td class="table-lines"><pre><span id="L1" class="lineno"><a class="lineno" href="#L1">1</a></span>
+<span id="L2" class="lineno"><a class="lineno" href="#L2">2</a></span>
+<span id="L3" class="lineno"><a class="lineno" href="#L3">3</a></span>
+<span id="L4" class="lineno"><a class="lineno" href="#L4">4</a></span>
+<span id="L5" class="lineno"><a class="lineno" href="#L5">5</a></span>
+<span id="L6" class="lineno"><a class="lineno" href="#L6">6</a></span>
+<span id="L7" class="lineno"><a class="lineno" href="#L7">7</a></span>
+<span id="L8" class="lineno"><a class="lineno" href="#L8">8</a></span>
+<span id="L9" class="lineno"><a class="lineno" href="#L9">9</a></span>
+<span id="L10" class="lineno"><a class="lineno" href="#L10">10</a></span>
+<span id="L11" class="lineno"><a class="lineno" href="#L11">11</a></span>
+<span id="L12" class="lineno"><a class="lineno" href="#L12">12</a></span>
+<span id="L13" class="lineno"><a class="lineno" href="#L13">13</a></span>
+<span id="L14" class="lineno"><a class="lineno" href="#L14">14</a></span>
+<span id="L15" class="lineno"><a class="lineno" href="#L15">15</a></span>
+<span id="L16" class="lineno"><a class="lineno" href="#L16">16</a></span>
+<span id="L17" class="lineno"><a class="lineno" href="#L17">17</a></span>
+<span id="L18" class="lineno"><a class="lineno" href="#L18">18</a></span>
+<span id="L19" class="lineno"><a class="lineno" href="#L19">19</a></span>
+<span id="L20" class="lineno"><a class="lineno" href="#L20">20</a></span>
+<span id="L21" class="lineno"><a class="lineno" href="#L21">21</a></span>
+<span id="L22" class="lineno"><a class="lineno" href="#L22">22</a></span>
+<span id="L23" class="lineno"><a class="lineno" href="#L23">23</a></span>
+<span id="L24" class="lineno"><a class="lineno" href="#L24">24</a></span>
+<span id="L25" class="lineno"><a class="lineno" href="#L25">25</a></span>
+<span id="L26" class="lineno"><a class="lineno" href="#L26">26</a></span>
+<span id="L27" class="lineno"><a class="lineno" href="#L27">27</a></span>
+<span id="L28" class="lineno"><a class="lineno" href="#L28">28</a></span>
+<span id="L29" class="lineno"><a class="lineno" href="#L29">29</a></span>
+<span id="L30" class="lineno"><a class="lineno" href="#L30">30</a></span>
+<span id="L31" class="lineno"><a class="lineno" href="#L31">31</a></span>
+<span id="L32" class="lineno"><a class="lineno" href="#L32">32</a></span>
+<span id="L33" class="lineno"><a class="lineno" href="#L33">33</a></span>
+<span id="L34" class="lineno"><a class="lineno" href="#L34">34</a></span>
+<span id="L35" class="lineno"><a class="lineno" href="#L35">35</a></span>
+<span id="L36" class="lineno"><a class="lineno" href="#L36">36</a></span>
+<span id="L37" class="lineno"><a class="lineno" href="#L37">37</a></span>
+<span id="L38" class="lineno"><a class="lineno" href="#L38">38</a></span>
+<span id="L39" class="lineno"><a class="lineno" href="#L39">39</a></span>
+<span id="L40" class="lineno"><a class="lineno" href="#L40">40</a></span>
+<span id="L41" class="lineno"><a class="lineno" href="#L41">41</a></span>
+<span id="L42" class="lineno"><a class="lineno" href="#L42">42</a></span>
+<span id="L43" class="lineno"><a class="lineno" href="#L43">43</a></span>
+<span id="L44" class="lineno"><a class="lineno" href="#L44">44</a></span>
+<span id="L45" class="lineno"><a class="lineno" href="#L45">45</a></span>
+<span id="L46" class="lineno"><a class="lineno" href="#L46">46</a></span>
+<span id="L47" class="lineno"><a class="lineno" href="#L47">47</a></span>
+<span id="L48" class="lineno"><a class="lineno" href="#L48">48</a></span>
+<span id="L49" class="lineno"><a class="lineno" href="#L49">49</a></span>
+<span id="L50" class="lineno"><a class="lineno" href="#L50">50</a></span>
+<span id="L51" class="lineno"><a class="lineno" href="#L51">51</a></span>
+<span id="L52" class="lineno"><a class="lineno" href="#L52">52</a></span>
+<span id="L53" class="lineno"><a class="lineno" href="#L53">53</a></span>
+<span id="L54" class="lineno"><a class="lineno" href="#L54">54</a></span>
+<span id="L55" class="lineno"><a class="lineno" href="#L55">55</a></span>
+<span id="L56" class="lineno"><a class="lineno" href="#L56">56</a></span>
+<span id="L57" class="lineno"><a class="lineno" href="#L57">57</a></span>
+<span id="L58" class="lineno"><a class="lineno" href="#L58">58</a></span>
+<span id="L59" class="lineno"><a class="lineno" href="#L59">59</a></span>
+<span id="L60" class="lineno"><a class="lineno" href="#L60">60</a></span>
+<span id="L61" class="lineno"><a class="lineno" href="#L61">61</a></span>
+<span id="L62" class="lineno"><a class="lineno" href="#L62">62</a></span>
+<span id="L63" class="lineno"><a class="lineno" href="#L63">63</a></span>
+<span id="L64" class="lineno"><a class="lineno" href="#L64">64</a></span>
+<span id="L65" class="lineno"><a class="lineno" href="#L65">65</a></span>
+<span id="L66" class="lineno"><a class="lineno" href="#L66">66</a></span>
+<span id="L67" class="lineno"><a class="lineno" href="#L67">67</a></span>
+<span id="L68" class="lineno"><a class="lineno" href="#L68">68</a></span>
+<span id="L69" class="lineno"><a class="lineno" href="#L69">69</a></span>
+<span id="L70" class="lineno"><a class="lineno" href="#L70">70</a></span>
+<span id="L71" class="lineno"><a class="lineno" href="#L71">71</a></span>
+<span id="L72" class="lineno"><a class="lineno" href="#L72">72</a></span>
+<span id="L73" class="lineno"><a class="lineno" href="#L73">73</a></span>
+</pre></td>
+<td class="table-code"><pre><span class="line-empty" title="No Anys on this line!">"""Shared constants used by health metrics helpers."""</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">from __future__ import annotations</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">_HEALTH_KEY = "health_metrics"</span>
+<span class="line-precise" title="No Anys on this line!">_MARKET_DATA_INCIDENTS_KEY = "market_data_incidents"</span>
+<span class="line-precise" title="No Anys on this line!">_MARKET_DATA_INCIDENT_LIMIT = 20</span>
+<span class="line-precise" title="No Anys on this line!">_LATENCY_FAST_THRESHOLD_MS = 250.0</span>
+<span class="line-precise" title="No Anys on this line!">_LATENCY_MEDIUM_THRESHOLD_MS = 750.0</span>
+<span class="line-precise" title="No Anys on this line!">_PROVIDER_HISTORY_LIMIT = 8</span>
+<span class="line-precise" title="No Anys on this line!">_TAB_LATENCIES_KEY = "tab_latencies"</span>
+<span class="line-precise" title="No Anys on this line!">_TAB_LATENCY_HISTORY_LIMIT = 32</span>
+<span class="line-precise" title="No Anys on this line!">_ADAPTER_FALLBACK_KEY = "adapter_fallbacks"</span>
+<span class="line-precise" title="No Anys on this line!">_RISK_INCIDENTS_KEY = "risk_incidents"</span>
+<span class="line-precise" title="No Anys on this line!">_RISK_INCIDENT_HISTORY_LIMIT = 50</span>
+<span class="line-precise" title="No Anys on this line!">_QUOTE_RATE_LIMIT_KEY = "quote_rate_limits"</span>
+<span class="line-precise" title="No Anys on this line!">_SNAPSHOT_EVENT_KEY = "snapshot_event"</span>
+<span class="line-precise" title="No Anys on this line!">_ENVIRONMENT_SNAPSHOT_KEY = "environment_snapshot"</span>
+<span class="line-precise" title="No Anys on this line!">_DIAGNOSTICS_SNAPSHOT_KEY = "startup_diagnostics"</span>
+<span class="line-precise" title="No Anys on this line!">_PORTFOLIO_HISTORY_LIMIT = 32</span>
+<span class="line-precise" title="No Anys on this line!">_QUOTE_HISTORY_LIMIT = 32</span>
+<span class="line-precise" title="No Anys on this line!">_FX_API_HISTORY_LIMIT = 32</span>
+<span class="line-precise" title="No Anys on this line!">_FX_CACHE_HISTORY_LIMIT = 32</span>
+<span class="line-precise" title="No Anys on this line!">_SESSION_MONITORING_KEY = "session_monitoring"</span>
+<span class="line-precise" title="No Anys on this line!">_ACTIVE_SESSIONS_KEY = "active_sessions"</span>
+<span class="line-precise" title="No Anys on this line!">_LOGIN_TO_RENDER_STATS_KEY = "login_to_render"</span>
+<span class="line-precise" title="No Anys on this line!">_LAST_HTTP_ERROR_KEY = "last_http_error"</span>
+<span class="line-precise" title="No Anys on this line!">_SESSION_MONITORING_TTL_SECONDS = 300.0</span>
+<span class="line-precise" title="No Anys on this line!">_DEPENDENCIES_KEY = "dependencies"</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">_PROVIDER_LABELS = {</span>
+<span class="line-precise" title="No Anys on this line!">    "alpha_vantage": "Alpha Vantage",</span>
+<span class="line-precise" title="No Anys on this line!">    "av": "Alpha Vantage",</span>
+<span class="line-precise" title="No Anys on this line!">    "polygon": "Polygon",</span>
+<span class="line-precise" title="No Anys on this line!">    "fred": "FRED",</span>
+<span class="line-precise" title="No Anys on this line!">    "worldbank": "World Bank",</span>
+<span class="line-precise" title="No Anys on this line!">    "iol": "IOL v2",</span>
+<span class="line-precise" title="No Anys on this line!">    "legacy": "IOL Legacy",</span>
+<span class="line-precise" title="No Anys on this line!">    "stale": "Cache persistente",</span>
+<span class="line-precise" title="No Anys on this line!">    "cache": "Caché en memoria",</span>
+<span class="line-empty" title="No Anys on this line!">}</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">_QUOTE_PROVIDER_HISTORY_LIMIT = 12</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">__all__ = [</span>
+<span class="line-precise" title="No Anys on this line!">    "_HEALTH_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_MARKET_DATA_INCIDENTS_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_MARKET_DATA_INCIDENT_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_LATENCY_FAST_THRESHOLD_MS",</span>
+<span class="line-precise" title="No Anys on this line!">    "_LATENCY_MEDIUM_THRESHOLD_MS",</span>
+<span class="line-precise" title="No Anys on this line!">    "_PROVIDER_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_TAB_LATENCIES_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_TAB_LATENCY_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_ADAPTER_FALLBACK_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_RISK_INCIDENTS_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_RISK_INCIDENT_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_QUOTE_RATE_LIMIT_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_SNAPSHOT_EVENT_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_ENVIRONMENT_SNAPSHOT_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_DIAGNOSTICS_SNAPSHOT_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_PORTFOLIO_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_QUOTE_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_FX_API_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_FX_CACHE_HISTORY_LIMIT",</span>
+<span class="line-precise" title="No Anys on this line!">    "_SESSION_MONITORING_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_ACTIVE_SESSIONS_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_LOGIN_TO_RENDER_STATS_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_LAST_HTTP_ERROR_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_SESSION_MONITORING_TTL_SECONDS",</span>
+<span class="line-precise" title="No Anys on this line!">    "_DEPENDENCIES_KEY",</span>
+<span class="line-precise" title="No Anys on this line!">    "_PROVIDER_LABELS",</span>
+<span class="line-precise" title="No Anys on this line!">    "_QUOTE_PROVIDER_HISTORY_LIMIT",</span>
+<span class="line-empty" title="No Anys on this line!">]</span>
+</pre></td>
+</tr></tbody>
+</table>
+</body>
+</html>

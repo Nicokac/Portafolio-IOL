@@ -1,0 +1,100 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link rel="stylesheet" type="text/css" href="../../../mypy-html.css">
+</head>
+<body>
+<h2>predictive_engine.adapters.sector_adapter</h2>
+<table>
+<caption>predictive_engine/adapters/sector_adapter.py</caption>
+<tbody><tr>
+<td class="table-lines"><pre><span id="L1" class="lineno"><a class="lineno" href="#L1">1</a></span>
+<span id="L2" class="lineno"><a class="lineno" href="#L2">2</a></span>
+<span id="L3" class="lineno"><a class="lineno" href="#L3">3</a></span>
+<span id="L4" class="lineno"><a class="lineno" href="#L4">4</a></span>
+<span id="L5" class="lineno"><a class="lineno" href="#L5">5</a></span>
+<span id="L6" class="lineno"><a class="lineno" href="#L6">6</a></span>
+<span id="L7" class="lineno"><a class="lineno" href="#L7">7</a></span>
+<span id="L8" class="lineno"><a class="lineno" href="#L8">8</a></span>
+<span id="L9" class="lineno"><a class="lineno" href="#L9">9</a></span>
+<span id="L10" class="lineno"><a class="lineno" href="#L10">10</a></span>
+<span id="L11" class="lineno"><a class="lineno" href="#L11">11</a></span>
+<span id="L12" class="lineno"><a class="lineno" href="#L12">12</a></span>
+<span id="L13" class="lineno"><a class="lineno" href="#L13">13</a></span>
+<span id="L14" class="lineno"><a class="lineno" href="#L14">14</a></span>
+<span id="L15" class="lineno"><a class="lineno" href="#L15">15</a></span>
+<span id="L16" class="lineno"><a class="lineno" href="#L16">16</a></span>
+<span id="L17" class="lineno"><a class="lineno" href="#L17">17</a></span>
+<span id="L18" class="lineno"><a class="lineno" href="#L18">18</a></span>
+<span id="L19" class="lineno"><a class="lineno" href="#L19">19</a></span>
+<span id="L20" class="lineno"><a class="lineno" href="#L20">20</a></span>
+<span id="L21" class="lineno"><a class="lineno" href="#L21">21</a></span>
+<span id="L22" class="lineno"><a class="lineno" href="#L22">22</a></span>
+<span id="L23" class="lineno"><a class="lineno" href="#L23">23</a></span>
+<span id="L24" class="lineno"><a class="lineno" href="#L24">24</a></span>
+<span id="L25" class="lineno"><a class="lineno" href="#L25">25</a></span>
+<span id="L26" class="lineno"><a class="lineno" href="#L26">26</a></span>
+<span id="L27" class="lineno"><a class="lineno" href="#L27">27</a></span>
+<span id="L28" class="lineno"><a class="lineno" href="#L28">28</a></span>
+<span id="L29" class="lineno"><a class="lineno" href="#L29">29</a></span>
+<span id="L30" class="lineno"><a class="lineno" href="#L30">30</a></span>
+<span id="L31" class="lineno"><a class="lineno" href="#L31">31</a></span>
+<span id="L32" class="lineno"><a class="lineno" href="#L32">32</a></span>
+<span id="L33" class="lineno"><a class="lineno" href="#L33">33</a></span>
+<span id="L34" class="lineno"><a class="lineno" href="#L34">34</a></span>
+<span id="L35" class="lineno"><a class="lineno" href="#L35">35</a></span>
+<span id="L36" class="lineno"><a class="lineno" href="#L36">36</a></span>
+<span id="L37" class="lineno"><a class="lineno" href="#L37">37</a></span>
+<span id="L38" class="lineno"><a class="lineno" href="#L38">38</a></span>
+</pre></td>
+<td class="table-code"><pre><span class="line-empty" title="No Anys on this line!">"""Adapters dedicated to sector level predictions."""</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">from __future__ import annotations</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">import logging</span>
+<span class="line-precise" title="No Anys on this line!">from typing import Callable</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-any" title="No Anys on this line!">import pandas as pd</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">from predictive_engine.base import compute_sector_predictions</span>
+<span class="line-precise" title="No Anys on this line!">from predictive_engine.models import SectorPredictionSet</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-precise" title="No Anys on this line!">LOGGER = logging.getLogger(__name__)</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-any" title="Any Types on this line: 
+Unimported (x8)">def build_sector_prediction_frame(</span>
+<span class="line-empty" title="No Anys on this line!">    opportunities: pd.DataFrame | None,</span>
+<span class="line-empty" title="No Anys on this line!">    *,</span>
+<span class="line-empty" title="No Anys on this line!">    backtesting_service: object,</span>
+<span class="line-empty" title="No Anys on this line!">    run_backtest: Callable[[object, str], pd.DataFrame | None],</span>
+<span class="line-empty" title="No Anys on this line!">    extract_series: Callable[[pd.DataFrame, str], pd.Series],</span>
+<span class="line-empty" title="No Anys on this line!">    ema_predictor: Callable[[pd.Series, int], float | None],</span>
+<span class="line-empty" title="No Anys on this line!">    average_correlation: Callable[[dict[str, pd.Series]], pd.Series],</span>
+<span class="line-empty" title="No Anys on this line!">    span: int,</span>
+<span class="line-empty" title="No Anys on this line!">) -&gt; pd.DataFrame:</span>
+<span class="line-empty" title="No Anys on this line!">    """Return a dataframe compatible with the legacy predictive service."""</span>
+<span class="line-empty" title="No Anys on this line!"></span>
+<span class="line-imprecise" title="Any Types on this line: 
+Unimported (x7)">    prediction_set: SectorPredictionSet = compute_sector_predictions(</span>
+<span class="line-imprecise" title="Any Types on this line: 
+Unimported (x1)">        opportunities,</span>
+<span class="line-precise" title="No Anys on this line!">        backtesting_service=backtesting_service,</span>
+<span class="line-precise" title="Any Types on this line: 
+Unimported (x1)">        run_backtest=run_backtest,</span>
+<span class="line-precise" title="Any Types on this line: 
+Unimported (x2)">        extract_series=extract_series,</span>
+<span class="line-precise" title="Any Types on this line: 
+Unimported (x1)">        ema_predictor=ema_predictor,</span>
+<span class="line-precise" title="Any Types on this line: 
+Unimported (x2)">        average_correlation=average_correlation,</span>
+<span class="line-precise" title="No Anys on this line!">        span=span,</span>
+<span class="line-precise" title="No Anys on this line!">        logger=LOGGER,</span>
+<span class="line-empty" title="No Anys on this line!">    )</span>
+<span class="line-any" title="Any Types on this line: 
+Unimported (x2)">    return prediction_set.to_dataframe()</span>
+</pre></td>
+</tr></tbody>
+</table>
+</body>
+</html>
