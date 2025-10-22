@@ -26,7 +26,7 @@ def test_calc_rows_integration():
     df = svc.calc_rows(quote_fn, df_pos)
     assert len(df) == 1
     row = df.iloc[0]
-    assert row["tipo"] == "Bono"
+    assert row["tipo"] == "Bono / ON"
     assert row["costo"] == pytest.approx(90.0)
     assert row["valor_actual"] == pytest.approx(110.0)
     assert row["pl"] == pytest.approx(20.0)
@@ -87,7 +87,7 @@ def test_calc_rows_handles_positional_quote_client():
         (
             "AL30",
             {"ultimoPrecio": 110.0, "cierreAnterior": 100.0},
-            "Bono",
+            "Bono / ON",
             100,
             90.0,
         ),

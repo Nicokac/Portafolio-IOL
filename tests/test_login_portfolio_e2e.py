@@ -116,7 +116,7 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
 
         assert fake_client.portfolio_calls == 1
         assert set(all_symbols) == {"AAPL", "AL30", "IOLPORA"}
-        assert {"CEDEAR", "Bono"}.issubset(set(available_types))
+        assert {"CEDEAR", "Bono / ON"}.issubset(set(available_types))
 
         controls = Controls(
             hide_cash=True,

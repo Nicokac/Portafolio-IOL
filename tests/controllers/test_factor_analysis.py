@@ -13,7 +13,7 @@ def test_factor_analysis_section_renders_with_metrics(monkeypatch, streamlit_stu
         {
             "simbolo": ["AAPL", "MSFT", "GGAL"],
             "valor_actual": [1200.0, 1100.0, 800.0],
-            "tipo": ["CEDEAR", "CEDEAR", "Accion"],
+            "tipo": ["CEDEAR", "CEDEAR", "Acción"],
         }
     )
 

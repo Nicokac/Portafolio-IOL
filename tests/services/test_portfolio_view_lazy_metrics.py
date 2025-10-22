@@ -28,7 +28,7 @@ def df_positions() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "simbolo": ["AL30", "GGAL"],
-            "tipo": ["Bono", "Acción"],
+            "tipo": ["Bono / ON", "Acción"],
             "valor_actual": [120.0, 80.0],
             "costo": [100.0, 70.0],
             "pl": [20.0, 10.0],

@@ -1,0 +1,22 @@
+[
+  {
+    "simbolo": "AL30",
+    "tipo": "Bono",
+    "tipo_estandar": "Bono / ON"
+  },
+  {
+    "simbolo": "GD30",
+    "tipo": "Bono",
+    "tipo_estandar": "Bono / ON"
+  },
+  {
+    "simbolo": "S10N5",
+    "tipo": "Letra",
+    "tipo_estandar": "Bono / ON"
+  },
+  {
+    "simbolo": "SPY",
+    "tipo": "ETF",
+    "tipo_estandar": "ETF"
+  }
+]
