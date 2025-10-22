@@ -344,6 +344,17 @@ class IOLClient(IIOLProvider):
             perfil_inversor = _sanitize_text(test_info.get("perfil"))
             vigencia = self._parse_notification_datetime(test_info.get("fechaVencimiento"))
 
+            if isinstance(vigencia, datetime):
+                now = TimeProvider.now_datetime()
+                try:
+                    candidate = (
+                        vigencia.astimezone(now.tzinfo) if vigencia.tzinfo is not None else vigencia.replace(tzinfo=now.tzinfo)
+                    )
+                except Exception:  # pragma: no cover - defensive guard
+                    candidate = vigencia
+                if candidate < now:
+                    return None
+
             if perfil_inversor:
                 preferencias_base = PROFILE_PREFERENCES_MAP.get(perfil_inversor.casefold())
                 if preferencias_base:
