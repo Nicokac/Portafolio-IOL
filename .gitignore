@@ -51,7 +51,10 @@ tokens/*
 !tokens/tokens_iol.json
 
 # --- Datos locales (ajusta según uso)
-data/
+# Project datasets and cache outputs
+data/*
+!data/*.py
+!data/__init__.py
 *.csv
 !docs/fixtures/default/*.csv
 !infrastructure/cache/ta_fallback.csv

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Any, Callable, Protocol, cast
 
 import pandas as pd
 
@@ -16,6 +16,20 @@ except ImportError:  # pragma: no cover - defensive fallback
 
 
 _DEFAULT_TABLE = "forecast_history"
+
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    import sqlite3 as sqlite3_module
+
+    SupportsClose = sqlite3_module.Connection
+else:
+
+    class SupportsClose(Protocol):
+        def close(self) -> None:
+            """Close the underlying connection."""
+
+
+SQLiteFactory = Callable[[str | Path], SupportsClose]
 
 
 def _ensure_parent(path: Path) -> None:
@@ -34,7 +48,7 @@ def save_forecast_history(
     path: str | Path = "./data/forecast_history.parquet",
     *,
     table_name: str = _DEFAULT_TABLE,
-    sqlite_factory: Callable[[str | Path], object] | None = None,
+    sqlite_factory: SQLiteFactory | None = None,
 ) -> Path:
     """Persist the adaptive history to Parquet with SQLite fallback."""
 
@@ -45,10 +59,11 @@ def save_forecast_history(
     _ensure_parent(target)
 
     if target.suffix.lower() in {".db", ".sqlite"} and sqlite3 is not None:
-        factory = sqlite_factory or sqlite3.connect  # type: ignore[arg-type]
+        factory = sqlite_factory or cast(SQLiteFactory, sqlite3.connect)
         connection = factory(target)
+        connection_any = cast(Any, connection)
         try:
-            df.to_sql(table_name, connection, if_exists="replace", index=False)
+            df.to_sql(table_name, connection_any, if_exists="replace", index=False)
         finally:
             connection.close()
         return target
@@ -61,10 +76,11 @@ def save_forecast_history(
             raise
         sqlite_target = target.with_suffix(".sqlite")
         _ensure_parent(sqlite_target)
-        factory = sqlite_factory or sqlite3.connect  # type: ignore[arg-type]
+        factory = sqlite_factory or cast(SQLiteFactory, sqlite3.connect)
         connection = factory(sqlite_target)
+        connection_any = cast(Any, connection)
         try:
-            df.to_sql(table_name, connection, if_exists="replace", index=False)
+            df.to_sql(table_name, connection_any, if_exists="replace", index=False)
         finally:
             connection.close()
         return sqlite_target
@@ -74,7 +90,7 @@ def load_forecast_history(
     path: str | Path = "./data/forecast_history.parquet",
     *,
     table_name: str = _DEFAULT_TABLE,
-    sqlite_factory: Callable[[str | Path], object] | None = None,
+    sqlite_factory: SQLiteFactory | None = None,
 ) -> pd.DataFrame:
     """Load persisted adaptive history, returning an empty frame on failure."""
 
@@ -82,10 +98,11 @@ def load_forecast_history(
     if target.suffix.lower() in {".db", ".sqlite"}:
         if sqlite3 is None or not target.exists():
             return empty_history_frame()
-        factory = sqlite_factory or sqlite3.connect  # type: ignore[arg-type]
+        factory = sqlite_factory or cast(SQLiteFactory, sqlite3.connect)
         connection = factory(target)
+        connection_any = cast(Any, connection)
         try:
-            return pd.read_sql(table_name, connection)
+            return pd.read_sql(table_name, connection_any)
         finally:
             connection.close()
 
@@ -99,9 +116,10 @@ def load_forecast_history(
     if sqlite3 is None or not sqlite_target.exists():
         return empty_history_frame()
 
-    factory = sqlite_factory or sqlite3.connect  # type: ignore[arg-type]
+    factory = sqlite_factory or cast(SQLiteFactory, sqlite3.connect)
     connection = factory(sqlite_target)
+    connection_any = cast(Any, connection)
     try:
-        return pd.read_sql(table_name, connection)
+        return pd.read_sql(table_name, connection_any)
     finally:
         connection.close()

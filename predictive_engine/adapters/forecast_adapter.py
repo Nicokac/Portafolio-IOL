@@ -8,12 +8,16 @@ from typing import Any, Callable, Dict, Mapping, Tuple
 
 import pandas as pd
 
+from predictive_engine.base import calculate_adaptive_forecast, update_adaptive_state
+from predictive_engine.models import (
+    AdaptiveForecastResult,
+    AdaptiveState,
+    AdaptiveUpdateResult,
+    empty_history_frame,
+)
+from predictive_engine.storage import load_forecast_history, save_forecast_history
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block
-
-from predictive_engine.base import calculate_adaptive_forecast, update_adaptive_state
-from predictive_engine.models import AdaptiveState, AdaptiveForecastResult, AdaptiveUpdateResult, empty_history_frame
-from predictive_engine.storage import load_forecast_history, save_forecast_history
 
 
 @dataclass
@@ -62,10 +66,21 @@ class EngineUpdateContext:
                 persisted = empty_history_frame()
             persisted = persisted.copy()
             if not persisted.empty:
-                persisted = persisted.sort_values("timestamp").tail(self.max_history_rows)
-                timestamps = pd.to_datetime(persisted.get("timestamp"), errors="coerce")
-                last_timestamp = timestamps.dropna().iloc[-1] if not timestamps.dropna().empty else None
-                self.state = AdaptiveState(history=persisted, last_updated=last_timestamp)
+                persisted = persisted.sort_values("timestamp").tail(
+                    self.max_history_rows
+                )
+                timestamps = pd.to_datetime(
+                    persisted.get("timestamp"),
+                    errors="coerce",
+                )
+                if timestamps.dropna().empty:
+                    last_timestamp = None
+                else:
+                    last_timestamp = timestamps.dropna().iloc[-1]
+                self.state = AdaptiveState(
+                    history=persisted,
+                    last_updated=last_timestamp,
+                )
                 self._initialised_from_storage = True
                 return self.state, False
             self._initialised_from_storage = True
@@ -83,7 +98,11 @@ class EngineUpdateContext:
             return
         try:
             self.cache.set(self.state_key, result.state, ttl=self.ttl_seconds)
-            self.cache.set(self.correlation_key, result.correlation_matrix.copy(), ttl=self.ttl_seconds)
+            self.cache.set(
+                self.correlation_key,
+                result.correlation_matrix.copy(),
+                ttl=self.ttl_seconds,
+            )
         except Exception:
             # Cache persistence is best-effort.
             return
@@ -135,7 +154,11 @@ def build_adaptive_updater(
     ema_span: int,
     performance_prefix: str = "adaptive",
 ) -> Callable[[pd.DataFrame, pd.DataFrame, pd.Timestamp], AdaptiveUpdateResult]:
-    def _updater(predictions: pd.DataFrame, actuals: pd.DataFrame, timestamp: pd.Timestamp) -> AdaptiveUpdateResult:
+    def _updater(
+        predictions: pd.DataFrame,
+        actuals: pd.DataFrame,
+        timestamp: pd.Timestamp,
+    ) -> AdaptiveUpdateResult:
         result, _ = update_model_with_cache(
             predictions,
             actuals,
@@ -208,7 +231,9 @@ def run_adaptive_forecast(
         or isinstance(actuals, pd.DataFrame)
     )
     if has_history and has_inputs:
-        raise ValueError("history and (predictions, actuals) are mutually exclusive inputs")
+        raise ValueError(
+            "history and (predictions, actuals) are mutually exclusive inputs"
+        )
 
     ttl_seconds = max(float(ttl_hours) if ttl_hours is not None else 0.0, 0.0) * 3600.0
     if cache is not None and hasattr(cache, "set_ttl_override"):
@@ -251,7 +276,11 @@ def run_adaptive_forecast(
 
     cache_hit_flag = False
 
-    def _updater(preds: pd.DataFrame, acts: pd.DataFrame, ts: pd.Timestamp) -> AdaptiveUpdateResult:
+    def _updater(
+        preds: pd.DataFrame,
+        acts: pd.DataFrame,
+        ts: pd.Timestamp,
+    ) -> AdaptiveUpdateResult:
         nonlocal cache_hit_flag
         result, hit = update_model_with_cache(
             preds,

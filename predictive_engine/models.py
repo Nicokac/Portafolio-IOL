@@ -37,10 +37,18 @@ class SectorPredictionSet:
     def to_dataframe(self) -> pd.DataFrame:
         if not self.rows:
             return pd.DataFrame(
-                columns=["sector", "predicted_return", "sample_size", "avg_correlation", "confidence"],
+                columns=[
+                    "sector",
+                    "predicted_return",
+                    "sample_size",
+                    "avg_correlation",
+                    "confidence",
+                ],
             )
         frame = pd.DataFrame([row.to_dict() for row in self.rows])
-        return frame.sort_values("predicted_return", ascending=False).reset_index(drop=True)
+        return frame.sort_values("predicted_return", ascending=False).reset_index(
+            drop=True
+        )
 
     def __iter__(self) -> Iterable[SectorPrediction]:
         return iter(self.rows)
@@ -102,7 +110,10 @@ class AdaptiveState:
     last_updated: pd.Timestamp | None = None
 
     def copy(self) -> "AdaptiveState":
-        return AdaptiveState(history=self.history.copy(), last_updated=self.last_updated)
+        return AdaptiveState(
+            history=self.history.copy(),
+            last_updated=self.last_updated,
+        )
 
 
 @dataclass
@@ -157,4 +168,6 @@ class AdaptiveForecastResult:
 
 
 def empty_history_frame() -> pd.DataFrame:
-    return pd.DataFrame(columns=["timestamp", "sector", "predicted_return", "actual_return"])
+    return pd.DataFrame(
+        columns=["timestamp", "sector", "predicted_return", "actual_return"]
+    )
