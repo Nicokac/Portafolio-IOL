@@ -40,11 +40,18 @@ API_BASE_URL = "https://api.invertironline.com/api/v2"
 PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
 DEFAULT_COUNTRY = "argentina"
 PORTFOLIO_URL = f"{API_BASE_URL}/portafolio/{{pais}}"
+PROFILE_URL = f"{API_BASE_URL}/datos-perfil"
 
 REQ_TIMEOUT = 30
 RETRIES = 3
 BACKOFF_SEC = 0.5
 USER_AGENT = "IOL-Portfolio/1.0 (+iol_client)"
+
+PROFILE_PREFERENCES_MAP = {
+    "conservador": ["Liquidez", "Bonos Cortos", "FCI Cobertura"],
+    "moderado": ["CEDEARs Diversificados", "FCI Balanceados"],
+    "agresivo": ["Acciones", "CEDEARs", "ETFs"],
+}
 
 
 def _elapsed_ms(start_ts: float) -> int:
@@ -281,6 +288,75 @@ class IOLClient(IIOLProvider):
             except Exception:
                 return dt
         return dt
+
+    def get_profile(self) -> dict[str, Any] | None:
+        """Fetch user profile and investor test info from /api/v2/datos-perfil."""
+
+        try:
+            response = self._request("GET", PROFILE_URL)
+        except InvalidCredentialsError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning("get_profile request error: %s", exc, exc_info=True)
+            return None
+
+        if response is None or not response.content:
+            return None
+
+        try:
+            payload = response.json() or {}
+        except ValueError as exc:
+            logger.warning("get_profile JSON inválido: %s", exc)
+            return None
+
+        if not isinstance(payload, Mapping):
+            logger.info(
+                "get_profile payload inesperado",
+                extra={"payload_type": type(payload).__name__},
+            )
+            return None
+
+        def _sanitize_text(value: Any) -> Optional[str]:
+            if value is None:
+                return None
+            text = str(value).strip()
+            return text or None
+
+        nombre = _sanitize_text(payload.get("nombre"))
+
+        test_info = payload.get("testInversor")
+        perfil_inversor: Optional[str] = None
+        vigencia: Optional[datetime] = None
+        preferencias: Optional[list[str]] = None
+
+        if isinstance(test_info, Mapping):
+            activo = test_info.get("activo")
+            if isinstance(activo, bool) and not activo:
+                return None
+            if isinstance(activo, str) and activo.strip().lower() in {"false", "0", "no", "n"}:
+                return None
+            vigente = test_info.get("vigente")
+            if isinstance(vigente, bool) and not vigente:
+                return None
+            if isinstance(vigente, str) and vigente.strip().lower() in {"false", "0", "no", "n"}:
+                return None
+
+            perfil_inversor = _sanitize_text(test_info.get("perfil"))
+            vigencia = self._parse_notification_datetime(test_info.get("fechaVencimiento"))
+
+            if perfil_inversor:
+                preferencias_base = PROFILE_PREFERENCES_MAP.get(perfil_inversor.casefold())
+                if preferencias_base:
+                    preferencias = list(preferencias_base)
+
+        normalized = {
+            "nombre": nombre,
+            "perfil_inversor": perfil_inversor,
+            "vigencia": vigencia,
+            "preferencias": preferencias,
+        }
+
+        return normalized
 
     def get_notification(self) -> Optional[dict[str, Any]]:
         marker = self._notification_token_marker(getattr(self.auth, "tokens", None))

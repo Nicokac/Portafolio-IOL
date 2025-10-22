@@ -116,6 +116,39 @@ _SNAPSHOT_STATUS_BADGES = {
 }
 
 
+def _get_session_profile() -> Optional[Mapping[str, Any]]:
+    profile = st.session_state.get("iol_user_profile")
+    return profile if isinstance(profile, Mapping) else None
+
+
+def _format_profile_preferences(preferencias: Any) -> str:
+    if isinstance(preferencias, (list, tuple)):
+        items = [str(item).strip() for item in preferencias if str(item).strip()]
+        if items:
+            return ", ".join(items)
+    return "No disponible"
+
+
+def _render_investor_profile_section(host: Any) -> None:
+    profile = _get_session_profile()
+    section = host.container(border=True)
+    with section:
+        st.markdown("#### 👤 Perfil del inversor")
+        if st.button("🔄 Actualizar perfil"):
+            st.cache_data.clear()
+            st.session_state["_profile_refresh_pending"] = True
+            st.session_state.pop("iol_user_profile", None)
+        if profile:
+            nombre = profile.get("nombre") or "No disponible"
+            perfil_inversor = profile.get("perfil_inversor") or "No disponible"
+            preferencias = _format_profile_preferences(profile.get("preferencias"))
+            st.markdown(f"👤 **Nombre:** {nombre}")
+            st.markdown(f"📊 **Perfil inversor:** {perfil_inversor}")
+            st.markdown(f"💡 **Preferencias:** {preferencias}")
+        else:
+            st.markdown("_Perfil del inversor no disponible._")
+
+
 def _sanitize_text(value: Any) -> Optional[str]:
     if value is None:
         return None
@@ -1715,6 +1748,8 @@ def _render_health_panel(host: Any, metrics: Mapping[str, Any]) -> None:
                         st.markdown("---")
                     for line in session_lines:
                         st.markdown(line)
+
+    _render_investor_profile_section(host)
 
     snapshot_metrics = None
     for key in ("snapshot", "snapshots", "snapshot_status", "portfolio_snapshot"):
