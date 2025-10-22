@@ -12,6 +12,9 @@ from services.health import get_health_metrics
 from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
 from shared.version import __version__
+from ui.actions import render_action_menu
+from ui.sidebar_controls import get_controls_reference_data, render_controls_panel
+from ui.ui_settings import render_ui_controls
 
 """Sidebar panel summarising recent data source health."""
 
@@ -1863,6 +1866,18 @@ def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, 
     """Render the health summary within the provided tab container."""
 
     resolved = _resolve_health_metrics(metrics)
+    control_hub = container.container(border=True)
+    with control_hub:
+        st.markdown("### 🎛️ Centro de control")
+        st.caption("Gestioná filtros, sesión y apariencia desde una sola pestaña.")
+    render_action_menu(container=control_hub)
+    render_ui_controls(container=control_hub)
+
+    symbols, types = get_controls_reference_data()
+    render_controls_panel(symbols, types, container=control_hub)
+
+    if hasattr(container, "divider"):
+        container.divider()
     _render_health_panel(container, resolved)
 
 
