@@ -110,6 +110,9 @@ class PortfolioSnapshotExport:
                     "total_pl",
                     "total_pl_pct",
                     "total_cash",
+                    "total_cash_ars",
+                    "total_cash_usd",
+                    "total_cash_combined",
                 )
             }
 
@@ -309,6 +312,10 @@ def _total_pl_pct(snapshot: PortfolioSnapshotExport) -> float | None:
 
 
 def _total_cash(snapshot: PortfolioSnapshotExport) -> float | None:
+    if "total_cash_combined" in snapshot.totals:
+        combined = snapshot.totals.get("total_cash_combined")
+        if combined is not None:
+            return combined
     return snapshot.totals.get("total_cash")
 
 

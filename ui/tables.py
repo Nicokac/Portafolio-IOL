@@ -42,21 +42,29 @@ def render_totals(
     total_cost = totals.total_cost
     total_pl = totals.total_pl
     total_pl_pct = totals.total_pl_pct
-    total_cash = totals.total_cash
+    money_market_cash = totals.total_cash
+    cash_ars = totals.total_cash_ars
+    cash_usd = totals.total_cash_usd
+    combined_cash = totals.total_cash_combined
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Valorizado", format_money(total_val))
-    c2.metric("Cash", format_money(total_cash))
-    c3.metric("Costo", format_money(total_cost))
-    c4.metric(
+    c2.metric("Costo", format_money(total_cost))
+    c3.metric(
         "P/L",
         format_money(total_pl),
         delta=None if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
     )
-    c5.metric(
+    c4.metric(
         "P/L %",
         "—" if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
     )
+
+    cash_cols = st.columns(4)
+    cash_cols[0].metric("Cash ARS", format_money(cash_ars))
+    cash_cols[1].metric("Cash USD", format_money(cash_usd, currency="USD"))
+    cash_cols[2].metric("Money Market", format_money(money_market_cash))
+    cash_cols[3].metric("Cash total", format_money(combined_cash))
 
     if _as_float_or_none(ccl_rate):
         rate = float(ccl_rate)

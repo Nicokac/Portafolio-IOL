@@ -416,6 +416,16 @@ class IOLAuth:
             )
             return self.tokens
 
+    def ensure_token(self, *, silent: bool = True) -> Dict[str, Any]:
+        """Garantiza que exista un access token válido, refrescándolo si expira."""
+        with self._lock:
+            tokens = dict(self.tokens)
+            if not tokens.get("access_token"):
+                return self.login()
+            if self._token_timestamp_expired(tokens) or self._access_token_expired(tokens):
+                return self.refresh(silent=silent)
+            return tokens
+
     def clear_tokens(self) -> None:
         """Elimina el archivo de tokens para forzar reautenticación la próxima vez."""
         with self._lock:
@@ -431,10 +441,9 @@ class IOLAuth:
                 logger.exception("No se pudo eliminar tokens en %s: %s", self.tokens_file, e)
 
     def auth_header(self) -> Dict[str, str]:
-        """Devuelve el header Authorization actual, realizando login si es necesario."""
-        if not self.tokens.get("access_token"):
-            self.login()
-        token = self.tokens.get("access_token")
+        """Devuelve el header Authorization actual, refrescando tokens si es necesario."""
+        tokens = self.ensure_token(silent=True)
+        token = tokens.get("access_token") if isinstance(tokens, Mapping) else None
         if not token:
             return {}
         return {"Authorization": f"Bearer {token}"}

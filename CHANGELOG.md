@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - Cash Flow dinámico (sincronizado con IOL)
+### Added
+- Integración con `/api/v2/estadocuenta` para calcular el efectivo disponible en ARS y USD, refrescando tokens automáticamente.
+- Nuevos totales del portafolio (`total_cash_ars`, `total_cash_usd`, `total_cash_combined`) y UI actualizada para mostrar el desglose y el total combinado.
+- Exportaciones y snapshots enriquecidos con el detalle de efectivo, preservando los históricos y compatibilidad con Money Market.
+
 ## [0.8.0] - UI Minimalista y Reorganización
 ### Overview
 Primera entrega de la nueva interfaz minimalista y reorganización visual de Portafolio-IOL.

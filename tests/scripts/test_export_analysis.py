@@ -45,6 +45,9 @@ def _write_sample_snapshot(directory: Path, *, name: str = "sample") -> Path:
             "total_pl": 1300.0,
             "total_pl_pct": 18.57,
             "total_cash": 1200.0,
+            "total_cash_ars": 500.0,
+            "total_cash_usd": 3.0,
+            "total_cash_combined": 2700.0,
         },
         "history": [
             {
