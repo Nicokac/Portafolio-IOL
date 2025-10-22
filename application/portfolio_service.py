@@ -31,6 +31,7 @@ class PortfolioTotals:
     total_cash_ars: float = 0.0
     total_cash_usd: float = 0.0
     total_cash_combined: float | None = None
+    usd_rate: float | None = None
 
     def __post_init__(self) -> None:
         cash = _to_float(self.total_cash)
@@ -44,6 +45,9 @@ class PortfolioTotals:
         if combined is None:
             combined = float(self.total_cash) + float(self.total_cash_ars) + float(self.total_cash_usd)
         object.__setattr__(self, "total_cash_combined", float(combined or 0.0))
+
+        rate = _to_float(self.usd_rate)
+        object.__setattr__(self, "usd_rate", None if rate is None else float(rate))
 
 
 def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
@@ -78,11 +82,30 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     cash_ars = _to_float(cash_info.get("cash_ars")) or 0.0
     cash_usd = _to_float(cash_info.get("cash_usd")) or 0.0
     usd_equiv = _to_float(cash_info.get("cash_usd_ars_equivalent"))
-    combined = total_cash + cash_ars
+    usd_rate = _to_float(cash_info.get("usd_rate"))
+
+    account_cash_total = cash_ars
     if usd_equiv is not None:
-        combined += usd_equiv
+        account_cash_total += usd_equiv
     else:
-        combined += cash_usd
+        account_cash_total += cash_usd
+
+    include_cash_rows = True
+    if cash_series.size and account_cash_total:
+        try:
+            if np.isfinite(total_cash) and np.isfinite(account_cash_total):
+                include_cash_rows = not np.isclose(
+                    total_cash,
+                    account_cash_total,
+                    rtol=1e-3,
+                    atol=max(1.0, account_cash_total * 0.005),
+                )
+        except Exception:
+            include_cash_rows = True
+
+    combined = account_cash_total
+    if include_cash_rows:
+        combined += total_cash
 
     return PortfolioTotals(
         total_val,
@@ -93,6 +116,7 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
         total_cash_ars=cash_ars,
         total_cash_usd=cash_usd,
         total_cash_combined=combined,
+        usd_rate=usd_rate,
     )
 
 
