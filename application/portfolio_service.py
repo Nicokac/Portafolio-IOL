@@ -100,10 +100,22 @@ def map_to_us_ticker(simbolo: str) -> str:
 # ---------- Clasificación y escala ----------
 
 
+
+
+def _canonical_type(label: str | None, *, default: str = "Otro") -> str:
+    normalized = normalize_asset_type(label)
+    if normalized:
+        return normalized
+    if label:
+        return str(label)
+    return default
+
 def classify_symbol(sym: str) -> str:
     """
     Clasifica por símbolo usando listas del config (cedears/etfs) y patrones
-    configurables. Devuelve una de: 'CEDEAR','ETF','Bono','Letra','FCI','Acción','Otro'
+    configurables. Devuelve una de las categorías estandarizadas como 'Acción',
+    'CEDEAR', 'ETF', 'Bono / ON', 'FCI / Money Market', 'Plazo Fijo', 'Caución'
+    u 'Otro'.
     """
     s = clean_symbol(sym)
     cfg = get_config()
@@ -114,36 +126,39 @@ def classify_symbol(sym: str) -> str:
     fci_set = set(map(clean_symbol, cfg.get("fci_symbols", []) or []))
     pattern_map = cfg.get("classification_patterns", {}) or {}
 
-    # Catálogo centralizado
-    if s in catalog:
-        return catalog[s]
+    entry = catalog.get(s)
+    if entry:
+        if isinstance(entry, Mapping):
+            tipo_estandar = entry.get("tipo_estandar")
+            if tipo_estandar:
+                return tipo_estandar
+            return _canonical_type(entry.get("tipo") or entry.get("descripcion"))
+        return _canonical_type(str(entry))
 
-    # Listas explícitas desde config
     if s in etf_set:
-        return "ETF"
+        return _canonical_type("ETF")
     if s in cedears_map:
-        return "CEDEAR"
+        return _canonical_type("CEDEAR")
     if s in fci_set:
-        return "FCI"
+        return _canonical_type("FCI")
 
-    # Heurísticas para Argentina (bonos/letras, etc.)
     if s.startswith(("AL", "GD", "AE")):
-        return "Bono"
+        return _canonical_type("Bono")
     if s.startswith("S") and any(ch.isdigit() for ch in s):
-        return "Letra"
-    # Clasificación basada en patrones configurables
+        return _canonical_type("Letra")
+
     for tipo, patterns in pattern_map.items():
         for pat in patterns or []:
             try:
                 if re.match(pat, s):
-                    return tipo
+                    return _canonical_type(tipo)
             except re.error:
                 continue
 
     if s in acciones_ar:
-        return "Acción"
+        return _canonical_type("Acción")
     if s.isalpha() and 3 <= len(s) <= 5:
-        return "CEDEAR"
+        return _canonical_type("CEDEAR")
     return "Otro"
 
 
@@ -183,19 +198,22 @@ def _match_declared_type(text: str) -> str | None:
         return None
 
     if "bono" in label or "oblig" in label or "negociable" in label:
-        return "Bono"
+        return _canonical_type("Bono")
     if "letra" in label:
-        return "Letra"
+        return _canonical_type("Letra")
     if "fci" in label or "fondo" in label or "money market" in label:
-        return "FCI"
+        return _canonical_type("FCI")
     if "cedear" in label:
-        return "CEDEAR"
+        return _canonical_type("CEDEAR")
     if "etf" in label:
-        return "ETF"
+        return _canonical_type("ETF")
     if "acción" in label or "accion" in label or "equity" in label:
-        return "Acción"
+        return _canonical_type("Acción")
 
     return None
+
+
+
 
 
 def classify_asset(it: dict) -> str:

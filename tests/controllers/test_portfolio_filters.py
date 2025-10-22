@@ -62,7 +62,7 @@ def test_apply_filters_filters_positions(patched_filters, monkeypatch):
     controls = SimpleNamespace(
         hide_cash=True,
         selected_syms=["AL30", "GOOG"],
-        selected_types=["Bono"],
+        selected_types=["Bono / ON"],
         symbol_query="AL",
     )
 
@@ -79,7 +79,7 @@ def test_apply_filters_filters_positions(patched_filters, monkeypatch):
             return df
 
         def classify_asset_cached(self, sym):  # noqa: ANN001 - mimic signature
-            return {"AL30": "Bono", "GOOG": "Accion"}.get(str(sym), "Otro")
+            return {"AL30": "Bono / ON", "GOOG": "Acción"}.get(str(sym), "Otro")
 
     df_view = filters_mod.apply_filters(df_pos, controls, cli=None, psvc=DummyPSvc())
 

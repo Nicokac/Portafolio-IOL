@@ -733,7 +733,7 @@ def test_render_advanced_analysis_controls_display(
     df = pd.DataFrame(
         {
             "simbolo": ["GGAL"],
-            "tipo": ["Accion"],
+            "tipo": ["Acción"],
             "valor_actual": [1000.0],
             "costo": [800.0],
             "pl": [200.0],

@@ -55,6 +55,7 @@ tokens/*
 data/*
 !data/*.py
 !data/__init__.py
+!data/assets_catalog.json
 *.csv
 !docs/fixtures/default/*.csv
 !infrastructure/cache/ta_fallback.csv

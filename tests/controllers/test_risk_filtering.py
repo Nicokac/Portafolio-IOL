@@ -91,7 +91,7 @@ def test_accion_local_tab_renders_independent_heatmap(monkeypatch, streamlit_stu
             "simbolo": ["AAPL", "NVDA", "LOMA", "YPFD", "TECO2"],
             "valor_actual": [1000.0, 950.0, 400.0, 380.0, 360.0],
             "mercado": ["nyse", "nyse", "bcba", "bcba", "bcba"],
-            "tipo": ["CEDEAR", "CEDEAR", "Accion", "Accion", None],
+            "tipo": ["CEDEAR", "CEDEAR", "Acción", "Acción", None],
         }
     )
 

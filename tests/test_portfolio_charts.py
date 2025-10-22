@@ -57,7 +57,7 @@ def test_plot_bubble_with_benchmark_dataset():
             "pl": [120.0, 0.0],
             "categoria": ["Activo", "Benchmark"],
             "es_benchmark": [False, True],
-            "tipo": ["Accion", "Benchmark"],
+            "tipo": ["Acción", "Benchmark"],
         }
     )
 

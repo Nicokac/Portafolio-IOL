@@ -29,6 +29,7 @@ OI_GREEN = "#009E73"
 OI_YELLOW = "#F0E442"
 OI_VERMILION = "#D55E00"
 OI_PURPLE = "#CC79A7"
+OI_GRAY = "#999999"
 
 PALETTES = {
     "light": Palette(
@@ -40,13 +41,17 @@ PALETTES = {
         negative=OI_VERMILION,
         accent=OI_BLUE,
         categories={
-            "CEDEAR": OI_BLUE,
-            "Bono": OI_GREEN,
             "Acción": OI_VERMILION,
+            "Bono / ON": OI_GREEN,
+            "CEDEAR": OI_BLUE,
             "ETF": OI_PURPLE,
+            "FCI / Money Market": OI_ORANGE,
+            "Plazo Fijo": OI_YELLOW,
+            "Caución": OI_SKY,
+            "Otro": OI_GRAY,
+            "Bono": OI_GREEN,
             "FCI": OI_ORANGE,
             "Letra": OI_SKY,
-            "Otro": OI_YELLOW,
         },
         highlight_bg=OI_BLUE,
         highlight_text="#FFFFFF",
@@ -60,13 +65,17 @@ PALETTES = {
         negative=OI_VERMILION,
         accent=OI_SKY,
         categories={
-            "CEDEAR": OI_SKY,
-            "Bono": OI_GREEN,
             "Acción": OI_VERMILION,
+            "Bono / ON": OI_GREEN,
+            "CEDEAR": OI_SKY,
             "ETF": OI_PURPLE,
+            "FCI / Money Market": OI_ORANGE,
+            "Plazo Fijo": OI_YELLOW,
+            "Caución": OI_BLUE,
+            "Otro": OI_GRAY,
+            "Bono": OI_GREEN,
             "FCI": OI_ORANGE,
             "Letra": OI_BLUE,
-            "Otro": OI_YELLOW,
         },
         highlight_bg=OI_SKY,
         highlight_text="#0e1117",

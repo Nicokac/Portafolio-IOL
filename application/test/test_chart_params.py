@@ -8,7 +8,7 @@ def test_bubble_chart_log_axes():
     df = pd.DataFrame(
         {
             "simbolo": ["A", "B"],
-            "tipo": ["Acción", "Bono"],
+            "tipo": ["Acción", "Bono / ON"],
             "valor_actual": [100, 200],
             "costo": [90, 190],
             "pl": [10, 10],
