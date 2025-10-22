@@ -251,32 +251,52 @@ def _match_declared_type(text: str) -> str | None:
 
 
 
-def classify_asset(it: dict) -> str:
-    """
-    Clasifica activo según 'titulo.tipo/descripcion' si existe, o heurística por símbolo.
-    Devuelve categorías estándar de Portafolio-IOL (p.ej. 'Acción', 'Bono',
-    'Bono / ON', 'FCI / Money Market', 'CEDEAR', 'ETF', 'Caución', etc.).
-    """
+def classify_asset(it: dict) -> dict[str, str]:
+    """Return both the original and normalized asset type for a payload item."""
 
     t = it.get("titulo") or {}
     sym = clean_symbol(it.get("simbolo", ""))
 
-    candidates = []
+    candidates: list[str] = []
     tipo_value = t.get("tipo")
     descripcion_value = t.get("descripcion")
 
-    if tipo_value:
-        candidates.append(tipo_value)
-    if descripcion_value and descripcion_value not in candidates:
-        candidates.append(descripcion_value)
+    if isinstance(tipo_value, str) and tipo_value.strip():
+        candidates.append(tipo_value.strip())
+    elif tipo_value not in (None, ""):
+        candidates.append(str(tipo_value))
 
+    if isinstance(descripcion_value, str) and descripcion_value.strip():
+        candidate_desc = descripcion_value.strip()
+        if candidate_desc not in candidates:
+            candidates.append(candidate_desc)
+    elif descripcion_value not in (None, ""):
+        candidate_desc = str(descripcion_value)
+        if candidate_desc not in candidates:
+            candidates.append(candidate_desc)
+
+    matched_label = ""
+    normalized_type = ""
     for candidate in candidates:
         matched = _match_declared_type(candidate)
         if matched:
-            return matched
+            normalized_type = matched
+            matched_label = candidate
+            break
 
-    # Fallback por símbolo
-    return classify_symbol(sym)
+    if not normalized_type:
+        normalized_type = classify_symbol(sym)
+
+    if not matched_label:
+        matched_label = next((candidate for candidate in candidates if candidate), "")
+
+    final_type = normalized_type or ""
+
+    return {
+        "tipo": final_type,
+        "tipo_estandar": final_type,
+        "tipo_iol": matched_label,
+    }
 
 
 # ---------- Normalización de payload ----------
@@ -381,6 +401,16 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
             t.get("riesgo") if isinstance(t, dict) else None,
         )
 
+        tipo_original = ""
+        descripcion_original = ""
+        if isinstance(t, dict):
+            raw_tipo = t.get("tipo")
+            raw_desc = t.get("descripcion")
+            if raw_tipo not in (None, ""):
+                tipo_original = str(raw_tipo).strip()
+            if raw_desc not in (None, ""):
+                descripcion_original = str(raw_desc).strip()
+
         if costo_unit is None:
             total_costo = (
                 (it.get("costoTotal") if isinstance(it, dict) else None)
@@ -406,8 +436,14 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
         if not riesgo_str:
             riesgo_str = "s/d"
 
+        valorizado = _pick(
+            it.get("valorizado") if isinstance(it, dict) else None,
+            t.get("valorizado") if isinstance(t, dict) else None,
+        )
+
         ultimo_precio_f = _to_float(ultimo_precio)
         variacion_diaria_f = _to_float(variacion_diaria)
+        valorizado_f = _to_float(valorizado)
 
         tiene_panel: bool | None
         if isinstance(tiene_panel_raw, bool):
@@ -441,6 +477,9 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                     "variacionDiaria": variacion_diaria_f,
                     "tienePanel": tiene_panel,
                     "riesgo": riesgo_str,
+                    "titulo_tipo_original": tipo_original,
+                    "titulo_descripcion_original": descripcion_original,
+                    "valorizado": float(valorizado_f) if valorizado_f is not None else np.nan,
                 }
             )
 
@@ -457,6 +496,9 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
             "variacionDiaria",
             "tienePanel",
             "riesgo",
+            "titulo_tipo_original",
+            "titulo_descripcion_original",
+            "valorizado",
         ],
     )
     balances = _extract_cash_balances(payload)
@@ -483,6 +525,8 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         "simbolo",
         "mercado",
         "tipo",
+        "tipo_iol",
+        "tipo_estandar",
         "cantidad",
         "ppc",
         "ultimo",
@@ -552,8 +596,49 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     df = df.merge(quotes_df, on=["mercado", "simbolo"], how="left")
 
     # ----- Clasificación y escala --------------------------------------
-    df["tipo"] = df["simbolo"].map(classify_symbol)
-    uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo"]]
+    def _classify(row: pd.Series) -> pd.Series:
+        titulo_payload: dict[str, Any] = {}
+        tipo_orig = row.get("titulo_tipo_original")
+        desc_orig = row.get("titulo_descripcion_original")
+        if isinstance(tipo_orig, str) and tipo_orig.strip():
+            titulo_payload["tipo"] = tipo_orig.strip()
+        elif tipo_orig not in (None, ""):
+            titulo_payload["tipo"] = str(tipo_orig)
+        if isinstance(desc_orig, str) and desc_orig.strip():
+            titulo_payload.setdefault("descripcion", desc_orig.strip())
+        elif desc_orig not in (None, ""):
+            titulo_payload.setdefault("descripcion", str(desc_orig))
+
+        result = classify_asset({
+            "simbolo": row.get("simbolo"),
+            "titulo": titulo_payload,
+        })
+
+        if isinstance(result, Mapping):
+            tipo_estandar = str(result.get("tipo_estandar") or result.get("tipo") or "")
+            tipo_iol = str(result.get("tipo_iol") or "")
+        else:
+            tipo_estandar = str(result or "")
+            tipo_iol = str(titulo_payload.get("tipo") or titulo_payload.get("descripcion") or "")
+
+        if not tipo_estandar:
+            try:
+                tipo_estandar = classify_symbol(str(row.get("simbolo", "")))
+            except Exception:  # pragma: no cover - defensive
+                tipo_estandar = ""
+
+        return pd.Series(
+            {
+                "tipo": tipo_estandar,
+                "tipo_estandar": tipo_estandar,
+                "tipo_iol": tipo_iol,
+            }
+        )
+
+    classification = df.apply(_classify, axis=1)
+    df = pd.concat([df, classification], axis=1)
+
+    uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo_estandar"]]
     scale_map = {s: scale_for(s, t) for s, t in uniq.itertuples(index=False)}
     df["scale"] = df["simbolo"].map(scale_map)
 
@@ -564,6 +649,9 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         df["ultimo"] = df["ultimo"].fillna(fallback_price)
     df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
     df["valor_actual"] = df["cantidad"] * df["ultimo"] * df["scale"]
+    if "valorizado" in df.columns:
+        fallback_valorizado = pd.to_numeric(df["valorizado"], errors="coerce")
+        df["valor_actual"] = df["valor_actual"].where(df["valor_actual"].notna(), fallback_valorizado)
     df["pl"] = df["valor_actual"] - df["costo"]
     df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
 
@@ -596,7 +684,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 def _classify_sym_cache(sym: str) -> str:
     """Cachea la clasificación por símbolo usando la función existente classify_asset."""
     try:
-        return classify_asset({"simbolo": str(sym).upper(), "titulo": {}}) or ""
+        result = classify_asset({"simbolo": str(sym).upper(), "titulo": {}})
+        if isinstance(result, Mapping):
+            return str(result.get("tipo_estandar") or result.get("tipo") or "")
+        return str(result or "")
     except (ValueError, TypeError) as e:
         logger.exception("No se pudo clasificar símbolo %s: %s", sym, e)
         return ""

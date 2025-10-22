@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] — Clasificación y valorizado alineados con API IOL
+### Changed
+- `classify_asset` ahora devuelve tanto la etiqueta normalizada como el texto original provisto por IOL, y `calc_rows` propaga las columnas `tipo_estandar` y `tipo_iol` hacia la vista final para mantener trazabilidad.
+- La normalización conserva `titulo.tipo` y `titulo.descripcion` en columnas dedicadas y reutiliza `activos[].valorizado` como respaldo cuando faltan cotizaciones externas.
+- Las métricas de P/L usan los valores de IOL (`valorizado`, `variacionDiaria`) cuando no hay precios frescos, manteniendo consistencia con la API oficial.
+
 ## [0.8.1] - Cash Flow dinámico (sincronizado con IOL)
 ### Added
 - Integración con `/api/v2/estadocuenta` para calcular el efectivo disponible en ARS y USD, refrescando tokens automáticamente.
