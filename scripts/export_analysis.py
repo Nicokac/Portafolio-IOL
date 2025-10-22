@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 from pathlib import Path
@@ -15,7 +14,7 @@ import pandas as pd
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-from shared.portfolio_export import (
+from shared.portfolio_export import (  # noqa: E402
     CHART_SPECS,
     METRIC_SPECS,
     PortfolioSnapshotExport,
@@ -47,7 +46,10 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "-o",
         type=Path,
         default=Path("exports"),
-        help="Directorio raíz donde se almacenarán los reportes (por defecto ./exports).",
+        help=(
+            "Directorio raíz donde se almacenarán los reportes "
+            "(por defecto ./exports)."
+        ),
     )
     parser.add_argument(
         "--metrics",
@@ -57,7 +59,10 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--charts",
         nargs="+",
-        help="Lista de gráficos a embeber en el Excel (usar --charts help para ver opciones).",
+        help=(
+            "Lista de gráficos a embeber en el Excel "
+            "(usar --charts help para ver opciones)."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -93,10 +98,13 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 
 def _available(options: Sequence) -> dict[str, str]:
-    return {spec.key: getattr(spec, "label", getattr(spec, "title", spec.key)) for spec in options}
+    return {
+        spec.key: getattr(spec, "label", getattr(spec, "title", spec.key))
+        for spec in options
+    }
 
 
-def _resolve_metric_keys(raw: Iterable[str] | None) -> list[str]:
+def _resolve_metric_keys(raw: Sequence[str] | None) -> list[str]:
     lookup = _available(METRIC_SPECS)
     if raw is None:
         return [spec.key for spec in METRIC_SPECS[:5]]
@@ -110,7 +118,7 @@ def _resolve_metric_keys(raw: Iterable[str] | None) -> list[str]:
     return resolved or [spec.key for spec in METRIC_SPECS[:5]]
 
 
-def _resolve_chart_keys(raw: Iterable[str] | None) -> list[str]:
+def _resolve_chart_keys(raw: Sequence[str] | None) -> list[str]:
     lookup = _available(CHART_SPECS)
     if raw is None:
         return [spec.key for spec in CHART_SPECS]
@@ -142,7 +150,10 @@ def _load_snapshot(path: Path) -> PortfolioSnapshotExport | None:
 
 def main(argv: Iterable[str] | None = None) -> int:
     args = _parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="%(levelname)s %(message)s",
+    )
 
     metric_keys = _resolve_metric_keys(args.metrics)
     chart_keys = _resolve_chart_keys(args.charts)
@@ -203,7 +214,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not kpis.empty:
             row = {
                 "snapshot": name,
-                "generated_at": snapshot.generated_at.isoformat() if snapshot.generated_at else "",
+                "generated_at": (
+                    snapshot.generated_at.isoformat()
+                    if snapshot.generated_at
+                    else ""
+                ),
             }
             for _, metric in kpis.iterrows():
                 row[metric["metric"]] = metric.get("raw_value")
