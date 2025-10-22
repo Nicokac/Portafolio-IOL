@@ -583,7 +583,7 @@ def _build_incremental_fingerprints(dataset_key: str, controls: Any, filters_key
         for key in attributes
         if key not in time_payload
         and key not in fx_payload
-        and key not in {"hide_cash", "selected_syms", "selected_types", "symbol_query"}
+        and key not in {"selected_syms", "selected_types", "symbol_query"}
     }
 
     fingerprints["filters.time"] = _fingerprint_from_payload(time_payload) if time_payload else "none"
@@ -1223,7 +1223,6 @@ class PortfolioViewModelService:
     @staticmethod
     def _filters_key_from(controls: Any) -> str:
         payload = {
-            "hide_cash": getattr(controls, "hide_cash", None),
             "selected_syms": sorted(map(str, getattr(controls, "selected_syms", []))),
             "selected_types": sorted(map(str, getattr(controls, "selected_types", []))),
             "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),

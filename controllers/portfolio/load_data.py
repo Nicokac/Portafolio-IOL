@@ -87,7 +87,6 @@ def _current_filters_snapshot() -> dict[str, Any]:
         return {}
     try:
         return {
-            "hide_cash": state.get("hide_cash"),
             "selected_syms": list(state.get("selected_syms", []) or []),
             "selected_types": list(state.get("selected_types", []) or []),
             "symbol_query": state.get("symbol_query"),
@@ -99,14 +98,12 @@ def _current_filters_snapshot() -> dict[str, Any]:
 
 def _filters_signature(filters: Mapping[str, Any] | None = None) -> str:
     source = dict(filters or {}) if filters else _current_filters_snapshot()
-    hide_cash = bool(source.get("hide_cash"))
     raw_syms = source.get("selected_syms") or []
     raw_types = source.get("selected_types") or []
     symbol_query = str(source.get("symbol_query", "") or "").strip().lower()
     cleaned_syms = sorted({str(sym).strip().upper() for sym in raw_syms if str(sym).strip()})
     cleaned_types = sorted({str(tp).strip().lower() for tp in raw_types if str(tp).strip()})
     payload = {
-        "hide_cash": hide_cash,
         "selected_syms": cleaned_syms,
         "selected_types": cleaned_types,
         "symbol_query": symbol_query,

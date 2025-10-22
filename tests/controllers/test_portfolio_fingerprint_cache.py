@@ -115,7 +115,7 @@ def test_dataset_fingerprint_changes_with_filters(
     viewmodel = _build_viewmodel(controls=controls)
 
     key_a = portfolio._portfolio_dataset_key(viewmodel, df_view)
-    controls.hide_cash = True
+    controls.selected_syms = ["GGAL"]
     key_b = portfolio._portfolio_dataset_key(viewmodel, df_view)
 
     assert key_a != key_b

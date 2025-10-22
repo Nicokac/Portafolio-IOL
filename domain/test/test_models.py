@@ -8,7 +8,7 @@ from domain.models import Controls
 def test_controls_defaults():
     c = Controls()
     assert c.refresh_secs == 30
-    assert c.hide_cash is True
+    assert c.hide_cash is False
     assert c.show_usd is False
     assert c.order_by == "valor_actual"
     assert c.desc is True

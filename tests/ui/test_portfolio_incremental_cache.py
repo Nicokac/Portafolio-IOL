@@ -77,7 +77,7 @@ class _Placeholder:
 def _make_viewmodel(order_by: str = "valor_actual", df: pd.DataFrame | None = None) -> SimpleNamespace:
     controls = Controls(
         refresh_secs=30,
-        hide_cash=True,
+        hide_cash=False,
         show_usd=False,
         order_by=order_by,
         desc=True,

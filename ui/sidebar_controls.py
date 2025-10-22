@@ -45,9 +45,16 @@ def _build_control_defaults(
     if selected_types_state is None:
         selected_types_state = st.session_state.get("selected_asset_types")
 
+    try:
+        st.session_state["hide_cash"] = False
+    except Exception:  # pragma: no cover - session state may be read-only
+        try:
+            st.session_state.pop("hide_cash", None)
+        except Exception:  # pragma: no cover - defensive guard
+            pass
+
     return {
         "refresh_secs": st.session_state.get("refresh_secs", 30),
-        "hide_cash": st.session_state.get("hide_cash", True),
         "show_usd": st.session_state.get("show_usd", False),
         "order_by": st.session_state.get("order_by", "valor_actual"),
         "desc": st.session_state.get("desc", True),
@@ -61,15 +68,25 @@ def _build_control_defaults(
 def _finalize_controls(controls: Controls) -> Controls:
     snap = st.session_state.get("controls_snapshot")
     if isinstance(snap, dict):
+        snap = dict(snap)
+        snap["hide_cash"] = False
         selected = list(snap.get("selected_types", []))
         try:
             st.session_state["selected_asset_types"] = selected
+        except Exception:  # pragma: no cover - defensive guard
+            pass
+        try:
+            st.session_state["hide_cash"] = False
         except Exception:  # pragma: no cover - defensive guard
             pass
         return Controls(**snap)
 
     try:
         st.session_state["selected_asset_types"] = list(controls.selected_types)
+    except Exception:  # pragma: no cover - defensive guard
+        pass
+    try:
+        st.session_state["hide_cash"] = False
     except Exception:  # pragma: no cover - defensive guard
         pass
     return controls
@@ -86,7 +103,7 @@ def get_active_controls(
 
     controls = Controls(
         refresh_secs=int(defaults["refresh_secs"]),
-        hide_cash=bool(defaults["hide_cash"]),
+        hide_cash=False,
         show_usd=bool(defaults["show_usd"]),
         order_by=str(defaults["order_by"]),
         desc=bool(defaults["desc"]),
@@ -116,7 +133,6 @@ def _show_apply_feedback() -> None:
 
 def _active_filter_chips(
     *,
-    hide_cash: bool,
     show_usd: bool,
     symbol_query: str,
     selected_syms: list[str],
@@ -134,8 +150,6 @@ def _active_filter_chips(
         chips.append(f"🎯 {len(selected_syms)}/{total_symbols} símbolos")
     if total_types and selected_types and len(selected_types) < total_types:
         chips.append(f"🏷️ {len(selected_types)}/{total_types} tipos")
-    if hide_cash:
-        chips.append("💸 Sin efectivo")
     if show_usd:
         chips.append("💵 USD CCL")
     return chips
@@ -231,11 +245,6 @@ def render_controls_panel(
         ) as filter_section:
             filter_section.markdown("### 🔍 Filtros")
             filter_section.caption("Limitá la vista para enfocarte en activos específicos o categorías.")
-            hide_cash = filter_section.checkbox(
-                "Ocultar IOLPORA / PARKING",
-                value=defaults["hide_cash"],
-                help="Oculta el efectivo para enfocarte en las posiciones invertidas.",
-            )
             symbol_query = filter_section.text_input(
                 "Buscar símbolo",
                 value=defaults["symbol_query"],
@@ -293,7 +302,6 @@ def render_controls_panel(
             )
 
         chips = _active_filter_chips(
-            hide_cash=hide_cash,
             show_usd=show_usd,
             symbol_query=symbol_query,
             selected_syms=selected_syms,
@@ -317,7 +325,7 @@ def render_controls_panel(
 
     controls = Controls(
         refresh_secs=refresh_secs,
-        hide_cash=hide_cash,
+        hide_cash=False,
         show_usd=show_usd,
         order_by=order_by,
         desc=desc,
