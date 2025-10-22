@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - Clean Final Release
+### Overview
+Consolidation and final cleanup of the Portafolio-IOL codebase after modular refactoring (phases 1–6).
+
+### Changes
+- Removed all redundant and legacy tests from ui/test and test/ directories.
+- Unified fixtures under tests/fixtures/.
+- Completed full lint and formatting compliance (ruff check . passes 100%).
+- Pruned dead code and duplicate utilities across controllers, services, and shared.
+- Refactored predictive_engine and data modules with full type consistency.
+- Cleaned scripts and tools, adding python -m tools entrypoint.
+- Modernized UI components (login, header, health sidebar) and normalized HTML markup.
+- Updated documentation under docs/testing.md to reflect new structure.
+
+### Technical status
+- ✅ Lint: passes cleanly
+- ⚠️ Typing: residual mypy issues (legacy modules)
+- ⚠️ Tests: external-dependency warnings (Kaleido/Streamlit)
+
+### Notes
+This release concludes the 0.7.x cleanup cycle and prepares the foundation for 0.8.0, 
+which will focus on type completion, test modernization, and performance regression tracking.
+
 ## [Unreleased]
 ### Added
 - Endpoints `/cache/status`, `/cache/invalidate` y `/cache/cleanup` con autenticación y métricas consolidadas del caché de mercado.
