@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Dict, Iterable, Tuple
+from typing import Callable, Dict, Iterable
 
 import numpy as np
 import pandas as pd
 
+from predictive_engine import utils
 from predictive_engine.models import (
     AdaptiveForecastResult,
     AdaptiveState,
@@ -17,7 +18,6 @@ from predictive_engine.models import (
     SectorPrediction,
     SectorPredictionSet,
 )
-from predictive_engine import utils
 from predictive_engine.storage import save_forecast_history
 
 
@@ -79,7 +79,10 @@ def compute_sector_predictions(
         weights: list[float] = []
         predictions: list[float] = []
         for symbol, predicted in symbol_predictions:
-            correlation = float(avg_corr.get(symbol, 0.0)) if isinstance(avg_corr, pd.Series) else 0.0
+            if isinstance(avg_corr, pd.Series):
+                correlation = float(avg_corr.get(symbol, 0.0))
+            else:
+                correlation = 0.0
             penalty = max(correlation, 0.0)
             weight = 1.0 / (1.0 + penalty)
             weights.append(weight)
@@ -91,7 +94,10 @@ def compute_sector_predictions(
         weights_array = weights_array / weights_array.sum()
 
         predicted_sector = float(np.dot(weights_array, predictions))
-        avg_corr_value = float(np.nanmean(avg_corr.to_numpy())) if not avg_corr.empty else 0.0
+        if avg_corr.empty:
+            avg_corr_value = 0.0
+        else:
+            avg_corr_value = float(np.nanmean(avg_corr.to_numpy()))
         confidence = float(max(0.0, min(1.0, 1.0 - max(avg_corr_value, 0.0))))
 
         rows.append(
@@ -118,14 +124,25 @@ def update_adaptive_state(
 ) -> AdaptiveUpdateResult:
     normalized_predictions = utils.normalise_predictions(predictions)
     normalized_actuals = utils.normalise_actuals(actuals)
-    merged = utils.merge_inputs(normalized_predictions, normalized_actuals, timestamp=timestamp)
+    merged = utils.merge_inputs(
+        normalized_predictions,
+        normalized_actuals,
+        timestamp=timestamp,
+    )
     normalized_frame = utils.prepare_normalized_frame(merged)
 
-    history, last_timestamp = utils.append_history(state.history, normalized_frame, max_rows=max_history_rows)
+    history, last_timestamp = utils.append_history(
+        state.history,
+        normalized_frame,
+        max_rows=max_history_rows,
+    )
     pivot = utils.pivot_history(history)
     corr_matrix, beta_shift = utils.compute_beta_shift(pivot, ema_span=ema_span)
 
-    updated_state = AdaptiveState(history=history, last_updated=last_timestamp or state.last_updated)
+    updated_state = AdaptiveState(
+        history=history,
+        last_updated=last_timestamp or state.last_updated,
+    )
     return AdaptiveUpdateResult(
         state=updated_state,
         normalized=normalized_frame,
@@ -176,7 +193,7 @@ def _summarise_metrics(metrics: ModelMetrics) -> Dict[str, float | str]:
             return "-"
         return f"{value:.2f}"
 
-    summary = {
+    summary: dict[str, float | str] = {
         "mae": metrics.mae,
         "rmse": metrics.rmse,
         "bias": metrics.bias,
@@ -204,7 +221,10 @@ def calculate_adaptive_forecast(
     *,
     ema_span: int,
     rolling_window: int,
-    model_updater: Callable[[pd.DataFrame, pd.DataFrame, pd.Timestamp], AdaptiveUpdateResult],
+    model_updater: Callable[
+        [pd.DataFrame, pd.DataFrame, pd.Timestamp],
+        AdaptiveUpdateResult,
+    ],
     cache_metadata: Dict[str, float | str] | None = None,
     persist_history: bool = False,
     history_path: str | Path | None = "./data/forecast_history.parquet",
@@ -280,9 +300,17 @@ def calculate_adaptive_forecast(
         beta_snapshots.append(beta_shift)
 
         sector_series = group["sector"].astype("string")
-        predicted_values = pd.to_numeric(group["predicted_return"], errors="coerce").to_numpy(dtype=float)
-        actual_values = pd.to_numeric(group["actual_return"], errors="coerce").to_numpy(dtype=float)
-        adjustments = sector_series.map(update.beta_shift).fillna(0.0).to_numpy(dtype=float)
+        predicted_values = pd.to_numeric(
+            group["predicted_return"],
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        actual_values = pd.to_numeric(
+            group["actual_return"],
+            errors="coerce",
+        ).to_numpy(dtype=float)
+        adjustments = (
+            sector_series.map(update.beta_shift).fillna(0.0).to_numpy(dtype=float)
+        )
         factors = np.clip(1.0 + adjustments, 0.0, 2.0)
         adjusted_predictions = predicted_values * factors
 
@@ -309,16 +337,27 @@ def calculate_adaptive_forecast(
             beta_shift_avg = 0.0
         else:
             beta_magnitudes = beta_diffs.mean(axis=1, skipna=True).dropna()
-            beta_shift_avg = float(beta_magnitudes.mean()) if not beta_magnitudes.empty else 0.0
+            if beta_magnitudes.empty:
+                beta_shift_avg = 0.0
+            else:
+                beta_shift_avg = float(beta_magnitudes.mean())
     else:
         beta_shift_avg = 0.0
 
     last_beta = last_update.beta_shift if last_update else pd.Series(dtype=float)
-    correlation_matrix = last_update.correlation_matrix if last_update else pd.DataFrame()
+    correlation_matrix = (
+        last_update.correlation_matrix if last_update else pd.DataFrame()
+    )
     sector_dispersion = utils.compute_sector_dispersion(df)
-    raw_errors = np.concatenate(raw_error_blocks) if raw_error_blocks else np.empty(0, dtype=float)
+    raw_errors = (
+        np.concatenate(raw_error_blocks)
+        if raw_error_blocks
+        else np.empty(0, dtype=float)
+    )
     adjusted_errors = (
-        np.concatenate(adjusted_error_blocks) if adjusted_error_blocks else np.empty(0, dtype=float)
+        np.concatenate(adjusted_error_blocks)
+        if adjusted_error_blocks
+        else np.empty(0, dtype=float)
     )
 
     metrics = evaluate_model_metrics(
