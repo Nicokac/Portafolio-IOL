@@ -1,8 +1,10 @@
 import logging
+from pathlib import Path
 from typing import Any, Optional
 
 import streamlit as st
 
+from shared.cache import cache
 from shared.utils import _as_float_or_none
 from ui.palette import get_active_palette
 
@@ -14,6 +16,8 @@ _NOTIFICATION_LAST_MESSAGE_KEY = "_header_notification_message"
 _NOTIFICATION_PLACEHOLDER_KEY = "_header_notification_placeholder"
 _NOTIFICATION_VARIANT_KEY = "_header_notification_variant"
 
+_SKIP_NOTIFICATION_FETCH = object()
+
 
 def _current_notification_marker() -> Any:
     refreshed = st.session_state.get("auth_token_refreshed_at")
@@ -23,6 +27,10 @@ def _current_notification_marker() -> Any:
 
 
 def _fetch_notification() -> Optional[dict[str, Any]]:
+    if not _can_attempt_notification_fetch():
+        logger.debug("Se omite fetch de notificaciones: sesión no autenticada o sin tokens disponibles")
+        return _SKIP_NOTIFICATION_FETCH
+
     try:
         from services.cache import build_iol_client as _build_iol_client
     except Exception:  # pragma: no cover - defensive import
@@ -58,9 +66,37 @@ def _load_notification() -> Optional[dict[str, Any]]:
         return st.session_state.get(_NOTIFICATION_DATA_KEY)
 
     notification = _fetch_notification()
+    if notification is _SKIP_NOTIFICATION_FETCH:
+        return st.session_state.get(_NOTIFICATION_DATA_KEY)
+
     st.session_state[_NOTIFICATION_MARKER_KEY] = marker
     st.session_state[_NOTIFICATION_DATA_KEY] = notification
     return notification
+
+
+def _can_attempt_notification_fetch() -> bool:
+    state = st.session_state
+    if state.get("force_login"):
+        return False
+    if state.get("auth_token_refreshed_at") or state.get("authenticated"):
+        return True
+
+    try:
+        tokens_file = cache.get("tokens_file")
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo acceder al cache de tokens para notificaciones", exc_info=True)
+        return False
+
+    if not tokens_file:
+        return False
+
+    try:
+        path = Path(tokens_file)
+    except (TypeError, ValueError, OSError):  # pragma: no cover - defensive guard
+        logger.debug("Ruta de tokens inválida para notificaciones: %s", tokens_file, exc_info=True)
+        return False
+
+    return path.exists()
 
 
 def _should_use_warning(message: str) -> bool:
