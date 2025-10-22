@@ -19,7 +19,6 @@ from application.predictive_service import (
 )
 from ui.utils.formatters import normalise_hit_ratio, resolve_badge_state
 
-
 LOGGER = logging.getLogger(__name__)
 
 

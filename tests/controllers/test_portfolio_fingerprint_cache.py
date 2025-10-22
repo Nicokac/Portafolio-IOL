@@ -8,11 +8,11 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from controllers.portfolio import portfolio
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from controllers.portfolio import portfolio
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,9 @@ def _build_viewmodel(*, controls: object | None = None) -> SimpleNamespace:
     )
 
 
-def test_dataset_fingerprint_memoized_per_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_fingerprint_memoized_per_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     counter = {"calls": 0}
 
     def fake_compute(viewmodel, df_view):
@@ -88,7 +90,9 @@ def test_dataset_fingerprint_memoized_per_snapshot(monkeypatch: pytest.MonkeyPat
     assert stats.get("hits") == 1
 
 
-def test_dataset_fingerprint_changes_with_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_fingerprint_changes_with_filters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     counter = {"calls": 0}
 
     def fake_compute(viewmodel, df_view):
@@ -118,7 +122,9 @@ def test_dataset_fingerprint_changes_with_filters(monkeypatch: pytest.MonkeyPatc
     assert counter["calls"] == 2
 
 
-def test_dataset_fingerprint_cache_improves_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dataset_fingerprint_cache_improves_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls = {"count": 0}
 
     def slow_compute(viewmodel, df_view):
@@ -144,4 +150,3 @@ def test_dataset_fingerprint_cache_improves_runtime(monkeypatch: pytest.MonkeyPa
     assert first_elapsed > 0.009
     assert second_elapsed < first_elapsed
     assert (first_elapsed - second_elapsed) > 0.005
-

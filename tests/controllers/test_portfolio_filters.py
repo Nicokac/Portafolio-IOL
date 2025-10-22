@@ -1,15 +1,15 @@
 import sys
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+from controllers.portfolio import filters as filters_mod
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from controllers.portfolio import filters as filters_mod
 
 
 @pytest.fixture

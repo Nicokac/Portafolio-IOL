@@ -8,6 +8,7 @@ import sqlite3
 from collections.abc import Generator
 
 import pytest
+
 pytest.importorskip("httpx")
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
@@ -18,7 +19,6 @@ from services.cache.core import CacheService
 from services.cache.market_data_cache import MarketDataCache
 from shared.errors import CacheUnavailableError
 from tests.fixtures.clock import FakeClock
-
 
 _STRUCTURED_LOGGER_NAMES = {"performance", "performance_test"}
 
@@ -37,9 +37,7 @@ def _structured_logs(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]
     return entries
 
 
-def _prepare_performance_logger(
-    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _prepare_performance_logger(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
     logger = logging.getLogger("performance_test")
     for handler in list(logger.handlers):
         logger.removeHandler(handler)
@@ -48,6 +46,7 @@ def _prepare_performance_logger(
     monkeypatch.setattr("api.routers.cache.PERF_LOGGER", logger)
     caplog.set_level(logging.INFO, logger="performance_test")
     caplog.set_level(logging.INFO, logger="performance")
+
 
 @pytest.fixture()
 def auth_headers(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
@@ -64,9 +63,7 @@ def client() -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture()
-def market_cache(
-    monkeypatch: pytest.MonkeyPatch, fake_clock: FakeClock
-) -> MarketDataCache:
+def market_cache(monkeypatch: pytest.MonkeyPatch, fake_clock: FakeClock) -> MarketDataCache:
     history = CacheService(namespace="cache_history", monotonic=fake_clock)
     fundamentals = CacheService(namespace="cache_fund", monotonic=fake_clock)
     predictions = CacheService(namespace="cache_pred", monotonic=fake_clock)
@@ -258,9 +255,9 @@ def test_cache_metrics_exposed_after_operations(
 
     assert metrics_response.status_code == 200
     body = metrics_response.text
-    assert "cache_status_requests_total{result=\"success\"}" in body
-    assert "cache_invalidate_total{result=\"success\"}" in body
-    assert "cache_cleanup_total{result=\"success\"}" in body
+    assert 'cache_status_requests_total{result="success"}' in body
+    assert 'cache_invalidate_total{result="success"}' in body
+    assert 'cache_cleanup_total{result="success"}' in body
     assert "cache_operation_duration_seconds_sum" in body
 
 
@@ -337,4 +334,3 @@ def test_cache_invalidate_handles_sqlite_locked(
     payload = entries[-1]
     assert payload.get("operation") == "invalidate"
     assert payload.get("success") is False
-

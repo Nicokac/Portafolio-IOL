@@ -27,7 +27,6 @@ from shared.telemetry import log_default_telemetry
 
 from .ui_adapter import _trigger_logout
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -56,6 +55,7 @@ def get_active_dataset_hash() -> str | None:
     """Return the dataset hash associated with the current refresh cycle."""
 
     return _ACTIVE_DATASET_HASH
+
 
 _MAX_RATE_LIMIT_RETRIES = 2
 
@@ -396,7 +396,10 @@ def _warm_start_from_disk(now: float | None = None) -> tuple[int, float]:
         return (0, 0.0)
 
     current_ts = float(now or time.time())
-    ttl = max(min(float(cache_ttl_quotes or _WARM_START_TTL_SECONDS), _WARM_START_TTL_SECONDS), 0.0)
+    ttl = max(
+        min(float(cache_ttl_quotes or _WARM_START_TTL_SECONDS), _WARM_START_TTL_SECONDS),
+        0.0,
+    )
     if ttl == 0:
         ttl = _WARM_START_TTL_SECONDS
 
@@ -703,14 +706,10 @@ def _get_quote_cached(
             break
         except requests.HTTPError as http_exc:
             last_error = http_exc
-            status_code = (
-                http_exc.response.status_code if http_exc.response is not None else None
-            )
+            status_code = http_exc.response.status_code if http_exc.response is not None else None
             if status_code == 429 and attempt < _MAX_RATE_LIMIT_RETRIES:
                 retry_after = _parse_retry_after_seconds(http_exc.response)
-                wait_time = quote_rate_limiter.penalize(
-                    provider_key, minimum_wait=retry_after
-                )
+                wait_time = quote_rate_limiter.penalize(provider_key, minimum_wait=retry_after)
                 if batch_stats is not None:
                     batch_stats.record_rate_limited()
                 logger.info(
@@ -886,7 +885,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     for k, v in data.items():
                         if v is None:
                             logger.warning(
-                                "get_quotes_bulk returned empty entry for %s:%s", k[0], k[1]
+                                "get_quotes_bulk returned empty entry for %s:%s",
+                                k[0],
+                                k[1],
                             )
                             continue
                         quote = _normalize_quote(v)
@@ -907,9 +908,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                                 provider_name = quote.get("provider") or "unknown"
                                 record_quote_provider_usage(
                                     provider_name,
-                                    elapsed_ms=elapsed_ms
-                                    if quote.get("last") is not None
-                                    else None,
+                                    elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
                                     stale=stale_flag or quote.get("last") is None,
                                     source="bulk" if ttl_seconds > 0 else "live",
                                 )
@@ -920,9 +919,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                             persist_key = _quote_cache_key(norm_market, norm_symbol, panel_value)
 
                             if quote.get("last") is None:
-                                fallback_quote = _recover_persisted_quote(
-                                    persist_key, store_time
-                                )
+                                fallback_quote = _recover_persisted_quote(persist_key, store_time)
                                 if fallback_quote is not None:
                                     normalized_bulk[k] = fallback_quote
                                     continue
@@ -941,15 +938,11 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                             provider_name = quote.get("provider") or "unknown"
                             record_quote_provider_usage(
                                 provider_name,
-                                elapsed_ms=elapsed_ms
-                                if quote.get("last") is not None
-                                else None,
+                                elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
                                 stale=stale_flag or quote.get("last") is None,
                                 source="bulk" if ttl_seconds > 0 else "live",
                             )
-                            logger.debug(
-                                "quote %s:%s -> %s", norm_market, norm_symbol, quote
-                            )
+                            logger.debug("quote %s:%s -> %s", norm_market, norm_symbol, quote)
                     data = normalized_bulk
                 if isinstance(data, Mapping):
                     for payload in data.values():
@@ -1020,10 +1013,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
         chunk_size = _resolve_chunk_size()
         telemetry["sublot_size"] = chunk_size
         telemetry["adaptive_batch_size"] = chunk_size
-        sublots = [
-            normalized[idx : idx + chunk_size]
-            for idx in range(0, len(normalized), chunk_size)
-        ] if normalized else []
+        sublots = (
+            [normalized[idx : idx + chunk_size] for idx in range(0, len(normalized), chunk_size)] if normalized else []
+        )
 
         def _fetch_sublot(entries: list[tuple[str, str, str | None]]):
             started = time.perf_counter()
@@ -1031,9 +1023,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             errors: list[tuple[str, str, Exception]] = []
             for market, symbol, panel in entries:
                 try:
-                    quote = _get_quote_cached(
-                        _cli, market, symbol, panel, ttl, batch_stats
-                    )
+                    quote = _get_quote_cached(_cli, market, symbol, panel, ttl, batch_stats)
                 except Exception as exc:  # pragma: no cover - network dependent
                     errors.append((market, symbol, exc))
                     quote = {
@@ -1082,9 +1072,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 for market, symbol, err in chunk_errors:
                     telemetry.setdefault("errors", 0)
                     telemetry["errors"] = int(telemetry["errors"]) + 1
-                    logger.exception(
-                        "get_quote failed for %s:%s -> %s", market, symbol, err
-                    )
+                    logger.exception("get_quote failed for %s:%s -> %s", market, symbol, err)
         elapsed_seconds = time.time() - start
         elapsed_ms = elapsed_seconds * 1000.0
         summary = batch_stats.summary(elapsed_seconds)

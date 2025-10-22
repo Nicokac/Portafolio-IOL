@@ -32,9 +32,7 @@ def _ensure_log_handler() -> None:
 
     _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     handler = logging.FileHandler(_LOG_FILE_PATH, encoding="utf-8")
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
     LOGGER.addHandler(handler)
     _LOG_HANDLER = handler
 
@@ -43,6 +41,7 @@ def _dynamic_threshold(size_mb: float) -> float:
     """Compute an adaptive threshold for maintenance triggers."""
 
     return max(128.0, size_mb * 0.75)
+
 
 _CACHE_CLEANUP_TOTAL: Any | None = None
 _VACUUM_DURATION_SECONDS: Any | None = None
@@ -92,9 +91,7 @@ def _append_metrics(row: dict[str, Any]) -> None:
 
 def _log_large_free_space(freed_space_mb: float, path: Path) -> None:
     if freed_space_mb >= 50.0:
-        LOGGER.info(
-            "sqlite-maintenance freed-space path=%s freed=%.2fMB", path, freed_space_mb
-        )
+        LOGGER.info("sqlite-maintenance freed-space path=%s freed=%.2fMB", path, freed_space_mb)
 
 
 def _execute_cache_maintenance(*, force: bool, asynchronous: bool) -> dict[str, Any] | None:
@@ -142,7 +139,10 @@ def _execute_cache_maintenance(*, force: bool, asynchronous: bool) -> dict[str, 
         try:
             tmp_copy.unlink()
         except OSError:
-            LOGGER.warning("sqlite-maintenance could not remove previous temp file path=%s", tmp_copy)
+            LOGGER.warning(
+                "sqlite-maintenance could not remove previous temp file path=%s",
+                tmp_copy,
+            )
 
     try:
         with sqlite3.connect(cache_path, timeout=5.0, isolation_level=None) as conn:
@@ -167,7 +167,8 @@ def _execute_cache_maintenance(*, force: bool, asynchronous: bool) -> dict[str, 
     tables_cleaned = 1 if deleted_rows or vacuum_time > 0 else 0
 
     LOGGER.info(
-        "sqlite-maintenance complete async=%s size_before=%.2fMB size_after=%.2fMB freed=%.2fMB vacuum=%.2fs deleted=%s path=%s",
+        "sqlite-maintenance complete async=%s size_before=%.2fMB size_after=%.2fMB "
+        "freed=%.2fMB vacuum=%.2fs deleted=%s path=%s",
         asynchronous,
         size_before_mb,
         size_after_mb,
@@ -408,14 +409,10 @@ def _run_targets(
         try:
             stats = target.maintenance_callable(timestamp, vacuum)
         except Exception:  # pragma: no cover - defensive logging
-            LOGGER.exception(
-                "sqlite-maintenance failed database=%s reason=%s", target.name, reason
-            )
+            LOGGER.exception("sqlite-maintenance failed database=%s reason=%s", target.name, reason)
             continue
         if not stats:
-            LOGGER.debug(
-                "sqlite-maintenance no-op database=%s reason=%s", target.name, reason
-            )
+            LOGGER.debug("sqlite-maintenance no-op database=%s reason=%s", target.name, reason)
             continue
         size_after = float(stats.get("size_after", _safe_file_size(path)))
         deleted = int(stats.get("deleted", 0))
@@ -424,12 +421,11 @@ def _run_targets(
         if cache_counter is not None and deleted:
             cache_counter.labels(database=target.name, reason=reason).inc(deleted)
         if vacuum_summary is not None:
-            vacuum_summary.labels(database=target.name, reason=reason).observe(
-                vacuum_duration
-            )
+            vacuum_summary.labels(database=target.name, reason=reason).observe(vacuum_duration)
 
         LOGGER.info(
-            "sqlite-maintenance done database=%s reason=%s deleted=%s size_before=%.2fMB size_after=%.2fMB vacuum=%.4fs path=%s",
+            "sqlite-maintenance done database=%s reason=%s deleted=%s size_before=%.2fMB "
+            "size_after=%.2fMB vacuum=%.4fs path=%s",
             target.name,
             reason,
             deleted,
@@ -483,9 +479,7 @@ class _SQLiteMaintenanceScheduler:
             if self._thread and self._thread.is_alive():
                 return False
             self._stop_event.clear()
-            self._thread = threading.Thread(
-                target=self._run_loop, name="sqlite-maintenance", daemon=True
-            )
+            self._thread = threading.Thread(target=self._run_loop, name="sqlite-maintenance", daemon=True)
             self._thread.start()
             LOGGER.info(
                 "sqlite-maintenance scheduler started interval=%.2fs threshold=%.2fMB",
@@ -602,9 +596,7 @@ def _load_default_configuration() -> SQLiteMaintenanceConfiguration:
         raw_retention = getattr(config_settings, "PERFORMANCE_STORE_TTL_DAYS", None)
         retention = _coerce_positive_float_or_none(raw_retention)
         if raw_retention is None:
-            fallback = _coerce_positive_float_or_none(
-                getattr(config_settings, "LOG_RETENTION_DAYS", 7)
-            )
+            fallback = _coerce_positive_float_or_none(getattr(config_settings, "LOG_RETENTION_DAYS", 7))
             retention = fallback if fallback is not None else 7.0
         enable_prom = bool(getattr(config_settings, "ENABLE_PROMETHEUS", True))
     else:

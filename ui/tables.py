@@ -8,9 +8,11 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from application.portfolio_service import calculate_totals, detect_currency
+from application.portfolio_service import (
+    PortfolioTotals,
+    calculate_totals,
+)
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
-from application.portfolio_service import calculate_totals, detect_currency, PortfolioTotals
 from shared.utils import (
     _as_float_or_none,
     _is_none_nan_inf,
@@ -23,11 +25,13 @@ from ui.lazy.runtime import (
     register_fragment_ready,
 )
 
+from .export import download_csv
+from .palette import get_active_palette
+
 _SEARCH_WIDGET_KEY = "portfolio_table_search_input"
 _SEARCH_DATASET_STATE_KEY = "__portfolio_table_search_dataset__"
 _DATASET_HASH_STATE_KEY = "dataset_hash"
-from .palette import get_active_palette
-from .export import download_csv
+
 
 def render_totals(
     df_view: pd.DataFrame,
@@ -66,6 +70,7 @@ def render_totals(
         c3b.metric("P/L (USD CCL)", format_money(usd_pl, currency="USD"))
         c4b.metric("CCL usado", format_money(rate))
 
+
 def render_table(
     df_view: pd.DataFrame,
     order_by: str,
@@ -96,7 +101,19 @@ def render_table(
     favorites = favorites or get_persistent_favorites()
     palette = get_active_palette()
 
-    cols_order = ["mercado", "simbolo", "tipo", "cantidad", "ultimo", "valor_actual", "costo", "pl", "pl_%", "pl_d", "chg_%"]
+    cols_order = [
+        "mercado",
+        "simbolo",
+        "tipo",
+        "cantidad",
+        "ultimo",
+        "valor_actual",
+        "costo",
+        "pl",
+        "pl_%",
+        "pl_d",
+        "chg_%",
+    ]
     for c in cols_order:
         if c not in df_view.columns:
             df_view[c] = np.nan
@@ -127,10 +144,9 @@ def render_table(
 
     search = st.text_input("Buscar", "", key=_SEARCH_WIDGET_KEY).strip().lower()
     if search:
-        mask = (
-            df_sorted["simbolo"].astype(str).str.lower().str.contains(search)
-            | df_sorted["tipo"].astype(str).str.lower().str.contains(search)
-        )
+        mask = df_sorted["simbolo"].astype(str).str.lower().str.contains(search) | df_sorted["tipo"].astype(
+            str
+        ).str.lower().str.contains(search)
         df_sorted = df_sorted[mask]
 
     if df_sorted.empty:
@@ -148,8 +164,6 @@ def render_table(
     for _, r in df_sorted.iterrows():
         sym = str(r["simbolo"])
         tipo = str(r.get("tipo") or "")
-        cur = detect_currency(sym, tipo)
-
         is_favorite = favorites.is_favorite(sym)
 
         row = {
@@ -177,22 +191,17 @@ def render_table(
         hist = quotes_hist.get(sym.upper(), [])
         vals = [
             _as_float_or_none(h.get("chg_pct"))
-            for h in hist[-SPARK_N:] if _as_float_or_none(h.get("chg_pct")) is not None
+            for h in hist[-SPARK_N:]
+            if _as_float_or_none(h.get("chg_pct")) is not None
         ]
         row["Intradía %"] = vals if len(vals) >= 2 else None
         all_spark_vals.extend(vals)
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
-            row["val_usd_num"] = (
-                float(r["valor_actual"]) / rate if not _is_none_nan_inf(r["valor_actual"]) else None
-            )
-            row["costo_usd_num"] = (
-                float(r["costo"]) / rate if not _is_none_nan_inf(r["costo"]) else None
-            )
-            row["pl_usd_num"] = (
-                float(r["pl"]) / rate if not _is_none_nan_inf(r["pl"]) else None
-            )
+            row["val_usd_num"] = float(r["valor_actual"]) / rate if not _is_none_nan_inf(r["valor_actual"]) else None
+            row["costo_usd_num"] = float(r["costo"]) / rate if not _is_none_nan_inf(r["costo"]) else None
+            row["pl_usd_num"] = float(r["pl"]) / rate if not _is_none_nan_inf(r["pl"]) else None
 
         fmt_rows.append(row)
 
@@ -319,7 +328,9 @@ def render_table(
     mark_fragment_ready("portfolio_table", source="backend_optimistic")
     emit_fragment_ready("portfolio_table")
 
-    st.caption("Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo.")
+    st.caption(
+        "Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo."
+    )
 
     drop_cols = list(rename_map.keys()) + ["es_favorito"]
     df_tbl.drop(columns=drop_cols, inplace=True, errors="ignore")

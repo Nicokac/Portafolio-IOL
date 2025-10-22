@@ -9,27 +9,25 @@ import pickle
 import threading
 import time
 from collections import Counter, deque
-from dataclasses import dataclass, field, asdict, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
 
 import numpy as np
-
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
-from services import health
-from services import snapshots as snapshot_service
-from services.cache import CacheService
-from services.cache.market_data_cache import get_market_data_cache
 from application.risk_service import (
     annualized_volatility,
     beta,
     compute_returns,
     max_drawdown,
 )
+from services import health, snapshot_defer
+from services import snapshots as snapshot_service
+from services.cache import CacheService
+from services.cache.market_data_cache import get_market_data_cache
 from shared import snapshot as snapshot_async
-from services import snapshot_defer
 from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -211,15 +209,12 @@ def _initialize_dataset_cache_adapter() -> PortfolioDatasetCacheAdapter:
         try:
             client = redis.Redis.from_url(url)
             logger.info(
-                "portfolio_dataset_cache configured with Redis backend", extra={"url": url}
+                "portfolio_dataset_cache configured with Redis backend",
+                extra={"url": url},
             )
-            return RedisDatasetCacheAdapter(
-                client, ttl_seconds=_DATASET_CACHE_TTL_SECONDS
-            )
+            return RedisDatasetCacheAdapter(client, ttl_seconds=_DATASET_CACHE_TTL_SECONDS)
         except Exception:  # pragma: no cover - fall back to in-memory adapter
-            logger.warning(
-                "Falling back to in-memory dataset cache adapter", exc_info=True
-            )
+            logger.warning("Falling back to in-memory dataset cache adapter", exc_info=True)
     return InMemoryDatasetCacheAdapter(
         ttl_seconds=_DATASET_CACHE_TTL_SECONDS,
         max_entries=_DATASET_CACHE_MAX_ENTRIES,
@@ -468,11 +463,7 @@ class _PortfolioCacheTelemetry:
             total = self._hits + self._misses
             hit_ratio = (self._hits / total) * 100.0 if total else 0.0
             pipeline_total = self._pipeline_hits + self._pipeline_misses
-            pipeline_ratio = (
-                (self._pipeline_hits / pipeline_total) * 100.0
-                if pipeline_total
-                else 0.0
-            )
+            pipeline_ratio = (self._pipeline_hits / pipeline_total) * 100.0 if pipeline_total else 0.0
             return PortfolioCacheMetricsSnapshot(
                 portfolio_view_render_s=self._render_total,
                 portfolio_cache_hit_ratio=hit_ratio,
@@ -484,9 +475,7 @@ class _PortfolioCacheTelemetry:
                 fingerprint_invalidations=dict(self._invalidations),
                 cache_miss_reasons=dict(self._miss_reasons),
                 recent_misses=tuple(dict(item) for item in self._recent_misses),
-                recent_invalidations=tuple(
-                    dict(item) for item in self._recent_invalidations
-                ),
+                recent_invalidations=tuple(dict(item) for item in self._recent_invalidations),
             )
 
 
@@ -542,10 +531,7 @@ def _normalize_fingerprint_value(value: Any) -> Any:
 
 def _fingerprint_from_payload(payload: Mapping[str, Any]) -> str:
     try:
-        normalized = {
-            str(key): _normalize_fingerprint_value(value)
-            for key, value in payload.items()
-        }
+        normalized = {str(key): _normalize_fingerprint_value(value) for key, value in payload.items()}
         serialized = json.dumps(normalized, sort_keys=True, default=_coerce_json)
     except Exception:
         serialized = json.dumps(
@@ -559,11 +545,7 @@ def _extract_controls_attributes(controls: Any) -> dict[str, Any]:
     if controls is None:
         return {}
     if hasattr(controls, "__dict__"):
-        return {
-            key: value
-            for key, value in vars(controls).items()
-            if not key.startswith("_")
-        }
+        return {key: value for key, value in vars(controls).items() if not key.startswith("_")}
     result: dict[str, Any] = {}
     for attr in dir(controls):
         if attr.startswith("_"):
@@ -578,9 +560,7 @@ def _extract_controls_attributes(controls: Any) -> dict[str, Any]:
     return result
 
 
-def _build_incremental_fingerprints(
-    dataset_key: str, controls: Any, filters_key: str
-) -> dict[str, str]:
+def _build_incremental_fingerprints(dataset_key: str, controls: Any, filters_key: str) -> dict[str, str]:
     raw_attributes = _extract_controls_attributes(controls)
     attributes = _sanitize_control_attributes(raw_attributes)
     fingerprints: dict[str, str] = {
@@ -601,19 +581,14 @@ def _build_incremental_fingerprints(
     misc_payload = {
         key: attributes[key]
         for key in attributes
-        if key not in time_payload and key not in fx_payload
+        if key not in time_payload
+        and key not in fx_payload
         and key not in {"hide_cash", "selected_syms", "selected_types", "symbol_query"}
     }
 
-    fingerprints["filters.time"] = (
-        _fingerprint_from_payload(time_payload) if time_payload else "none"
-    )
-    fingerprints["filters.fx"] = (
-        _fingerprint_from_payload(fx_payload) if fx_payload else "none"
-    )
-    fingerprints["filters.misc"] = (
-        _fingerprint_from_payload(misc_payload) if misc_payload else "none"
-    )
+    fingerprints["filters.time"] = _fingerprint_from_payload(time_payload) if time_payload else "none"
+    fingerprints["filters.fx"] = _fingerprint_from_payload(fx_payload) if fx_payload else "none"
+    fingerprints["filters.misc"] = _fingerprint_from_payload(misc_payload) if misc_payload else "none"
 
     return fingerprints
 
@@ -636,7 +611,11 @@ def _compute_returns_block(df_view: pd.DataFrame) -> pd.DataFrame:
         costo = pd.to_numeric(df["costo"], errors="coerce")
         pl = pd.to_numeric(df["pl"], errors="coerce")
         with np.errstate(divide="ignore", invalid="ignore"):
-            ratio = np.where(np.isfinite(costo) & (np.abs(costo) > 1e-9), (pl / costo) * 100.0, np.nan)
+            ratio = np.where(
+                np.isfinite(costo) & (np.abs(costo) > 1e-9),
+                (pl / costo) * 100.0,
+                np.nan,
+            )
         returns = pd.DataFrame({"return_pct": ratio})
         if "simbolo" in df.columns:
             returns["simbolo"] = df["simbolo"].values
@@ -707,13 +686,22 @@ def compute_incremental_view(
 
     totals: PortfolioTotals | None = None
     totals_elapsed = 0.0
-    if _should_reuse_block(
-        dataset_changed=dataset_changed,
-        previous_snapshot=previous_snapshot,
-        previous_fingerprints=prev_fingerprints,
-        current_fingerprints=fingerprints,
-        dependencies=("dataset", "filters.base", "filters.time", "filters.fx", "filters.misc"),
-    ) and "positions_df" in reused_blocks:
+    if (
+        _should_reuse_block(
+            dataset_changed=dataset_changed,
+            previous_snapshot=previous_snapshot,
+            previous_fingerprints=prev_fingerprints,
+            current_fingerprints=fingerprints,
+            dependencies=(
+                "dataset",
+                "filters.base",
+                "filters.time",
+                "filters.fx",
+                "filters.misc",
+            ),
+        )
+        and "positions_df" in reused_blocks
+    ):
         totals = previous_snapshot.totals
         reused_blocks.add("totals")
 
@@ -732,13 +720,13 @@ def compute_incremental_view(
         if (
             not previous_pending
             and _should_reuse_block(
-            dataset_changed=dataset_changed,
-            previous_snapshot=previous_snapshot,
-            previous_fingerprints=prev_fingerprints,
-            current_fingerprints=fingerprints,
-            dependencies=("dataset", "filters.time", "filters.fx"),
-        )
-        and "positions_df" in reused_blocks
+                dataset_changed=dataset_changed,
+                previous_snapshot=previous_snapshot,
+                previous_fingerprints=prev_fingerprints,
+                current_fingerprints=fingerprints,
+                dependencies=("dataset", "filters.time", "filters.fx"),
+            )
+            and "positions_df" in reused_blocks
         ):
             cached_returns = prev_blocks.get("returns_df")
             if isinstance(cached_returns, pd.DataFrame):
@@ -754,13 +742,13 @@ def compute_incremental_view(
         if (
             not previous_pending
             and _should_reuse_block(
-            dataset_changed=dataset_changed,
-            previous_snapshot=previous_snapshot,
-            previous_fingerprints=prev_fingerprints,
-            current_fingerprints=fingerprints,
-            dependencies=("dataset", "filters.base", "filters.misc"),
-        )
-        and "positions_df" in reused_blocks
+                dataset_changed=dataset_changed,
+                previous_snapshot=previous_snapshot,
+                previous_fingerprints=prev_fingerprints,
+                current_fingerprints=fingerprints,
+                dependencies=("dataset", "filters.base", "filters.misc"),
+            )
+            and "positions_df" in reused_blocks
         ):
             contribution_metrics = previous_snapshot.contribution_metrics
             reused_blocks.add("contribution_metrics")
@@ -842,6 +830,7 @@ def _append_incremental_metric(
             exc_info=True,
         )
 
+
 _SYMBOL_RISK_CACHE: dict[tuple[str, str, str], tuple[dict[str, Any], str, float]] = {}
 _SYMBOL_RISK_CACHE_MAX = 512
 
@@ -867,11 +856,10 @@ def _prune_symbol_risk_cache() -> None:
     surplus = len(_SYMBOL_RISK_CACHE) - _SYMBOL_RISK_CACHE_MAX
     if surplus <= 0:
         return
-    ordered_keys = sorted(
-        _SYMBOL_RISK_CACHE.items(), key=lambda item: item[1][2]
-    )
+    ordered_keys = sorted(_SYMBOL_RISK_CACHE.items(), key=lambda item: item[1][2])
     for key, _ in ordered_keys[:surplus]:
         _SYMBOL_RISK_CACHE.pop(key, None)
+
 
 def compute_symbol_risk_metrics(
     tasvc,
@@ -905,9 +893,7 @@ def compute_symbol_risk_metrics(
     try:
         prices = cache.get_history(
             request_symbols,
-            loader=lambda symbols=request_symbols: tasvc.portfolio_history(
-                simbolos=list(symbols), period=period
-            ),
+            loader=lambda symbols=request_symbols: tasvc.portfolio_history(simbolos=list(symbols), period=period),
             period=period,
             benchmark=benchmark,
         )
@@ -961,9 +947,7 @@ def compute_symbol_risk_metrics(
         elif bench_returns.empty:
             sym_beta = float("nan")
         else:
-            aligned_sym, aligned_bench = sym_returns.align(
-                bench_returns, join="inner"
-            )
+            aligned_sym, aligned_bench = sym_returns.align(bench_returns, join="inner")
             sym_beta = beta(aligned_sym, aligned_bench)
 
         record = {
@@ -988,9 +972,7 @@ def compute_symbol_risk_metrics(
     metrics_df = pd.DataFrame(metrics)
     for col in ("volatilidad", "drawdown", "beta"):
         if col in metrics_df.columns:
-            metrics_df[col] = pd.to_numeric(metrics_df[col], errors="coerce").astype(
-                "float32"
-            )
+            metrics_df[col] = pd.to_numeric(metrics_df[col], errors="coerce").astype("float32")
     return metrics_df
 
 
@@ -1084,9 +1066,7 @@ class PortfolioViewModelService:
         self._last_incremental_stats: dict[str, Any] | None = None
         self._snapshot_lock = threading.Lock()
         self._snapshot_kind = "portfolio"
-        self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = (
-            _get_dataset_cache_adapter()
-        )
+        self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = _get_dataset_cache_adapter()
         self._soft_refresh_guard_active = False
         if self._dataset_cache_adapter is not None:
             try:
@@ -1106,9 +1086,7 @@ class PortfolioViewModelService:
         else:
             self._snapshot_storage = snapshot_backend
 
-    def configure_dataset_cache_adapter(
-        self, adapter: PortfolioDatasetCacheAdapter | None
-    ) -> None:
+    def configure_dataset_cache_adapter(self, adapter: PortfolioDatasetCacheAdapter | None) -> None:
         """Override the dataset cache adapter for this service instance."""
 
         if adapter is None:
@@ -1127,7 +1105,10 @@ class PortfolioViewModelService:
             try:
                 backend_name = getter()
             except Exception:
-                logger.debug("No se pudo determinar el backend activo de snapshots", exc_info=True)
+                logger.debug(
+                    "No se pudo determinar el backend activo de snapshots",
+                    exc_info=True,
+                )
         if isinstance(backend_name, str):
             backend_name = backend_name.strip() or None
         elif backend_name is not None:
@@ -1178,9 +1159,7 @@ class PortfolioViewModelService:
         except Exception:
             logger.debug("No se pudo registrar el evento de snapshot", exc_info=True)
 
-    def _should_invalidate_cache(
-        self, dataset_hash: str | None, skip_invalidation: bool
-    ) -> bool:
+    def _should_invalidate_cache(self, dataset_hash: str | None, skip_invalidation: bool) -> bool:
         """Return whether cache invalidation should run for this cycle."""
 
         skip_flag = bool(skip_invalidation)
@@ -1192,7 +1171,9 @@ class PortfolioViewModelService:
             self._soft_refresh_guard_active = True
             logger.info("[PortfolioView] Skipped early invalidate (dataset stable)")
             logger.info(
-                "portfolio_view.skip_invalidation_guarded event=\"skip_invalidation_guarded\" dataset=%s skip_invalidation=%s current=%s",
+                "portfolio_view.skip_invalidation_guarded "
+                'event="skip_invalidation_guarded" dataset=%s '
+                "skip_invalidation=%s current=%s",
                 candidate_hash,
                 skip_flag,
                 current_hash,
@@ -1236,9 +1217,7 @@ class PortfolioViewModelService:
             hashed = pd.util.hash_pandas_object(df, index=True, categorize=True)
             return hashlib.sha1(hashed.values.tobytes()).hexdigest()
         except TypeError:
-            payload = json.dumps(
-                df.to_dict(orient="list"), sort_keys=True, default=_coerce_json
-            ).encode("utf-8")
+            payload = json.dumps(df.to_dict(orient="list"), sort_keys=True, default=_coerce_json).encode("utf-8")
             return hashlib.sha1(payload).hexdigest()
 
     @staticmethod
@@ -1246,9 +1225,7 @@ class PortfolioViewModelService:
         payload = {
             "hide_cash": getattr(controls, "hide_cash", None),
             "selected_syms": sorted(map(str, getattr(controls, "selected_syms", []))),
-            "selected_types": sorted(
-                map(str, getattr(controls, "selected_types", []))
-            ),
+            "selected_types": sorted(map(str, getattr(controls, "selected_types", []))),
             "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
         }
         return json.dumps(payload, sort_keys=True)
@@ -1351,9 +1328,11 @@ class PortfolioViewModelService:
         list_fn = getattr(self._snapshot_storage, "list_snapshots", None)
         history_fetcher: Callable[[], Sequence[Mapping[str, Any]]] | None = None
         if callable(list_fn):
-            history_fetcher = lambda: list_fn(  # type: ignore[assignment]
-                self._snapshot_kind, limit=500, order="asc"
-            )
+
+            def _fetch_history() -> Sequence[Mapping[str, Any]]:
+                return list_fn(self._snapshot_kind, limit=500, order="asc")
+
+            history_fetcher = _fetch_history
 
         payload, metadata = self._snapshot_payload_and_metadata(
             df_view=snapshot.df_view,
@@ -1422,11 +1401,7 @@ class PortfolioViewModelService:
                 with self._snapshot_lock:
                     current = self._snapshot
                     if current is snapshot:
-                        history = (
-                            persisted_history
-                            if persisted_history is not None
-                            else snapshot.historical_total
-                        )
+                        history = persisted_history if persisted_history is not None else snapshot.historical_total
                         self._snapshot = PortfolioViewSnapshot(
                             df_view=snapshot.df_view,
                             totals=snapshot.totals,
@@ -1468,19 +1443,18 @@ class PortfolioViewModelService:
             try:
                 adapter.clear()
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo limpiar el dataset cache tras invalidate_positions", exc_info=True)
-        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
-            "dataset_changed", detail=dataset_key
-        )
+                logger.debug(
+                    "No se pudo limpiar el dataset cache tras invalidate_positions",
+                    exc_info=True,
+                )
+        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation("dataset_changed", detail=dataset_key)
         _log_dataset_cache_event(
             "invalidate",
             dataset_key,
             scope="positions",
             filters_key=current_filters,
         )
-        logger.info(
-            "portfolio_view cache invalidated (positions) dataset=%s", dataset_key
-        )
+        logger.info("portfolio_view cache invalidated (positions) dataset=%s", dataset_key)
 
     def invalidate_filters(self, filters_key: str | None = None) -> None:
         """Invalida el snapshot cuando cambian los filtros relevantes."""
@@ -1496,19 +1470,18 @@ class PortfolioViewModelService:
             try:
                 adapter.clear()
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo limpiar el dataset cache tras invalidate_filters", exc_info=True)
-        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
-            "filters_changed", detail=filters_key
-        )
+                logger.debug(
+                    "No se pudo limpiar el dataset cache tras invalidate_filters",
+                    exc_info=True,
+                )
+        _PORTFOLIO_CACHE_TELEMETRY.record_invalidation("filters_changed", detail=filters_key)
         _log_dataset_cache_event(
             "invalidate",
             current_dataset,
             scope="filters",
             filters_key=filters_key,
         )
-        logger.info(
-            "portfolio_view cache invalidated (filters) filters=%s", filters_key
-        )
+        logger.info("portfolio_view cache invalidated (filters) filters=%s", filters_key)
 
     def _store_dataset_cache_entry(
         self,
@@ -1524,9 +1497,7 @@ class PortfolioViewModelService:
         adapter = self._dataset_cache_adapter
         if adapter is None or not dataset_key:
             return
-        cache_key = _dataset_cache_key(
-            dataset_key, filters_key, fingerprints, timestamp_bucket
-        )
+        cache_key = _dataset_cache_key(dataset_key, filters_key, fingerprints, timestamp_bucket)
         try:
             history_payload = tuple(dict(row) for row in self._history_records)
             entry = PortfolioDatasetCacheEntry(
@@ -1551,9 +1522,7 @@ class PortfolioViewModelService:
                 timestamp_bucket=timestamp_bucket,
             )
         except Exception:  # pragma: no cover - cache errors should not break flow
-            logger.debug(
-                "No se pudo almacenar la entrada del dataset cache", exc_info=True
-            )
+            logger.debug("No se pudo almacenar la entrada del dataset cache", exc_info=True)
 
     def _compute_viewmodel_phase(
         self,
@@ -1579,15 +1548,13 @@ class PortfolioViewModelService:
         dataset_changed = raw_dataset_changed and not skip_invalidation
         filters_changed = filters_key != self._filters_key
 
-        should_invalidate_cache = self._should_invalidate_cache(
-            dataset_key, skip_invalidation
-        )
+        should_invalidate_cache = self._should_invalidate_cache(dataset_key, skip_invalidation)
         if not should_invalidate_cache:
             dataset_changed = False
 
         if skip_invalidation and dataset_key:
             logger.info(
-                "portfolio_view.skip_invalidation_applied event=\"skip_invalidation\" dataset=%s filters=%s",
+                'portfolio_view.skip_invalidation_applied event="skip_invalidation" dataset=%s filters=%s',
                 dataset_key,
                 filters_key,
             )
@@ -1602,17 +1569,13 @@ class PortfolioViewModelService:
         with self._snapshot_lock:
             current_snapshot = self._snapshot
 
-        fingerprints = _build_incremental_fingerprints(
-            dataset_key, controls, filters_key
-        )
+        fingerprints = _build_incremental_fingerprints(dataset_key, controls, filters_key)
 
         cache_adapter = self._dataset_cache_adapter
         cached_entry: PortfolioDatasetCacheEntry | None = None
         warm_entry: PortfolioDatasetCacheEntry | None = None
         if cache_adapter is not None and dataset_key:
-            cache_key = _dataset_cache_key(
-                dataset_key, filters_key, fingerprints, timestamp_bucket
-            )
+            cache_key = _dataset_cache_key(dataset_key, filters_key, fingerprints, timestamp_bucket)
             candidate = cache_adapter.get(cache_key)
             if isinstance(candidate, PortfolioDatasetCacheEntry):
                 cached_entry = candidate
@@ -1630,11 +1593,7 @@ class PortfolioViewModelService:
             entry_fingerprints = dict(cached_entry.fingerprints)
             entry_timestamp_match = cached_entry.timestamp_bucket == timestamp_bucket
             entry_filters_match = cached_entry.filters_key == filters_key
-            can_reuse_entry = (
-                entry_filters_match
-                and entry_fingerprints == dict(fingerprints)
-                and entry_timestamp_match
-            )
+            can_reuse_entry = entry_filters_match and entry_fingerprints == dict(fingerprints) and entry_timestamp_match
             reason = ""
             if include_extended and pending:
                 can_reuse_entry = False
@@ -1654,13 +1613,9 @@ class PortfolioViewModelService:
                     self._current_dataset_hash = dataset_key
                     self._filters_key = filters_key
                     self._incremental_cache = dict(cached_entry.incremental_cache)
-                    self._incremental_cache.setdefault(
-                        "fingerprints", entry_fingerprints
-                    )
+                    self._incremental_cache.setdefault("fingerprints", entry_fingerprints)
                     self._last_incremental_stats = dict(cached_entry.stats)
-                    self._history_records = [
-                        dict(row) for row in cached_entry.history_records
-                    ]
+                    self._history_records = [dict(row) for row in cached_entry.history_records]
                 elapsed = time.perf_counter() - render_start
                 _PORTFOLIO_CACHE_TELEMETRY.record_hit(
                     elapsed_s=elapsed,
@@ -1736,9 +1691,7 @@ class PortfolioViewModelService:
                     "warm",
                     dataset_key,
                     filters_key=filters_key,
-                    pending=";".join(warm_entry.pending_metrics)
-                    if warm_entry.pending_metrics
-                    else "none",
+                    pending=";".join(warm_entry.pending_metrics) if warm_entry.pending_metrics else "none",
                     include_extended=include_extended,
                     timestamp_bucket=timestamp_bucket,
                 )
@@ -1754,11 +1707,7 @@ class PortfolioViewModelService:
         )
         effective_filters_changed = filters_changed or incremental_changed
 
-        can_reuse_snapshot = (
-            previous_snapshot is not None
-            and not dataset_changed
-            and not effective_filters_changed
-        )
+        can_reuse_snapshot = previous_snapshot is not None and not dataset_changed and not effective_filters_changed
 
         if can_reuse_snapshot:
             pending = tuple(getattr(previous_snapshot, "pending_metrics", ()))
@@ -1844,11 +1793,7 @@ class PortfolioViewModelService:
             pending_metrics = ("extended_metrics",)
 
         storage_id = None
-        if (
-            previous_snapshot is not None
-            and not dataset_changed
-            and not effective_filters_changed
-        ):
+        if previous_snapshot is not None and not dataset_changed and not effective_filters_changed:
             storage_id = previous_snapshot.storage_id
 
         snapshot = PortfolioViewSnapshot(
@@ -1908,7 +1853,8 @@ class PortfolioViewModelService:
         _PORTFOLIO_CACHE_TELEMETRY.record_pipeline_event(hit=pipeline_hit)
 
         logger.info(
-            "portfolio_view phase=%s dataset_changed=%s filters_changed=%s pending=%s reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
+            "portfolio_view phase=%s dataset_changed=%s filters_changed=%s pending=%s "
+            "reused=%s recomputed=%s apply=%.4fs totals=%.4fs",
             telemetry_phase,
             dataset_changed,
             effective_filters_changed,
@@ -1920,9 +1866,7 @@ class PortfolioViewModelService:
         )
 
         total_elapsed = time.perf_counter() - render_start
-        previous_pending = tuple(
-            getattr(previous_snapshot, "pending_metrics", ()) or ()
-        )
+        previous_pending = tuple(getattr(previous_snapshot, "pending_metrics", ()) or ())
         follow_up_extended = include_extended and previous_pending == ("extended_metrics",)
 
         if not follow_up_extended:
@@ -2093,6 +2037,7 @@ class PortfolioViewModelService:
             )
         return snapshot
 
+
 def _coerce_json(value: Any) -> Any:
     if isinstance(value, (pd.Timestamp, pd.Timedelta)):
         return value.isoformat()
@@ -2122,7 +2067,9 @@ def _apply_filters(
     )
 
 
-def _compute_contribution_metrics(df_view: pd.DataFrame) -> PortfolioContributionMetrics:
+def _compute_contribution_metrics(
+    df_view: pd.DataFrame,
+) -> PortfolioContributionMetrics:
     if df_view is None or df_view.empty:
         return PortfolioContributionMetrics.empty()
 
@@ -2146,11 +2093,7 @@ def _compute_contribution_metrics(df_view: pd.DataFrame) -> PortfolioContributio
 
     numeric_cols = list(cols.values())
 
-    by_symbol = (
-        df.groupby(["tipo", "simbolo"], dropna=False)[numeric_cols]
-        .sum(min_count=1)
-        .reset_index()
-    )
+    by_symbol = df.groupby(["tipo", "simbolo"], dropna=False)[numeric_cols].sum(min_count=1).reset_index()
 
     total_val = by_symbol["valor_actual"].sum(min_count=1)
     total_pl = by_symbol["pl"].sum(min_count=1)
@@ -2165,11 +2108,7 @@ def _compute_contribution_metrics(df_view: pd.DataFrame) -> PortfolioContributio
     else:
         by_symbol["pl_pct"] = (by_symbol["pl"] / total_pl) * 100.0
 
-    by_type = (
-        df.groupby("tipo", dropna=False)[numeric_cols]
-        .sum(min_count=1)
-        .reset_index()
-    )
+    by_type = df.groupby("tipo", dropna=False)[numeric_cols].sum(min_count=1).reset_index()
 
     if not np.isfinite(total_val) or np.isclose(total_val, 0.0):
         by_type["valor_actual_pct"] = np.nan
@@ -2280,7 +2219,9 @@ def _as_mapping(value: Any) -> dict[str, float]:
     return {}
 
 
-def _history_df_from_snapshot_records(records: Sequence[Mapping[str, Any]]) -> pd.DataFrame:
+def _history_df_from_snapshot_records(
+    records: Sequence[Mapping[str, Any]],
+) -> pd.DataFrame:
     history_rows: list[dict[str, float]] = []
     for row in records:
         payload = row.get("payload") if isinstance(row, Mapping) else {}
@@ -2307,9 +2248,7 @@ def _get_numeric(payload: Mapping[str, Any], key: str) -> float:
         return 0.0
 
 
-def _ensure_container(
-    placeholder: Any, references: MutableMapping[str, Any]
-) -> Any:
+def _ensure_container(placeholder: Any, references: MutableMapping[str, Any]) -> Any:
     """Return a persistent container bound to ``placeholder``."""
 
     container = references.get("container")
@@ -2417,4 +2356,3 @@ def update_charts(
             snapshot=snapshot,
         )
     return refs
-

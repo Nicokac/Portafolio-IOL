@@ -1,4 +1,5 @@
 """Shared cache helpers for market history and fundamentals."""
+
 from __future__ import annotations
 
 import logging
@@ -8,17 +9,16 @@ import sqlite3
 import sys
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
-from fnmatch import fnmatch
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 from threading import Lock
 from typing import Any, Callable, Iterable, Sequence
 
-from shared.errors import CacheUnavailableError
-
 import pandas as pd
 
 from services.cache.core import CacheService
+from shared.errors import CacheUnavailableError
 from shared.settings import (
     market_data_cache_backend,
     market_data_cache_path,
@@ -360,9 +360,7 @@ class _SQLiteBackend(_BasePersistentBackend):
             if not self._path.parent.exists():
                 self._path.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self._path) as conn:
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, expires_at REAL, payload BLOB)"
-                )
+                conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, expires_at REAL, payload BLOB)")
                 conn.commit()
             self._initialised = True
 
@@ -379,9 +377,7 @@ class _SQLiteBackend(_BasePersistentBackend):
         except OSError:
             return 0
 
-    def run_maintenance(
-        self, *, vacuum: bool = True, now: float | None = None
-    ) -> dict[str, float | int]:
+    def run_maintenance(self, *, vacuum: bool = True, now: float | None = None) -> dict[str, float | int]:
         """Clean expired rows and optionally compact the SQLite cache."""
 
         self._ensure()
@@ -416,9 +412,7 @@ class _SQLiteBackend(_BasePersistentBackend):
     def get(self, key: str) -> tuple[float | None, Any] | None:
         self._ensure()
         with self._connection() as conn:
-            row = conn.execute(
-                "SELECT expires_at, payload FROM cache WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT expires_at, payload FROM cache WHERE key = ?", (key,)).fetchone()
         if row is None:
             return None
         expires_at, payload = row
@@ -513,9 +507,7 @@ def _initialise_backend() -> _BasePersistentBackend | None:
     if backend_name == "redis":
         url = market_data_cache_redis_url
         if not url:
-            LOGGER.warning(
-                "MARKET_DATA_CACHE_REDIS_URL no definido; usando caché en memoria"
-            )
+            LOGGER.warning("MARKET_DATA_CACHE_REDIS_URL no definido; usando caché en memoria")
             return None
         LOGGER.info("Market data cache persistente configurado con Redis (%s)", url)
         try:
@@ -523,9 +515,7 @@ def _initialise_backend() -> _BasePersistentBackend | None:
         except RuntimeError:
             LOGGER.exception("Fallo al inicializar Redis; se usará caché en memoria")
             return None
-    LOGGER.warning(
-        "Backend de caché desconocido '%s'; se usará caché en memoria", backend_name
-    )
+    LOGGER.warning("Backend de caché desconocido '%s'; se usará caché en memoria", backend_name)
     return None
 
 
@@ -661,17 +651,13 @@ def create_persistent_cache(namespace: str) -> PersistentCacheService:
     return _create_cache(namespace)
 
 
-def run_persistent_cache_maintenance(
-    *, now: float | None = None, vacuum: bool = True
-) -> dict[str, float | int] | None:
+def run_persistent_cache_maintenance(*, now: float | None = None, vacuum: bool = True) -> dict[str, float | int] | None:
     """Run maintenance tasks for the SQLite persistent cache backend."""
 
     backend = _get_backend()
     if not isinstance(backend, _SQLiteBackend):
         if backend is None:
-            LOGGER.debug(
-                "Omitiendo mantenimiento de caché persistente: backend sin inicializar"
-            )
+            LOGGER.debug("Omitiendo mantenimiento de caché persistente: backend sin inicializar")
         else:
             LOGGER.debug(
                 "Omitiendo mantenimiento de caché persistente: backend %s no es SQLite",
@@ -710,12 +696,8 @@ class MarketDataCache:
         prediction_ttl: float | None = None,
     ) -> None:
         self.history_cache = history_cache or _create_cache("market_history")
-        self.fundamentals_cache = fundamentals_cache or _create_cache(
-            "market_fundamentals"
-        )
-        self.prediction_cache = prediction_cache or _create_cache(
-            "market_predictions"
-        )
+        self.fundamentals_cache = fundamentals_cache or _create_cache("market_fundamentals")
+        self.prediction_cache = prediction_cache or _create_cache("market_predictions")
         if default_ttl is not None:
             self.default_ttl = float(default_ttl)
         if prediction_ttl is not None:

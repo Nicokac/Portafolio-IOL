@@ -1,6 +1,6 @@
+import importlib
 import sys
 from pathlib import Path
-import importlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,6 +21,7 @@ def _reload_auth(monkeypatch, key: bytes | None):
         monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())
         config.settings.tokens_key = key.decode()
     import infrastructure.iol.auth as auth_module
+
     importlib.reload(auth_module)
     return auth_module
 

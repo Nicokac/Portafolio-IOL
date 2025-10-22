@@ -9,8 +9,8 @@ mode.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Callable, Mapping
 
 import numpy as np
@@ -21,7 +21,6 @@ from application.predictive_service import (
     update_cache_metrics,
 )
 from domain.adaptive_cache_lock import adaptive_cache_lock
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +98,9 @@ class RecommendationService:
         fundamentals_df: pd.DataFrame | None = None,
     ) -> None:
         self._portfolio_df = portfolio_df.copy() if isinstance(portfolio_df, pd.DataFrame) else pd.DataFrame()
-        self._opportunities_df = opportunities_df.copy() if isinstance(opportunities_df, pd.DataFrame) else pd.DataFrame()
+        self._opportunities_df = (
+            opportunities_df.copy() if isinstance(opportunities_df, pd.DataFrame) else pd.DataFrame()
+        )
         self._risk_metrics_df = risk_metrics_df.copy() if isinstance(risk_metrics_df, pd.DataFrame) else pd.DataFrame()
         self._fundamentals_df = fundamentals_df.copy() if isinstance(fundamentals_df, pd.DataFrame) else pd.DataFrame()
         self._analysis: dict[str, object] | None = None
@@ -110,9 +111,7 @@ class RecommendationService:
             if "valor_actual" not in self._portfolio_df.columns:
                 # Fallback to costo when valuation column is missing.
                 if "costo" in self._portfolio_df.columns:
-                    self._portfolio_df["valor_actual"] = pd.to_numeric(
-                        self._portfolio_df["costo"], errors="coerce"
-                    )
+                    self._portfolio_df["valor_actual"] = pd.to_numeric(self._portfolio_df["costo"], errors="coerce")
                 else:
                     self._portfolio_df["valor_actual"] = 0.0
             self._portfolio_df["valor_actual"] = pd.to_numeric(
@@ -183,9 +182,7 @@ class RecommendationService:
         total = float(merged["valor_actual"].sum())
         if total <= 0:
             return pd.Series(dtype=float)
-        distribution = (
-            merged.groupby("beta_bucket")["valor_actual"].sum().sort_values(ascending=False) / total
-        )
+        distribution = merged.groupby("beta_bucket")["valor_actual"].sum().sort_values(ascending=False) / total
         return distribution
 
     def _compute_portfolio_beta_average(self) -> float:
@@ -405,9 +402,7 @@ class RecommendationService:
         sector_dist = analysis.get("sector_distribution")
         if isinstance(sector_dist, pd.Series) and sector in sector_dist.index:
             current = float(sector_dist.loc[sector]) * 100
-            reasons.append(
-                f"Sector {sector} hoy representa {current:.1f}% del portafolio"
-            )
+            reasons.append(f"Sector {sector} hoy representa {current:.1f}% del portafolio")
         elif sector in under.get("sector", set()) or sector:
             reasons.append(f"Agrega exposición al sector {sector}")
 
@@ -415,9 +410,7 @@ class RecommendationService:
             currency_dist = analysis.get("currency_distribution")
             if isinstance(currency_dist, pd.Series) and currency in currency_dist.index:
                 current = float(currency_dist.loc[currency]) * 100
-                reasons.append(
-                    f"{currency} equivale al {current:.1f}% de tu cartera"
-                )
+                reasons.append(f"{currency} equivale al {current:.1f}% de tu cartera")
             elif currency in under.get("moneda", set()):
                 reasons.append(f"Diversifica moneda sumando {currency}")
 
@@ -428,9 +421,7 @@ class RecommendationService:
             beta_note += " (agresivo)"
         reasons.append(beta_note)
 
-        reasons.append(
-            f"Rentabilidad esperada {expected_return:.1f}% combinando crecimiento y dividendos"
-        )
+        reasons.append(f"Rentabilidad esperada {expected_return:.1f}% combinando crecimiento y dividendos")
 
         if mode == "low_risk":
             reasons.append("Enfoque defensivo priorizando estabilidad")
@@ -457,14 +448,10 @@ class RecommendationService:
         contribution = float(allocation_pct) * float(expected_return) / 100.0
         if not np.isfinite(contribution):
             contribution = 0.0
-        parts.append(
-            f"Aporta {contribution:+.2f} % al retorno esperado del portafolio."
-        )
+        parts.append(f"Aporta {contribution:+.2f} % al retorno esperado del portafolio.")
 
         if predicted_return is not None and np.isfinite(predicted_return):
-            parts.append(
-                f"Predicción sectorial EMA: {predicted_return:.2f}%"
-            )
+            parts.append(f"Predicción sectorial EMA: {predicted_return:.2f}%")
 
         beta_value = float(beta)
         base_beta = float(portfolio_beta)
@@ -483,13 +470,9 @@ class RecommendationService:
         sector_dist = analysis.get("sector_distribution")
         if isinstance(sector_dist, pd.Series) and sector_label in sector_dist.index:
             share = float(sector_dist.loc[sector_label]) * 100
-            parts.append(
-                f"Contribuye a diversificación sectorial ({sector_label} hoy {share:.1f}%)."
-            )
+            parts.append(f"Contribuye a diversificación sectorial ({sector_label} hoy {share:.1f}%).")
         else:
-            parts.append(
-                f"Contribuye a diversificación sectorial incorporando {sector_label}."
-            )
+            parts.append(f"Contribuye a diversificación sectorial incorporando {sector_label}.")
 
         return " ".join(parts)
 
@@ -573,9 +556,7 @@ class RecommendationService:
                     tipo=tipo,
                     currency=currency,
                     is_existing=True,
-                    predicted_return_pct=float(
-                        predictions.get(sector, float("nan"))
-                    ),
+                    predicted_return_pct=float(predictions.get(sector, float("nan"))),
                 )
             )
 
@@ -643,17 +624,13 @@ class RecommendationService:
                 reducible = allocation - min_weight
                 mask = reducible > 1e-12
                 if np.any(mask):
-                    reduction = (allocation.sum() - 1.0) * reducible[mask] / float(
-                        reducible[mask].sum()
-                    )
+                    reduction = (allocation.sum() - 1.0) * reducible[mask] / float(reducible[mask].sum())
                     allocation[np.flatnonzero(mask)] -= reduction
             else:
                 headroom = max_weight - allocation
                 mask = headroom > 1e-12
                 if np.any(mask):
-                    addition = (1.0 - allocation.sum()) * headroom[mask] / float(
-                        headroom[mask].sum()
-                    )
+                    addition = (1.0 - allocation.sum()) * headroom[mask] / float(headroom[mask].sum())
                     allocation[np.flatnonzero(mask)] += addition
 
         allocation = np.clip(allocation, min_weight, max_weight)
@@ -743,12 +720,7 @@ class RecommendationService:
             if isinstance(symbol_series, pd.Series)
             else []
         )
-        sector_list = (
-            opportunities.get("sector", pd.Series(dtype=str))
-            .astype("string")
-            .str.strip()
-            .tolist()
-        )
+        sector_list = opportunities.get("sector", pd.Series(dtype=str)).astype("string").str.strip().tolist()
 
         LOGGER.debug(
             "RecommendationService solicitando lock adaptativo para predicciones (modo=%s, símbolos=%s, sectores=%s)",
@@ -774,17 +746,10 @@ class RecommendationService:
         if isinstance(predictions_df, pd.DataFrame) and not predictions_df.empty:
             predictions_df = predictions_df.copy()
             predictions_df["sector"] = (
-                predictions_df.get("sector", pd.Series(dtype=str))
-                .astype("string")
-                .fillna("")
-                .str.strip()
+                predictions_df.get("sector", pd.Series(dtype=str)).astype("string").fillna("").str.strip()
             )
-            predicted_values = pd.to_numeric(
-                predictions_df.get("predicted_return"), errors="coerce"
-            )
-            for sector_value, predicted in zip(
-                predictions_df["sector"], predicted_values
-            ):
+            predicted_values = pd.to_numeric(predictions_df.get("predicted_return"), errors="coerce")
+            for sector_value, predicted in zip(predictions_df["sector"], predicted_values):
                 sector_label = str(sector_value)
                 if not sector_label:
                     continue
@@ -847,9 +812,7 @@ class RecommendationService:
                     sector=sector,
                     tipo=tipo,
                     currency=currency,
-                    predicted_return_pct=float(
-                        prediction_map.get(sector, float("nan"))
-                    ),
+                    predicted_return_pct=float(prediction_map.get(sector, float("nan"))),
                 )
             )
 
@@ -914,9 +877,7 @@ class RecommendationService:
         df = df.head(int(max(top_n, 1)))
 
         if not df.empty and not df["is_existing"].any():
-            existing_pool = base_df.query("is_existing").sort_values(
-                "score", ascending=False
-            )
+            existing_pool = base_df.query("is_existing").sort_values("score", ascending=False)
             if not existing_pool.empty:
                 replacement = existing_pool.iloc[0]
                 if replacement["symbol"] not in set(df["symbol"]):
@@ -956,20 +917,12 @@ class RecommendationService:
             adjustment = 100.0 - total_pct
             last_idx = df.index[-1]
             df.loc[last_idx, "allocation_%"] += adjustment
-            df.loc[last_idx, "allocation_amount"] = (
-                df.loc[last_idx, "allocation_%"] * normalized_amount / 100
-            )
+            df.loc[last_idx, "allocation_amount"] = df.loc[last_idx, "allocation_%"] * normalized_amount / 100
 
-        df["expected_return"] = pd.to_numeric(
-            df.get("expected_return"), errors="coerce"
-        )
-        df["predicted_return_pct"] = pd.to_numeric(
-            df.get("predicted_return_pct"), errors="coerce"
-        )
+        df["expected_return"] = pd.to_numeric(df.get("expected_return"), errors="coerce")
+        df["predicted_return_pct"] = pd.to_numeric(df.get("predicted_return_pct"), errors="coerce")
         df["beta"] = pd.to_numeric(df.get("beta"), errors="coerce")
-        df["sector"] = (
-            df.get("sector", pd.Series(dtype=str)).astype("string").fillna("Sin sector")
-        )
+        df["sector"] = df.get("sector", pd.Series(dtype=str)).astype("string").fillna("Sin sector")
         df["tipo"] = df.get("tipo", pd.Series(dtype=str)).astype("string")
         df["currency"] = df.get("currency", pd.Series(dtype=str)).astype("string")
 
@@ -981,9 +934,7 @@ class RecommendationService:
             expected_val = float(expected_val) if np.isfinite(expected_val) else 0.0
             beta_val = pd.to_numeric(row.get("beta"), errors="coerce")
             beta_val = float(beta_val) if np.isfinite(beta_val) else float("nan")
-            predicted_val = pd.to_numeric(
-                row.get("predicted_return_pct"), errors="coerce"
-            )
+            predicted_val = pd.to_numeric(row.get("predicted_return_pct"), errors="coerce")
             predicted_float = float(predicted_val) if np.isfinite(predicted_val) else None
             sector_label = str(row.get("sector", ""))
             extended.append(
@@ -1005,4 +956,3 @@ class RecommendationService:
 __all__ = [
     "RecommendationService",
 ]
-

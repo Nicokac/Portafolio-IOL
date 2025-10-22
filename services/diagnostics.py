@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Utilities for collecting and reporting startup diagnostics."""
-
 import logging
 import socket
 import time
@@ -16,6 +14,8 @@ from services.health import get_health_metrics, record_environment_snapshot
 from shared.cache import cache as shared_cache
 from shared.export import ensure_kaleido_runtime
 from shared.time_provider import TimeProvider
+
+"""Utilities for collecting and reporting startup diagnostics."""
 
 
 analysis_logger = logging.getLogger("analysis")

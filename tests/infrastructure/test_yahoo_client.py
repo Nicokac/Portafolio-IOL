@@ -227,9 +227,7 @@ def test_http_404_downgraded_and_cached(monkeypatch: pytest.MonkeyPatch, caplog)
         with pytest.raises(AppError):
             client.get_fundamentals("missing")
 
-    debug_messages = [
-        record.message for record in caplog.records if record.levelno == logging.DEBUG
-    ]
+    debug_messages = [record.message for record in caplog.records if record.levelno == logging.DEBUG]
     assert any("Yahoo Finance devolvió 404" in message for message in debug_messages)
     assert len(session_factory.sessions) == 1
 

@@ -1,4 +1,5 @@
 """Focused tests around lightweight technical analytics helpers."""
+
 from __future__ import annotations
 
 import sys
@@ -6,11 +7,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from application.ta_service import simple_alerts
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from application.ta_service import simple_alerts
 
 
 def test_simple_alerts_detects_core_signals() -> None:

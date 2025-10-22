@@ -1,7 +1,6 @@
 """Streamlit-facing controller helpers for the portfolio dashboard."""
 
 import importlib
-import importlib
 from functools import lru_cache
 from typing import Any, Callable
 
@@ -10,8 +9,8 @@ import streamlit as st
 from services import snapshot_defer
 from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
-from shared.user_actions import log_user_action
 from shared.fragment_state import get_fragment_state_guardian
+from shared.user_actions import log_user_action
 
 
 @lru_cache(maxsize=1)
@@ -110,9 +109,7 @@ def render_portfolio_ui(
             dataset_hash = None
         if isinstance(dataset_hash, str) and dataset_hash:
             telemetry["dataset_hash"] = dataset_hash
-        reused_visual_cache = bool(
-            st.session_state.get("__portfolio_visual_cache_reused__")
-        )
+        reused_visual_cache = bool(st.session_state.get("__portfolio_visual_cache_reused__"))
         telemetry["reused_visual_cache"] = reused_visual_cache
         visual_cache = st.session_state.get("cached_render")
         if isinstance(visual_cache, dict):

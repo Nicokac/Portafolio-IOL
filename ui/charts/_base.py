@@ -1,5 +1,6 @@
 # ui/charts.py
 from __future__ import annotations
+
 import logging
 from typing import Any
 
@@ -8,6 +9,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
 from ..palette import get_active_palette
 
 logger = logging.getLogger(__name__)
@@ -22,11 +24,8 @@ FONT_FAMILY = "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
 SHOW_AXIS_TITLES = True
 
 # Paleta estable por símbolo
-_SYMBOL_PALETTE = (
-    px.colors.qualitative.Set2
-    + px.colors.qualitative.Pastel
-    + px.colors.qualitative.Light24
-)
+_SYMBOL_PALETTE = px.colors.qualitative.Set2 + px.colors.qualitative.Pastel + px.colors.qualitative.Light24
+
 
 def _rgba(hex_color: str, alpha: float) -> str:
     """Convert hex color to rgba string with given alpha."""
@@ -34,19 +33,23 @@ def _rgba(hex_color: str, alpha: float) -> str:
     r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r},{g},{b},{alpha})"
 
+
 def _symbol_color_map(symbols: list[str]) -> dict[str, str]:
     return {s: _SYMBOL_PALETTE[i % len(_SYMBOL_PALETTE)] for i, s in enumerate(symbols)}
+
 
 def _color_discrete_map(df: pd.DataFrame, tipo_col: str = "tipo"):
     pal = get_active_palette()
     tipos = [t for t in df[tipo_col].dropna().unique().tolist()]
     return {t: pal.categories.get(t, pal.accent) for t in tipos}
 
+
 def _si(n: float) -> str:
     try:
         return f"{n:,.0f}".replace(",", "_").replace(".", ",").replace("_", ".")
     except Exception:
         return str(n)
+
 
 def _apply_layout(fig: go.Figure, title: str | None = None, *, show_legend=True, y0_line=False):
     pal = get_active_palette()
@@ -63,9 +66,11 @@ def _apply_layout(fig: go.Figure, title: str | None = None, *, show_legend=True,
     fig.update_yaxes(showgrid=True, gridcolor=pal.grid, zeroline=y0_line, zerolinecolor=pal.grid)
     return fig
 
+
 # =========================
 # Gráficos – Portafolio
 # =========================
+
 
 def plot_pl_topn(df: pd.DataFrame, n: int = 20):
     if df is None or df.empty or "pl" not in df.columns:
@@ -76,7 +81,9 @@ def plot_pl_topn(df: pd.DataFrame, n: int = 20):
     order = d["simbolo"].astype(str).tolist()
     sym_map = _symbol_color_map(order)
     fig = px.bar(
-        d, x="simbolo", y="pl",
+        d,
+        x="simbolo",
+        y="pl",
         color="simbolo",
         hover_data={"tipo": True, "pl": ":,.0f"},
         color_discrete_map=sym_map,
@@ -91,37 +98,50 @@ def plot_pl_topn(df: pd.DataFrame, n: int = 20):
         fig.update_yaxes(title=None, tickformat=",")
     return _apply_layout(fig, show_legend=False)
 
+
 def plot_donut_tipo(df: pd.DataFrame):
     if df is None or df.empty or "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    d = (df.dropna(subset=["valor_actual"])
-           .groupby("tipo", dropna=True)["valor_actual"].sum().reset_index())
+    d = df.dropna(subset=["valor_actual"]).groupby("tipo", dropna=True)["valor_actual"].sum().reset_index()
     if d.empty:
         return None
     fig = px.pie(
-        d, names="tipo", values="valor_actual", hole=0.60,
-        color="tipo", color_discrete_map=_color_discrete_map(d, "tipo"),
+        d,
+        names="tipo",
+        values="valor_actual",
+        hole=0.60,
+        color="tipo",
+        color_discrete_map=_color_discrete_map(d, "tipo"),
     )
     fig.update_traces(
         textinfo="percent",
         hovertemplate="%{label}: %{value:,.0f}<extra></extra>",
-        pull=[0.02]*len(d),
+        pull=[0.02] * len(d),
     )
     total = _si(float(d["valor_actual"].sum()))
-    fig.add_annotation(text=f"<b>Total</b><br>{total}", showarrow=False, font=dict(size=14), x=0.5, y=0.5)
+    fig.add_annotation(
+        text=f"<b>Total</b><br>{total}",
+        showarrow=False,
+        font=dict(size=14),
+        x=0.5,
+        y=0.5,
+    )
     return _apply_layout(fig, show_legend=True)
+
 
 def plot_dist_por_tipo(df: pd.DataFrame):
     if df is None or df.empty or "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    d = (df.dropna(subset=["valor_actual"])
-           .groupby("tipo", dropna=True)["valor_actual"].sum().reset_index())
+    d = df.dropna(subset=["valor_actual"]).groupby("tipo", dropna=True)["valor_actual"].sum().reset_index()
     if d.empty:
         return None
     order = d.sort_values("valor_actual", ascending=False)["tipo"].tolist()
     fig = px.bar(
-        d, x="tipo", y="valor_actual",
-        color="tipo", color_discrete_map=_color_discrete_map(d, "tipo"),
+        d,
+        x="tipo",
+        y="valor_actual",
+        color="tipo",
+        color_discrete_map=_color_discrete_map(d, "tipo"),
         hover_data={"valor_actual": ":,.0f"},
         category_orders={"tipo": order},
     )
@@ -153,11 +173,7 @@ def plot_portfolio_timeline(history_df: pd.DataFrame | None):
     if df.empty:
         return None
 
-    value_cols = [
-        col
-        for col in ["total_value", "total_cost", "total_pl"]
-        if col in df.columns
-    ]
+    value_cols = [col for col in ["total_value", "total_cost", "total_pl"] if col in df.columns]
     if not value_cols:
         return None
 
@@ -245,16 +261,13 @@ def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str 
     df["simbolo"] = df["simbolo"].astype(str).replace({"": "Sin símbolo"})
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce").fillna(0.0)
 
-    pivot = (
-        df.pivot_table(
-            index="tipo",
-            columns="simbolo",
-            values=value_col,
-            aggfunc="sum",
-            fill_value=0.0,
-        )
-        .sort_index()
-    )
+    pivot = df.pivot_table(
+        index="tipo",
+        columns="simbolo",
+        values=value_col,
+        aggfunc="sum",
+        fill_value=0.0,
+    ).sort_index()
 
     if pivot.empty:
         return None
@@ -269,10 +282,7 @@ def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str 
     palette = list(dict.fromkeys(type_color_map.get(t, "#636EFA") for t in tipos))
     if len(palette) < 2:
         palette = palette * 2
-    colorscale = [
-        (i / (len(palette) - 1), color)
-        for i, color in enumerate(palette)
-    ]
+    colorscale = [(i / (len(palette) - 1), color) for i, color in enumerate(palette)]
 
     fig = go.Figure(
         data=[
@@ -300,6 +310,7 @@ def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str 
 # =================
 # Gráficos avanzados
 # =================
+
 
 # def plot_bubble_pl_vs_costo(df: pd.DataFrame, x_axis: str, y_axis: str):
 def plot_bubble_pl_vs_costo(
@@ -329,11 +340,7 @@ def plot_bubble_pl_vs_costo(
 
     # Evita tamaños negativos o NaN
     if "valor_actual" in d.columns:
-        d["valor_ok"] = (
-            pd.to_numeric(d["valor_actual"], errors="coerce")
-            .clip(lower=0.0)
-            .fillna(0.0)
-        )
+        d["valor_ok"] = pd.to_numeric(d["valor_actual"], errors="coerce").clip(lower=0.0).fillna(0.0)
     else:
         d["valor_ok"] = 1.0
 
@@ -378,11 +385,8 @@ def plot_bubble_pl_vs_costo(
         hover_data=hover_data,
         **color_kwargs,
     )
-    # pal = get_active_palette()
     pal = get_active_palette()
     if SHOW_AXIS_TITLES:
-        # fig.update_xaxes(title=x_axis.replace("_", " ").capitalize(), tickformat=",")
-        # fig.update_yaxes(title=y_axis.replace("_", " ").capitalize(), tickformat=",", zeroline=True, zerolinecolor=pal.grid)
         fig.update_xaxes(
             title=x_axis.replace("_", " ").capitalize(),
             tickformat=",",
@@ -396,10 +400,13 @@ def plot_bubble_pl_vs_costo(
             type="log" if log_y else "linear",
         )
     else:
-        # fig.update_xaxes(title=None, tickformat=",")
-        # fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
         fig.update_xaxes(tickformat=",", type="log" if log_x else "linear")
-        fig.update_yaxes(tickformat=",", zeroline=True, zerolinecolor=pal.grid, type="log" if log_y else "linear")
+        fig.update_yaxes(
+            tickformat=",",
+            zeroline=True,
+            zerolinecolor=pal.grid,
+            type="log" if log_y else "linear",
+        )
 
     if benchmark_col and benchmark_col in d.columns:
         bench_points = d[d[benchmark_col].fillna(False)]
@@ -407,17 +414,14 @@ def plot_bubble_pl_vs_costo(
             bench_x = bench_points.iloc[0][x_axis]
             bench_y = bench_points.iloc[0][y_axis]
             if pd.notna(bench_x):
-                fig.add_vline(
-                    x=float(bench_x), line_dash="dot", line_color=pal.highlight_bg
-                )
+                fig.add_vline(x=float(bench_x), line_dash="dot", line_color=pal.highlight_bg)
             if pd.notna(bench_y):
-                fig.add_hline(
-                    y=float(bench_y), line_dash="dot", line_color=pal.highlight_bg
-                )
+                fig.add_hline(y=float(bench_y), line_dash="dot", line_color=pal.highlight_bg)
 
     return _apply_layout(fig)
 
-#def plot_heat_pl_pct(df: pd.DataFrame):
+
+# def plot_heat_pl_pct(df: pd.DataFrame):
 def plot_heat_pl_pct(df: pd.DataFrame, color_scale: str = "RdBu"):
     if df is None or df.empty or "pl_%" not in df.columns or "simbolo" not in df.columns:
         return None
@@ -451,9 +455,11 @@ def plot_heat_pl_pct(df: pd.DataFrame, color_scale: str = "RdBu"):
         fig.update_yaxes(title=None, zeroline=True, zerolinecolor=pal.grid)
     return _apply_layout(fig, show_legend=False)
 
+
 # ==============================
 # P/L diaria (solo valores/delta)
 # ==============================
+
 
 def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
     cols = [c for c in ("simbolo", "pl_d", "chg_%", "pld_%", "tipo") if c in df.columns]
@@ -484,7 +490,9 @@ def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
         custom_cols.append("chg_%")
 
     fig = px.bar(
-        d, x="simbolo", y="pl_d",
+        d,
+        x="simbolo",
+        y="pl_d",
         color="simbolo",
         color_discrete_map=sym_map,
         hover_data={"tipo": True},
@@ -513,15 +521,17 @@ def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
 
     return _apply_layout(fig, show_legend=False, y0_line=True)
 
+
 # ============================
 # (Opcional) comparativo VS
 # ============================
 
+
 def plot_pl_daily_vs_total(df: pd.DataFrame, n: int = 20):
     if df is None or df.empty:
         return None
-    cols = ["simbolo","pl","pl_d","tipo"]
-    if not set(["simbolo","pl"]).issubset(df.columns):
+    cols = ["simbolo", "pl", "pl_d", "tipo"]
+    if not set(["simbolo", "pl"]).issubset(df.columns):
         return None
     d = df[[c for c in cols if c in df.columns]].copy()
     if "pl" not in d or d["pl"].dropna().empty:
@@ -529,7 +539,7 @@ def plot_pl_daily_vs_total(df: pd.DataFrame, n: int = 20):
     d = d.sort_values("pl", ascending=False).head(n)
     d_long = []
     for _, r in d.iterrows():
-        d_long.append({"simbolo": r["simbolo"], "métrica": "P/L total",  "valor": r["pl"]})
+        d_long.append({"simbolo": r["simbolo"], "métrica": "P/L total", "valor": r["pl"]})
         if pd.notna(r.get("pl_d")):
             d_long.append({"simbolo": r["simbolo"], "métrica": "P/L diaria", "valor": r["pl_d"]})
     d_long = pd.DataFrame(d_long)
@@ -538,7 +548,10 @@ def plot_pl_daily_vs_total(df: pd.DataFrame, n: int = 20):
     order = d["simbolo"].astype(str).tolist()
     pal = get_active_palette()
     fig = px.bar(
-        d_long, x="simbolo", y="valor", color="métrica",
+        d_long,
+        x="simbolo",
+        y="valor",
+        color="métrica",
         barmode="group",
         color_discrete_sequence=[pal.accent, pal.positive],
         hover_data={"valor": ":,.0f"},
@@ -553,9 +566,11 @@ def plot_pl_daily_vs_total(df: pd.DataFrame, n: int = 20):
         fig.update_yaxes(title=None, tickformat=",", zeroline=True, zerolinecolor=pal.grid)
     return _apply_layout(fig, show_legend=True)
 
+
 # ============================
 # Subplots / Indicadores
 # ============================
+
 
 def plot_price_ma_bbands(df: pd.DataFrame, simbolo: str):
     """
@@ -567,19 +582,36 @@ def plot_price_ma_bbands(df: pd.DataFrame, simbolo: str):
     fig = go.Figure()
 
     # Precio (línea)
-    fig.add_trace(go.Scatter(
-        x=df.index, y=df["Close"], name=f"{simbolo} Close", mode="lines", line=dict(width=2)
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=df.index,
+            y=df["Close"],
+            name=f"{simbolo} Close",
+            mode="lines",
+            line=dict(width=2),
+        )
+    )
 
     # SMA/EMA (opcionales)
-    if "SMA_FAST" in df: fig.add_trace(go.Scatter(x=df.index, y=df["SMA_FAST"], name="SMA corta", mode="lines"))
-    if "SMA_SLOW" in df: fig.add_trace(go.Scatter(x=df.index, y=df["SMA_SLOW"], name="SMA larga", mode="lines"))
-    if "EMA" in df:      fig.add_trace(go.Scatter(x=df.index, y=df["EMA"],      name="EMA", mode="lines"))
+    if "SMA_FAST" in df:
+        fig.add_trace(go.Scatter(x=df.index, y=df["SMA_FAST"], name="SMA corta", mode="lines"))
+    if "SMA_SLOW" in df:
+        fig.add_trace(go.Scatter(x=df.index, y=df["SMA_SLOW"], name="SMA larga", mode="lines"))
+    if "EMA" in df:
+        fig.add_trace(go.Scatter(x=df.index, y=df["EMA"], name="EMA", mode="lines"))
 
     # Bandas de Bollinger
-    if {"BB_U","BB_L"}.issubset(df.columns):
+    if {"BB_U", "BB_L"}.issubset(df.columns):
         pal = get_active_palette()
-        fig.add_trace(go.Scatter(x=df.index, y=df["BB_U"], name="Banda Sup", mode="lines", line=dict(width=1)))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["BB_U"],
+                name="Banda Sup",
+                mode="lines",
+                line=dict(width=1),
+            )
+        )
         fig.add_trace(
             go.Scatter(
                 x=df.index,
@@ -592,12 +624,21 @@ def plot_price_ma_bbands(df: pd.DataFrame, simbolo: str):
             )
         )
     if "BB_M" in df:
-        fig.add_trace(go.Scatter(x=df.index, y=df["BB_M"], name="Banda Media", mode="lines", line=dict(width=1, dash="dot")))
+        fig.add_trace(
+            go.Scatter(
+                x=df.index,
+                y=df["BB_M"],
+                name="Banda Media",
+                mode="lines",
+                line=dict(width=1, dash="dot"),
+            )
+        )
 
     pal = get_active_palette()
     fig.update_yaxes(tickformat=",", title=None, gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title=f"Precio + MAs + Bollinger — {simbolo}", show_legend=True)
+
 
 def plot_rsi(df: pd.DataFrame):
     """RSI con líneas guía 70/30."""
@@ -607,10 +648,11 @@ def plot_rsi(df: pd.DataFrame):
     pal = get_active_palette()
     fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], name="RSI", mode="lines"))
     fig.add_hrect(y0=70, y1=100, fillcolor=_rgba(pal.negative, 0.08), line_width=0)
-    fig.add_hrect(y0=0,  y1=30,  fillcolor=_rgba(pal.positive, 0.08), line_width=0)
-    fig.update_yaxes(range=[0,100], title=None, gridcolor=pal.grid)
+    fig.add_hrect(y0=0, y1=30, fillcolor=_rgba(pal.positive, 0.08), line_width=0)
+    fig.update_yaxes(range=[0, 100], title=None, gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title="RSI (14)", show_legend=False)
+
 
 def plot_volume(df: pd.DataFrame):
     """Volumen en barras."""
@@ -622,6 +664,7 @@ def plot_volume(df: pd.DataFrame):
     fig.update_yaxes(title=None, tickformat=",", gridcolor=pal.grid)
     fig.update_xaxes(title=None, showgrid=False)
     return _apply_layout(fig, title="Volumen", show_legend=False)
+
 
 def plot_correlation_heatmap(prices_df: pd.DataFrame, *, title: str | None = None):
     """
@@ -663,10 +706,11 @@ def plot_correlation_heatmap(prices_df: pd.DataFrame, *, title: str | None = Non
         color_continuous_scale="RdBu",
         range_color=[-1, 1],
     )
-    fig.update_traces(hovertemplate='Correlación entre %{x} y %{y}:<br><b>%{z:.2f}</b><extra></extra>')
+    fig.update_traces(hovertemplate="Correlación entre %{x} y %{y}:<br><b>%{z:.2f}</b><extra></extra>")
     fig.update_xaxes(side="bottom")
     chart_title = title or "Matriz de Correlación de Rendimientos Diarios"
     return _apply_layout(fig, title=chart_title)
+
 
 def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow: int):
     """
@@ -685,60 +729,169 @@ def plot_technical_analysis_chart(df_ind: pd.DataFrame, sma_fast: int, sma_slow:
     )
 
     # 1) Precio + Indicadores
-    fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["Close"], name="Close", mode="lines"), row=1, col=1)
+    fig.add_trace(
+        go.Scatter(x=df_ind.index, y=df_ind["Close"], name="Close", mode="lines"),
+        row=1,
+        col=1,
+    )
     if "SMA_FAST" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_FAST"], name=f"SMA {sma_fast}", mode="lines"), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["SMA_FAST"],
+                name=f"SMA {sma_fast}",
+                mode="lines",
+            ),
+            row=1,
+            col=1,
+        )
     if "SMA_SLOW" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["SMA_SLOW"], name=f"SMA {sma_slow}", mode="lines"), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["SMA_SLOW"],
+                name=f"SMA {sma_slow}",
+                mode="lines",
+            ),
+            row=1,
+            col=1,
+        )
     if "EMA" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA", mode="lines"), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["EMA"], name="EMA", mode="lines"),
+            row=1,
+            col=1,
+        )
     if "BB_U" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["BB_U"], name="BB Upper", line=dict(dash="dot")),
+            row=1,
+            col=1,
+        )
     if "BB_L" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["BB_L"], name="BB Lower", line=dict(dash="dot")),
+            row=1,
+            col=1,
+        )
     if {"ICHI_CONV", "ICHI_BASE"}.issubset(df_ind.columns):
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_CONV"], name="Ichimoku Conv", mode="lines"), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_BASE"], name="Ichimoku Base", mode="lines"), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["ICHI_CONV"],
+                name="Ichimoku Conv",
+                mode="lines",
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["ICHI_BASE"],
+                name="Ichimoku Base",
+                mode="lines",
+            ),
+            row=1,
+            col=1,
+        )
     if {"ICHI_A", "ICHI_B"}.issubset(df_ind.columns):
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_A"], name="Ichimoku A", line=dict(width=0), showlegend=False), row=1, col=1)
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ICHI_B"], name="Ichimoku B", fill="tonexty", line=dict(width=0), fillcolor="rgba(200,200,200,0.2)", showlegend=False), row=1, col=1)
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["ICHI_A"],
+                name="Ichimoku A",
+                line=dict(width=0),
+                showlegend=False,
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_ind.index,
+                y=df_ind["ICHI_B"],
+                name="Ichimoku B",
+                fill="tonexty",
+                line=dict(width=0),
+                fillcolor="rgba(200,200,200,0.2)",
+                showlegend=False,
+            ),
+            row=1,
+            col=1,
+        )
     fig.update_yaxes(title_text="Precio", row=1, col=1)
 
     # 2) MACD (si existe)
     if "MACD" in df_ind:
-        fig.add_trace(go.Bar(x=df_ind.index, y=df_ind.get("MACD_HIST"), name="MACD Hist"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["MACD"], name="MACD", mode="lines"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["MACD_SIGNAL"], name="Señal", mode="lines"), row=2, col=1)
+        fig.add_trace(
+            go.Bar(x=df_ind.index, y=df_ind.get("MACD_HIST"), name="MACD Hist"),
+            row=2,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["MACD"], name="MACD", mode="lines"),
+            row=2,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["MACD_SIGNAL"], name="Señal", mode="lines"),
+            row=2,
+            col=1,
+        )
         fig.update_yaxes(title_text="MACD", row=2, col=1)
 
     # 3) RSI
     if "RSI" in df_ind:
         # fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=2, col=1)
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"), row=3, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["RSI"], name="RSI", mode="lines"),
+            row=3,
+            col=1,
+        )
         pal = get_active_palette()
 
-    # # 3) Volumen (si existe)
-        fig.add_hrect(y0=70, y1=100, line_width=0, fillcolor=_rgba(pal.negative, 0.08), row=3, col=1)
+        # # 3) Volumen (si existe)
+        fig.add_hrect(
+            y0=70,
+            y1=100,
+            line_width=0,
+            fillcolor=_rgba(pal.negative, 0.08),
+            row=3,
+            col=1,
+        )
         fig.add_hrect(y0=0, y1=30, line_width=0, fillcolor=_rgba(pal.positive, 0.08), row=3, col=1)
         fig.update_yaxes(title_text="RSI", range=[0, 100], row=3, col=1)
 
     # 4) Estocástico
     if "STOCH_K" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["STOCH_K"], name="%K", mode="lines"), row=4, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["STOCH_K"], name="%K", mode="lines"),
+            row=4,
+            col=1,
+        )
         if "STOCH_D" in df_ind:
-            fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["STOCH_D"], name="%D", mode="lines"), row=4, col=1)
+            fig.add_trace(
+                go.Scatter(x=df_ind.index, y=df_ind["STOCH_D"], name="%D", mode="lines"),
+                row=4,
+                col=1,
+            )
         fig.update_yaxes(title_text="Estocástico", range=[0, 100], row=4, col=1)
 
     # 5) ATR
     if "ATR" in df_ind:
-        fig.add_trace(go.Scatter(x=df_ind.index, y=df_ind["ATR"], name="ATR", mode="lines"), row=5, col=1)
+        fig.add_trace(
+            go.Scatter(x=df_ind.index, y=df_ind["ATR"], name="ATR", mode="lines"),
+            row=5,
+            col=1,
+        )
         fig.update_yaxes(title_text="ATR", row=5, col=1)
 
     # 6) Volumen
     if "Volume" in df_ind:
         fig.add_trace(go.Bar(x=df_ind.index, y=df_ind["Volume"], name="Volumen"), row=6, col=1)
         fig.update_yaxes(title_text="Volumen", row=6, col=1)
-        
+
     _apply_layout(fig, show_legend=True)
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), legend_title_text="")
     return fig

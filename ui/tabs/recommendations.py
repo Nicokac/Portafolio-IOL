@@ -17,10 +17,10 @@ from application.adaptive_predictive_service import (
     prepare_adaptive_history,
     simulate_adaptive_forecast,
 )
-from application.profile_service import DEFAULT_PROFILE, ProfileService
 from application.predictive_service import get_cache_stats, predict_sector_performance
-from ui.charts.correlation_matrix import build_correlation_figure
+from application.profile_service import DEFAULT_PROFILE, ProfileService
 from shared.logging_utils import silence_streamlit_warnings
+from ui.charts.correlation_matrix import build_correlation_figure
 
 from .recommendations import (
     _SESSION_STATE_KEY,
@@ -127,9 +127,7 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
             ),
             "opportunities": pd.DataFrame(),
             "risk_metrics": pd.DataFrame(),
-            "amount": float(
-                pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()
-            ),
+            "amount": float(pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()),
             "mode_label": mode_label,
             "mode_key": mode_key,
             "analysis": {},

@@ -6,9 +6,11 @@ import streamlit as st
 from .palette import get_palette
 from .utils.bootstrap import ensure_bootstrap_assets
 
+
 @dataclass
 class UISettings:
     """Simple container for UI configuration."""
+
     layout: str = "wide"  # "wide" or "centered"
     theme: str = "dark"  # "light" or "dark"
 
@@ -72,6 +74,7 @@ def apply_settings(settings: UISettings) -> None:
         st.markdown(style_block, unsafe_allow_html=True)
     except TypeError:
         st.markdown(style_block)
+
 
 def init_ui() -> UISettings:
     """Convenience helper to obtain current settings and apply them."""

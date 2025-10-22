@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Sidebar panel summarising recent data source health."""
-
 import math
 import re
 from pathlib import Path
@@ -14,6 +12,9 @@ from services.health import get_health_metrics
 from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
 from shared.version import __version__
+
+"""Sidebar panel summarising recent data source health."""
+
 
 format_note = shared_notes.format_note
 
@@ -212,9 +213,7 @@ def _format_duration_seconds(seconds: Optional[float]) -> Optional[str]:
     return f"{value * 1000:.0f} ms"
 
 
-def _format_session_monitoring(
-    data: Optional[Mapping[str, Any]]
-) -> Iterable[str]:
+def _format_session_monitoring(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     if not isinstance(data, Mapping):
         return ["_Sin métricas de sesiones._"]
 
@@ -271,9 +270,7 @@ def _normalize_numeric_samples(data: Any) -> list[float]:
     else:
         raw_samples = data
 
-    if not isinstance(raw_samples, Iterable) or isinstance(
-        raw_samples, (str, bytes, bytearray)
-    ):
+    if not isinstance(raw_samples, Iterable) or isinstance(raw_samples, (str, bytes, bytearray)):
         return []
 
     samples: list[float] = []
@@ -303,7 +300,9 @@ def _extract_stat_samples(entry: Any, metric: str) -> list[float]:
     return _normalize_numeric_samples(block.get("samples"))
 
 
-def _build_series_dataframe(series: Mapping[str, Iterable[float]]) -> Optional[pd.DataFrame]:
+def _build_series_dataframe(
+    series: Mapping[str, Iterable[float]],
+) -> Optional[pd.DataFrame]:
     columns: dict[str, pd.Series] = {}
     for label, values in series.items():
         numeric_values = list(values)
@@ -359,19 +358,13 @@ def _format_environment_badge(snapshot: Any) -> Optional[str]:
     if not isinstance(snapshot, Mapping):
         return None
 
-    python_token = _format_version_token(
-        snapshot.get("python_version") or snapshot.get("python"), icon="🐍"
-    )
+    python_token = _format_version_token(snapshot.get("python_version") or snapshot.get("python"), icon="🐍")
     streamlit_token = _format_version_token(
         snapshot.get("streamlit_version") or snapshot.get("streamlit"),
         icon="📊",
         label="Streamlit",
     )
-    runtime_label = _sanitize_text(
-        snapshot.get("runtime")
-        or snapshot.get("environment")
-        or snapshot.get("platform")
-    )
+    runtime_label = _sanitize_text(snapshot.get("runtime") or snapshot.get("environment") or snapshot.get("platform"))
     runtime_token = f"🖥️ {runtime_label}" if runtime_label else None
 
     tokens = [token for token in (python_token, streamlit_token, runtime_token) if token]
@@ -520,15 +513,9 @@ def _iter_diagnostic_checks(
                 yield None, entry
 
 
-def _format_diagnostic_entry(
-    name: Optional[str], data: Mapping[str, Any]
-) -> Optional[str]:
+def _format_diagnostic_entry(name: Optional[str], data: Mapping[str, Any]) -> Optional[str]:
     status_icon, status_label = _status_badge(data.get("status"))
-    label = (
-        _sanitize_text(data.get("label") or data.get("name"))
-        or (str(name).strip() if name else None)
-        or "Chequeo"
-    )
+    label = _sanitize_text(data.get("label") or data.get("name")) or (str(name).strip() if name else None) or "Chequeo"
     ts_text = _format_timestamp(_coerce_timestamp(data.get("ts")))
     detail_text = _sanitize_text(data.get("detail") or data.get("message"))
 
@@ -594,11 +581,7 @@ def _format_dependencies_section(data: Optional[Mapping[str, Any]]) -> Iterable[
         if not isinstance(entry, Mapping):
             continue
         icon, status_label = _status_badge(entry.get("status"))
-        label_text = (
-            _sanitize_text(entry.get("label"))
-            or _sanitize_text(name)
-            or "Dependencia"
-        )
+        label_text = _sanitize_text(entry.get("label")) or _sanitize_text(name) or "Dependencia"
         ts_text = _format_timestamp(_coerce_timestamp(entry.get("ts")))
         detail_text = _sanitize_text(entry.get("detail"))
 
@@ -644,9 +627,7 @@ def _format_risk_summary(data: Optional[Mapping[str, Any]]) -> str:
         fallback_int = int(fallback_count)
         if fallback_int:
             if isinstance(fallback_ratio, (int, float)):
-                severity_tokens.append(
-                    f"🛟 Fallbacks {fallback_int}/{total_int} ({fallback_ratio:.0%})"
-                )
+                severity_tokens.append(f"🛟 Fallbacks {fallback_int}/{total_int} ({fallback_ratio:.0%})")
             else:
                 severity_tokens.append(f"🛟 Fallbacks {fallback_int}/{total_int}")
 
@@ -758,9 +739,7 @@ def _format_risk_detail_line(category: str, stats: Mapping[str, Any]) -> str:
 
     detail_suffix = f" • {' | '.join(status_parts)}" if status_parts else ""
 
-    return format_note(
-        f"🧮 {label} — {count_int} incidencias • {metrics_summary}{detail_suffix}"
-    )
+    return format_note(f"🧮 {label} — {count_int} incidencias • {metrics_summary}{detail_suffix}")
 
 
 def _format_risk_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
@@ -793,21 +772,18 @@ def _format_risk_detail_section(data: Optional[Mapping[str, Any]]) -> Iterable[s
 
     return lines or ["_Sin incidencias registradas._"]
 
+
 def _extract_yfinance_history(data: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     history_raw = data.get("history")
     entries: list[Mapping[str, Any]] = []
-    if isinstance(history_raw, Iterable) and not isinstance(
-        history_raw, (str, bytes, bytearray)
-    ):
+    if isinstance(history_raw, Iterable) and not isinstance(history_raw, (str, bytes, bytearray)):
         for entry in history_raw:
             if isinstance(entry, Mapping):
                 entries.append(entry)
     return entries
 
 
-def _compress_yfinance_history(
-    entries: Sequence[Mapping[str, Any]], *, limit: int = 5
-) -> Optional[str]:
+def _compress_yfinance_history(entries: Sequence[Mapping[str, Any]], *, limit: int = 5) -> Optional[str]:
     if not entries:
         return None
 
@@ -842,9 +818,7 @@ def _format_timestamp(ts: Optional[float]) -> str:
     return snapshot.text
 
 
-def _format_authentication_section(
-    data: Optional[Mapping[str, Any]]
-) -> Iterable[str]:
+def _format_authentication_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
     if not isinstance(data, Mapping):
         return ["_Sin autenticaciones registradas._"]
 
@@ -858,24 +832,14 @@ def _format_authentication_section(
     detail_text = _sanitize_text(data.get("detail") or data.get("message"))
     error_text = _sanitize_text(data.get("error"))
 
-    last_ok_ts = _coerce_timestamp(
-        data.get("last_success_ts") or data.get("last_refresh_ts") or data.get("ts")
-    )
+    last_ok_ts = _coerce_timestamp(data.get("last_success_ts") or data.get("last_refresh_ts") or data.get("ts"))
     last_error_ts = _coerce_timestamp(data.get("last_error_ts") or data.get("last_failure_ts"))
 
     token_age = data.get("token_age_secs") or data.get("token_age")
-    token_age_txt = (
-        f"token {float(token_age):.0f}s"
-        if isinstance(token_age, (int, float))
-        else None
-    )
+    token_age_txt = f"token {float(token_age):.0f}s" if isinstance(token_age, (int, float)) else None
 
     expires_in = data.get("expires_in_secs") or data.get("expires_in")
-    expires_txt = (
-        f"expira en {float(expires_in):.0f}s"
-        if isinstance(expires_in, (int, float))
-        else None
-    )
+    expires_txt = f"expira en {float(expires_in):.0f}s" if isinstance(expires_in, (int, float)) else None
 
     reauth_flag = bool(data.get("reauth_required") or data.get("reauth"))
 
@@ -917,16 +881,8 @@ def _format_snapshot_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]
     freshness_value = data.get("freshness")
     freshness_icon, freshness_label = _freshness_badge(freshness_value)
 
-    last_use_ts = _coerce_timestamp(
-        data.get("last_used_ts")
-        or data.get("last_load_ts")
-        or data.get("last_access_ts")
-    )
-    last_saved_ts = _coerce_timestamp(
-        data.get("last_saved_ts")
-        or data.get("last_created_ts")
-        or data.get("ts")
-    )
+    last_use_ts = _coerce_timestamp(data.get("last_used_ts") or data.get("last_load_ts") or data.get("last_access_ts"))
+    last_saved_ts = _coerce_timestamp(data.get("last_saved_ts") or data.get("last_created_ts") or data.get("ts"))
 
     backend = data.get("backend")
     backend_label = None
@@ -1018,9 +974,7 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
         or "desconocido"
     )
     provider_key = provider_value.casefold()
-    provider_label = _YFINANCE_PROVIDER_LABELS.get(
-        provider_key, f"Fuente: {provider_value}"
-    )
+    provider_label = _YFINANCE_PROVIDER_LABELS.get(provider_key, f"Fuente: {provider_value}")
 
     fallback_value = latest_entry.get("fallback")
     if fallback_value is None:
@@ -1048,15 +1002,11 @@ def _format_yfinance_status(data: Optional[dict]) -> str:
     else:
         icon = "✅"
 
-    status_label = _YFINANCE_STATUS_LABELS.get(
-        result_key, result_key.title() if result_key else "Desconocido"
-    )
+    status_label = _YFINANCE_STATUS_LABELS.get(result_key, result_key.title() if result_key else "Desconocido")
 
     timestamp_value = None
     if isinstance(latest_entry, Mapping):
-        timestamp_value = _coerce_timestamp(
-            latest_entry.get("last_fetch_ts") or latest_entry.get("ts")
-        )
+        timestamp_value = _coerce_timestamp(latest_entry.get("last_fetch_ts") or latest_entry.get("ts"))
     if timestamp_value is None:
         timestamp_value = _coerce_timestamp(data.get("last_fetch_ts") or data.get("ts"))
     ts_text = _format_timestamp(timestamp_value)
@@ -1195,6 +1145,10 @@ def _format_quote_providers(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
             parts.append(f"prom. {float(avg_ms):.0f} ms")
         if isinstance(last_ms, (int, float)):
             parts.append(f"último {float(last_ms):.0f} ms")
+        if isinstance(p50_ms, (int, float)):
+            parts.append(f"p50 {float(p50_ms):.0f} ms")
+        if isinstance(p95_ms, (int, float)):
+            parts.append(f"p95 {float(p95_ms):.0f} ms")
         if rate_count:
             rate_bits: list[str] = [f"limit {rate_count}"]
             if isinstance(rate_avg, (int, float)):
@@ -1316,17 +1270,8 @@ def _format_macro_history(
 
     lines: list[str] = []
     for attempt in reversed(recent[-limit:]):
-        status = str(
-            attempt.get("status_normalized")
-            or attempt.get("status")
-            or "unknown"
-        ).casefold()
-        label = str(
-            attempt.get("provider_label")
-            or attempt.get("label")
-            or attempt.get("provider")
-            or "desconocido"
-        )
+        status = str(attempt.get("status_normalized") or attempt.get("status") or "unknown").casefold()
+        label = str(attempt.get("provider_label") or attempt.get("label") or attempt.get("provider") or "desconocido")
         ts = _format_timestamp(attempt.get("ts"))
         elapsed = attempt.get("elapsed_ms")
         if isinstance(elapsed, (int, float)):
@@ -1341,9 +1286,7 @@ def _format_macro_history(
             candidate = missing_raw.strip()
             if candidate:
                 missing = [candidate]
-        elif isinstance(missing_raw, Iterable) and not isinstance(
-            missing_raw, (bytes, bytearray, str)
-        ):
+        elif isinstance(missing_raw, Iterable) and not isinstance(missing_raw, (bytes, bytearray, str)):
             missing = [str(item).strip() for item in missing_raw if str(item).strip()]
         missing_txt = f" • sin series: {', '.join(missing)}" if missing else ""
         fallback_flag = bool(attempt.get("fallback"))
@@ -1364,12 +1307,7 @@ def _format_macro_history(
         else:
             status_label = status.title()
 
-        lines.append(
-            format_note(
-                f"{icon} {label}: {status_label} • {ts} ({elapsed_txt})"
-                f"{detail_txt}{missing_txt}"
-            )
-        )
+        lines.append(format_note(f"{icon} {label}: {status_label} • {ts} ({elapsed_txt}){detail_txt}{missing_txt}"))
 
     return lines
 
@@ -1433,12 +1371,8 @@ def _format_macro_provider(summary: Mapping[str, Any]) -> str:
 
     total = summary.get("count")
     total_int = int(total) if isinstance(total, (int, float)) else 0
-    status_counts = (
-        summary.get("status_counts") if isinstance(summary.get("status_counts"), Mapping) else {}
-    )
-    status_ratios = (
-        summary.get("status_ratios") if isinstance(summary.get("status_ratios"), Mapping) else {}
-    )
+    status_counts = summary.get("status_counts") if isinstance(summary.get("status_counts"), Mapping) else {}
+    status_ratios = summary.get("status_ratios") if isinstance(summary.get("status_ratios"), Mapping) else {}
 
     parts: list[str] = []
     success_count = status_counts.get("success")
@@ -1482,9 +1416,7 @@ def _format_macro_provider(summary: Mapping[str, Any]) -> str:
         parts.append(latency_line)
 
     summary_txt = f" — {' • '.join(parts)}" if parts else ""
-    return format_note(
-        f"{icon} {label}: {status_label} • {ts} ({elapsed_txt}){detail_txt}{summary_txt}"
-    )
+    return format_note(f"{icon} {label}: {status_label} • {ts} ({elapsed_txt}){detail_txt}{summary_txt}")
 
 
 def _format_macro_overall(summary: Mapping[str, Any]) -> Optional[str]:
@@ -1492,12 +1424,8 @@ def _format_macro_overall(summary: Mapping[str, Any]) -> Optional[str]:
     if not isinstance(total, (int, float)) or int(total) <= 0:
         return None
     total_int = int(total)
-    status_counts = (
-        summary.get("status_counts") if isinstance(summary.get("status_counts"), Mapping) else {}
-    )
-    status_ratios = (
-        summary.get("status_ratios") if isinstance(summary.get("status_ratios"), Mapping) else {}
-    )
+    status_counts = summary.get("status_counts") if isinstance(summary.get("status_counts"), Mapping) else {}
+    status_ratios = summary.get("status_ratios") if isinstance(summary.get("status_ratios"), Mapping) else {}
 
     parts: list[str] = []
     success_count = status_counts.get("success")
@@ -1578,7 +1506,12 @@ def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
 
     percentiles = stats.get("percentiles")
     if isinstance(percentiles, Mapping):
-        for name, display in (("p50", "P50"), ("p90", "P90"), ("p95", "P95"), ("p99", "P99")):
+        for name, display in (
+            ("p50", "P50"),
+            ("p90", "P90"),
+            ("p95", "P95"),
+            ("p99", "P99"),
+        ):
             value = percentiles.get(name)
             if isinstance(value, (int, float)):
                 parts.append(f"{display} {float(value):.0f} ms")
@@ -1596,16 +1529,12 @@ def _format_tab_latency_entry(key: str, stats: Mapping[str, Any]) -> str:
         else:
             parts.append(f"OK {int(success_count)}/{total_int}")
 
-    error_ratio_value = (
-        stats.get("error_ratio") if isinstance(stats.get("error_ratio"), (int, float)) else None
-    )
+    error_ratio_value = stats.get("error_ratio") if isinstance(stats.get("error_ratio"), (int, float)) else None
 
     error_count = stats.get("error_count")
     if isinstance(error_count, (int, float)) and total_int:
         if isinstance(error_ratio_value, (int, float)):
-            parts.append(
-                f"errores {int(error_count)}/{total_int} ({error_ratio_value:.0%})"
-            )
+            parts.append(f"errores {int(error_count)}/{total_int} ({error_ratio_value:.0%})")
         else:
             parts.append(f"errores {int(error_count)}/{total_int}")
 
@@ -1639,31 +1568,23 @@ def _format_tab_latency_section(data: Optional[Mapping[str, Any]]) -> Iterable[s
     return lines or ["_Sin latencias registradas._"]
 
 
-def _format_adapter_fallback_line(
-    adapter_label: str, provider_stats: Mapping[str, Any]
-) -> str:
+def _format_adapter_fallback_line(adapter_label: str, provider_stats: Mapping[str, Any]) -> str:
     provider_label = str(provider_stats.get("label") or "desconocido")
     count = provider_stats.get("count")
     fallback_count = provider_stats.get("fallback_count")
     fallback_ratio = provider_stats.get("fallback_ratio")
     status_counts = (
-        provider_stats.get("status_counts")
-        if isinstance(provider_stats.get("status_counts"), Mapping)
-        else {}
+        provider_stats.get("status_counts") if isinstance(provider_stats.get("status_counts"), Mapping) else {}
     )
     status_ratios = (
-        provider_stats.get("status_ratios")
-        if isinstance(provider_stats.get("status_ratios"), Mapping)
-        else {}
+        provider_stats.get("status_ratios") if isinstance(provider_stats.get("status_ratios"), Mapping) else {}
     )
 
     total_int = int(count) if isinstance(count, (int, float)) else 0
     metrics: list[str] = []
     if isinstance(fallback_count, (int, float)) and total_int:
         if isinstance(fallback_ratio, (int, float)):
-            metrics.append(
-                f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})"
-            )
+            metrics.append(f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})")
         elif int(fallback_count):
             metrics.append(f"fallback {int(fallback_count)}/{total_int}")
 
@@ -1686,12 +1607,12 @@ def _format_adapter_fallback_line(
     if not metrics:
         metrics.append("sin métricas registradas")
 
-    return format_note(
-        f"🛟 {adapter_label} → {provider_label} — {' • '.join(metrics)}"
-    )
+    return format_note(f"🛟 {adapter_label} → {provider_label} — {' • '.join(metrics)}")
 
 
-def _format_adapter_fallback_section(data: Optional[Mapping[str, Any]]) -> Iterable[str]:
+def _format_adapter_fallback_section(
+    data: Optional[Mapping[str, Any]],
+) -> Iterable[str]:
     if not isinstance(data, Mapping):
         return ["_Sin registros de fallbacks._"]
 
@@ -1730,34 +1651,20 @@ def _format_adapter_fallback_section(data: Optional[Mapping[str, Any]]) -> Itera
             metrics: list[str] = []
             if isinstance(fallback_count, (int, float)) and total_int:
                 if isinstance(fallback_ratio, (int, float)):
-                    metrics.append(
-                        f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})"
-                    )
+                    metrics.append(f"fallback {fallback_ratio:.0%} ({int(fallback_count)}/{total_int})")
                 elif int(fallback_count):
                     metrics.append(f"fallback {int(fallback_count)}/{total_int}")
-            status_counts = (
-                stats.get("status_counts")
-                if isinstance(stats.get("status_counts"), Mapping)
-                else {}
-            )
-            status_ratios = (
-                stats.get("status_ratios")
-                if isinstance(stats.get("status_ratios"), Mapping)
-                else {}
-            )
+            status_counts = stats.get("status_counts") if isinstance(stats.get("status_counts"), Mapping) else {}
+            status_ratios = stats.get("status_ratios") if isinstance(stats.get("status_ratios"), Mapping) else {}
             success_count = status_counts.get("success")
             if isinstance(success_count, (int, float)) and total_int:
                 success_ratio = status_ratios.get("success")
                 if isinstance(success_ratio, (int, float)):
-                    metrics.append(
-                        f"OK {int(success_count)}/{total_int} ({success_ratio:.0%})"
-                    )
+                    metrics.append(f"OK {int(success_count)}/{total_int} ({success_ratio:.0%})")
                 else:
                     metrics.append(f"OK {int(success_count)}/{total_int}")
             if metrics:
-                aggregated.append(
-                    format_note(f"Σ {label} — {' • '.join(metrics)}")
-                )
+                aggregated.append(format_note(f"Σ {label} — {' • '.join(metrics)}"))
         if aggregated:
             lines.append("_Totales por proveedor:_")
             lines.extend(aggregated)
@@ -1795,9 +1702,7 @@ def _render_health_panel(host: Any, metrics: Mapping[str, Any]) -> None:
         if session_lines:
             st.markdown(session_lines[0])
         if (len(auth_lines) > 1) or (len(session_lines) > 1):
-            with _container_expander(
-                overview_section, "Detalle de autenticación y sesión", expanded=False
-            ):
+            with _container_expander(overview_section, "Detalle de autenticación y sesión", expanded=False):
                 if auth_lines:
                     for line in auth_lines:
                         st.markdown(line)
@@ -1907,9 +1812,7 @@ def _render_health_panel(host: Any, metrics: Mapping[str, Any]) -> None:
                 for line in dependencies_lines:
                     st.markdown(line)
 
-        latency_lines = list(
-            _format_latency_section(metrics.get("portfolio"), metrics.get("quotes"))
-        )
+        latency_lines = list(_format_latency_section(metrics.get("portfolio"), metrics.get("quotes")))
         if latency_lines:
             with _container_expander(diagnostics_section, "Latencias de cálculo"):
                 for line in latency_lines:
@@ -1956,9 +1859,7 @@ def render_health_sidebar(*, metrics: Optional[Mapping[str, Any]] = None) -> Non
     _render_health_panel(st.sidebar, resolved)
 
 
-def render_health_monitor_tab(
-    container: Any, *, metrics: Optional[Mapping[str, Any]] = None
-) -> None:
+def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, Any]] = None) -> None:
     """Render the health summary within the provided tab container."""
 
     resolved = _resolve_health_metrics(metrics)

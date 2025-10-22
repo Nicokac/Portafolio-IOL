@@ -9,15 +9,15 @@ explicit user toggles.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from contextvars import ContextVar, Token
 import importlib
 import json
 import logging
-from pathlib import Path
 import sys
 import threading
 import time
+from contextvars import ContextVar, Token
+from dataclasses import dataclass
+from pathlib import Path
 from threading import Event, Lock
 from typing import Any, Dict, Tuple
 
@@ -49,9 +49,7 @@ class FragmentGuardResult:
     explicit_hide: bool
 
 
-_AUTO_LOAD_GUARD: ContextVar[bool] = ContextVar(
-    "fragment_state_auto_load_guard", default=True
-)
+_AUTO_LOAD_GUARD: ContextVar[bool] = ContextVar("fragment_state_auto_load_guard", default=True)
 
 
 def register_fragment_auto_load_context(
@@ -110,7 +108,10 @@ class FragmentStateGuardian:
         self._cycle_dataset = dataset_token
         self._start_hydration_cycle(dataset_token)
         if is_hydration_locked():
-            logger.debug("Hydration locked; deferring fragment restore for %s", self._cycle_dataset)
+            logger.debug(
+                "Hydration locked; deferring fragment restore for %s",
+                self._cycle_dataset,
+            )
             self._mark_hydration_complete(dataset_token)
             return
         try:
@@ -280,7 +281,10 @@ class FragmentStateGuardian:
             refreshed.append(key)
         if refreshed:
             detail = {"dataset_hash": dataset_token, "fragments": sorted(refreshed)}
-            logger.info("[Guardian] Soft refresh: dataset revalidated without rerun", extra=detail)
+            logger.info(
+                "[Guardian] Soft refresh: dataset revalidated without rerun",
+                extra=detail,
+            )
         self._mark_hydration_complete(dataset_token)
 
     def is_hydrated(self, dataset_hash: str | None = None) -> bool:
@@ -539,11 +543,7 @@ class FragmentStateGuardian:
             if not isinstance(fragments, dict) or not fragments:
                 continue
             normalized[dataset_hash] = {
-                "fragments": {
-                    str(key): value
-                    for key, value in fragments.items()
-                    if isinstance(value, dict)
-                }
+                "fragments": {str(key): value for key, value in fragments.items() if isinstance(value, dict)}
             }
         if not normalized:
             return None

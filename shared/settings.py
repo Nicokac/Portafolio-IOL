@@ -4,6 +4,7 @@ This module centralizes access to the configuration values used across
 services and infrastructure layers. Values are sourced from environment
 variables, `streamlit` secrets or ``config.json`` via ``shared.config``.
 """
+
 from __future__ import annotations
 
 from typing import Dict
@@ -27,9 +28,7 @@ quotes_hist_maxlen: int = settings.quotes_hist_maxlen
 max_quote_workers: int = settings.max_quote_workers
 quotes_batch_size: int = getattr(settings, "quotes_batch_size", max_quote_workers)
 quotes_swr_ttl_seconds: float = getattr(settings, "quotes_swr_ttl_seconds", 30.0)
-quotes_swr_grace_seconds: float = getattr(
-    settings, "quotes_swr_grace_seconds", float(cache_ttl_quotes)
-)
+quotes_swr_grace_seconds: float = getattr(settings, "quotes_swr_grace_seconds", float(cache_ttl_quotes))
 yahoo_fundamentals_ttl: int = settings.YAHOO_FUNDAMENTALS_TTL
 yahoo_quotes_ttl: int = settings.YAHOO_QUOTES_TTL
 fastapi_tokens_key: str | None = getattr(settings, "fastapi_tokens_key", None)
@@ -49,21 +48,13 @@ legacy_login_max_retries: int = getattr(settings, "LEGACY_LOGIN_MAX_RETRIES", 1)
 legacy_login_backoff_base: float = getattr(settings, "LEGACY_LOGIN_BACKOFF_BASE", 0.5)
 notifications_url: str | None = getattr(settings, "NOTIFICATIONS_URL", None)
 notifications_timeout: float = getattr(settings, "NOTIFICATIONS_TIMEOUT", 3.0)
-visual_cache_max_preload_count: int = getattr(
-    settings, "VISUAL_CACHE_MAX_PRELOAD_COUNT", 3
-)
+visual_cache_max_preload_count: int = getattr(settings, "VISUAL_CACHE_MAX_PRELOAD_COUNT", 3)
 min_score_threshold: int = settings.min_score_threshold
 max_results: int = settings.max_results
 log_retention_days: int = getattr(settings, "LOG_RETENTION_DAYS", 7)
-sqlite_maintenance_interval_hours: float = getattr(
-    settings, "SQLITE_MAINTENANCE_INTERVAL_HOURS", 6.0
-)
-sqlite_maintenance_size_threshold_mb: float = getattr(
-    settings, "SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB", 256.0
-)
-performance_store_ttl_days: float = getattr(
-    settings, "PERFORMANCE_STORE_TTL_DAYS", float(log_retention_days)
-)
+sqlite_maintenance_interval_hours: float = getattr(settings, "SQLITE_MAINTENANCE_INTERVAL_HOURS", 6.0)
+sqlite_maintenance_size_threshold_mb: float = getattr(settings, "SQLITE_MAINTENANCE_SIZE_THRESHOLD_MB", 256.0)
+performance_store_ttl_days: float = getattr(settings, "PERFORMANCE_STORE_TTL_DAYS", float(log_retention_days))
 stub_max_runtime_warn: float = getattr(settings, "STUB_MAX_RUNTIME_WARN", 0.25)
 STUB_MAX_RUNTIME_WARN: float = stub_max_runtime_warn
 
@@ -91,39 +82,21 @@ MAX_RESULTS: int = max_results
 # Macro data provider configuration
 macro_api_provider: str = getattr(settings, "MACRO_API_PROVIDER", "fred")
 fred_api_key: str | None = getattr(settings, "FRED_API_KEY", None)
-fred_api_base_url: str = getattr(
-    settings, "FRED_API_BASE_URL", "https://api.stlouisfed.org/fred"
-)
-fred_api_rate_limit_per_minute: int = getattr(
-    settings, "FRED_API_RATE_LIMIT_PER_MINUTE", 120
-)
+fred_api_base_url: str = getattr(settings, "FRED_API_BASE_URL", "https://api.stlouisfed.org/fred")
+fred_api_rate_limit_per_minute: int = getattr(settings, "FRED_API_RATE_LIMIT_PER_MINUTE", 120)
 fred_sector_series: Dict[str, str] = getattr(settings, "FRED_SECTOR_SERIES", {})
-macro_sector_fallback: Dict[str, Dict[str, object]] = getattr(
-    settings, "MACRO_SECTOR_FALLBACK", {}
-)
+macro_sector_fallback: Dict[str, Dict[str, object]] = getattr(settings, "MACRO_SECTOR_FALLBACK", {})
 world_bank_api_key: str | None = getattr(settings, "WORLD_BANK_API_KEY", None)
-world_bank_api_base_url: str = getattr(
-    settings, "WORLD_BANK_API_BASE_URL", "https://api.worldbank.org/v2"
-)
-world_bank_api_rate_limit_per_minute: int = getattr(
-    settings, "WORLD_BANK_API_RATE_LIMIT_PER_MINUTE", 60
-)
-world_bank_sector_series: Dict[str, str] = getattr(
-    settings, "WORLD_BANK_SECTOR_SERIES", {}
-)
+world_bank_api_base_url: str = getattr(settings, "WORLD_BANK_API_BASE_URL", "https://api.worldbank.org/v2")
+world_bank_api_rate_limit_per_minute: int = getattr(settings, "WORLD_BANK_API_RATE_LIMIT_PER_MINUTE", 60)
+world_bank_sector_series: Dict[str, str] = getattr(settings, "WORLD_BANK_SECTOR_SERIES", {})
 fmp_api_key: str | None = getattr(settings, "FMP_API_KEY", None)
-fmp_base_url: str = getattr(
-    settings, "FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"
-)
+fmp_base_url: str = getattr(settings, "FMP_BASE_URL", "https://financialmodelingprep.com/api/v3")
 fmp_timeout: float = getattr(settings, "FMP_TIMEOUT", 5.0)
 ohlc_primary_provider: str = getattr(settings, "OHLC_PRIMARY_PROVIDER", "alpha_vantage")
-ohlc_secondary_providers: list[str] = list(
-    getattr(settings, "OHLC_SECONDARY_PROVIDERS", []) or []
-)
+ohlc_secondary_providers: list[str] = list(getattr(settings, "OHLC_SECONDARY_PROVIDERS", []) or [])
 alpha_vantage_api_key: str | None = getattr(settings, "ALPHA_VANTAGE_API_KEY", None)
-alpha_vantage_base_url: str = getattr(
-    settings, "ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query"
-)
+alpha_vantage_base_url: str = getattr(settings, "ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query")
 polygon_api_key: str | None = getattr(settings, "POLYGON_API_KEY", None)
 polygon_base_url: str = getattr(settings, "POLYGON_BASE_URL", "https://api.polygon.io")
 

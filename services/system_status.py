@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-"""Helpers to consolidate observability metrics for the system status panel."""
-
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 import streamlit as st
 
 from shared.time_provider import TimeProvider
+
+"""Helpers to consolidate observability metrics for the system status panel."""
+
 
 _PROMETHEUS_SESSION_KEY = "prometheus_metrics"
 _TOKEN_CLAIMS_KEY = "auth_token_claims"
@@ -210,4 +211,3 @@ __all__ = [
     "get_token_snapshot",
     "get_system_status_snapshot",
 ]
-

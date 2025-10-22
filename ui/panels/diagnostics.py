@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 import streamlit as st
-from typing import Callable
 
 from application.predictive_service import get_cache_stats
-from services.performance_metrics import export_metrics_csv, get_recent_metrics
+from services.performance_metrics import (
+    MetricSummary,
+    export_metrics_csv,
+    get_recent_metrics,
+)
+from shared.time_provider import TimeProvider
 from ui.helpers.navigation import safe_page_link
 from ui.tabs.performance_dashboard import render_performance_dashboard_tab
-from shared.time_provider import TimeProvider
 
 
 def _format_memory(value: float | None) -> str:
@@ -35,9 +40,7 @@ def _metrics_to_dataframe(
 ) -> pd.DataFrame:
     rows = [
         {
-            name_label: name_transform(summary.name)
-            if name_transform
-            else summary.name,
+            name_label: name_transform(summary.name) if name_transform else summary.name,
             "Muestras": summary.samples,
             "Promedio (ms)": round(summary.average_ms, 2),
             "Último (ms)": round(summary.last_ms, 2),
@@ -148,9 +151,7 @@ def render_diagnostics_panel() -> None:
         frame = _metrics_to_dataframe(remaining_metrics)
         st.dataframe(frame, width="stretch", hide_index=True)
     if not metrics:
-        st.caption(
-            "Aún no hay mediciones registradas. Ejecutá una simulación o predicción para generar datos."
-        )
+        st.caption("Aún no hay mediciones registradas. Ejecutá una simulación o predicción para generar datos.")
 
     snapshot = get_cache_stats()
     st.subheader("📦 Estado del caché predictivo")
@@ -181,4 +182,3 @@ def render_diagnostics_panel() -> None:
 
 
 __all__ = ["render_diagnostics_panel"]
-

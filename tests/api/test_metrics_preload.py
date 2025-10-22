@@ -8,9 +8,7 @@ from fastapi.testclient import TestClient
 from tests.api.test_ui_total_load_metrics import _prepare_app
 
 
-def test_metrics_endpoint_exposes_preload_timings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metrics_endpoint_exposes_preload_timings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     timer, app = _prepare_app(tmp_path, monkeypatch, enable_prometheus=True)
 
     timer.update_preload_total_metric(732)

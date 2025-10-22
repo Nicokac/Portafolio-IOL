@@ -61,4 +61,3 @@ __all__ = [
     "set_force_login",
     "set_login_error",
 ]
-

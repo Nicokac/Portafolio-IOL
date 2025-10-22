@@ -77,9 +77,7 @@ def summarize_portfolio_stats(
 _summarize_portfolio_stats = summarize_portfolio_stats
 
 
-def record_portfolio_load(
-    elapsed_ms: Optional[float], *, source: str, detail: Optional[str] = None
-) -> None:
+def record_portfolio_load(elapsed_ms: Optional[float], *, source: str, detail: Optional[str] = None) -> None:
     """Persist response time and source for the latest portfolio load."""
     store = get_store()
     source_text = str(source or "unknown").strip() or "unknown"
@@ -115,16 +113,12 @@ def record_portfolio_load(
         value = float(numeric_latency)
         stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
         stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
-        stats["latency_sum_sq"] = (
-            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
-        )
+        stats["latency_sum_sq"] = float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
         current_min = _as_optional_float(stats.get("latency_min"))
         stats["latency_min"] = value if current_min is None else min(current_min, value)
         current_max = _as_optional_float(stats.get("latency_max"))
         stats["latency_max"] = value if current_max is None else max(current_max, value)
-        latency_history = _ensure_latency_history(
-            stats.get("latency_history"), limit=_PORTFOLIO_HISTORY_LIMIT
-        )
+        latency_history = _ensure_latency_history(stats.get("latency_history"), limit=_PORTFOLIO_HISTORY_LIMIT)
         latency_history.append(value)
         stats["latency_history"] = latency_history
         stats["last_elapsed_ms"] = value
@@ -136,9 +130,7 @@ def record_portfolio_load(
     stats["last_ts"] = now
 
     latest_event = dict(summary)
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_PORTFOLIO_HISTORY_LIMIT
-    )
+    event_history = _ensure_event_history(stats.get("event_history"), limit=_PORTFOLIO_HISTORY_LIMIT)
     event_history.append(latest_event)
     stats["event_history"] = event_history
 
@@ -156,9 +148,7 @@ def record_portfolio_load(
 def portfolio_metrics_snapshot(store: Mapping[str, Any]) -> Dict[str, Any]:
     """Return merged portfolio metrics for dashboards."""
 
-    portfolio_data = _merge_entry(
-        store.get("portfolio"), _summarize_portfolio_stats(store.get("portfolio_stats"))
-    )
+    portfolio_data = _merge_entry(store.get("portfolio"), _summarize_portfolio_stats(store.get("portfolio_stats")))
     return {"portfolio": portfolio_data}
 
 

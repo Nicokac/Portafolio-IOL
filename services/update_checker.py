@@ -13,17 +13,14 @@ import time
 from typing import Any
 
 import requests
+
 from shared.version import __version__
 
-REMOTE_VERSION_URL = (
-    "https://raw.githubusercontent.com/Nicokac/portafolio-iol/main/shared/version.json"
-)
+REMOTE_VERSION_URL = "https://raw.githubusercontent.com/Nicokac/portafolio-iol/main/shared/version.json"
 
 logger = logging.getLogger(__name__)
 
-_CHECK_FILE = os.path.join(
-    tempfile.gettempdir(), "portafolio_iol_version_check.json"
-)
+_CHECK_FILE = os.path.join(tempfile.gettempdir(), "portafolio_iol_version_check.json")
 
 LOG_FILE = os.path.join(tempfile.gettempdir(), "portafolio_iol_update_log.json")
 
@@ -162,11 +159,10 @@ def _run_update_script(latest_version: str) -> bool:
     import streamlit as st
 
     if not _has_shell_support():
-        st.info(
-            "Las actualizaciones automáticas no están disponibles en este entorno."
-        )
+        st.info("Las actualizaciones automáticas no están disponibles en este entorno.")
         st.link_button(
-            "Ver cambios", "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md"
+            "Ver cambios",
+            "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
         )
         return False
 
@@ -186,9 +182,7 @@ def _run_update_script(latest_version: str) -> bool:
             check=True,
         )
     except subprocess.CalledProcessError:
-        st.error(
-            "❌ Error al actualizar. Por favor, actualice manualmente desde el repositorio."
-        )
+        st.error("❌ Error al actualizar. Por favor, actualice manualmente desde el repositorio.")
         return False
 
     _log_event("update", latest_version, "done")

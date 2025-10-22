@@ -1,7 +1,7 @@
 import importlib.util
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 
 def test_runtime_fallback_reuses_placeholder(monkeypatch, caplog):
@@ -16,12 +16,7 @@ def test_runtime_fallback_reuses_placeholder(monkeypatch, caplog):
     monkeypatch.setattr(runtime, "log_default_telemetry", lambda **_: None)
     monkeypatch.setattr(runtime, "_get_persistent_placeholder", lambda _fragment_id: "PERSISTENT")
 
-    placeholder = runtime._handle_fragment_fallback(
-        "frag123", context_ready=False, scope="global"
-    )
+    placeholder = runtime._handle_fragment_fallback("frag123", context_ready=False, scope="global")
 
     assert placeholder == "PERSISTENT"
-    assert any(
-        "fallback_reuse_persistent_container=True" in line
-        for line in caplog.text.splitlines()
-    )
+    assert any("fallback_reuse_persistent_container=True" in line for line in caplog.text.splitlines())

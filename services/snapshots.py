@@ -15,16 +15,16 @@ records and compute comparisons between arbitrary entries.
 
 from __future__ import annotations
 
-from dataclasses import asdict, is_dataclass
 import json
 import logging
 import os
-import sys
-from pathlib import Path
 import sqlite3
+import sys
 import threading
 import time
 import uuid
+from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence
 
 from services import health
@@ -50,7 +50,6 @@ def auto_configure_if_needed() -> None:
             configure_storage(backend="json")
         except Exception:  # pragma: no cover - defensive logging path
             logger.exception("No se pudo autoconfigurar el backend de snapshots")
-
 
 
 def _ensure_configured() -> None:
@@ -84,7 +83,10 @@ class _BaseSnapshotStorage:
     """Common interface for snapshot storage backends."""
 
     def save_snapshot(
-        self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None
+        self,
+        kind: str,
+        payload: SnapshotPayload,
+        metadata: SnapshotMetadata | None = None,
     ) -> Mapping[str, Any]:
         raise NotImplementedError
 
@@ -100,7 +102,12 @@ class _BaseSnapshotStorage:
 class _NullSnapshotStorage(_BaseSnapshotStorage):
     """No-op backend used as safe fallback when configuration fails."""
 
-    def save_snapshot(self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None):
+    def save_snapshot(
+        self,
+        kind: str,
+        payload: SnapshotPayload,
+        metadata: SnapshotMetadata | None = None,
+    ):
         logger.debug("NullSnapshotStorage.save_snapshot called for kind=%s", kind)
         now = time.time()
         return {
@@ -191,7 +198,12 @@ class _JSONSnapshotStorage(_BaseSnapshotStorage):
                 )
             raise SnapshotStorageError(str(err)) from err
 
-    def save_snapshot(self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None):
+    def save_snapshot(
+        self,
+        kind: str,
+        payload: SnapshotPayload,
+        metadata: SnapshotMetadata | None = None,
+    ):
         entry = {
             "id": str(uuid.uuid4()),
             "kind": str(kind or "").strip() or "generic",
@@ -260,14 +272,17 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
                     )
                     """
                 )
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_snapshots_kind_created_at ON snapshots(kind, created_at)"
-                )
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_kind_created_at ON snapshots(kind, created_at)")
         except sqlite3.Error as err:
             logger.exception("No se pudo inicializar SQLite en %s: %s", self.path, err)
             raise SnapshotStorageError(str(err)) from err
 
-    def save_snapshot(self, kind: str, payload: SnapshotPayload, metadata: SnapshotMetadata | None = None):
+    def save_snapshot(
+        self,
+        kind: str,
+        payload: SnapshotPayload,
+        metadata: SnapshotMetadata | None = None,
+    ):
         compressed_payload = compress_payload(_to_plain_mapping(payload))
         entry = {
             "id": str(uuid.uuid4()),
@@ -331,7 +346,10 @@ class _SQLiteSnapshotStorage(_BaseSnapshotStorage):
         if limit is not None and limit >= 0:
             limit_clause = "LIMIT ?"
             params.append(limit)
-        sql = f"SELECT id, kind, created_at, payload, metadata FROM snapshots {where} ORDER BY created_at {order_clause} {limit_clause}"
+        sql = (
+            "SELECT id, kind, created_at, payload, metadata FROM snapshots "
+            f"{where} ORDER BY created_at {order_clause} {limit_clause}"
+        )
         try:
             with sqlite3.connect(self.path) as conn:
                 cur = conn.execute(sql, tuple(params))
@@ -408,9 +426,7 @@ def configure_storage(
 
     try:
         if backend == "json":
-            storage = _JSONSnapshotStorage(
-                storage_path or Path("data/snapshots.json"), retention=retention_value
-            )
+            storage = _JSONSnapshotStorage(storage_path or Path("data/snapshots.json"), retention=retention_value)
         elif backend in {"sqlite", "sqlite3"}:
             storage = _SQLiteSnapshotStorage(storage_path or Path("data/snapshots.db"))
         elif backend in {"null", "none", "disabled"}:
@@ -516,9 +532,7 @@ def compare_snapshots(id_a: str, id_b: str) -> Mapping[str, Any] | None:
         raise
 
 
-def _compare_snapshots_with_storage(
-    storage: _BaseSnapshotStorage, id_a: str, id_b: str
-) -> Mapping[str, Any] | None:
+def _compare_snapshots_with_storage(storage: _BaseSnapshotStorage, id_a: str, id_b: str) -> Mapping[str, Any] | None:
     snap_a = storage.load_snapshot(id_a)
     snap_b = storage.load_snapshot(id_b)
     if not snap_a or not snap_b:
@@ -593,4 +607,3 @@ def _auto_configure_from_settings() -> None:
 
 if os.getenv("STREAMLIT_RUNTIME") or "streamlit" in sys.modules:
     auto_configure_if_needed()
-

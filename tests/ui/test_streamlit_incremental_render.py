@@ -6,6 +6,8 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from controllers.portfolio import portfolio as portfolio_mod
+from domain.models import Controls
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import UIFakeStreamlit
 
@@ -13,13 +15,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from controllers.portfolio import portfolio as portfolio_mod
-from domain.models import Controls
-
 
 class _FavoritesStub:
     def sort_options(self, symbols: list[str]) -> list[str]:
         return list(symbols)
+
     def default_index(self, options: list[str]) -> int:
         return 0
 

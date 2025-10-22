@@ -1,25 +1,26 @@
-import pandas as pd
-import pytest
-
-pytestmark = pytest.mark.skip(
-    reason="Legacy portfolio helper coverage is deprecated in v0.7"
-)
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pandas as pd
 import plotly.express as px
+import pytest
+
+import controllers.portfolio.charts as charts_mod
+import controllers.portfolio.filters as filters_mod
+import controllers.portfolio.fundamentals as fund_mod
+import controllers.portfolio.load_data as load_mod
+import controllers.portfolio.risk as risk_mod
+from controllers import portfolio as pm
+from domain.models import Controls
+from shared.favorite_symbols import FavoriteSymbols
+from tests.fixtures.common import DummyCtx
+
+pytestmark = pytest.mark.skip(reason="Legacy portfolio helper coverage is deprecated in v0.7")
+
 
 # NOTE: Helpers legacy mantenidos temporalmente para comparar con la suite
 # moderna de portfolio. Una vez validada la cobertura en `tests/controllers/`
 # estos escenarios se eliminarán.
-from controllers import portfolio as pm
-import controllers.portfolio.load_data as load_mod
-import controllers.portfolio.filters as filters_mod
-import controllers.portfolio.charts as charts_mod
-import controllers.portfolio.risk as risk_mod
-import controllers.portfolio.fundamentals as fund_mod
-from shared.favorite_symbols import FavoriteSymbols
-from domain.models import Controls
-from tests.fixtures.common import DummyCtx
 
 
 def test_load_portfolio_data(monkeypatch):
@@ -50,6 +51,7 @@ def test_load_portfolio_data(monkeypatch):
     assert syms == ["AL30", "GOOG"]
     assert types == ["Accion", "Bono"]
 
+
 def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
     monkeypatch.setattr(load_mod, "fetch_portfolio", lambda cli: {})
     monkeypatch.setattr(load_mod.st, "spinner", lambda msg: DummyCtx())
@@ -79,9 +81,7 @@ def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
     with pytest.raises(RerunCalled):
         pm.load_portfolio_data(None, DummyPSvc())
 
-    warn_mock.assert_called_once_with(
-        "Sesión expirada, por favor vuelva a iniciar sesión"
-    )
+    warn_mock.assert_called_once_with("Sesión expirada, por favor vuelva a iniciar sesión")
 
 
 def test_load_portfolio_data_shows_generic_error(monkeypatch):
@@ -149,9 +149,7 @@ def test_load_portfolio_data_reruns_on_auth_error(monkeypatch):
     with pytest.raises(RerunCalled):
         pm.load_portfolio_data(None, DummyPSvc())
 
-    warn_mock.assert_called_once_with(
-        "Sesión expirada, por favor vuelva a iniciar sesión"
-    )
+    warn_mock.assert_called_once_with("Sesión expirada, por favor vuelva a iniciar sesión")
     rerun_mock.assert_called_once()
     stop_mock.assert_not_called()
 
@@ -166,8 +164,10 @@ def test_load_portfolio_data_warns_on_empty_positions(monkeypatch):
     monkeypatch.setattr(load_mod.st, "error", lambda *a, **k: None)
     df_mock = MagicMock()
     monkeypatch.setattr(load_mod.st, "dataframe", df_mock)
+
     class StopCalled(Exception):
         pass
+
     stop_mock = MagicMock(side_effect=StopCalled)
     monkeypatch.setattr(load_mod.st, "stop", stop_mock)
     monkeypatch.setattr(load_mod.st, "session_state", {}, raising=False)
@@ -182,9 +182,7 @@ def test_load_portfolio_data_warns_on_empty_positions(monkeypatch):
     with pytest.raises(StopCalled):
         pm.load_portfolio_data(None, DummyPSvc())
 
-    warn_mock.assert_called_once_with(
-        "No se encontraron posiciones o no pudimos mapear la respuesta."
-    )
+    warn_mock.assert_called_once_with("No se encontraron posiciones o no pudimos mapear la respuesta.")
     df_mock.assert_called_once()
     stop_mock.assert_called_once()
 
@@ -227,14 +225,16 @@ def test_apply_filters(monkeypatch):
 
 
 def test_generate_basic_charts(monkeypatch):
-    df = pd.DataFrame({
-        "simbolo": ["AL30"],
-        "valor_actual": [100],
-        "pl": [10],
-        "pl_%": [0.1],
-        "pl_d": [5],
-        "tipo": ["Bono"],
-    })
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AL30"],
+            "valor_actual": [100],
+            "pl": [10],
+            "pl_%": [0.1],
+            "pl_d": [5],
+            "tipo": ["Bono"],
+        }
+    )
     monkeypatch.setattr(charts_mod, "plot_pl_topn", lambda df, n: "topn")
     monkeypatch.setattr(charts_mod, "plot_donut_tipo", lambda df: "donut")
     monkeypatch.setattr(charts_mod, "plot_pl_daily_topn", lambda df, n: "daily")
@@ -268,9 +268,7 @@ def test_compute_risk_metrics():
     expected_var = risk_mod.historical_var(expected_port_ret)
     expected_cvar = risk_mod.expected_shortfall(expected_port_ret)
     expected_opt_w = risk_mod.markowitz_optimize(returns_df)
-    expected_asset_vols, expected_asset_drawdowns = risk_mod.asset_risk_breakdown(
-        returns_df
-    )
+    expected_asset_vols, expected_asset_drawdowns = risk_mod.asset_risk_breakdown(returns_df)
     expected_port_drawdown = risk_mod.max_drawdown(expected_port_ret)
 
     (
@@ -306,14 +304,16 @@ def test_render_basic_section_handles_empty(monkeypatch):
 
 
 def test_render_basic_section_with_data(monkeypatch):
-    df = pd.DataFrame({
-        "simbolo": ["AL30"],
-        "valor_actual": [100],
-        "pl": [10],
-        "pl_%": [0.1],
-        "pl_d": [5],
-        "tipo": ["Bono"],
-    })
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AL30"],
+            "valor_actual": [100],
+            "pl": [10],
+            "pl_%": [0.1],
+            "pl_d": [5],
+            "tipo": ["Bono"],
+        }
+    )
     mock_totals = MagicMock()
     monkeypatch.setattr(charts_mod, "render_totals", mock_totals)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
@@ -505,9 +505,7 @@ def test_render_risk_analysis_empty_history(monkeypatch):
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
     tasvc = SimpleNamespace(portfolio_history=lambda *a, **k: pd.DataFrame())
     pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
-    info_mock.assert_any_call(
-        "No se pudieron obtener datos históricos para calcular métricas de riesgo."
-    )
+    info_mock.assert_any_call("No se pudieron obtener datos históricos para calcular métricas de riesgo.")
 
 
 def test_render_risk_analysis_valid_data(monkeypatch):
@@ -520,9 +518,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     monkeypatch.setattr(risk_mod.st, "bar_chart", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "line_chart", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "write", lambda *a, **k: None)
-    monkeypatch.setattr(
-        risk_mod.st, "number_input", lambda *args, **kwargs: kwargs.get("value")
-    )
+    monkeypatch.setattr(risk_mod.st, "number_input", lambda *args, **kwargs: kwargs.get("value"))
 
     expander_calls = []
 
@@ -537,9 +533,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     draw_col = SimpleNamespace(plotly_chart=MagicMock(), info=MagicMock())
     scatter_col = SimpleNamespace(plotly_chart=MagicMock(), info=MagicMock())
 
-    columns_calls = iter(
-        [col_metrics, (vol_col, draw_col), (scatter_col,)]
-    )
+    columns_calls = iter([col_metrics, (vol_col, draw_col), (scatter_col,)])
 
     def fake_columns(n):
         return next(columns_calls)
@@ -603,9 +597,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
     monkeypatch.setattr(risk_mod.px, "scatter", lambda *a, **k: DummyFigure())
     monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: pd.Series([-0.01, -0.05]))
 
-    monkeypatch.setattr(
-        risk_mod, "monte_carlo_simulation", lambda *a, **k: pd.Series([1, 2])
-    )
+    monkeypatch.setattr(risk_mod, "monte_carlo_simulation", lambda *a, **k: pd.Series([1, 2]))
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "markdown", lambda *a, **k: None)
@@ -617,9 +609,7 @@ def test_render_risk_analysis_valid_data(monkeypatch):
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
 
-    select_values = iter(
-        [["A", "B"], "1y", "3 meses (63)", "S&P 500 (^GSPC)", "95%"]
-    )
+    select_values = iter([["A", "B"], "1y", "3 meses (63)", "S&P 500 (^GSPC)", "95%"])
 
     def fake_selectbox(label, options, index=0, **kwargs):
         try:
@@ -632,7 +622,9 @@ def test_render_risk_analysis_valid_data(monkeypatch):
 
     monkeypatch.setattr(risk_mod.st, "selectbox", fake_selectbox)
     monkeypatch.setattr(
-        risk_mod, "rolling_correlations", lambda *a, **k: pd.DataFrame({"A↔B": [0.1, 0.2]})
+        risk_mod,
+        "rolling_correlations",
+        lambda *a, **k: pd.DataFrame({"A↔B": [0.1, 0.2]}),
     )
 
     pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
@@ -684,13 +676,16 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
     monkeypatch.setattr(
         risk_mod.st,
         "columns",
-        lambda n: ([SimpleNamespace(metric=MagicMock()) for _ in range(n)]
-        if n == 5
-        else (dummy_col, dummy_col) if n == 2 else (dummy_col,)),
+        lambda n: (
+            [SimpleNamespace(metric=MagicMock()) for _ in range(n)]
+            if n == 5
+            else (dummy_col, dummy_col)
+            if n == 2
+            else (dummy_col,)
+        ),
     )
 
     returns_df = pd.DataFrame({"A": [0.01, -0.02]})
-    bench_ret = pd.Series([0.0, 0.0])
 
     def fake_history(simbolos=None, period=None):
         if simbolos and simbolos[0] == "^GSPC":
@@ -728,10 +723,7 @@ def test_render_risk_analysis_insufficient_per_asset_data(monkeypatch):
 
     pm.render_risk_analysis(df, tasvc, favorites=FavoriteSymbols({}))
 
-    assert any(
-        "volatilidad por activo" in msg.lower()
-        for msg in info_messages
-    )
+    assert any("volatilidad por activo" in msg.lower() for msg in info_messages)
 
 
 def test_render_fundamental_analysis_no_symbols(monkeypatch):

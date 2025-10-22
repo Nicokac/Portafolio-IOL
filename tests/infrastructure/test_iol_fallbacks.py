@@ -8,17 +8,15 @@ import pandas as pd
 import pytest
 import requests
 
+from infrastructure.iol import client as iol_client_module
+from services import cache as cache_module
+from services import ohlc_adapter as ohlc_module
 from tests.fixtures.auth import FakeAuth
 
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from infrastructure.iol import client as iol_client_module
-from infrastructure.iol.legacy import iol_client as legacy_module
-from services import cache as cache_module
-from services import ohlc_adapter as ohlc_module
 
 
 ORIGINAL_PERSIST_QUOTE = cache_module._persist_quote
@@ -41,9 +39,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> iol_client_module.IOLClient:
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
     monkeypatch.setattr(iol_client_module, "st", SimpleNamespace(session_state={}))
-    return iol_client_module.IOLClient(
-        "user", "", auth=FakeAuth(access="access", refresh="refresh")
-    )
+    return iol_client_module.IOLClient("user", "", auth=FakeAuth(access="access", refresh="refresh"))
 
 
 def _http_error(status: int) -> requests.HTTPError:
@@ -64,9 +60,7 @@ def test_primary_endpoint_provides_fresh_quote(
     monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
     monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
 
-    def successful_request(
-        self: iol_client_module.IOLClient, method: str, url: str, **kwargs: Any
-    ) -> SimpleNamespace:
+    def successful_request(self: iol_client_module.IOLClient, method: str, url: str, **kwargs: Any) -> SimpleNamespace:
         return SimpleNamespace(
             status_code=200,
             raise_for_status=lambda: None,
@@ -303,9 +297,7 @@ def test_fetch_quotes_bulk_uses_persisted_price_when_bulk_returns_null(
     assert recorded == [("iol", {"elapsed_ms": None, "stale": True, "source": "persistent"})]
 
 
-def test_fetch_quotes_bulk_persists_and_rehydrates(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fetch_quotes_bulk_persists_and_rehydrates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = SimpleNamespace(session_state={})
     monkeypatch.setattr(cache_module, "st", fake_st)
     monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
@@ -447,7 +439,11 @@ def test_legacy_login_only_once_for_multiple_symbols(
             }
 
     monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyLoginSpy)
-    monkeypatch.setattr(ohlc_module, "OHLCAdapter", lambda *_, **__: pytest.fail("OHLC fallback should not run"))
+    monkeypatch.setattr(
+        ohlc_module,
+        "OHLCAdapter",
+        lambda *_, **__: pytest.fail("OHLC fallback should not run"),
+    )
     monkeypatch.setattr(cache_module, "_persist_quote", lambda *_, **__: None)
     monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
     monkeypatch.setattr(cache_module, "record_quote_provider_usage", lambda *_, **__: None)

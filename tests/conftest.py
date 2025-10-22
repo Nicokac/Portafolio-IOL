@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
 import os
 import sys
+import warnings
+from collections.abc import Iterable, Sequence
 from types import ModuleType, SimpleNamespace
 from typing import Any
-import warnings
 
 import pytest
 
 from tests.fixtures.auth import FakeAuth
-from tests.fixtures.common import DummyCtx
 from tests.fixtures.clock import FakeClock
+from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import BaseFakeStreamlit, FakeStreamlit, UIFakeStreamlit
 from tests.fixtures.time import FakeTime
 
@@ -57,7 +57,12 @@ class _DummyStreamlitSecretNotFoundError(KeyError):
 class _DummySecrets(dict):
     """Secrets mapping that keeps the stub core in sync."""
 
-    def __init__(self, initial: dict[str, Any] | None = None, *, core: "_DummyStreamlitCore | None" = None) -> None:
+    def __init__(
+        self,
+        initial: dict[str, Any] | None = None,
+        *,
+        core: "_DummyStreamlitCore | None" = None,
+    ) -> None:
         super().__init__(initial or {})
         if core is None:
             core = globals().get("_streamlit_core")
@@ -70,7 +75,6 @@ class _DummySecrets(dict):
             return super().__getitem__(key)
         except KeyError:  # pragma: no cover - compatibility branch
             raise _DummyStreamlitSecretNotFoundError(str(key)) from None
-
 
 
 class _DummySidebar:
@@ -445,7 +449,11 @@ class _DummyStreamlitCore:
         return _DummyContext(self, entry)
 
     def expander(self, label: object, *, expanded: bool | None = None) -> _DummyContext:
-        entry = self._record("expander", label=str(label), expanded=bool(expanded) if expanded is not None else None)
+        entry = self._record(
+            "expander",
+            label=str(label),
+            expanded=bool(expanded) if expanded is not None else None,
+        )
         return _DummyContext(self, entry)
 
     def form(self, key: str) -> _DummyContext:
@@ -459,7 +467,14 @@ class _DummyStreamlitCore:
         entry["result"] = result
         return result
 
-    def text_input(self, label: str, *, key: str | None = None, value: str | None = None, help: str | None = None) -> str:
+    def text_input(
+        self,
+        label: str,
+        *,
+        key: str | None = None,
+        value: str | None = None,
+        help: str | None = None,
+    ) -> str:
         result = value or ""
         if key:
             self.session_state[key] = result
@@ -560,7 +575,15 @@ class _DummyStreamlitCore:
         result = self._toggle_returns.get(entry_key, bool(value))
         if key:
             self.session_state[key] = result
-        self._record("toggle", label=label, value=value, key=key, help=help, result=result, on_change=on_change)
+        self._record(
+            "toggle",
+            label=label,
+            value=value,
+            key=key,
+            help=help,
+            result=result,
+            on_change=on_change,
+        )
         return result
 
     def multiselect(
@@ -617,7 +640,14 @@ class _DummyStreamlitCore:
         )
         return result
 
-    def button(self, label: str, *, key: str | None = None, help: str | None = None, **kwargs: Any) -> bool:
+    def button(
+        self,
+        label: str,
+        *,
+        key: str | None = None,
+        help: str | None = None,
+        **kwargs: Any,
+    ) -> bool:
         entry_key = key or label
         result = self._button_returns.get(entry_key, False)
         record = {"label": label, "key": entry_key, "help": help, "result": result}
@@ -630,7 +660,12 @@ class _DummyStreamlitCore:
         entry = self._record("tabs", labels=list(labels))
         tabs: list[_DummyTab] = []
         for index, label in enumerate(labels):
-            tab_entry: dict[str, Any] = {"type": "tab", "label": label, "index": index, "children": []}
+            tab_entry: dict[str, Any] = {
+                "type": "tab",
+                "label": label,
+                "index": index,
+                "children": [],
+            }
             entry.setdefault("children", []).append(tab_entry)
             tabs.append(_DummyTab(self, tab_entry))
         return tabs
@@ -643,7 +678,11 @@ class _DummyStreamlitCore:
         entry = self._record("columns", spec=spec, gap=gap)
         columns: list[_DummyColumn] = []
         for index in range(count):
-            column_entry: dict[str, Any] = {"type": "column", "index": index, "children": []}
+            column_entry: dict[str, Any] = {
+                "type": "column",
+                "index": index,
+                "children": [],
+            }
             entry.setdefault("children", []).append(column_entry)
             columns.append(_DummyColumn(self, column_entry))
         return columns
@@ -708,6 +747,7 @@ class _DummyStreamlitCore:
 
     def cache_resource(self, func=None, **kwargs):
         if func is None:
+
             def decorator(wrapped):
                 return wrapped
 
@@ -787,9 +827,7 @@ sys.modules.setdefault("streamlit", _streamlit_module)
 _streamlit_runtime_module = ModuleType("streamlit.runtime")
 _streamlit_runtime_secrets_module = ModuleType("streamlit.runtime.secrets")
 _streamlit_runtime_secrets_module.Secrets = _DummySecrets  # type: ignore[attr-defined]
-_streamlit_runtime_secrets_module.StreamlitSecretNotFoundError = (
-    _DummyStreamlitSecretNotFoundError
-)
+_streamlit_runtime_secrets_module.StreamlitSecretNotFoundError = _DummyStreamlitSecretNotFoundError
 _streamlit_runtime_module.secrets = _streamlit_runtime_secrets_module  # type: ignore[attr-defined]
 
 _runtime_namespace = SimpleNamespace(
@@ -831,9 +869,6 @@ _altair_module.Tooltip = _DummyAltairExpr
 _altair_module.Legend = _DummyAltairExpr
 
 sys.modules.setdefault("altair", _altair_module)
-
-
-import pytest
 
 
 @pytest.fixture(autouse=True, scope="session")

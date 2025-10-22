@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 
 from infrastructure.iol.client import IOLClient
 
+
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="chmod not supported on Windows")
 def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
     tokens_path = tmp_path / "tokens.json"
@@ -18,11 +19,14 @@ def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
     key = Fernet.generate_key()
     monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())
     from shared import config
+
     config.settings.tokens_key = key.decode()
 
     with patch("requests.Session.post", return_value=mock_resp):
         import importlib
+
         import infrastructure.iol.auth as auth_module
+
         importlib.reload(auth_module)
         auth = auth_module.IOLAuth("user", "pass", tokens_file=tokens_path)
         tokens = auth.login()
@@ -38,11 +42,13 @@ def test_iol_auth_login_and_clear_tokens(tmp_path, monkeypatch):
         auth.clear_tokens()
         assert not tokens_path.exists()
 
+
 def test_iol_auth_expired_tokens_triggers_login(tmp_path, monkeypatch):
     tokens_path = tmp_path / "tokens.json"
     key = Fernet.generate_key()
     monkeypatch.setenv("IOL_TOKENS_KEY", key.decode())
     from shared import config
+
     config.settings.tokens_key = key.decode()
     # Write expired tokens
     expired = {"access_token": "old", "timestamp": 0}
@@ -51,7 +57,9 @@ def test_iol_auth_expired_tokens_triggers_login(tmp_path, monkeypatch):
     tokens_path.write_bytes(content)
 
     import importlib
+
     import infrastructure.iol.auth as auth_module
+
     importlib.reload(auth_module)
 
     calls = {"count": 0}

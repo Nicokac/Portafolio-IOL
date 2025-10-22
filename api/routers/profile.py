@@ -7,8 +7,8 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import Field
 
-from services.auth import get_current_user
 from api.routers.base_models import _BaseModel
+from services.auth import get_current_user
 
 router = APIRouter(prefix="/profile", tags=["profile"], dependencies=[Depends(get_current_user)])
 

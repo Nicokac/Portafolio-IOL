@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Helpers to capture runtime environment metadata for diagnostics."""
-
 import csv
 import logging
 import os
@@ -12,6 +10,9 @@ import time
 from importlib import import_module
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
+
+"""Helpers to capture runtime environment metadata for diagnostics."""
+
 
 try:  # pragma: no cover - optional dependency, exercised in integration
     import psutil  # type: ignore
@@ -101,7 +102,11 @@ def _collect_memory_info() -> Dict[str, Any]:
         page_size = None
         try:
             page_size = os.sysconf("SC_PAGE_SIZE")  # type: ignore[attr-defined]
-        except (AttributeError, ValueError, OSError):  # pragma: no cover - platform specific
+        except (
+            AttributeError,
+            ValueError,
+            OSError,
+        ):  # pragma: no cover - platform specific
             page_size = None
         if page_size is not None:
             try:

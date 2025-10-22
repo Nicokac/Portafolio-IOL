@@ -1,15 +1,19 @@
 # infrastructure/http/session.py
 from __future__ import annotations
+
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
 
 def _wrap_with_timeout(request_func, default_timeout: float):
     def wrapped(method, url, **kwargs):
         if "timeout" not in kwargs:
             kwargs["timeout"] = default_timeout
         return request_func(method, url, **kwargs)
+
     return wrapped
+
 
 def build_session(
     user_agent: str,

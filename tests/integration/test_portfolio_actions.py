@@ -1,5 +1,4 @@
 import csv
-from types import SimpleNamespace
 
 import pytest
 

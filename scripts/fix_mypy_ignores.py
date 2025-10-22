@@ -11,12 +11,8 @@ from collections.abc import Iterable, Sequence
 
 LOGGER = logging.getLogger(__name__)
 
-ERR_RE = re.compile(
-    r"^(?P<path>.+?):(?P<line>\d+): error: .+ \[(?P<code>[-a-z0-9]+)\]$"
-)
-UNUSED_RE = re.compile(
-    r"^(?P<path>.+?):(?P<line>\d+): error: unused 'type: ignore' comment"
-)
+ERR_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+): error: .+ \[(?P<code>[-a-z0-9]+)\]$")
+UNUSED_RE = re.compile(r"^(?P<path>.+?):(?P<line>\d+): error: unused 'type: ignore' comment")
 
 DEFAULT_MYPY_ARGS = (
     "mypy",
@@ -27,17 +23,12 @@ DEFAULT_MYPY_ARGS = (
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Ejecuta mypy y normaliza anotaciones `type: ignore`."
-    )
+    parser = argparse.ArgumentParser(description="Ejecuta mypy y normaliza anotaciones `type: ignore`.")
     parser.add_argument(
         "paths",
         nargs="*",
         default=(".",),
-        help=(
-            "Rutas o módulos a validar con mypy "
-            "(por defecto el repositorio completo)."
-        ),
+        help=("Rutas o módulos a validar con mypy (por defecto el repositorio completo)."),
     )
     parser.add_argument(
         "--dry-run",

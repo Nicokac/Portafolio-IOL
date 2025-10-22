@@ -3,7 +3,7 @@
 import csv
 from pathlib import Path
 
-from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
@@ -61,12 +61,9 @@ def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
 
     assert rows and rows[0]["tab_name"] == "portafolio"
     assert float(rows[0]["portfolio_tab_render_s"]) >= 0.0
-    assert rows[0]["profile_block_total_ms"] == "" or float(
-        rows[0]["profile_block_total_ms"]
-    ) >= 0.0
+    assert rows[0]["profile_block_total_ms"] == "" or float(rows[0]["profile_block_total_ms"]) >= 0.0
 
     try:
         metrics_path.unlink()
     except FileNotFoundError:  # pragma: no cover - defensive cleanup
         pass
-

@@ -2,25 +2,23 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import threading
 import time
-import random
 from typing import Optional
 
-import streamlit as st
 import requests
+import streamlit as st
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException
 
-from shared.time_provider import TimeProvider
 from shared.errors import InvalidCredentialsError
+from shared.time_provider import TimeProvider
 
 logger = logging.getLogger(__name__)
 
 
-AUTH_FAILURE_COOLDOWN_SECONDS = float(
-    os.getenv("LEGACY_AUTH_FAILURE_COOLDOWN_SECONDS", "0") or 0
-)
+AUTH_FAILURE_COOLDOWN_SECONDS = float(os.getenv("LEGACY_AUTH_FAILURE_COOLDOWN_SECONDS", "0") or 0)
 
 
 class LegacySession:
@@ -69,7 +67,10 @@ class LegacySession:
         tokens = getattr(auth, "tokens", {}) if auth is not None else {}
         bearer = tokens.get("access_token") if isinstance(tokens, dict) else None
         refresh = tokens.get("refresh_token") if isinstance(tokens, dict) else None
-        tokens_snapshot = (str(bearer) if bearer else None, str(refresh) if refresh else None)
+        tokens_snapshot = (
+            str(bearer) if bearer else None,
+            str(refresh) if refresh else None,
+        )
 
         with self._lock:
             creds_changed = (self._user, self._password) != (norm_user, norm_password)

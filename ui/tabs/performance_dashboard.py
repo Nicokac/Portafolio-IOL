@@ -44,9 +44,7 @@ def _entries_to_dataframe(entries: Iterable) -> pd.DataFrame:
                 "mem_percent": entry.ram_percent,
                 "success": bool(getattr(entry, "success", True)),
                 "extras": extras,
-                "extras_text": json.dumps(extras, ensure_ascii=False, sort_keys=True)
-                if extras
-                else "",
+                "extras_text": json.dumps(extras, ensure_ascii=False, sort_keys=True) if extras else "",
             }
         )
     if not records:
@@ -71,9 +69,7 @@ def _extract_numeric_extra(series: pd.Series, key: str) -> pd.Series:
     if series.empty:
         return pd.Series(dtype="float64")
     return pd.to_numeric(
-        series.map(
-            lambda extras: extras.get(key) if isinstance(extras, dict) else None
-        ),
+        series.map(lambda extras: extras.get(key) if isinstance(extras, dict) else None),
         errors="coerce",
     )
 
@@ -95,6 +91,7 @@ def _build_alert_rows(df: pd.DataFrame) -> pd.DataFrame:
     alerts = df[duration_alert | cpu_alert | mem_alert].copy()
     if alerts.empty:
         return alerts
+
     def _describe(row):
         messages: list[str] = []
         if row.duration_s > _ALERT_DURATION_SECONDS:
@@ -104,6 +101,7 @@ def _build_alert_rows(df: pd.DataFrame) -> pd.DataFrame:
         if pd.notna(row.mem_percent) and row.mem_percent > _ALERT_MEM_PERCENT:
             messages.append(f"memoria>{_ALERT_MEM_PERCENT:.0f}%")
         return ", ".join(messages)
+
     alerts["Alertas"] = alerts.apply(_describe, axis=1)
     return alerts
 
@@ -163,12 +161,8 @@ def _build_ui_overhead_frame(df: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame()
     ui_entries = ui_entries.reset_index(drop=True)
     total_series = _extract_numeric_extra(ui_entries["extras"], "total_ms").to_numpy()
-    logic_series = _extract_numeric_extra(
-        ui_entries["extras"], "profile_block_total_ms"
-    ).to_numpy()
-    overhead_series = _extract_numeric_extra(
-        ui_entries["extras"], "streamlit_overhead_ms"
-    ).to_numpy()
+    logic_series = _extract_numeric_extra(ui_entries["extras"], "profile_block_total_ms").to_numpy()
+    overhead_series = _extract_numeric_extra(ui_entries["extras"], "streamlit_overhead_ms").to_numpy()
     frame = pd.DataFrame(
         {
             "ui_total_load_ms": total_series,
@@ -192,7 +186,15 @@ def _prepare_display(df: pd.DataFrame) -> pd.DataFrame:
     formatted["Extras"] = formatted["extras"].map(_extras_to_text)
     formatted["Estado"] = formatted["success"].map(lambda value: "✅" if value else "❌")
     return formatted[
-        ["Timestamp", "Bloque", "Duración (s)", "CPU (%)", "RAM (%)", "Estado", "Extras"]
+        [
+            "Timestamp",
+            "Bloque",
+            "Duración (s)",
+            "CPU (%)",
+            "RAM (%)",
+            "Estado",
+            "Extras",
+        ]
     ]
 
 
@@ -254,10 +256,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
                 max_value=max_ts,
                 value=(min_ts, max_ts),
             )
-            df = df[
-                (df["timestamp"] >= pd.to_datetime(start))
-                & (df["timestamp"] <= pd.to_datetime(end))
-            ]
+            df = df[(df["timestamp"] >= pd.to_datetime(start)) & (df["timestamp"] <= pd.to_datetime(end))]
 
     keyword = st.text_input("Buscar palabras clave en extras", value="")
     if keyword:
@@ -312,9 +311,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
                 decimals=0,
                 chart_type="line",
                 help_text="Suma de los bloques instrumentados reportados en la sesión.",
-                chart_gradient=_compute_duration_gradient(
-                    ui_recent["profile_block_total_ms"]
-                ),
+                chart_gradient=_compute_duration_gradient(ui_recent["profile_block_total_ms"]),
             )
             _render_sparkline_metric(
                 ui_columns[2],
@@ -323,12 +320,8 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
                 unit=" ms",
                 decimals=0,
                 chart_type="line",
-                help_text=(
-                    "Latencia atribuida al layout: ui_total_load_ms menos la lógica instrumentada."
-                ),
-                chart_gradient=_compute_duration_gradient(
-                    ui_recent["streamlit_overhead_ms"]
-                ),
+                help_text=("Latencia atribuida al layout: ui_total_load_ms menos la lógica instrumentada."),
+                chart_gradient=_compute_duration_gradient(ui_recent["streamlit_overhead_ms"]),
             )
             st.markdown(
                 """
@@ -339,9 +332,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
 - Mejorar el caching de componentes UI costosos.
 """
             )
-        metrics_frame = timeline.set_index("timestamp")[
-            ["duration_s", "cpu_percent", "mem_percent"]
-        ]
+        metrics_frame = timeline.set_index("timestamp")[["duration_s", "cpu_percent", "mem_percent"]]
         if current_mode == "historical":
             metrics_frame = metrics_frame.expanding().mean()
         metrics_frame = metrics_frame.dropna(how="all")
@@ -358,9 +349,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
             sparkline_export_df.insert(1, "view_mode", current_mode)
 
             metric_cols = st.columns(3)
-            duration_label = (
-                "Duración promedio (s)" if current_mode == "historical" else "Duración última (s)"
-            )
+            duration_label = "Duración promedio (s)" if current_mode == "historical" else "Duración última (s)"
             duration_help = (
                 "Promedio acumulado de la duración histórica de los bloques instrumentados."
                 if current_mode == "historical"

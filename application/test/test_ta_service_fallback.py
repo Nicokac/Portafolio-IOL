@@ -37,7 +37,14 @@ class _DummyATR:
 
 
 class _DummyStoch:
-    def __init__(self, high: pd.Series, low: pd.Series, close: pd.Series, window: int, smooth_window: int) -> None:
+    def __init__(
+        self,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        window: int,
+        smooth_window: int,
+    ) -> None:
         self._index = close.index
 
     def stoch(self) -> pd.Series:
@@ -93,7 +100,9 @@ def _patch_indicators(monkeypatch: pytest.MonkeyPatch, adapter: _AdapterStub) ->
     monkeypatch.setattr("application.ta_service.IchimokuIndicator", _DummyIchimoku)
 
 
-def test_fetch_with_indicators_returns_data_when_adapter_succeeds(monkeypatch: pytest.MonkeyPatch):
+def test_fetch_with_indicators_returns_data_when_adapter_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+):
     periods = 60
     idx = pd.date_range("2024-01-01", periods=periods, freq="D")
     frame = pd.DataFrame(
@@ -113,7 +122,9 @@ def test_fetch_with_indicators_returns_data_when_adapter_succeeds(monkeypatch: p
     assert adapter.calls == 1
 
 
-def test_fetch_with_indicators_returns_empty_when_adapter_empty(monkeypatch: pytest.MonkeyPatch):
+def test_fetch_with_indicators_returns_empty_when_adapter_empty(
+    monkeypatch: pytest.MonkeyPatch,
+):
     adapter = _AdapterStub(pd.DataFrame())
     _patch_indicators(monkeypatch, adapter)
 
@@ -122,7 +133,9 @@ def test_fetch_with_indicators_returns_empty_when_adapter_empty(monkeypatch: pyt
     assert adapter.calls == 1
 
 
-def test_fetch_with_indicators_raises_runtime_error_on_adapter_failure(monkeypatch: pytest.MonkeyPatch):
+def test_fetch_with_indicators_raises_runtime_error_on_adapter_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
     adapter = _AdapterStub(RuntimeError("fail"))
     _patch_indicators(monkeypatch, adapter)
 

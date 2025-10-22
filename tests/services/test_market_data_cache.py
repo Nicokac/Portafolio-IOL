@@ -9,6 +9,7 @@ from services.cache.core import CacheService
 from services.cache.market_data_cache import MarketDataCache
 from tests.fixtures.clock import FakeClock
 
+
 @pytest.fixture()
 def market_cache(fake_clock: FakeClock) -> MarketDataCache:
     history = CacheService(namespace="test_history", monotonic=fake_clock)

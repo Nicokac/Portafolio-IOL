@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
-import sys
-from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -117,7 +117,10 @@ def test_fetch_quotes_bulk_respects_monkeypatched_ttl(monkeypatch):
             def get_quotes_bulk(self, items):
                 self.calls += 1
                 return {
-                    tuple(item): {"last": float(self.calls), "chg_pct": float(self.calls)}
+                    tuple(item): {
+                        "last": float(self.calls),
+                        "chg_pct": float(self.calls),
+                    }
                     for item in items
                 }
 
@@ -268,6 +271,7 @@ def test_get_fundamental_data_respects_monkeypatched_ttl(monkeypatch):
     """``get_fundamental_data`` should honour Yahoo fundamentals TTL overrides."""
 
     with reload_ta_with(monkeypatch, "yahoo_fundamentals_ttl", 0) as (ta_module, mp):
+
         class DummyYF:
             def __init__(self) -> None:
                 self.calls = 0

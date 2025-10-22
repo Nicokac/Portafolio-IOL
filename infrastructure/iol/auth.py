@@ -1,23 +1,24 @@
 # infrastructure/iol/auth.py
 from __future__ import annotations
+
+import json
+import logging
+import math
+import os
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import os
-import logging
-import json
-import time
-import threading
-import math
-from typing import Dict, Any, Mapping
+from typing import Any, Dict, Mapping
 
-import streamlit as st
 import requests
+import streamlit as st
 from cryptography.fernet import Fernet, InvalidToken
 
-from shared.config import settings
-from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
 from services.diagnostics import run_startup_diagnostics
 from services.health import record_diagnostics_snapshot
+from shared.config import settings
+from shared.errors import InvalidCredentialsError, NetworkError, TimeoutError
 
 logger = logging.getLogger(__name__)
 _SESSION_USER_ID_KEY = "iol_current_user_id"
@@ -112,6 +113,7 @@ def get_current_user_id() -> str | None:
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo obtener el usuario actual", exc_info=True)
         return None
+
 
 @dataclass
 class IOLAuth:
@@ -257,7 +259,8 @@ class IOLAuth:
             self.clear_tokens()
         except (TimeoutError, NetworkError) as exc:
             logger.info(
-                "Refresh inicial falló (%s); se forzará login()", exc,
+                "Refresh inicial falló (%s); se forzará login()",
+                exc,
                 extra={"tokens_file": self.tokens_path},
             )
             self.clear_tokens()
@@ -265,7 +268,11 @@ class IOLAuth:
     def login(self) -> Dict[str, Any]:
         """Realiza el login contra la API de IOL y guarda los tokens."""
         with self._lock:
-            payload = {"username": self.user, "password": self.password, "grant_type": "password"}
+            payload = {
+                "username": self.user,
+                "password": self.password,
+                "grant_type": "password",
+            }
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             start = time.time()
             try:
@@ -352,7 +359,10 @@ class IOLAuth:
                     extra={"tokens_file": self.tokens_path},
                 )
                 return self.login()
-            payload = {"refresh_token": self.tokens["refresh_token"], "grant_type": "refresh_token"}
+            payload = {
+                "refresh_token": self.tokens["refresh_token"],
+                "grant_type": "refresh_token",
+            }
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
             start = time.time()
             try:

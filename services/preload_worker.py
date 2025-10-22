@@ -85,12 +85,7 @@ def _reset_events() -> None:
 
 
 def _log_preload_metric(library: str, duration: float, status: str, error: str | None = None) -> None:
-    message = (
-        "preload"
-        f" | library={library}"
-        f" | status={status}"
-        f" | duration_ms={_format_duration_ms(duration)}"
-    )
+    message = f"preload | library={library} | status={status} | duration_ms={_format_duration_ms(duration)}"
     if error:
         message += f" | error={error}"
     log_startup_event(message)
@@ -128,11 +123,7 @@ def _preload_target(libraries: Iterable[str] | None = None) -> None:
     _RESUME_EVENT.wait()
     resume_delay_ms = (time.perf_counter() - resume_started) * 1000.0
     _set_phase(PreloadPhase.RUNNING)
-    log_startup_event(
-        "preload | status=running"
-        f" | libraries={requested}"
-        f" | resume_delay_ms={resume_delay_ms:.2f}"
-    )
+    log_startup_event(f"preload | status=running | libraries={requested} | resume_delay_ms={resume_delay_ms:.2f}")
     start_total = time.perf_counter()
     durations: dict[str, float | None] = {}
     first_error: str | None = None
@@ -163,12 +154,7 @@ def _preload_target(libraries: Iterable[str] | None = None) -> None:
         _set_phase(PreloadPhase.FAILED)
     else:
         status_value = "completed" if first_error is None else "completed_with_errors"
-        log_startup_event(
-            "preload"
-            f" | status={status_value}"
-            f" | total_ms={total_ms:.2f}"
-            f" | libraries={requested}"
-        )
+        log_startup_event(f"preload | status={status_value} | total_ms={total_ms:.2f} | libraries={requested}")
         _set_phase(PreloadPhase.COMPLETED if first_error is None else PreloadPhase.FAILED)
     finally:
         _TELEMETRY.durations_ms = durations
@@ -222,9 +208,7 @@ def start_preload_worker(
         return True
 
 
-def resume_preload_worker(
-    *, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None
-) -> bool:
+def resume_preload_worker(*, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None) -> bool:
     """Signal the worker to resume the import sequence."""
 
     global _LIBRARY_OVERRIDE

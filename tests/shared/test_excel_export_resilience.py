@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
 
+from shared import portfolio_export as export
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from shared import portfolio_export as export
 
 
 def _snapshot() -> export.PortfolioSnapshotExport:
@@ -51,7 +51,9 @@ def _patch_export_dependencies(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 @pytest.mark.parametrize("png_bytes", [None, b""])
 def test_excel_export_skips_missing_chart_images(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, png_bytes: bytes | None
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    png_bytes: bytes | None,
 ) -> None:
     chart_keys = _patch_export_dependencies(monkeypatch)
     monkeypatch.setattr(export, "fig_to_png_bytes", lambda _fig: png_bytes)
@@ -64,7 +66,4 @@ def test_excel_export_skips_missing_chart_images(
     assert len(workbook_bytes) > 0
 
     for key in chart_keys:
-        assert any(
-            "⛔ Imagen omitida" in record.message and key in record.message
-            for record in caplog.records
-        )
+        assert any("⛔ Imagen omitida" in record.message and key in record.message for record in caplog.records)

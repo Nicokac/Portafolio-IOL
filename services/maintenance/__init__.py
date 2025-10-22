@@ -19,9 +19,7 @@ def run_sqlite_maintenance(*, force: bool = False) -> bool:
     return _impl(force=force)
 
 
-def run_sqlite_maintenance_now(
-    *, reason: str = "manual", now: float | None = None, vacuum: bool = True
-):
+def run_sqlite_maintenance_now(*, reason: str = "manual", now: float | None = None, vacuum: bool = True):
     """Execute the maintenance cycle immediately using a lazy import."""
 
     from .sqlite_maintenance import run_sqlite_maintenance_now as _impl

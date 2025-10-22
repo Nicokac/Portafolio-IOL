@@ -8,16 +8,18 @@ from application.portfolio_viewmodel import (
     get_portfolio_tabs,
 )
 from domain.models import Controls
-from services.portfolio_view import PortfolioViewSnapshot, PortfolioContributionMetrics
+from services.portfolio_view import PortfolioContributionMetrics, PortfolioViewSnapshot
 
 
 def test_build_portfolio_viewmodel_computes_totals_and_metrics():
     controls = Controls(refresh_secs=60)
-    filtered = pd.DataFrame({
-        'simbolo': ['AAA'],
-        'valor_actual': [120.0],
-        'costo': [100.0],
-    })
+    filtered = pd.DataFrame(
+        {
+            "simbolo": ["AAA"],
+            "valor_actual": [120.0],
+            "costo": [100.0],
+        }
+    )
 
     snapshot = PortfolioViewSnapshot(
         df_view=filtered,
@@ -32,8 +34,8 @@ def test_build_portfolio_viewmodel_computes_totals_and_metrics():
     vm = build_portfolio_viewmodel(
         snapshot=snapshot,
         controls=controls,
-        fx_rates={'ccl': 900.0},
-        all_symbols=['AAA'],
+        fx_rates={"ccl": 900.0},
+        all_symbols=["AAA"],
         snapshots_module=_FakeSnapshotSvc(),
     )
 
@@ -44,7 +46,7 @@ def test_build_portfolio_viewmodel_computes_totals_and_metrics():
     assert vm.totals.total_pl == pytest.approx(20.0)
     assert vm.metrics.refresh_secs == 60
     assert vm.metrics.ccl_rate == 900.0
-    assert vm.metrics.all_symbols == ('AAA',)
+    assert vm.metrics.all_symbols == ("AAA",)
     assert vm.metrics.has_positions is True
     assert vm.tab_options == get_portfolio_tabs()
 

@@ -5,11 +5,11 @@ from typing import Any, Dict, Iterable, Tuple
 
 import pytest
 
+from services import cache as cache_module
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from services import cache as cache_module
 
 
 class DummyBulkClient:
@@ -53,13 +53,13 @@ def _collect_info_logs(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [
         record.message
         for record in caplog.records
-        if record.levelno == logging.INFO
-        and record.name == "services.cache"
-        and "quotes processed" in record.message
+        if record.levelno == logging.INFO and record.name == "services.cache" and "quotes processed" in record.message
     ]
 
 
-def test_fetch_quotes_bulk_logs_single_info_for_bulk_client(caplog: pytest.LogCaptureFixture) -> None:
+def test_fetch_quotes_bulk_logs_single_info_for_bulk_client(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     client = DummyBulkClient()
     items = [("bcba", "GGAL"), ("bcba", "ALUA")]
 
@@ -77,13 +77,19 @@ def test_fetch_quotes_bulk_logs_single_info_for_bulk_client(caplog: pytest.LogCa
     assert "rate_limited=3" in message
 
 
-def test_fetch_quotes_bulk_logs_single_info_for_per_symbol(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_quotes_bulk_logs_single_info_for_per_symbol(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
     client = DummySingleClient()
     items = [("bcba", "GGAL"), ("bcba", "ALUA")]
 
     # Avoid actual waiting during tests.
     monkeypatch.setattr(cache_module.quote_rate_limiter, "wait_for_slot", lambda provider: None)
-    monkeypatch.setattr(cache_module.quote_rate_limiter, "penalize", lambda provider, minimum_wait=None: 0.0)
+    monkeypatch.setattr(
+        cache_module.quote_rate_limiter,
+        "penalize",
+        lambda provider, minimum_wait=None: 0.0,
+    )
 
     with caplog.at_level(logging.INFO, logger="services.cache"):
         result = cache_module.fetch_quotes_bulk(client, items)

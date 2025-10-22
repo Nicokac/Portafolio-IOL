@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from typing import Mapping
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -13,7 +12,6 @@ from ui.charts.correlation_matrix import build_correlation_figure
 
 from .formatting import (
     _format_float,
-    _format_float_delta,
     _format_percent,
     _format_percent_delta,
 )
@@ -35,17 +33,9 @@ def _merge_symbol_sector_frames(*frames: pd.DataFrame) -> pd.DataFrame:
         if "symbol" not in df.columns and "ticker" in df.columns:
             df = df.rename(columns={"ticker": "symbol"})
         if {"symbol", "sector"}.issubset(df.columns):
-            df["symbol"] = (
-                df.get("symbol", pd.Series(dtype=str))
-                .astype("string")
-                .str.upper()
-                .str.strip()
-            )
+            df["symbol"] = df.get("symbol", pd.Series(dtype=str)).astype("string").str.upper().str.strip()
             df["sector"] = (
-                df.get("sector", pd.Series(dtype=str))
-                .astype("string")
-                .str.strip()
-                .replace({"": "Sin sector"})
+                df.get("sector", pd.Series(dtype=str)).astype("string").str.strip().replace({"": "Sin sector"})
             )
             rows.append(df[["symbol", "sector"]])
     if not rows:
@@ -114,8 +104,7 @@ def _render_correlation_tab(payload: Mapping[str, object] | None) -> None:
     hit_ratio = float(metadata.get("hit_ratio", 0.0)) if metadata else 0.0
     last_updated_label = str(metadata.get("last_updated", "-")) if metadata else "-"
     st.caption(
-        "Última actualización del estado adaptativo: "
-        f"{last_updated_label} | Ratio de aciertos: {hit_ratio:.0f} %"
+        f"Última actualización del estado adaptativo: {last_updated_label} | Ratio de aciertos: {hit_ratio:.0f} %"
     )
 
     cols = st.columns(4)

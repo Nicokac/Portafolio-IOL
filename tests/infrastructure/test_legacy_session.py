@@ -9,12 +9,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from infrastructure.iol.legacy import session as legacy_session_module
+from shared.errors import InvalidCredentialsError
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from infrastructure.iol.legacy import session as legacy_session_module
-from shared.errors import InvalidCredentialsError
 
 
 @pytest.fixture
@@ -169,9 +169,7 @@ def test_sticky_flag_can_expire_after_cooldown(
     builder = MagicMock(side_effect=InvalidCredentialsError("boom"))
     monkeypatch.setattr(legacy_session, "_build_session", builder)
 
-    monkeypatch.setattr(
-        legacy_session_module, "AUTH_FAILURE_COOLDOWN_SECONDS", 10, raising=False
-    )
+    monkeypatch.setattr(legacy_session_module, "AUTH_FAILURE_COOLDOWN_SECONDS", 10, raising=False)
 
     # Start with a deterministic timestamp.
     now = 100.0
@@ -189,4 +187,3 @@ def test_sticky_flag_can_expire_after_cooldown(
     now += 6
     assert legacy_session.ensure_authenticated("user", "pass", auth=None) is None
     assert builder.call_count == 2
-

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from contextlib import contextmanager
 from pathlib import Path
 from time import perf_counter
 from types import SimpleNamespace
-import warnings
 
 import pandas as pd
 import pytest
@@ -128,8 +128,8 @@ def test_render_for_test_smoke() -> None:
         )
         recommendations.export_adaptive_report = lambda payload: Path("docs/qa/v0.5.6-smoke-report.md")
         recommendations.build_correlation_figure = lambda *args, **kwargs: _ChartStub("correlation")
-        recommendations.recommendations_controller.get_predictive_cache_view = (
-            lambda: PredictiveCacheViewModel(hits=3, misses=0, last_updated="offline")
+        recommendations.recommendations_controller.get_predictive_cache_view = lambda: PredictiveCacheViewModel(
+            hits=3, misses=0, last_updated="offline"
         )
 
         with _no_warnings():

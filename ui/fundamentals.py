@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import pandas as pd
-import streamlit as st
 import plotly.express as px
+import streamlit as st
 
 from shared.utils import _is_none_nan_inf, format_number, format_percent
+
 from .export import PLOTLY_CONFIG
 
 # Meta información de indicadores: etiqueta, formato, descripción y fuente
@@ -120,6 +121,7 @@ INDICATORS = {
     },
 }
 
+
 def render_fundamental_data(data: dict):
     if not data or (isinstance(data, dict) and data.get("error")):
         if isinstance(data, dict):
@@ -143,10 +145,11 @@ def render_fundamental_data(data: dict):
                 "Fuente": f"[Link]({meta['url']})",
             }
         )
-        
+
     st.table(pd.DataFrame(rows))
     st.caption("Resumen de indicadores fundamentales básicos.")
     st.divider()
+
 
 def render_fundamental_ranking(df: pd.DataFrame):
     """Muestra ranking y filtros por métricas fundamentales/ESG."""
@@ -233,6 +236,4 @@ def render_sector_comparison(df: pd.DataFrame):
         annotation_position="top left",
     )
     st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
-    st.caption(
-        "Valores mayores a 1 indican métricas por encima del promedio del sector (posible sobrevaluación)."
-    )
+    st.caption("Valores mayores a 1 indican métricas por encima del promedio del sector (posible sobrevaluación).")

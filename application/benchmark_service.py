@@ -13,6 +13,7 @@ except Exception:  # pragma: no cover - SciPy not available or altered
     _scipy_util = None
 else:  # pragma: no cover - executed during runtime, hard to unit test deterministically
     if not hasattr(_scipy_util, "_lazywhere"):
+
         def _lazywhere(cond, arrays, func, fillvalue=np.nan):
             cond_arr = np.asarray(cond, dtype=bool)
             array_list = [np.asarray(arr) for arr in arrays]
@@ -113,9 +114,7 @@ def benchmark_analysis(
                 X = combined[factor_cols].astype(float)
                 X = sm.add_constant(X, has_constant="add")
                 model = sm.OLS(y, X).fit()
-                betas = {
-                    col: float(model.params.get(col, np.nan)) for col in factor_cols
-                }
+                betas = {col: float(model.params.get(col, np.nan)) for col in factor_cols}
                 r_squared = float(model.rsquared)
 
     return {
@@ -127,9 +126,7 @@ def benchmark_analysis(
     }
 
 
-def compute_benchmark_comparison(
-    recommendations: pd.DataFrame, benchmark: str
-) -> dict[str, float | str]:
+def compute_benchmark_comparison(recommendations: pd.DataFrame, benchmark: str) -> dict[str, float | str]:
     """Estimate relative metrics against a reference benchmark."""
 
     benchmark_key = str(benchmark).lower()
@@ -180,9 +177,7 @@ def compute_benchmark_comparison(
         else float("nan")
     )
     relative_beta = (
-        portfolio_beta - benchmark_beta
-        if np.isfinite(portfolio_beta) and np.isfinite(benchmark_beta)
-        else float("nan")
+        portfolio_beta - benchmark_beta if np.isfinite(portfolio_beta) and np.isfinite(benchmark_beta) else float("nan")
     )
 
     baseline_weights = np.array(baseline.get("weights", []), dtype=float)

@@ -1,11 +1,15 @@
 import plotly.graph_objs as go
-from types import SimpleNamespace
 
 import ui.tabs.recommendations as rec
 
 
 def test_cache_status_valid_state(monkeypatch):
-    fake_stats = {"ratio": 0.6, "ttl_display": "6h", "last_updated_str": "ahora", "hit_ratio": 0.6}
+    fake_stats = {
+        "ratio": 0.6,
+        "ttl_display": "6h",
+        "last_updated_str": "ahora",
+        "hit_ratio": 0.6,
+    }
     called = {}
 
     def fake_status(*args, **kwargs):

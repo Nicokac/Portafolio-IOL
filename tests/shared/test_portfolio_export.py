@@ -1,19 +1,20 @@
 """Tests for shared export helpers."""
+
 from __future__ import annotations
 
 import base64
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import plotly.graph_objects as go
 import pytest
 
+from shared import export
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from shared import export
 
 
 _DUMMY_PNG = base64.b64decode(
@@ -76,9 +77,7 @@ def test_fig_to_png_bytes_returns_none_and_warns_when_runtime_missing(
 
     assert result is None
     assert export._KALEIDO_RUNTIME_AVAILABLE is False
-    assert any(
-        "Exportación no crítica" in message for message in caplog.messages
-    )
+    assert any("Exportación no crítica" in message for message in caplog.messages)
 
 
 def test_fig_to_png_bytes_short_circuits_after_failure(

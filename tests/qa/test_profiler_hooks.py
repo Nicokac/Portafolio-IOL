@@ -1,7 +1,6 @@
 import csv
 
-from shared import qa_profiler
-from shared import telemetry
+from shared import qa_profiler, telemetry
 
 
 def test_profiler_writes_metrics_snapshot(tmp_path, monkeypatch):

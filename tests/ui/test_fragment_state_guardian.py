@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import logging
+import sys
 from types import ModuleType, SimpleNamespace
 from typing import Any
-
-import sys
 
 import pytest
 
@@ -126,8 +125,8 @@ if "plotly" not in sys.modules:
         }
     )
 
-from controllers.portfolio import portfolio as portfolio_mod
 import shared.fragment_state as fragment_state
+from controllers.portfolio import portfolio as portfolio_mod
 from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
@@ -139,7 +138,13 @@ def guardian_test_setup(monkeypatch: pytest.MonkeyPatch):
 
     events: list[tuple[str, Any, Any]] = []
 
-    def _capture(action: str, detail: Any, *, dataset_hash: str | None = None, latency_ms: Any | None = None) -> None:
+    def _capture(
+        action: str,
+        detail: Any,
+        *,
+        dataset_hash: str | None = None,
+        latency_ms: Any | None = None,
+    ) -> None:
         events.append((action, detail, dataset_hash))
 
     monkeypatch.setattr(portfolio_mod, "log_user_action", _capture)
@@ -295,9 +300,7 @@ def test_guardian_soft_refresh_keeps_fragment_visible(guardian_test_setup):
     assert rerun_block["status"] == "loaded"
 
 
-def test_guardian_wait_for_hydration_emits_events(
-    guardian_test_setup, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_guardian_wait_for_hydration_emits_events(guardian_test_setup, caplog: pytest.LogCaptureFixture) -> None:
     fake_st, _events = guardian_test_setup
     guardian = fragment_state.get_fragment_state_guardian()
     dataset_token = "dataset-wait"

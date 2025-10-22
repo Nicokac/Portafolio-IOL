@@ -1,21 +1,21 @@
 """View-model builders for the portfolio section."""
+
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
-from typing import Mapping, Sequence, Any
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from domain.models import Controls
+from services import snapshots as snapshot_service
 from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
 )
-from services import snapshots as snapshot_service
-
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,7 @@ def build_portfolio_viewmodel(
     if snapshot is None:
         df_view = pd.DataFrame()
         totals = calculate_totals(None)
-        historical_total = pd.DataFrame(
-            columns=["timestamp", "total_value", "total_cost", "total_pl"]
-        )
+        historical_total = pd.DataFrame(columns=["timestamp", "total_value", "total_cost", "total_pl"])
         contributions = PortfolioContributionMetrics.empty()
         snapshot_id = None
         pending_metrics: tuple[str, ...] = ()

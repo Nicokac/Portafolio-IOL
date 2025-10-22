@@ -1,4 +1,5 @@
 """Base fallback adapter with caching and incident tracking."""
+
 from __future__ import annotations
 
 import logging
@@ -10,7 +11,6 @@ from typing import Any, Callable, Dict, Mapping, Sequence, Tuple
 import pandas as pd
 
 from services.health import record_adapter_fallback, record_market_data_incident
-
 
 logger = logging.getLogger(__name__)
 
@@ -166,11 +166,7 @@ class BaseMarketDataAdapter:
             self._cache.clear()
             return
         now = time.time()
-        expired = [
-            key
-            for key, entry in self._cache.items()
-            if now - entry.timestamp >= self.cache_ttl
-        ]
+        expired = [key for key, entry in self._cache.items() if now - entry.timestamp >= self.cache_ttl]
         for key in expired:
             self._cache.pop(key, None)
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
 import importlib
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -41,7 +40,11 @@ def test_run_startup_diagnostics_formats_payload(
     monkeypatch.setattr(diagnostics_module, "TimeProvider", fake_time)
 
     health_metrics = {
-        "quotes": {"status": "success", "label": "Cotizaciones", "detail": "3 proveedores"},
+        "quotes": {
+            "status": "success",
+            "label": "Cotizaciones",
+            "detail": "3 proveedores",
+        },
         "fx_api": {"status": "error", "label": "FX", "detail": "Timeout"},
         "other": "ignored",
     }

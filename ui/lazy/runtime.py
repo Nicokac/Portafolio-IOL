@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
 from dataclasses import dataclass
-import time
+from textwrap import dedent
 from typing import Any, Iterator
 
-from textwrap import dedent
-
 import streamlit as st
+
+from shared import telemetry
+from shared.fragment_state import (
+    get_fragment_state_guardian,
+    register_fragment_auto_load_context,
+    reset_fragment_auto_load_context,
+)
+from shared.telemetry import log_default_telemetry
 
 _js_import_error: Exception | None = None
 
@@ -23,13 +30,6 @@ except Exception as exc:  # pragma: no cover - dependency optional in tests
 else:  # pragma: no cover - informational placeholder for linting
     _js_import_error = None
 
-from shared import telemetry
-from shared.fragment_state import (
-    get_fragment_state_guardian,
-    register_fragment_auto_load_context,
-    reset_fragment_auto_load_context,
-)
-from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +51,7 @@ def _get_or_init_session_dict(key: str) -> tuple[dict[str, Any], bool]:
     try:
         mapping = state.setdefault(key, {})
     except Exception:  # pragma: no cover - defensive safeguard for non-mutable state
-        logger.debug(
-            "[LazyRuntime] session_state_setdefault_failed key=%s", key, exc_info=True
-        )
+        logger.debug("[LazyRuntime] session_state_setdefault_failed key=%s", key, exc_info=True)
         return {}, False
 
     if not isinstance(mapping, dict):
@@ -61,9 +59,7 @@ def _get_or_init_session_dict(key: str) -> tuple[dict[str, Any], bool]:
         try:
             state[key] = mapping
         except Exception:  # pragma: no cover - defensive safeguard when session state immutable
-            logger.debug(
-                "[LazyRuntime] session_state_not_dict key=%s", key, exc_info=True
-            )
+            logger.debug("[LazyRuntime] session_state_not_dict key=%s", key, exc_info=True)
             return mapping, False
 
     return mapping, True
@@ -207,9 +203,8 @@ def emit_fragment_ready(fragment_id: str) -> None:
                 exc_info=True,
             )
     except Exception as exc:  # pragma: no cover - integration with frontend
-        logger.warning(
-            "[LazyRuntime] JS emit failed for %s: %s", fragment_id, exc, exc_info=True
-        )
+        logger.warning("[LazyRuntime] JS emit failed for %s: %s", fragment_id, exc, exc_info=True)
+
 
 _FRAGMENT_CONTEXT_TIMEOUT_S = 0.25
 _FRAGMENT_CONTEXT_POLL_INTERVAL_S = 0.05
@@ -427,15 +422,15 @@ def _resolve_fragment_context(factory, name: str):
         try:
             candidate = factory(name)
         except TypeError:
-            logger.debug(
-                "Streamlit fragment factory %r rejected lazy fragment %s", factory, name
-            )
+            logger.debug("Streamlit fragment factory %r rejected lazy fragment %s", factory, name)
             return None
 
     manager = _coerce_fragment_candidate(candidate)
     if manager is None:
         logger.debug(
-            "Streamlit fragment factory %r returned unsupported value %r", factory, candidate
+            "Streamlit fragment factory %r returned unsupported value %r",
+            factory,
+            candidate,
         )
     return manager
 
@@ -544,9 +539,7 @@ def _container_context():
     return nullcontext()
 
 
-def _handle_fragment_fallback(
-    fragment_id: str, context_ready: bool, scope: str
-) -> Any | None:
+def _handle_fragment_fallback(fragment_id: str, context_ready: bool, scope: str) -> Any | None:
     """Resolve the container to use when fragment rendering falls back."""
 
     try:  # pragma: no cover - optional telemetry hook
@@ -836,7 +829,9 @@ def register_fragment_ready(
         registry[fragment_id] = payload
     except Exception:  # pragma: no cover - defensive safeguard for unexpected values
         logger.debug(
-            "[LazyRuntime] failed_to_store_fragment_ready fragment=%s", fragment_id, exc_info=True
+            "[LazyRuntime] failed_to_store_fragment_ready fragment=%s",
+            fragment_id,
+            exc_info=True,
         )
 
 

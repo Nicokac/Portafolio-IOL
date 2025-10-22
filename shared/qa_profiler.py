@@ -145,7 +145,7 @@ def _measure_memory_usage_mb() -> float | None:
             process = psutil.Process()
             rss_bytes = float(process.memory_info().rss)
             if rss_bytes > 0.0:
-                return rss_bytes / (1024.0 ** 2)
+                return rss_bytes / (1024.0**2)
         except Exception:  # pragma: no cover - psutil runtime failure safeguard
             logger.debug("Unable to determine memory usage via psutil", exc_info=True)
 
@@ -156,7 +156,7 @@ def _measure_memory_usage_mb() -> float | None:
             if rss_value <= 0.0:
                 return None
             if sys.platform == "darwin":
-                return rss_value / (1024.0 ** 2)
+                return rss_value / (1024.0**2)
             return rss_value / 1024.0
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("Unable to determine memory usage via resource", exc_info=True)

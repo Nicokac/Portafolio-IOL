@@ -10,8 +10,8 @@ from api.middleware.refresh_rate_limit import REFRESH_RATE_LIMITER
 from services import auth as auth_module
 from services.auth import (
     ACTIVE_TOKENS,
-    USED_REFRESH_NONCES,
     MAX_TOKEN_TTL_SECONDS,
+    USED_REFRESH_NONCES,
     generate_token,
     verify_token,
 )
@@ -54,9 +54,7 @@ def _advance_into_window(fake_time: FakeTime, claims: dict[str, int]) -> None:
     fake_time.set(claims["exp"] - 120)
 
 
-def test_refresh_rate_limiter_blocks_after_threshold(
-    fake_time: FakeTime, client: TestClient
-) -> None:
+def test_refresh_rate_limiter_blocks_after_threshold(fake_time: FakeTime, client: TestClient) -> None:
     headers = {"Authorization": "Bearer invalid-token"}
 
     for _ in range(10):
@@ -69,9 +67,7 @@ def test_refresh_rate_limiter_blocks_after_threshold(
     assert REFRESH_RATE_LIMITER.total_attempts == 11
 
 
-def test_replay_is_rejected_with_nonce_error(
-    fake_time: FakeTime, client: TestClient
-) -> None:
+def test_replay_is_rejected_with_nonce_error(fake_time: FakeTime, client: TestClient) -> None:
     token = generate_token("nonce-user", expiry=MAX_TOKEN_TTL_SECONDS)
     claims = verify_token(token)
     _advance_into_window(fake_time, claims)

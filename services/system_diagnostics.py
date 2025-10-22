@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Background diagnostics runner aggregating latency and environment health."""
-
 import base64
 import json
 import logging
@@ -13,9 +11,9 @@ import threading
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
-from datetime import datetime
 from typing import Deque, Iterable, Mapping, Sequence
 
 from application.predictive_service import (
@@ -27,6 +25,8 @@ from services.performance_metrics import MetricSummary, get_recent_metrics
 from shared.settings import app_env
 from shared.time_provider import TimeProvider
 from shared.version import __build_signature__, __version__, get_version_info
+
+"""Background diagnostics runner aggregating latency and environment health."""
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -93,9 +93,7 @@ class CacheHealthSnapshot:
     remaining_ttl: float | None
 
     @classmethod
-    def from_predictive(
-        cls, snapshot: PredictiveSnapshot | PredictiveCacheSnapshot
-    ) -> "CacheHealthSnapshot":
+    def from_predictive(cls, snapshot: PredictiveSnapshot | PredictiveCacheSnapshot) -> "CacheHealthSnapshot":
         if isinstance(snapshot, PredictiveCacheSnapshot):
             base = snapshot.as_predictive_snapshot()
         else:
@@ -415,10 +413,7 @@ def run_system_diagnostics_once(now: float | None = None) -> SystemDiagnosticsSn
         moment = _resolve_generation_time(now)
         generated_at = moment.isoformat()
         metrics = _collect_metrics()
-        endpoints = [
-            _resolve_metric(name, metrics)
-            for name in _CONFIG.tracked_metrics
-        ]
+        endpoints = [_resolve_metric(name, metrics) for name in _CONFIG.tracked_metrics]
         cache_snapshot = _collect_cache_snapshot()
         key_statuses = _collect_key_statuses()
         environment = _build_environment_status()

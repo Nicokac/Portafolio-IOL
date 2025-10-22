@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 from pathlib import Path
 from typing import Mapping, MutableMapping
-
-import base64
-import hashlib
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -43,9 +42,7 @@ class ProfileService:
         encryption_key: str | None = None,
     ) -> None:
         self._storage_path = Path(storage_path or "config.json")
-        self._session_state = (
-            session_state if session_state is not None else self._resolve_session_state()
-        )
+        self._session_state = session_state if session_state is not None else self._resolve_session_state()
         self._secrets = secrets if secrets is not None else self._resolve_secrets()
         self._encryption_key = encryption_key or self._resolve_key_material()
         self._cipher = Fernet(self._normalise_key(self._encryption_key))
@@ -109,9 +106,7 @@ class ProfileService:
         }
         horizon_map = {"corto": "3 m", "mediano": "12 m", "largo": "24 m+"}
         risk_text = risk_map.get(profile_data.get("risk_tolerance", ""), "Moderado")
-        horizon_text = horizon_map.get(
-            profile_data.get("investment_horizon", ""), "12 m"
-        )
+        horizon_text = horizon_map.get(profile_data.get("investment_horizon", ""), "12 m")
         return f"🧩 Perfil: {risk_text} / {horizon_text}"
 
     # ------------------------------------------------------------------
@@ -158,9 +153,7 @@ class ProfileService:
             return base64.urlsafe_b64encode(digest)
         return candidate
 
-    def _normalise_profile(
-        self, profile: Mapping[str, object] | None
-    ) -> dict[str, str]:
+    def _normalise_profile(self, profile: Mapping[str, object] | None) -> dict[str, str]:
         if not isinstance(profile, Mapping):
             return {}
         normalized: dict[str, str] = DEFAULT_PROFILE.copy()
@@ -176,7 +169,11 @@ class ProfileService:
         return normalized
 
     def _load_profile_from_sources(self) -> dict[str, str]:
-        for source in (self._session_profile, self._secrets_profile, self._file_profile):
+        for source in (
+            self._session_profile,
+            self._secrets_profile,
+            self._file_profile,
+        ):
             profile = source()
             if profile:
                 return profile
@@ -243,4 +240,3 @@ class ProfileService:
 
 
 __all__ = ["ProfileService", "DEFAULT_PROFILE"]
-

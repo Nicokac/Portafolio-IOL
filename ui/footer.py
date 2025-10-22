@@ -37,8 +37,10 @@ def render_footer() -> None:
                 <div class='footer-links-card'>
                     <div class='footer-links-card__title'>Enlaces útiles</div>
                     <div class='footer-links-card__list'>
-                        <div>📘 <a href="https://github.com/caliari/Portafolio-IOL#readme" target="_blank" rel="noopener noreferrer">Documentación</a></div>
-                        <div>🆘 <a href="https://github.com/caliari/Portafolio-IOL/issues" target="_blank" rel="noopener noreferrer">Centro de ayuda</a></div>
+                        <div>📘 <a href="https://github.com/caliari/Portafolio-IOL#readme" target="_blank"
+                                rel="noopener noreferrer">Documentación</a></div>
+                        <div>🆘 <a href="https://github.com/caliari/Portafolio-IOL/issues" target="_blank"
+                                rel="noopener noreferrer">Centro de ayuda</a></div>
                     </div>
                     <div class='footer-links-card__disclaimer'>
                         Datos provistos sin garantía ni recomendación de inversión.

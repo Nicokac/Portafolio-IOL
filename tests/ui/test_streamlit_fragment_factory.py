@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-
 import logging
+from contextlib import contextmanager
 
 import pytest
 
@@ -41,7 +40,9 @@ class _ContainerStreamlit:
         return _ctx()
 
 
-def test_fragment_factory_wraps_function_return(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fragment_factory_wraps_function_return(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = _FunctionFragmentStreamlit()
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "_FRAGMENT_WARNING_EMITTED", False)
@@ -55,7 +56,9 @@ def test_fragment_factory_wraps_function_return(monkeypatch: pytest.MonkeyPatch)
     assert fake_st.fragment_calls == ["portfolio_table"]
 
 
-def test_fragment_factory_fallback_to_container(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+def test_fragment_factory_fallback_to_container(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     fake_st = _ContainerStreamlit()
     monkeypatch.setattr(lazy_runtime, "st", fake_st)
     monkeypatch.setattr(lazy_runtime, "_FRAGMENT_WARNING_EMITTED", False)
@@ -66,9 +69,7 @@ def test_fragment_factory_fallback_to_container(monkeypatch: pytest.MonkeyPatch,
     assert factory is None
     assert "fallback to container" in caplog.text
 
-    with lazy_runtime._enter_scope(
-        "portfolio_table", fragment_factory=None, form_callable=None, scope="global"
-    ):
+    with lazy_runtime._enter_scope("portfolio_table", fragment_factory=None, form_callable=None, scope="global"):
         pass
 
     assert fake_st.entered == 1

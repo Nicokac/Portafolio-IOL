@@ -4,6 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from infrastructure.iol import auth as auth_mod
+from services import cache as svc_cache
+from shared import config
+
 # Stub cryptography to avoid heavy dependency
 crypto_mod = types.ModuleType("cryptography")
 fernet_mod = types.ModuleType("fernet")
@@ -25,10 +29,6 @@ setattr(fernet_mod, "InvalidToken", Exception)
 crypto_mod.fernet = fernet_mod
 sys.modules.setdefault("cryptography", crypto_mod)
 sys.modules.setdefault("cryptography.fernet", fernet_mod)
-
-from services import cache as svc_cache
-from infrastructure.iol import auth as auth_mod
-from shared import config
 
 
 def test_repeated_401_forces_login(monkeypatch):
@@ -55,9 +55,7 @@ def test_repeated_401_forces_login(monkeypatch):
         rerun_called["called"] = True
         raise RuntimeError("rerun")
 
-    monkeypatch.setattr(
-        svc_cache, "st", SimpleNamespace(session_state={}, rerun=rerun)
-    )
+    monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state={}, rerun=rerun))
     svc_cache.fetch_portfolio.clear()
 
     def dummy_logout(user="", password=""):
@@ -72,4 +70,3 @@ def test_repeated_401_forces_login(monkeypatch):
     assert svc_cache.st.session_state["force_login"] is True
     assert cleared["called"] is True
     assert rerun_called["called"] is True
-

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -13,7 +13,10 @@ from shared.ui import notes
 @pytest.mark.parametrize(
     "note, expected",
     [
-        ("⚠️ Datos simulados (Yahoo no disponible)", ":warning: **Datos simulados (Yahoo no disponible)**"),
+        (
+            "⚠️ Datos simulados (Yahoo no disponible)",
+            ":warning: **Datos simulados (Yahoo no disponible)**",
+        ),
         (
             "Se recortaron los resultados a los 10 mejores según el score compuesto.",
             "**Se recortaron los resultados a los 10 mejores según el score compuesto.**",
@@ -24,7 +27,10 @@ from shared.ui import notes
         ),
         ("✅ Operación exitosa", ":white_check_mark: **Operación exitosa**"),
         ("❌ Error en backend", ":x: **Error en backend**"),
-        ("Considerar diversificación adicional.", "Considerar diversificación adicional."),
+        (
+            "Considerar diversificación adicional.",
+            "Considerar diversificación adicional.",
+        ),
         ("", ""),
     ],
 )

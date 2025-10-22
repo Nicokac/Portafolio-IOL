@@ -18,10 +18,12 @@ def _as_float_or_none(x: Any, log: bool = True) -> float | None:
         return None
     return f
 
+
 def _is_none_nan_inf(x: Any) -> bool:
     """Return ``True`` when ``x`` cannot be represented as a finite float."""
 
     return _as_float_or_none(x) is None
+
 
 def format_money(value: float | int | None, currency: str = "ARS") -> str:
     v = _as_float_or_none(value)
@@ -33,12 +35,14 @@ def format_money(value: float | int | None, currency: str = "ARS") -> str:
     prefix = "US$ " if currency.upper() == "USD" else "$ "
     return f"{sign}{prefix}{s}"
 
+
 def format_number(value: float | int | None) -> str:
     v = _as_float_or_none(value)
     if v is None:
         return "—"
     ent_str = f"{int(round(v)):,}".replace(",", ".")
     return ent_str
+
 
 def format_price(value: float | int | None, currency: str = "ARS") -> str:
     v = _as_float_or_none(value)
@@ -48,6 +52,7 @@ def format_price(value: float | int | None, currency: str = "ARS") -> str:
     prefix = "US$ " if currency.upper() == "USD" else "$ "
     return prefix + s
 
+
 def format_percent(value: float | None, spaced: bool = False) -> str:
     """Format ``value`` as a percentage string with two decimals."""
 
@@ -56,6 +61,7 @@ def format_percent(value: float | None, spaced: bool = False) -> str:
         return "—"
     suffix = " %" if spaced else "%"
     return f"{v:.2f}{suffix}"
+
 
 def _to_float(x: Any, log: bool = True) -> float | None:
     """Return ``x`` coerced to ``float`` when the representation is valid."""
@@ -76,4 +82,3 @@ def _to_float(x: Any, log: bool = True) -> float | None:
         if log:
             logger.warning("Valor inválido para conversión a float: %s", s)
         return None
-

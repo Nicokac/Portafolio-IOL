@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 import sys
+import types
 from datetime import datetime
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
 import requests
-import types
 
+from infrastructure.iol import client as iol_client_module
 from tests.fixtures.auth import FakeAuth
 
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from infrastructure.iol import client as iol_client_module
-from infrastructure.iol.legacy import iol_client as legacy_module
 
 
 class StreamlitStub:
@@ -96,9 +94,7 @@ def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware
     monkeypatch.setattr(iol_client_module, "Iol", StubIol)
     monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
 
-    client = iol_client_module.IOLClient(
-        "user", "", auth=FakeAuth(access="access", refresh="refresh")
-    )
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth(access="access", refresh="refresh"))
 
     assert isinstance(client.iol_market, StubIol)
     assert client.iol_market.bearer == "access"
@@ -109,9 +105,7 @@ def test_client_assigns_naive_bearer_time(monkeypatch: pytest.MonkeyPatch, aware
     assert call_count == 1
 
 
-def test_get_quote_returns_last_and_chg_pct(
-    monkeypatch: pytest.MonkeyPatch, aware_moment: datetime
-) -> None:
+def test_get_quote_returns_last_and_chg_pct(monkeypatch: pytest.MonkeyPatch, aware_moment: datetime) -> None:
     """Quick hotfix validation: pytest tests/infrastructure/test_iol_client.py -k get_quote."""
 
     class ResponseStub:
@@ -123,9 +117,7 @@ def test_get_quote_returns_last_and_chg_pct(
                 "moneda": "ARS",
             }
 
-    def fake_request(
-        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
-    ) -> ResponseStub:
+    def fake_request(self: iol_client_module.IOLClient, method: str, url: str, **kwargs) -> ResponseStub:
         return ResponseStub()
 
     def fake_now_datetime(cls: type[iol_client_module.TimeProvider]) -> datetime:
@@ -140,9 +132,7 @@ def test_get_quote_returns_last_and_chg_pct(
     monkeypatch.setattr(iol_client_module, "st", StreamlitStub)
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", fake_request)
 
-    client = iol_client_module.IOLClient(
-        "user", "", auth=FakeAuth(access="access", refresh="refresh")
-    )
+    client = iol_client_module.IOLClient("user", "", auth=FakeAuth(access="access", refresh="refresh"))
 
     result = client.get_quote("bcba", "AAPL")
 
@@ -162,9 +152,7 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
 
-    def fake_request(
-        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
-    ) -> SimpleNamespace:
+    def fake_request(self: iol_client_module.IOLClient, method: str, url: str, **kwargs) -> SimpleNamespace:
         calls["method"] = method
         calls["url"] = url
         return SimpleNamespace(
@@ -200,9 +188,7 @@ def test_get_quote_passes_panel_query_param(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
 
-    def fake_request(
-        self: iol_client_module.IOLClient, method: str, url: str, **kwargs
-    ) -> SimpleNamespace:
+    def fake_request(self: iol_client_module.IOLClient, method: str, url: str, **kwargs) -> SimpleNamespace:
         calls["params"] = kwargs.get("params")
         return SimpleNamespace(
             status_code=200,
@@ -244,9 +230,7 @@ def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(
         iol_client_module.IOLClient,
         "_request",
-        lambda *_, **__: (_ for _ in ()).throw(
-            requests.HTTPError(response=SimpleNamespace(status_code=500))
-        ),
+        lambda *_, **__: (_ for _ in ()).throw(requests.HTTPError(response=SimpleNamespace(status_code=500))),
     )
     monkeypatch.setattr(
         iol_client_module.IOLClient,
@@ -260,7 +244,9 @@ def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -
     assert result == fallback_payload
 
 
-def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_quote_marks_stale_when_no_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """If no provider responds, the payload should be marked as stale."""
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
@@ -282,9 +268,7 @@ def test_get_quote_marks_stale_when_no_fallback(monkeypatch: pytest.MonkeyPatch)
     assert payload == {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
 
 
-def test_get_quote_response_none_uses_legacy(
-    monkeypatch: pytest.MonkeyPatch, stub_record_usage: list[dict]
-) -> None:
+def test_get_quote_response_none_uses_legacy(monkeypatch: pytest.MonkeyPatch, stub_record_usage: list[dict]) -> None:
     """When the primary request yields no response, the legacy fallback should supply the quote."""
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)

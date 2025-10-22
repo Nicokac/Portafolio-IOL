@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Mapping
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -30,7 +29,11 @@ def _sample_payload() -> Mapping[str, object]:
             {"icon": "⚠️", "label": "FX", "value": "timeout"},
         ],
         "session": {
-            "values": {"session_id": "abc123", "authenticated": True, "locale": "es_AR"},
+            "values": {
+                "session_id": "abc123",
+                "authenticated": True,
+                "locale": "es_AR",
+            },
             "flags": ["authenticated"],
         },
         "event": "startup.diagnostics",

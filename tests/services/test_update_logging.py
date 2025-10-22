@@ -40,7 +40,9 @@ def test_check_for_update_logs_event(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ("check", "0.5.9", "ok") in events
 
 
-def test_run_update_script_logs_started_and_done(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_update_script_logs_started_and_done(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     events: list[tuple[str, str, str]] = []
 
     def fake_log(event: str, version: str, status: str) -> None:

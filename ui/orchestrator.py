@@ -12,8 +12,6 @@ from pathlib import Path
 
 import streamlit as st
 
-logger = logging.getLogger("ui.orchestrator")
-
 from bootstrap.config import TOTAL_LOAD_START
 from bootstrap.startup import (
     flush_ui_startup_metric,
@@ -26,19 +24,8 @@ from bootstrap.startup import (
     schedule_post_login_initialization,
     schedule_scientific_preload_resume,
     start_preload_worker,
-)
-from bootstrap.startup import (
-    update_ui_startup_metric_lazy,
     update_ui_total_load_metric_lazy,
 )
-try:
-    from controllers.auth import LOGIN_AUTH_TIMESTAMP_KEY, build_iol_client
-except ImportError:  # pragma: no cover - tests may stub controllers.auth
-    LOGIN_AUTH_TIMESTAMP_KEY = "login_auth_timestamp"
-
-    def build_iol_client():  # type: ignore[override]
-        return None
-
 from services.cache import get_fx_rates_cached
 from services.health import get_health_metrics, record_dependency_status
 from services.startup_logger import log_ui_total_load_metric
@@ -48,11 +35,23 @@ from shared.telemetry import log_default_telemetry
 from shared.time_provider import TimeProvider
 from ui.actions import render_action_menu
 from ui.footer import render_footer
-from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.header import render_header
+from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.helpers.preload import ensure_scientific_preload_ready
 from ui.login import render_login_page
 from ui.ui_settings import render_ui_controls
+
+logger = logging.getLogger("ui.orchestrator")
+
+
+try:
+    from controllers.auth import LOGIN_AUTH_TIMESTAMP_KEY, build_iol_client
+except ImportError:  # pragma: no cover - tests may stub controllers.auth
+    LOGIN_AUTH_TIMESTAMP_KEY = "login_auth_timestamp"
+
+    def build_iol_client():  # type: ignore[override]
+        return None
+
 
 analysis_logger = logging.getLogger("analysis")
 ANALYSIS_LOG_PATH = Path(__file__).resolve().parent.parent / "analysis.log"
@@ -76,18 +75,14 @@ def _maybe_log_pre_login_checkpoint() -> None:
         st.session_state[_PRE_LAZY_LOGGED_KEY] = True
         st.session_state["startup_load_ms_before_lazy"] = elapsed
     except Exception:  # pragma: no cover - defensive guard
-        logger.debug(
-            "No se pudo persistir startup_load_ms_before_lazy", exc_info=True
-        )
+        logger.debug("No se pudo persistir startup_load_ms_before_lazy", exc_info=True)
 
 
 def _mark_scientific_preload_pending() -> None:
     try:
         st.session_state[_SCIENTIFIC_PRELOAD_READY_KEY] = False
     except Exception:  # pragma: no cover - session state may be read-only in tests
-        logger.debug(
-            "No se pudo marcar scientific_preload_ready", exc_info=True
-        )
+        logger.debug("No se pudo marcar scientific_preload_ready", exc_info=True)
 
 
 def _render_login_phase() -> None:
@@ -97,9 +92,7 @@ def _render_login_phase() -> None:
         st.session_state.setdefault(_LOGIN_PHASE_START_KEY, time.perf_counter())
         st.session_state.pop(_LOGIN_PRELOAD_RECORDED_KEY, None)
     except Exception:  # pragma: no cover - defensive guard
-        logger.debug(
-            "No se pudo inicializar el seguimiento de login", exc_info=True
-        )
+        logger.debug("No se pudo inicializar el seguimiento de login", exc_info=True)
     start_preload_worker(paused=True)
     try:
         render_login_page()
@@ -115,17 +108,13 @@ def _record_login_preload_timings(preload_ready: bool) -> None:
         if st.session_state.get(_LOGIN_PRELOAD_RECORDED_KEY):
             return
     except Exception:  # pragma: no cover - defensive guard
-        logger.debug(
-            "No se pudo leer el estado de métricas de login", exc_info=True
-        )
+        logger.debug("No se pudo leer el estado de métricas de login", exc_info=True)
         return
 
     try:
         start_value = st.session_state.get(_LOGIN_PHASE_START_KEY)
     except Exception:
-        logger.debug(
-            "No se pudo acceder al inicio de sesión", exc_info=True
-        )
+        logger.debug("No se pudo acceder al inicio de sesión", exc_info=True)
         return
 
     if not isinstance(start_value, (int, float)):
@@ -163,9 +152,7 @@ def _record_login_preload_timings(preload_ready: bool) -> None:
         st.session_state.pop(_LOGIN_PHASE_START_KEY, None)
         st.session_state.pop(LOGIN_AUTH_TIMESTAMP_KEY, None)
     except Exception:  # pragma: no cover - defensive guard
-        logger.debug(
-            "No se pudo limpiar el estado de métricas de login", exc_info=True
-        )
+        logger.debug("No se pudo limpiar el estado de métricas de login", exc_info=True)
 
 
 def _format_total_load_value(total_ms: int) -> str:
@@ -176,9 +163,7 @@ def _render_total_load_indicator(placeholder) -> None:
     try:
         elapsed_ms = max(int((time.perf_counter() - TOTAL_LOAD_START) * 1000), 0)
     except Exception:
-        logger.debug(
-            "No se pudo calcular el tiempo total de carga", exc_info=True
-        )
+        logger.debug("No se pudo calcular el tiempo total de carga", exc_info=True)
         try:
             log_ui_total_load_metric(None)
         except Exception:
@@ -191,26 +176,20 @@ def _render_total_load_indicator(placeholder) -> None:
     try:
         st.session_state["total_load_ms"] = elapsed_ms
     except Exception:
-        logger.debug(
-            "No se pudo persistir total_load_ms en session_state", exc_info=True
-        )
+        logger.debug("No se pudo persistir total_load_ms en session_state", exc_info=True)
 
     try:
         timings = st.session_state.get("portfolio_stage_timings")
         if isinstance(timings, dict) and "total_ms" not in timings:
             timings["total_ms"] = float(elapsed_ms)
     except Exception:
-        logger.debug(
-            "No se pudo extender portfolio_stage_timings con total_ms", exc_info=True
-        )
+        logger.debug("No se pudo extender portfolio_stage_timings con total_ms", exc_info=True)
 
     profile_block_durations: list[float] = []
     try:
         stage_timings = st.session_state.get("portfolio_stage_timings")
     except Exception:
-        logger.debug(
-            "No se pudo acceder a portfolio_stage_timings", exc_info=True
-        )
+        logger.debug("No se pudo acceder a portfolio_stage_timings", exc_info=True)
         stage_timings = None
 
     if isinstance(stage_timings, dict):
@@ -237,35 +216,25 @@ def _render_total_load_indicator(placeholder) -> None:
     try:
         st.session_state["streamlit_overhead_ms"] = overhead_ms
     except Exception:
-        logger.debug(
-            "No se pudo almacenar streamlit_overhead_ms", exc_info=True
-        )
+        logger.debug("No se pudo almacenar streamlit_overhead_ms", exc_info=True)
 
     try:
         startup_ms = st.session_state.get(_UI_STARTUP_METRIC_KEY)
     except Exception:
-        logger.debug(
-            "No se pudo obtener ui_startup_load_ms", exc_info=True
-        )
+        logger.debug("No se pudo obtener ui_startup_load_ms", exc_info=True)
         startup_ms = None
 
     flush_ui_startup_metric(startup_ms)
 
     formatted_value = _format_total_load_value(elapsed_ms)
-    block = (
-        "<div class='load-time-indicator'>"
-        f"🕒 Tiempo total de carga: {formatted_value} ms"
-        "</div>"
-    )
+    block = f"<div class='load-time-indicator'>🕒 Tiempo total de carga: {formatted_value} ms</div>"
     try:
         if placeholder is not None:
             placeholder.markdown(block, unsafe_allow_html=True)
         else:
             st.markdown(block, unsafe_allow_html=True)
     except Exception:
-        logger.debug(
-            "No se pudo renderizar el indicador de tiempo total", exc_info=True
-        )
+        logger.debug("No se pudo renderizar el indicador de tiempo total", exc_info=True)
 
     extra_payload: dict[str, object] = {}
     if logic_total_ms is not None:
@@ -487,20 +456,14 @@ def render_main_ui() -> None:
     try:
         already_rendered = bool(st.session_state.get("_app_shell_placeholder_rendered"))
     except Exception:
-        logger.debug(
-            "No se pudo comprobar el estado del skeleton inicial", exc_info=True
-        )
+        logger.debug("No se pudo comprobar el estado del skeleton inicial", exc_info=True)
     if not already_rendered:
-        shell_container = skeletons.mark_placeholder(
-            "app_shell", placeholder=first_frame_placeholder
-        )
+        shell_container = skeletons.mark_placeholder("app_shell", placeholder=first_frame_placeholder)
         if shell_container is not None:
             try:
                 shell_container.markdown("⌛ Preparando tu portafolio…")
             except Exception:
-                logger.debug(
-                    "No se pudo renderizar el skeleton inicial", exc_info=True
-                )
+                logger.debug("No se pudo renderizar el skeleton inicial", exc_info=True)
             else:
                 try:
                     st.session_state["_app_shell_placeholder_rendered"] = True
@@ -517,9 +480,7 @@ def render_main_ui() -> None:
         try:
             st.session_state.setdefault("ui_first_paint_ms", float(first_paint_metric))
         except Exception:
-            logger.debug(
-                "No se pudo persistir ui_first_paint_ms", exc_info=True
-            )
+            logger.debug("No se pudo persistir ui_first_paint_ms", exc_info=True)
     _check_critical_dependencies()
 
     if st.session_state.get("force_login"):
@@ -548,16 +509,12 @@ def render_main_ui() -> None:
         status_severity,
         last_failure_ts,
     ) = summarize_health_status(metrics=health_metrics)
-    detail_html = (
-        f"<span class='health-status-badge__detail'>{status_detail}</span>"
-        if status_detail
-        else ""
-    )
+    detail_html = f"<span class='health-status-badge__detail'>{status_detail}</span>" if status_detail else ""
     tooltip_text = _format_failure_tooltip_text(last_failure_ts)
     tooltip_attr = ""
     if tooltip_text:
         safe_tooltip = html.escape(tooltip_text, quote=True)
-        tooltip_attr = f" title=\"{safe_tooltip}\" data-tooltip=\"{safe_tooltip}\""
+        tooltip_attr = f' title="{safe_tooltip}" data-tooltip="{safe_tooltip}"'
     badge_classes = " ".join(
         [
             "health-status-badge",
@@ -584,26 +541,15 @@ def render_main_ui() -> None:
     preload_ready = ensure_scientific_preload_ready(main_col)
     _record_login_preload_timings(preload_ready)
     if not preload_ready:
-        st.warning(
-            "No se pudieron precargar las librerías científicas. "
-            "Continuamos con una carga diferida."
-        )
+        st.warning("No se pudieron precargar las librerías científicas. Continuamos con una carga diferida.")
 
     cli = build_iol_client()
 
     portfolio_module = lazy_module("controllers.portfolio.portfolio")
-    default_view_model_service_factory = getattr(
-        portfolio_module, "default_view_model_service_factory"
-    )
-    default_notifications_service_factory = getattr(
-        portfolio_module, "default_notifications_service_factory"
-    )
-    render_portfolio_ui = lazy_attr(
-        "ui.controllers.portfolio_ui", "render_portfolio_ui"
-    )
-    render_recommendations_tab = lazy_attr(
-        "ui.tabs.recommendations", "render_recommendations_tab"
-    )
+    default_view_model_service_factory = getattr(portfolio_module, "default_view_model_service_factory")
+    default_notifications_service_factory = getattr(portfolio_module, "default_notifications_service_factory")
+    render_portfolio_ui = lazy_attr("ui.controllers.portfolio_ui", "render_portfolio_ui")
+    render_recommendations_tab = lazy_attr("ui.tabs.recommendations", "render_recommendations_tab")
 
     portfolio_section_kwargs = {
         "view_model_service_factory": default_view_model_service_factory,
@@ -670,16 +616,12 @@ def render_main_ui() -> None:
                 try:
                     st.session_state["_hydration_lock"] = False
                 except Exception:  # pragma: no cover - defensive safeguard
-                    logger.debug(
-                        "No se pudo actualizar _hydration_lock", exc_info=True
-                    )
+                    logger.debug("No se pudo actualizar _hydration_lock", exc_info=True)
                 if not st.session_state.get("_hydration_unlock_rerun_triggered"):
                     should_request_rerun = True
                     st.session_state["_hydration_unlock_rerun_triggered"] = True
             try:
-                soft_refresh = bool(
-                    st.session_state.pop("_soft_refresh_applied", False)
-                )
+                soft_refresh = bool(st.session_state.pop("_soft_refresh_applied", False))
             except Exception:  # pragma: no cover - defensive safeguard
                 soft_refresh = False
 
@@ -704,9 +646,7 @@ def render_main_ui() -> None:
                 with ANALYSIS_LOG_PATH.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(analysis_entry, ensure_ascii=False) + "\n")
             except OSError as exc:
-                logger.warning(
-                    "No se pudo escribir analysis.log: %s", exc
-                )
+                logger.warning("No se pudo escribir analysis.log: %s", exc)
             try:
                 dataset_hash = st.session_state.get("portfolio_dataset_hash")
             except Exception:  # pragma: no cover - defensive safeguard

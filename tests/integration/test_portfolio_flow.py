@@ -1,15 +1,11 @@
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 import pandas as pd
 import pytest
 import requests
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from application.portfolio_service import PortfolioService
 from controllers.portfolio import filters
@@ -19,6 +15,10 @@ from services import cache as cache_module
 from services.portfolio_view import PortfolioViewModelService
 from tests.fixtures.streamlit import BaseFakeStreamlit
 from tests.ui.test_portfolio_ui import FakeStreamlit
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def _http_error(status: int) -> requests.HTTPError:
@@ -30,9 +30,7 @@ pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 
 
 @pytest.fixture
-def fake_streamlit(
-    monkeypatch: pytest.MonkeyPatch, fake_st: BaseFakeStreamlit
-) -> BaseFakeStreamlit:
+def fake_streamlit(monkeypatch: pytest.MonkeyPatch, fake_st: BaseFakeStreamlit) -> BaseFakeStreamlit:
     for module in (filters, cache_module, iol_client_module):
         monkeypatch.setattr(module, "st", fake_st)
     monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
@@ -95,8 +93,18 @@ def test_portfolio_flow_recovers_via_ohlc_after_legacy_429(
 
     portfolio_payload = {
         "activos": [
-            {"simbolo": "GGAL", "mercado": "bcba", "cantidad": 10, "costoUnitario": 100.0},
-            {"simbolo": "AAPL", "mercado": "nyse", "cantidad": 5, "costoUnitario": 150.0},
+            {
+                "simbolo": "GGAL",
+                "mercado": "bcba",
+                "cantidad": 10,
+                "costoUnitario": 100.0,
+            },
+            {
+                "simbolo": "AAPL",
+                "mercado": "nyse",
+                "cantidad": 5,
+                "costoUnitario": 150.0,
+            },
         ]
     }
 
@@ -122,7 +130,10 @@ def test_portfolio_country_endpoint_flow(
     cache_file = tmp_path / "portfolio.json"
     monkeypatch.setattr("infrastructure.iol.client.PORTFOLIO_CACHE", cache_file)
     monkeypatch.setattr(
-        iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None, raising=False
+        iol_client_module.IOLClient,
+        "_ensure_market_auth",
+        lambda self: None,
+        raising=False,
     )
 
     class DummyAuth:
@@ -209,7 +220,10 @@ def test_portfolio_country_endpoint_flow(
     assert available_types  # clasificación derivada del payload
 
     assets = {
-        (str(item.get("mercado", "")).lower(), str(item.get("simbolo", "")).upper()): item
+        (
+            str(item.get("mercado", "")).lower(),
+            str(item.get("simbolo", "")).upper(),
+        ): item
         for item in payload["activos"]
     }
 

@@ -50,7 +50,9 @@ def test_technical_badge_handles_bearish_signals() -> None:
     assert tech["counts"] == {"bullish": 1, "bearish": 2}
 
 
-def test_earnings_badge_activates_for_upcoming_event(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_earnings_badge_activates_for_upcoming_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Freeze "today" by overriding TimeProvider.now_datetime so the delta is deterministic.
     from shared import time_provider
 
@@ -61,7 +63,10 @@ def test_earnings_badge_activates_for_upcoming_event(monkeypatch: pytest.MonkeyP
     badges = build_notification_badges(
         risk_metrics=None,
         technical_indicators=None,
-        earnings_calendar=[{"symbol": "AAPL", "date": "2024-01-03"}, {"symbol": "MSFT", "days_until": 10}],
+        earnings_calendar=[
+            {"symbol": "AAPL", "date": "2024-01-03"},
+            {"symbol": "MSFT", "days_until": 10},
+        ],
         earnings_days_threshold=5,
     )
     earnings = badges["earnings"]

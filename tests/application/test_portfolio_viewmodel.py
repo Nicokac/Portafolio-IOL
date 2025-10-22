@@ -1,4 +1,5 @@
 """Tests for the portfolio view-model and cached helpers."""
+
 from __future__ import annotations
 
 import sys
@@ -7,12 +8,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+import application.portfolio_service as portfolio_mod
+from application.portfolio_service import PortfolioService, calc_rows
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-import application.portfolio_service as portfolio_mod
-from application.portfolio_service import PortfolioService, calc_rows
 
 
 @pytest.fixture(autouse=True)
@@ -23,13 +24,25 @@ def _reset_classify_cache():
     portfolio_mod._classify_sym_cache.cache_clear()
 
 
-def test_calc_rows_generates_viewmodel_with_expected_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_calc_rows_generates_viewmodel_with_expected_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`calc_rows` should combine quotes and positions into a rich view-model."""
 
     df_pos = pd.DataFrame(
         [
-            {"simbolo": "GGAL", "mercado": "bcba", "cantidad": 10, "costo_unitario": 100},
-            {"simbolo": "AAPL", "mercado": "nyse", "cantidad": 5, "costo_unitario": 150},
+            {
+                "simbolo": "GGAL",
+                "mercado": "bcba",
+                "cantidad": 10,
+                "costo_unitario": 100,
+            },
+            {
+                "simbolo": "AAPL",
+                "mercado": "nyse",
+                "cantidad": 5,
+                "costo_unitario": 150,
+            },
         ]
     )
 
@@ -41,7 +54,11 @@ def test_calc_rows_generates_viewmodel_with_expected_metrics(monkeypatch: pytest
     def fake_quote(mercado: str, simbolo: str) -> dict:
         return quotes[(mercado, simbolo)]
 
-    monkeypatch.setattr(portfolio_mod, "classify_symbol", lambda sym: "CEDEAR" if sym == "AAPL" else "ACCION")
+    monkeypatch.setattr(
+        portfolio_mod,
+        "classify_symbol",
+        lambda sym: "CEDEAR" if sym == "AAPL" else "ACCION",
+    )
     monkeypatch.setattr(portfolio_mod, "scale_for", lambda sym, tipo: 1.0)
 
     view = calc_rows(fake_quote, df_pos, exclude_syms=[])

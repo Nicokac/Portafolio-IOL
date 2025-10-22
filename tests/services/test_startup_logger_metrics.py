@@ -8,13 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from shared import version
 from services import startup_logger
+from shared import version
 
 
-def test_ui_total_load_metric_log_entry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ui_total_load_metric_log_entry(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     reload(startup_logger)
     log_path = tmp_path / "app_startup.log"
     logger = logging.getLogger("app.startup")

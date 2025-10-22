@@ -1,5 +1,6 @@
 """Authentication fixtures for tests."""
 
+
 class FakeAuth:
     """Reusable authentication stub for infrastructure and API tests."""
 

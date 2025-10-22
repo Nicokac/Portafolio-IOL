@@ -87,6 +87,7 @@ def _dispatch_task(
     telemetry_fn = task.telemetry_fn
     wrapped_telemetry: TelemetryCallable | None = None
     if telemetry_fn is not None:
+
         def _wrapped(
             phase: str,
             elapsed_s: float | None,

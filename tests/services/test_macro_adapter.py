@@ -7,16 +7,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Callable, Dict, Iterable
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 import pytest
 
 import services.health as health_service
 from infrastructure.macro import MacroAPIError, MacroSeriesObservation
 from services import base_adapter
 from services.macro_adapter import MacroAdapter
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 class _DummySettings(SimpleNamespace):
@@ -43,7 +43,9 @@ def _build_adapter(
     )
 
 
-def test_fetch_records_attempts_and_fallback_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_records_attempts_and_fallback_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fallback_events: list[tuple[str, str, str, bool]] = []
 
     def _record(adapter: str, provider: str, status: str, fallback: bool) -> None:
@@ -99,7 +101,9 @@ def test_fetch_records_attempts_and_fallback_flag(monkeypatch: pytest.MonkeyPatc
     ]
 
 
-def test_fetch_uses_static_fallback_and_updates_health(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_uses_static_fallback_and_updates_health(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fallback_events: list[tuple[str, str, str, bool]] = []
 
     def _record(adapter: str, provider: str, status: str, fallback: bool) -> None:
@@ -151,9 +155,7 @@ def test_fetch_uses_static_fallback_and_updates_health(monkeypatch: pytest.Monke
     result = adapter.fetch(["Energy"])
 
     assert result.provider is None
-    assert result.fallback_entries == {
-        "Energy": {"value": 2.5, "as_of": "2023-12-01"}
-    }
+    assert result.fallback_entries == {"Energy": {"value": 2.5, "as_of": "2023-12-01"}}
     assert [attempt["provider"] for attempt in result.attempts] == [
         "fred",
         "worldbank",

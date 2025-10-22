@@ -1,13 +1,13 @@
 """Utilities to manage favorite symbols persisted in Streamlit session state."""
+
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
-import json
 from typing import Iterable, MutableMapping, Protocol, Sequence
 
 import streamlit as st
-
 
 logger = logging.getLogger(__name__)
 

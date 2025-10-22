@@ -82,9 +82,7 @@ def _compute_dataset_hash(df: pd.DataFrame | None) -> str:
         hashed = pd.util.hash_pandas_object(df, index=True, categorize=True)
         return hashlib.sha1(hashed.values.tobytes()).hexdigest()
     except TypeError:
-        payload = json.dumps(
-            df.to_dict(orient="list"), sort_keys=True, default=str
-        ).encode("utf-8")
+        payload = json.dumps(df.to_dict(orient="list"), sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha1(payload).hexdigest()
 
 
@@ -107,15 +105,9 @@ def _quote_pairs(df: pd.DataFrame) -> list[tuple[str, str]]:
     cols = [col for col in ("mercado", "simbolo") if col in df.columns]
     if len(cols) < 2:
         return []
-    subset = (
-        df[cols]
-        .dropna(subset=["simbolo"])
-        .astype({"mercado": str, "simbolo": str})
-    )
+    subset = df[cols].dropna(subset=["simbolo"]).astype({"mercado": str, "simbolo": str})
     subset["mercado"] = subset["mercado"].str.lower()
-    subset["mercado"] = subset["mercado"].where(
-        subset["mercado"].str.strip().astype(bool), "bcba"
-    )
+    subset["mercado"] = subset["mercado"].where(subset["mercado"].str.strip().astype(bool), "bcba")
     subset["simbolo"] = subset["simbolo"].str.upper()
     subset = subset.drop_duplicates()
     return list(subset.itertuples(index=False, name=None))
@@ -251,9 +243,7 @@ class PortfolioDataFetchService:
                 daemon=True,
             )
         else:
-            thread = self._background_factory(
-                lambda: self._run_background_refresh(cli, psvc)
-            )
+            thread = self._background_factory(lambda: self._run_background_refresh(cli, psvc))
         with self._refresh_lock:
             if self._refresh_in_progress:
                 return False
@@ -299,7 +289,7 @@ class PortfolioDataFetchService:
                 if previous_hash == dataset.dataset_hash:
                     state.skip_invalidation = True
                     logger.info(
-                        "portfolio_data_fetch event=\"skip_invalidation\" dataset_hash=%s",
+                        'portfolio_data_fetch event="skip_invalidation" dataset_hash=%s',
                         dataset.dataset_hash,
                     )
                 else:
@@ -364,4 +354,3 @@ __all__ = [
     "get_portfolio_data_fetch_service",
     "_compute_dataset_hash",
 ]
-

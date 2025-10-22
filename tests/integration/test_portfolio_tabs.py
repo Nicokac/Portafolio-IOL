@@ -1,23 +1,24 @@
 """Integration-style tests exercising the portfolio tabs with real view-models."""
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Iterable, Sequence
 from types import SimpleNamespace
+from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
 import pytest
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
 from application.portfolio_service import PortfolioTotals, calculate_totals
 from controllers.portfolio import portfolio as portfolio_mod
 from domain.models import Controls
-from services.portfolio_view import PortfolioViewSnapshot, PortfolioContributionMetrics
+from services.portfolio_view import PortfolioContributionMetrics, PortfolioViewSnapshot
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 class _Column:
@@ -168,17 +169,21 @@ class _FakeStreamlit:
     def caption(self, message: str) -> None:
         self.captions.append(message)
 
-    def markdown(self, message: str, **_: object) -> None:
-        self.captions.append(message)
-
     def plotly_chart(self, fig, **kwargs) -> None:  # noqa: ANN001 - mimic streamlit signature
         self.plot_calls.append({"fig": fig, "kwargs": kwargs})
 
     def dataframe(self, data, **_: object) -> None:  # noqa: ANN001 - mimic streamlit signature
         self.table = data
 
-    def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
-        self.captions.append(str(body))
+    def markdown(
+        self,
+        message: str,
+        *,
+        unsafe_allow_html: bool = False,
+        **_: object,
+    ) -> None:
+        del unsafe_allow_html
+        self.captions.append(str(message))
 
     def line_chart(self, data: pd.DataFrame) -> None:
         self.line_charts.append(data)
@@ -373,8 +378,8 @@ def _run_for_tab(
 
     from controllers.portfolio import charts as charts_mod
     from controllers.portfolio import risk as risk_mod
-    from ui import tables as tables_mod
     from ui import favorites as favorites_mod
+    from ui import tables as tables_mod
 
     fake_st = _FakeStreamlit(radio_sequence=[tab_index])
     if selected_type is not None:
@@ -406,9 +411,7 @@ def _run_for_tab(
     monkeypatch.setattr(
         risk_mod,
         "markowitz_optimize",
-        lambda returns: pd.Series(
-            1.0 / len(returns.columns), index=returns.columns
-        )
+        lambda returns: pd.Series(1.0 / len(returns.columns), index=returns.columns)
         if not returns.empty
         else pd.Series(dtype=float),
     )
@@ -460,7 +463,9 @@ def test_technical_tab_renders(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake_st.line_charts, "Expected backtest chart to be rendered"
 
 
-def test_risk_tab_warns_when_selected_type_has_no_data(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_risk_tab_warns_when_selected_type_has_no_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = _run_for_tab(2, monkeypatch, selected_type="BONO")
     assert any("No hay datos para el tipo seleccionado" in msg for msg in fake_st.warnings)
     assert not fake_st.metrics

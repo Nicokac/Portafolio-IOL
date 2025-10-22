@@ -166,9 +166,7 @@ class _Placeholder:
         return _ContextManager(self._owner)
 
     def markdown(self, body: str, *, unsafe_allow_html: bool = False) -> None:
-        self._owner.markdowns.append(
-            {"body": body, "unsafe": unsafe_allow_html, "placeholder": True}
-        )
+        self._owner.markdowns.append({"body": body, "unsafe": unsafe_allow_html, "placeholder": True})
 
     def info(self, message: str) -> None:
         self._owner.info(message)
@@ -177,9 +175,7 @@ class _Placeholder:
         self._owner.caption(text)
 
     def write(self, body: str) -> None:
-        self._owner.markdowns.append(
-            {"body": body, "unsafe": False, "placeholder": True, "write": True}
-        )
+        self._owner.markdowns.append({"body": body, "unsafe": False, "placeholder": True, "write": True})
 
     def checkbox(self, *args: Any, **kwargs: Any) -> Any:
         return self._owner.checkbox(*args, **kwargs)
@@ -205,9 +201,7 @@ class UIFlowMixin:
         radio_sequence = radio_sequence or []
         self._radio_iter: Iterator[int] = iter(radio_sequence)
         self._selectbox_defaults = selectbox_defaults or {}
-        self._multiselect_responses = {
-            key: list(value) for key, value in (multiselect_responses or {}).items()
-        }
+        self._multiselect_responses = {key: list(value) for key, value in (multiselect_responses or {}).items()}
         self._checkbox_values: dict[str, list[bool]] = {}
         for raw_key, value in (checkbox_values or {}).items():
             key = str(raw_key)

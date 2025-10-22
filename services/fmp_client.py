@@ -1,4 +1,5 @@
 """Client helpers for Financial Modeling Prep (FMP) API access."""
+
 from __future__ import annotations
 
 import logging

@@ -5,15 +5,17 @@ import json
 import logging
 import threading
 import time
+import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
-import warnings
 
 import requests
 import streamlit as st
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException
 
+from infrastructure.iol.legacy.session import LegacySession
+from services.health import record_quote_provider_usage
 from shared.config import settings
 from shared.errors import InvalidCredentialsError
 from shared.time_provider import TimeProvider
@@ -21,14 +23,13 @@ from shared.utils import _to_float
 
 from .auth import IOLAuth
 from .ports import IIOLProvider
-from services.health import record_quote_provider_usage
+
 warnings.filterwarnings(
     "ignore",
     message="`infrastructure.iol.legacy` está deprecado",
     category=DeprecationWarning,
 )
 
-from infrastructure.iol.legacy.session import LegacySession
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,11 @@ class IOLClient(IIOLProvider):
         has_refresh = bool(getattr(self.auth, "refresh", None))
         logger.info(
             "IOLClient init",
-            extra={"user": safe_user, "tokens_file": tokens_path, "has_refresh": has_refresh},
+            extra={
+                "user": safe_user,
+                "tokens_file": tokens_path,
+                "has_refresh": has_refresh,
+            },
         )
 
         self._legacy_last_http_label: Optional[str] = None
@@ -296,7 +301,15 @@ class IOLClient(IIOLProvider):
     def _parse_price_fields(data: Dict[str, Any]) -> Optional[float]:
         if not isinstance(data, dict):
             return None
-        for key in ("ultimoPrecio", "ultimo", "last", "lastPrice", "precio", "cierre", "close"):
+        for key in (
+            "ultimoPrecio",
+            "ultimo",
+            "last",
+            "lastPrice",
+            "precio",
+            "cierre",
+            "close",
+        ):
             value = data.get(key)
             if isinstance(value, (int, float)):
                 return float(value)
@@ -317,7 +330,12 @@ class IOLClient(IIOLProvider):
         if not isinstance(data, dict):
             return None
 
-        for key in ("variacion", "variacionPorcentual", "cambioPorcentual", "changePercent"):
+        for key in (
+            "variacion",
+            "variacionPorcentual",
+            "cambioPorcentual",
+            "changePercent",
+        ):
             value = data.get(key)
             if isinstance(value, (int, float)):
                 return float(value)
@@ -668,21 +686,11 @@ class IOLClient(IIOLProvider):
             v2_error,
         )
 
-        legacy_payload, legacy_flags = self._legacy_quote_fallback(
-            resolved_market, resolved_symbol, panel
-        )
+        legacy_payload, legacy_flags = self._legacy_quote_fallback(resolved_market, resolved_symbol, panel)
         legacy_auth_unavailable = bool(legacy_flags.get("legacy_auth_unavailable"))
-        legacy_provider = (
-            legacy_payload.get("provider")
-            if isinstance(legacy_payload, dict)
-            else "legacy"
-        ) or "legacy"
+        legacy_provider = (legacy_payload.get("provider") if isinstance(legacy_payload, dict) else "legacy") or "legacy"
 
-        if (
-            legacy_payload is not None
-            and not legacy_auth_unavailable
-            and legacy_payload.get("last") is not None
-        ):
+        if legacy_payload is not None and not legacy_auth_unavailable and legacy_payload.get("last") is not None:
             record_quote_provider_usage(
                 legacy_provider,
                 elapsed_ms=None,
@@ -720,9 +728,7 @@ class IOLClient(IIOLProvider):
             resolved_market,
             resolved_symbol,
         )
-        fallback = self._fallback_quote_via_ohlc(
-            resolved_market, resolved_symbol, panel=panel
-        )
+        fallback = self._fallback_quote_via_ohlc(resolved_market, resolved_symbol, panel=panel)
         if fallback is not None:
             if legacy_auth_unavailable:
                 fallback = dict(fallback)
@@ -791,7 +797,9 @@ class IOLClient(IIOLProvider):
     ) -> tuple[Optional[Dict[str, Optional[float]]], Dict[str, bool]]:
         flags: Dict[str, bool] = {}
         try:
-            from infrastructure.iol.legacy.iol_client import IOLClient as LegacyIOLClient
+            from infrastructure.iol.legacy.iol_client import (
+                IOLClient as LegacyIOLClient,
+            )
 
             legacy_client = LegacyIOLClient(
                 self.user,
@@ -810,18 +818,15 @@ class IOLClient(IIOLProvider):
                 status = http_exc.response.status_code
             if status == 429:
                 self._legacy_last_http_label = "legacy_429"
-                result_label = "http_429"
             elif status in (401, 403):
                 self._legacy_last_http_label = "legacy_auth_fail"
-                result_label = f"http_{status}"
             else:
-                result_label = "http_error"
-            logger.warning(
-                "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
-                resolved_market,
-                resolved_symbol,
-                status or http_exc,
-            )
+                logger.warning(
+                    "Legacy IOLClient.get_quote HTTP error %s:%s -> %s",
+                    resolved_market,
+                    resolved_symbol,
+                    status or http_exc,
+                )
             return None, flags
         except requests.RequestException as req_exc:
             logger.warning(
@@ -957,4 +962,3 @@ def build_iol_client(
 
 
 __all__ = ["IOLClient", "IOLClientAdapter", "build_iol_client"]
-

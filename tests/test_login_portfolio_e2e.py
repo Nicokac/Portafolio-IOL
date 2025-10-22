@@ -11,7 +11,6 @@ from domain.models import Controls
 from services import cache as services_cache
 from tests.fixtures.streamlit import BaseFakeStreamlit
 
-
 pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 
 
@@ -48,9 +47,19 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
 
     portfolio_payload = {
         "activos": [
-            {"simbolo": "AAPL", "mercado": "nyse", "cantidad": 10, "costoUnitario": 150},
+            {
+                "simbolo": "AAPL",
+                "mercado": "nyse",
+                "cantidad": 10,
+                "costoUnitario": 150,
+            },
             {"simbolo": "AL30", "mercado": "bcba", "cantidad": 20, "costoUnitario": 95},
-            {"simbolo": "IOLPORA", "mercado": "bcba", "cantidad": 1000, "costoUnitario": 1.0},
+            {
+                "simbolo": "IOLPORA",
+                "mercado": "bcba",
+                "cantidad": 1000,
+                "costoUnitario": 1.0,
+            },
         ]
     }
     quotes_map = {
@@ -131,4 +140,3 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
         assert fake_streamlit.session_state["quotes_hist"]["AAPL"][0]["chg_pct"] == pytest.approx(1.5)
     finally:
         auth_service.register_auth_provider(original_provider)
-

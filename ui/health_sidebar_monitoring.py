@@ -1,12 +1,12 @@
-
 from __future__ import annotations
+
+import json
+from typing import Any, Mapping, Sequence
+
+import streamlit as st
 
 """Render helpers for the monitoring sidebar that surfaces startup diagnostics."""
 
-from typing import Any, Mapping, Sequence
-import json
-
-import streamlit as st
 
 DEFAULT_DOWNLOAD_LABEL = "Descargar diagnóstico"
 DEFAULT_FILE_NAME = "startup_diagnostics.json"

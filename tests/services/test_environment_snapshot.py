@@ -1,9 +1,8 @@
 import importlib
 import logging
+import sys
 from pathlib import Path
 from types import SimpleNamespace
-import sys
-
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -54,7 +53,11 @@ def test_build_environment_snapshot_gathers_runtime_details(monkeypatch, caplog)
     runtime = snapshot["runtime"]
     assert runtime["python"]["version"] == "3.11.3"
     assert runtime["python"]["implementation"] == "CPython"
-    assert runtime["platform"] == {"system": "Linux", "release": "6.2.0", "machine": "x86_64"}
+    assert runtime["platform"] == {
+        "system": "Linux",
+        "release": "6.2.0",
+        "machine": "x86_64",
+    }
     assert runtime["executable"] == "/usr/bin/python"
 
     environment = snapshot["environment"]
@@ -71,4 +74,3 @@ def test_build_environment_snapshot_gathers_runtime_details(monkeypatch, caplog)
 
     record = next(rec for rec in caplog.records if rec.message == "environment.snapshot")
     assert record.analysis == snapshot
-

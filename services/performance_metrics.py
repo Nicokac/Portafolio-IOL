@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Lightweight performance observability helpers for critical services."""
-
 import csv
 import io
 import statistics
@@ -13,6 +11,12 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Deque, Iterable, Iterator
 
+from services.update_checker import record_update_log
+from shared.version import __version__
+
+"""Lightweight performance observability helpers for critical services."""
+
+
 try:  # pragma: no cover - tracemalloc availability depends on runtime
     import tracemalloc
 except ModuleNotFoundError:  # pragma: no cover - fallback for stripped environments
@@ -20,9 +24,6 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for stripped environm
 else:  # pragma: no cover - tracing state is environment specific
     if not tracemalloc.is_tracing():
         tracemalloc.start(25)
-
-from shared.version import __version__
-from services.update_checker import record_update_log
 
 
 _MAX_SAMPLES = 50
@@ -128,11 +129,7 @@ def get_recent_metrics() -> list[MetricSummary]:
     """Return aggregated performance metrics for monitored functions."""
 
     with _LOCK:
-        items = [
-            _summarise_samples(name, tuple(buffer))
-            for name, buffer in _SAMPLES.items()
-            if buffer
-        ]
+        items = [_summarise_samples(name, tuple(buffer)) for name, buffer in _SAMPLES.items() if buffer]
     return sorted(items, key=lambda item: item.name)
 
 
@@ -218,4 +215,3 @@ __all__ = [
     "export_metrics_csv",
     "reset_metrics",
 ]
-

@@ -1,21 +1,21 @@
 """UI-focused tests for portfolio chart rendering helpers."""
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+from application.portfolio_service import calculate_totals
+from controllers.portfolio import charts as charts_mod
+from domain.models import Controls
+from ui import tables as tables_mod
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from application.portfolio_service import calculate_totals
-from controllers.portfolio import charts as charts_mod
-from ui import tables as tables_mod
-from domain.models import Controls
 
 
 class _Column:

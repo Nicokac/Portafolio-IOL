@@ -1,4 +1,5 @@
 import json
+
 from application.portfolio_service import classify_symbol
 from infrastructure import asset_catalog
 
@@ -27,6 +28,7 @@ def test_catalog_uses_settings_secret_or_env(monkeypatch, tmp_path):
     path.write_text(json.dumps(data))
     monkeypatch.delenv("ASSET_CATALOG_PATH", raising=False)
     from shared import config
+
     monkeypatch.setattr(config.settings, "secret_or_env", lambda key, default=None: str(path))
     asset_catalog.get_asset_catalog.cache_clear()
     assert classify_symbol("abc") == "Accion"

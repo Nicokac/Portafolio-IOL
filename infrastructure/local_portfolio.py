@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
+
 class LocalPortfolioRepository:
     """
     Almacenamiento simple con respaldo JSON para posiciones de cartera.
@@ -30,9 +31,7 @@ class LocalPortfolioRepository:
     def save(self, data: Dict[str, Any]) -> None:
         """Conservar los datos de la cartera en el disco."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        self.path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # --- Editing helpers -------------------------------------------------
     def add(self, position: Dict[str, Any]) -> None:
@@ -52,8 +51,5 @@ class LocalPortfolioRepository:
     def remove(self, simbolo: str) -> None:
         data = self.load()
         target = simbolo.upper()
-        data["activos"] = [
-            it for it in data.get("activos", []) if str(it.get("simbolo", "")).upper() != target
-        ]
+        data["activos"] = [it for it in data.get("activos", []) if str(it.get("simbolo", "")).upper() != target]
         self.save(data)
-

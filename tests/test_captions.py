@@ -1,20 +1,21 @@
-from pathlib import Path
 import sys
+from pathlib import Path
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-import pandas as pd
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pandas as pd
 
-from domain.models import Controls
-from controllers.portfolio import charts as charts_mod
-from controllers.portfolio import risk as risk_mod
-from ui.fx_panels import render_spreads
 import ui.fx_panels as fx_panels
 import ui.tables as tables_mod
+from controllers.portfolio import charts as charts_mod
+from controllers.portfolio import risk as risk_mod
+from domain.models import Controls
 from shared.favorite_symbols import FavoriteSymbols
 from tests.fixtures.common import DummyCtx
+from ui.fx_panels import render_spreads
 
 
 def test_render_basic_section_captions(monkeypatch):
@@ -50,9 +51,7 @@ def test_render_basic_section_captions(monkeypatch):
 
 def test_render_risk_analysis_caption(monkeypatch):
     df = pd.DataFrame({"simbolo": ["A", "B"], "valor_actual": [1, 2]})
-    tasvc = SimpleNamespace(
-        portfolio_history=lambda simbolos, period: pd.DataFrame({s: [1, 1] for s in simbolos})
-    )
+    tasvc = SimpleNamespace(portfolio_history=lambda simbolos, period: pd.DataFrame({s: [1, 1] for s in simbolos}))
     monkeypatch.setattr(risk_mod.st, "subheader", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod.st, "selectbox", lambda *a, **k: "1y")
     monkeypatch.setattr(risk_mod.st, "spinner", lambda *a, **k: DummyCtx())
@@ -82,9 +81,7 @@ def test_render_spreads_caption(monkeypatch):
     mock_caption = MagicMock()
     monkeypatch.setattr(fx_panels.st, "caption", mock_caption)
     render_spreads(rates)
-    mock_caption.assert_called_once_with(
-        "Muestra la diferencia porcentual entre distintas cotizaciones del dólar."
-    )
+    mock_caption.assert_called_once_with("Muestra la diferencia porcentual entre distintas cotizaciones del dólar.")
 
 
 def test_render_table_caption(monkeypatch):

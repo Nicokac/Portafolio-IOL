@@ -214,7 +214,9 @@ def test_skeleton_initializes_once(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake_state["_ui_skeleton_start"] == 123.0
 
 
-def test_browser_renderer_does_not_call_kaleido(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_browser_renderer_does_not_call_kaleido(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When Kaleido is disabled, fig_to_png_bytes must not invoke the renderer."""
 
     monkeypatch.setattr(export, "_KALEIDO_AVAILABLE", False)

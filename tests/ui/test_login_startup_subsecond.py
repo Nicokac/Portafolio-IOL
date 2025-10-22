@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import types
-from pathlib import Path
 import builtins
 import importlib
 import sys
+import types
+from pathlib import Path
 
 import pytest
+
 
 @pytest.fixture
 def main_app(monkeypatch: pytest.MonkeyPatch):
@@ -61,7 +62,11 @@ def main_app(monkeypatch: pytest.MonkeyPatch):
     install_stub("streamlit.components", __path__=[])
     sys.modules["streamlit.components"].v1 = components_stub.v1
     install_stub("streamlit.components.v1", html=lambda *a, **k: None)
-    install_stub("ui.ui_settings", init_ui=lambda *a, **k: None, render_ui_controls=lambda *a, **k: None)
+    install_stub(
+        "ui.ui_settings",
+        init_ui=lambda *a, **k: None,
+        render_ui_controls=lambda *a, **k: None,
+    )
     install_stub("ui.header", render_header=lambda *a, **k: None)
     install_stub("ui.actions", render_action_menu=lambda *a, **k: None)
     install_stub(
@@ -105,7 +110,11 @@ def main_app(monkeypatch: pytest.MonkeyPatch):
         record_auth_timestamp=lambda *_a, **_k: None,
         rerun=lambda *_a, **_k: None,
     )
-    install_stub("services.health", get_health_metrics=lambda: {}, record_dependency_status=lambda *a, **k: None)
+    install_stub(
+        "services.health",
+        get_health_metrics=lambda: {},
+        record_dependency_status=lambda *a, **k: None,
+    )
     settings_stub = types.SimpleNamespace(
         cache_ttl_portfolio=3600,
         cache_ttl_last_price=3600,
@@ -172,9 +181,7 @@ def reset_session_state(main_app, monkeypatch: pytest.MonkeyPatch):  # noqa: D40
     main_app.st.session_state.clear()
 
 
-def test_render_login_phase_marks_preload_pending(
-    main_app, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_render_login_phase_marks_preload_pending(main_app, monkeypatch: pytest.MonkeyPatch) -> None:
     recorded: dict[str, object] = {}
 
     def fake_start_preload_worker(*, paused: bool, libraries=None) -> bool:  # type: ignore[override]
@@ -195,9 +202,7 @@ def test_render_login_phase_marks_preload_pending(
     assert main_app.st.session_state["scientific_preload_ready"] is False
 
 
-def test_main_schedules_preload_resume_after_auth(
-    main_app, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_main_schedules_preload_resume_after_auth(main_app, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resume_calls: list[dict[str, object]] = []
 
     def fake_resume_preload_worker(*, delay_seconds: float, libraries=None) -> bool:  # type: ignore[override]
@@ -298,10 +303,7 @@ def test_app_import_guard_handles_preload_failure(
         assert guarded_app.start_preload_worker(paused=True) is False
         assert guarded_app.resume_preload_worker(delay_seconds=0.1) is False
         assert guarded_app.is_preload_complete() is False
-        assert any(
-            "Lazy preload skipped on startup" in record.message
-            for record in caplog.records
-        )
+        assert any("Lazy preload skipped on startup" in record.message for record in caplog.records)
     finally:
         sys.modules["app"] = original_app
         if original_preload is None:

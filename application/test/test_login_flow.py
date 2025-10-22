@@ -1,8 +1,9 @@
-import streamlit as st
-from ui.actions import render_action_menu
 from unittest.mock import patch
 
+import streamlit as st
+
 from tests.fixtures.common import DummyCtx
+from ui.actions import render_action_menu
 
 
 def test_logout_forces_login_page(monkeypatch):
@@ -22,6 +23,7 @@ def test_logout_forces_login_page(monkeypatch):
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
 
     with patch("ui.actions.auth_service.logout") as mock_logout:
+
         def fake_logout(*a, **k):
             st.session_state.clear()
             st.session_state["force_login"] = True
@@ -34,11 +36,13 @@ def test_logout_forces_login_page(monkeypatch):
 
     with patch("ui.login.render_login_page") as mock_login:
         from ui.login import render_login_page
+
         if st.session_state.get("force_login"):
             render_login_page()
         mock_login.assert_called_once()
 
     st.session_state.clear()
+
 
 def test_service_build_iol_client_returns_error(monkeypatch):
     from services import cache as svc_cache
@@ -107,6 +111,7 @@ def test_render_login_page_shows_error(monkeypatch):
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
 
     from shared import config
+
     config.settings.tokens_key = "k"
 
     captured = {}
@@ -181,11 +186,12 @@ def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     assert st.session_state.get("login_error") == "no key"
     assert not any("password" in k.lower() for k in st.session_state)
 
+
 def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_path):
-    from ui import login
-    from controllers import auth as ctrl_auth
     from application import auth_service
+    from controllers import auth as ctrl_auth
     from shared.cache import cache as app_cache
+    from ui import login
 
     monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
@@ -220,8 +226,8 @@ def test_login_success_creates_tokens_file_and_clears_password(monkeypatch, tmp_
 
 
 def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
-    from ui import login
     from application import auth_service
+    from ui import login
 
     monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
@@ -250,11 +256,11 @@ def test_login_invalid_credentials_no_tokens_file(monkeypatch, tmp_path):
 
 
 def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
-    from ui import login
-    from controllers import auth as ctrl_auth
     from application import auth_service
+    from controllers import auth as ctrl_auth
     from services import cache as svc_cache
     from shared.cache import cache as app_cache
+    from ui import login
 
     monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "u", "some_password": "p"})
     _prepare_login_form(monkeypatch)
@@ -303,11 +309,11 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
 
 
 def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
-    from ui import login
-    from controllers import auth as ctrl_auth
     from application import auth_service
+    from controllers import auth as ctrl_auth
     from services import cache as svc_cache
     from shared.cache import cache as app_cache
+    from ui import login
 
     # simulate initial login
     # simulate initial login

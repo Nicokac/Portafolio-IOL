@@ -1,10 +1,11 @@
 # ui\sidebar_controls.py
 from __future__ import annotations
+
+import html
 from contextlib import contextmanager
 from dataclasses import asdict
 from textwrap import shorten
 
-import html
 import streamlit as st
 
 from domain.models import Controls
@@ -101,9 +102,7 @@ def render_sidebar(
         "desc": st.session_state.get("desc", True),
         "top_n": st.session_state.get("top_n", 20),
         "selected_syms": st.session_state.get("selected_syms", all_symbols),
-        "selected_types": selected_types_state
-        if selected_types_state is not None
-        else available_types,
+        "selected_types": selected_types_state if selected_types_state is not None else available_types,
         "symbol_query": st.session_state.get("symbol_query", ""),
     }
 
@@ -118,11 +117,7 @@ def render_sidebar(
         "cantidad",
         "simbolo",
     ]
-    order_index = (
-        order_options.index(defaults["order_by"])
-        if defaults["order_by"] in order_options
-        else 0
-    )
+    order_index = order_options.index(defaults["order_by"]) if defaults["order_by"] in order_options else 0
 
     body_opened = False
     if hasattr(host, "markdown"):
@@ -140,9 +135,7 @@ def render_sidebar(
     with form:
         with _section_card(form) as update_section:
             update_section.markdown("### ⏱️ Actualización")
-            update_section.caption(
-                "Controlá cada cuánto se refrescan tablas, totales y gráficos."
-            )
+            update_section.caption("Controlá cada cuánto se refrescan tablas, totales y gráficos.")
             refresh_secs = update_section.slider(
                 "Intervalo (seg)",
                 5,
@@ -157,9 +150,7 @@ def render_sidebar(
             extra_classes="control-panel__section--flash" if flash_active else "",
         ) as filter_section:
             filter_section.markdown("### 🔍 Filtros")
-            filter_section.caption(
-                "Limitá la vista para enfocarte en activos específicos o categorías."
-            )
+            filter_section.caption("Limitá la vista para enfocarte en activos específicos o categorías.")
             hide_cash = filter_section.checkbox(
                 "Ocultar IOLPORA / PARKING",
                 value=defaults["hide_cash"],
@@ -174,31 +165,20 @@ def render_sidebar(
             selected_syms = filter_section.multiselect(
                 "Filtrar por símbolo",
                 all_symbols,
-                default=[
-                    s
-                    for s in (defaults["selected_syms"] or [])
-                    if s in all_symbols
-                ]
-                or all_symbols,
+                default=[s for s in (defaults["selected_syms"] or []) if s in all_symbols] or all_symbols,
                 help="Aplica solo los símbolos elegidos en tablas, rankings y gráficos.",
             )
             selected_types = filter_section.multiselect(
                 "Filtrar por tipo",
                 available_types,
-                default=[
-                    t
-                    for t in (defaults["selected_types"] or available_types)
-                    if t in available_types
-                ],
+                default=[t for t in (defaults["selected_types"] or available_types) if t in available_types],
                 help="Muestra únicamente las clases de activo seleccionadas.",
             )
             overview_container = filter_section.container()
 
         with _section_card(form) as currency_section:
             currency_section.markdown("### 💱 Moneda")
-            currency_section.caption(
-                "Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones."
-            )
+            currency_section.caption("Cambiá la moneda para comparar contra USD CCL en todas las visualizaciones.")
             show_usd = currency_section.toggle(
                 "Mostrar valores en USD CCL",
                 value=defaults["show_usd"],
@@ -207,9 +187,7 @@ def render_sidebar(
 
         with _section_card(form) as order_section:
             order_section.markdown("### ↕️ Orden")
-            order_section.caption(
-                "Definí cómo ordenarás la tabla de posiciones y rankings asociados."
-            )
+            order_section.caption("Definí cómo ordenarás la tabla de posiciones y rankings asociados.")
             order_by = order_section.selectbox(
                 "Ordenar por",
                 order_options,
@@ -224,9 +202,7 @@ def render_sidebar(
 
         with _section_card(form) as charts_section:
             charts_section.markdown("### 📈 Gráficos")
-            charts_section.caption(
-                "Controlá cuántos elementos se visualizan en rankings y gráficos destacados."
-            )
+            charts_section.caption("Controlá cuántos elementos se visualizan en rankings y gráficos destacados.")
             top_n = charts_section.slider(
                 "Top N",
                 5,

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
-from datetime import datetime
 import json
 import logging
+from dataclasses import asdict, dataclass
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -78,11 +78,17 @@ class PortfolioSnapshotExport:
         """Create a normalized payload from :class:`PortfolioViewSnapshot`."""
 
         try:
-            from application.portfolio_service import PortfolioTotals
-            from services.portfolio_view import PortfolioContributionMetrics
+            from application.portfolio_service import (
+                PortfolioTotals as _PortfolioTotals,
+            )
         except ImportError:  # pragma: no cover - defensive, tests patch modules
-            PortfolioTotals = object  # type: ignore[assignment]
-            PortfolioContributionMetrics = object  # type: ignore[assignment]
+            _PortfolioTotals = None  # type: ignore[assignment]
+        try:
+            from services.portfolio_view import (
+                PortfolioContributionMetrics as _PortfolioContributionMetrics,
+            )
+        except ImportError:  # pragma: no cover - defensive, tests patch modules
+            _PortfolioContributionMetrics = None  # type: ignore[assignment]
 
         df_view = _ensure_dataframe(getattr(snapshot, "df_view", None))
         totals = getattr(snapshot, "totals", None)
@@ -91,12 +97,20 @@ class PortfolioSnapshotExport:
             totals_dict = {}
         elif isinstance(totals, dict):
             totals_dict = {k: _safe_float(v) for k, v in totals.items()}
+        elif _PortfolioTotals is not None and isinstance(totals, _PortfolioTotals):
+            totals_dict = {k: _safe_float(v) for k, v in asdict(totals).items()}
         elif "PortfolioTotals" in str(type(totals)):
             totals_dict = {k: _safe_float(v) for k, v in asdict(totals).items()}
         else:
             totals_dict = {
                 key: _safe_float(getattr(totals, key, None))
-                for key in ("total_value", "total_cost", "total_pl", "total_pl_pct", "total_cash")
+                for key in (
+                    "total_value",
+                    "total_cost",
+                    "total_pl",
+                    "total_pl_pct",
+                    "total_cash",
+                )
             }
 
         generated_at_ts = getattr(snapshot, "generated_at", None)
@@ -104,7 +118,11 @@ class PortfolioSnapshotExport:
 
         history_df = _ensure_dataframe(getattr(snapshot, "historical_total", None))
         contrib = getattr(snapshot, "contribution_metrics", None)
-        if contrib is not None and "PortfolioContributionMetrics" in str(type(contrib)):
+        if (
+            contrib is not None
+            and _PortfolioContributionMetrics is not None
+            and isinstance(contrib, _PortfolioContributionMetrics)
+        ):
             by_symbol = _ensure_dataframe(getattr(contrib, "by_symbol", None))
             by_type = _ensure_dataframe(getattr(contrib, "by_type", None))
         else:
@@ -469,11 +487,7 @@ def _chart_timeline(snapshot: PortfolioSnapshotExport, limit: int) -> go.Figure 
     history = _normalize_history(snapshot.history)
     if history.empty:
         return None
-    value_cols = [
-        col
-        for col in ("total_value", "total_cost", "total_pl")
-        if col in history.columns
-    ]
+    value_cols = [col for col in ("total_value", "total_cost", "total_pl") if col in history.columns]
     if not value_cols:
         return None
     melted = history.melt(
@@ -514,7 +528,14 @@ def _chart_heatmap(snapshot: PortfolioSnapshotExport, limit: int) -> go.Figure |
     pivot = pivot.sort_index().fillna(0.0)
     if pivot.empty:
         return None
-    fig = go.Figure(data=go.Heatmap(z=pivot.values, x=list(pivot.columns), y=list(pivot.index), colorscale="Blues"))
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.values,
+            x=list(pivot.columns),
+            y=list(pivot.index),
+            colorscale="Blues",
+        )
+    )
     fig.update_layout(template="plotly_white", title="Mapa de calor por símbolo y tipo")
     return fig
 
@@ -606,7 +627,6 @@ def build_rankings(
         data = data.dropna(subset=[column]).sort_values(column, ascending=ascending).head(limit)
         if data.empty:
             return pd.DataFrame()
-        total = data[column].sum(min_count=1)
         total_ref = df[column].sum(min_count=1)
         share = None
         if np.isfinite(total_ref) and not np.isclose(total_ref, 0.0):
@@ -820,7 +840,13 @@ def create_excel_workbook(
 
         sheet_order: list[tuple[str, pd.DataFrame]] = []
 
-        for name in ["kpis", "positions", "contribution_by_symbol", "contribution_by_type", "history"]:
+        for name in [
+            "kpis",
+            "positions",
+            "contribution_by_symbol",
+            "contribution_by_type",
+            "history",
+        ]:
             if name in tables and not tables[name].empty:
                 sheet_order.append((name, tables[name]))
 

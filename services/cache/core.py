@@ -9,7 +9,7 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any, Callable, Dict, Mapping
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
-    from application.predictive_service import PredictiveCacheSnapshot
+    pass
 
 
 @dataclass
@@ -298,6 +298,8 @@ def get_cache_stats(cache: CacheService | None = None) -> Dict[str, Any]:
     try:
         from application.predictive_service import (  # pylint: disable=import-outside-toplevel
             PredictiveCacheSnapshot,
+        )
+        from application.predictive_service import (
             get_cache_stats as _predictive_cache_stats,
         )
     except Exception:  # pragma: no cover - defensive guard

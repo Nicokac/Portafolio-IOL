@@ -63,16 +63,59 @@ def test_record_macro_api_usage_accumulates_stats(
     _reset_state(monkeypatch)
 
     health_service.record_macro_api_usage(
-        attempts=[{"provider": "FRED", "label": "FRED", "status": "success", "elapsed_ms": 100.0}],
-        latest={"provider": "FRED", "label": "FRED", "status": "success", "elapsed_ms": 100.0, "ts": 1.0},
+        attempts=[
+            {
+                "provider": "FRED",
+                "label": "FRED",
+                "status": "success",
+                "elapsed_ms": 100.0,
+            }
+        ],
+        latest={
+            "provider": "FRED",
+            "label": "FRED",
+            "status": "success",
+            "elapsed_ms": 100.0,
+            "ts": 1.0,
+        },
     )
     health_service.record_macro_api_usage(
-        attempts=[{"provider": "FRED", "label": "FRED", "status": "error", "elapsed_ms": 900.0, "detail": "boom"}],
-        latest={"provider": "FRED", "label": "FRED", "status": "error", "elapsed_ms": 900.0, "detail": "boom", "ts": 2.0},
+        attempts=[
+            {
+                "provider": "FRED",
+                "label": "FRED",
+                "status": "error",
+                "elapsed_ms": 900.0,
+                "detail": "boom",
+            }
+        ],
+        latest={
+            "provider": "FRED",
+            "label": "FRED",
+            "status": "error",
+            "elapsed_ms": 900.0,
+            "detail": "boom",
+            "ts": 2.0,
+        },
     )
     health_service.record_macro_api_usage(
-        attempts=[{"provider": "ECB", "label": "ECB", "status": "success", "elapsed_ms": 400.0, "fallback": True}],
-        latest={"provider": "ECB", "label": "ECB", "status": "success", "elapsed_ms": 400.0, "fallback": True, "ts": 3.0},
+        attempts=[
+            {
+                "provider": "ECB",
+                "label": "ECB",
+                "status": "success",
+                "elapsed_ms": 400.0,
+                "fallback": True,
+            }
+        ],
+        latest={
+            "provider": "ECB",
+            "label": "ECB",
+            "status": "success",
+            "elapsed_ms": 400.0,
+            "fallback": True,
+            "ts": 3.0,
+        },
     )
 
     metrics = health_service.get_health_metrics()
@@ -118,8 +161,21 @@ def test_record_macro_api_usage_tracks_missing_latency(
     _reset_state(monkeypatch)
 
     health_service.record_macro_api_usage(
-        attempts=[{"provider": "FRED", "label": "FRED", "status": "success", "elapsed_ms": None}],
-        latest={"provider": "FRED", "label": "FRED", "status": "success", "elapsed_ms": None, "ts": 4.0},
+        attempts=[
+            {
+                "provider": "FRED",
+                "label": "FRED",
+                "status": "success",
+                "elapsed_ms": None,
+            }
+        ],
+        latest={
+            "provider": "FRED",
+            "label": "FRED",
+            "status": "success",
+            "elapsed_ms": None,
+            "ts": 4.0,
+        },
     )
 
     macro = health_service.get_health_metrics().get("macro_api") or {}

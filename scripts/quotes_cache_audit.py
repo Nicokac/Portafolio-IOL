@@ -104,28 +104,18 @@ class PortfolioCacheSnapshot:
     def invalidation_breakdown(self) -> str:
         if not self.fingerprint_invalidations:
             return "Sin invalidaciones registradas"
-        return ", ".join(
-            f"{reason}={count}"
-            for reason, count in sorted(self.fingerprint_invalidations.items())
-        )
+        return ", ".join(f"{reason}={count}" for reason, count in sorted(self.fingerprint_invalidations.items()))
 
     def miss_breakdown(self) -> str:
         if not self.cache_miss_reasons:
             return "Sin misses registrados"
-        return ", ".join(
-            f"{reason}={count}"
-            for reason, count in sorted(self.cache_miss_reasons.items())
-        )
+        return ", ".join(f"{reason}={count}" for reason, count in sorted(self.cache_miss_reasons.items()))
 
     def unnecessary_misses(self) -> int:
         return int(self.cache_miss_reasons.get("unchanged_fingerprint", 0) or 0)
 
     def recent_unnecessary_misses(self) -> list[dict]:
-        return [
-            miss
-            for miss in self.recent_misses
-            if miss.get("reason") == "unchanged_fingerprint"
-        ]
+        return [miss for miss in self.recent_misses if miss.get("reason") == "unchanged_fingerprint"]
 
 
 def _load_events(path: Path) -> list[dict]:
@@ -161,9 +151,7 @@ def _parse_batches(events: Iterable[dict]) -> list[QuoteBatchEvent]:
                 existing.mode = str(mode) if mode is not None else existing.mode
                 existing.stale = bool(stale) if stale is not None else existing.stale
                 existing.refresh_scheduled = (
-                    bool(refresh_scheduled)
-                    if refresh_scheduled is not None
-                    else existing.refresh_scheduled
+                    bool(refresh_scheduled) if refresh_scheduled is not None else existing.refresh_scheduled
                 )
                 continue
         batches.append(
@@ -173,11 +161,7 @@ def _parse_batches(events: Iterable[dict]) -> list[QuoteBatchEvent]:
                 duration_s=duration,
                 mode=str(mode) if mode is not None else None,
                 stale=bool(stale) if stale is not None else None,
-                refresh_scheduled=(
-                    bool(refresh_scheduled)
-                    if refresh_scheduled is not None
-                    else None
-                ),
+                refresh_scheduled=(bool(refresh_scheduled) if refresh_scheduled is not None else None),
                 background=bool(background) if background is not None else None,
             )
         )
@@ -218,25 +202,15 @@ def load_portfolio_metrics(path: Path) -> PortfolioCacheSnapshot:
         hits=int(data.get("hits", 0) or 0),
         render_invocations=int(data.get("render_invocations", 0) or 0),
         fingerprint_invalidations={
-            str(reason): int(count)
-            for reason, count in invalidations_raw.items()
-            if count is not None
+            str(reason): int(count) for reason, count in invalidations_raw.items() if count is not None
         },
-        cache_miss_reasons={
-            str(reason): int(count)
-            for reason, count in miss_reasons_raw.items()
-            if count is not None
-        },
+        cache_miss_reasons={str(reason): int(count) for reason, count in miss_reasons_raw.items() if count is not None},
         recent_misses=[miss for miss in recent_misses if isinstance(miss, dict)],
-        recent_invalidations=[
-            entry for entry in recent_invalidations if isinstance(entry, dict)
-        ],
+        recent_invalidations=[entry for entry in recent_invalidations if isinstance(entry, dict)],
     )
 
 
-def export_metrics(
-    report: AuditReport, portfolio: PortfolioCacheSnapshot, output: Path
-) -> None:
+def export_metrics(report: AuditReport, portfolio: PortfolioCacheSnapshot, output: Path) -> None:
     lines = [
         "metric,value,notes\n",
         f"quotes_refresh_total_s,{report.quotes_refresh_total_s():.2f},",
@@ -277,10 +251,7 @@ def render_quotes_cli(report: AuditReport) -> str:
     if anomalous:
         lines.append("Sub-lotes >1s detectados:")
         for batch in anomalous:
-            lines.append(
-                "  * "
-                f"{batch.group} ({', '.join(batch.symbols)}) -> {batch.duration_s:.2f}s"
-            )
+            lines.append(f"  * {batch.group} ({', '.join(batch.symbols)}) -> {batch.duration_s:.2f}s")
     else:
         lines.append("No se detectaron sub-lotes por encima de 1 segundo")
     return "\n".join(lines)
@@ -290,20 +261,14 @@ def render_portfolio_cli(metrics: PortfolioCacheSnapshot) -> str:
     lines = [
         "Resumen portfolio_view.render:",
         f"- Tiempo total: {metrics.render_total_s:.2f} s",
-        (
-            "- Invocaciones: "
-            f"{metrics.render_invocations} "
-            f"(hits={metrics.hits}, misses={metrics.miss_count})"
-        ),
+        (f"- Invocaciones: {metrics.render_invocations} (hits={metrics.hits}, misses={metrics.miss_count})"),
         f"- Hit ratio: {metrics.hit_ratio:.2f}%",
         f"- Razones de miss: {metrics.miss_breakdown()}",
         f"- Invalidaciones: {metrics.invalidation_breakdown()}",
     ]
     unnecessary = metrics.unnecessary_misses()
     if unnecessary:
-        lines.append(
-            f"Misses sin cambios de fingerprint detectados: {unnecessary}"
-        )
+        lines.append(f"Misses sin cambios de fingerprint detectados: {unnecessary}")
         recent = metrics.recent_unnecessary_misses()
         if recent:
             lines.append("Últimos misses sin cambios registrados:")
@@ -311,11 +276,7 @@ def render_portfolio_cli(metrics: PortfolioCacheSnapshot) -> str:
                 apply_ms = float(miss.get("apply_elapsed") or 0.0)
                 totals_ms = float(miss.get("totals_elapsed") or 0.0)
                 render_ms = float(miss.get("render_elapsed") or 0.0)
-                lines.append(
-                    "  * "
-                    f"apply={apply_ms:.3f}s totals={totals_ms:.3f}s "
-                    f"render={render_ms:.3f}s"
-                )
+                lines.append(f"  * apply={apply_ms:.3f}s totals={totals_ms:.3f}s render={render_ms:.3f}s")
     return "\n".join(lines)
 
 

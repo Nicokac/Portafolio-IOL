@@ -44,5 +44,3 @@ def test_monte_carlo_length():
     weights = pd.Series([0.5, 0.5], index=returns.columns)
     sims = rs.monte_carlo_simulation(returns, weights, n_sims=10, horizon=10)
     assert len(sims) == 10
-
-

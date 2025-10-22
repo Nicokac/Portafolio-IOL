@@ -14,7 +14,6 @@ from application.backtesting_service import BacktestingService, FixturePriceLoad
 from application.predictive_service import reset_cache
 from services.cache.core import CacheService
 
-
 FIXTURES_ROOT = Path("docs/fixtures/default")
 
 

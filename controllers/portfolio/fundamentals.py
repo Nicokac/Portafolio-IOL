@@ -4,18 +4,17 @@ import time
 import pandas as pd
 import streamlit as st
 
+from services.cache.market_data_cache import get_market_data_cache
+from services.health import record_tab_latency
+from services.notifications import NotificationFlags
+from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.fundamentals import (
     render_fundamental_ranking,
     render_sector_comparison,
 )
-from services.notifications import NotificationFlags
-from services.cache.market_data_cache import get_market_data_cache
-from shared.errors import AppError
 from ui.notifications import render_earnings_badge
-from services.health import record_tab_latency
-
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +33,7 @@ def render_fundamental_analysis(
         render_earnings_badge(
             help_text="Algunas empresas de tu portafolio reportan resultados en los próximos días.",
         )
-    symbols = (
-        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
-        if not df_view.empty
-        else []
-    )
+    symbols = sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()}) if not df_view.empty else []
 
     render_favorite_badges(
         favorites,
@@ -67,18 +62,10 @@ def render_fundamental_analysis(
             start_time = time.perf_counter()
             try:
                 cache = get_market_data_cache()
-                sector_hints = sorted(
-                    {
-                        str(val).strip()
-                        for val in df_view.get("tipo", [])
-                        if str(val).strip()
-                    }
-                )
+                sector_hints = sorted({str(val).strip() for val in df_view.get("tipo", []) if str(val).strip()})
                 fund_df = cache.get_fundamentals(
                     portfolio_symbols,
-                    loader=lambda symbols=list(portfolio_symbols): tasvc.portfolio_fundamentals(
-                        list(symbols)
-                    ),
+                    loader=lambda symbols=list(portfolio_symbols): tasvc.portfolio_fundamentals(list(symbols)),
                     sectors=sector_hints,
                 )
             except AppError as err:
@@ -98,9 +85,7 @@ def render_fundamental_analysis(
             for col in fund_df.columns:
                 if fund_df[col].dtype == object:
                     fund_df[col] = pd.to_numeric(fund_df[col], errors="coerce")
-            float_cols = [
-                col for col in fund_df.columns if pd.api.types.is_float_dtype(fund_df[col])
-            ]
+            float_cols = [col for col in fund_df.columns if pd.api.types.is_float_dtype(fund_df[col])]
             if float_cols:
                 fund_df[float_cols] = fund_df[float_cols].astype("float32")
         render_fundamental_ranking(fund_df)

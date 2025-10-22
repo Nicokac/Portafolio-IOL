@@ -1,11 +1,10 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
-
-from services.cache.core import CacheService
 
 from predictive_engine.adapters import run_adaptive_forecast
 from predictive_engine.storage import load_forecast_history, save_forecast_history
+from services.cache.core import CacheService
 
 
 def _sample_history() -> pd.DataFrame:
@@ -72,9 +71,7 @@ def test_beta_shift_and_dispersion_metrics(tmp_path):
     assert np.isfinite(forecast.metrics.beta_shift_avg)
     assert forecast.metrics.beta_shift_avg == pytest.approx(expected_beta_shift or 0.0, rel=1e-6)
 
-    sector_dispersion_expected = (
-        history.groupby("sector")["predicted_return"].mean().std(ddof=0)
-    )
+    sector_dispersion_expected = history.groupby("sector")["predicted_return"].mean().std(ddof=0)
     assert forecast.metrics.sector_dispersion == pytest.approx(sector_dispersion_expected, rel=1e-6)
 
 

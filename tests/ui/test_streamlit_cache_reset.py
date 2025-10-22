@@ -1,14 +1,12 @@
-import tests.ui.test_streamlit_cache_reuse as reuse_mod  # noqa: F401 - ensures module stubs
-
 import pytest
 
+import tests.ui.test_streamlit_cache_reuse as reuse_mod  # noqa: F401 - ensures module stubs
 from controllers.portfolio.portfolio import (
     _DATASET_HASH_STATE_KEY,
     _PORTFOLIO_LAST_USER_STATE_KEY,
     _VISUAL_CACHE_STATE_KEY,
     render_portfolio_section,
 )
-from tests.ui.test_streamlit_cache_reuse import _portfolio_setup
 from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 

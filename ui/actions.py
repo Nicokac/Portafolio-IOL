@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
+
 import streamlit as st
 
 from application import auth_service
 from shared.errors import AppError
-
 
 logger = logging.getLogger(__name__)
 
@@ -62,4 +62,3 @@ def render_action_menu(container=None) -> None:
     if err:
         st.error(f"No se pudo cerrar sesión: {err}")
         st.stop()
-

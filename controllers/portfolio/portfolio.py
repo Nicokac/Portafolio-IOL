@@ -13,55 +13,69 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
-from domain.models import Controls
-from ui.sidebar_controls import render_sidebar
-from ui.fundamentals import render_fundamental_data
-from ui.export import PLOTLY_CONFIG
-from ui.charts import plot_technical_analysis_chart
-from ui.favorites import render_favorite_badges, render_favorite_toggle
 from application.portfolio_service import PortfolioService, map_to_us_ticker
-from application.ta_service import TAService
 from application.portfolio_viewmodel import build_portfolio_viewmodel
-from shared import skeletons
-from shared.errors import AppError
-from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
-from services.notifications import NotificationFlags, NotificationsService
+from application.ta_service import TAService
+from domain.models import Controls
+from infrastructure.iol.auth import get_current_user_id
+from services import snapshots as snapshot_service
+from services.cache import CacheService
 from services.health import record_tab_latency
+from services.notifications import NotificationFlags, NotificationsService
+from services.performance_metrics import measure_execution
+from services.performance_timer import profile_block
+from services.performance_timer import record_stage as log_performance_stage
 from services.portfolio_view import (
     PortfolioViewModelService,
     update_charts,
     update_summary_section,
     update_table_data,
 )
-from services import snapshots as snapshot_service
-from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
-from ui.lazy import charts_fragment, current_component, current_scope, in_form_scope, table_fragment
-from ui.lazy.runtime import current_dataset_token
-from services.performance_metrics import measure_execution
-from services.performance_timer import profile_block, record_stage as log_performance_stage
-from services.cache import CacheService
-from shared.telemetry import log_default_telemetry, log_telemetry
-from shared.user_actions import log_user_action
+from shared import skeletons
 from shared.cache import visual_cache_registry
-from infrastructure.iol.auth import get_current_user_id
+from shared.errors import AppError
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from shared.fragment_state import (
     FragmentGuardResult,
     fragment_state_soft_refresh,
     get_fragment_state_guardian,
     should_auto_load_fragment,
 )
+from shared.telemetry import log_default_telemetry, log_telemetry
+from shared.user_actions import log_user_action
+from ui.charts import plot_technical_analysis_chart
+from ui.export import PLOTLY_CONFIG
+from ui.favorites import render_favorite_badges, render_favorite_toggle
+from ui.fundamentals import render_fundamental_data
+from ui.lazy import (
+    charts_fragment,
+    current_component,
+    current_scope,
+    in_form_scope,
+    table_fragment,
+)
+from ui.lazy.runtime import current_dataset_token
+from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
+from ui.sidebar_controls import render_sidebar
 
-from .load_data import load_portfolio_data
 from .charts import (
-    render_summary as render_summary_section,
-    render_table as render_table_section,
-    render_charts as render_charts_section,
     render_advanced_analysis,
 )
+from .charts import (
+    render_charts as render_charts_section,
+)
+from .charts import (
+    render_summary as render_summary_section,
+)
+from .charts import (
+    render_table as render_table_section,
+)
 from .fundamentals import render_fundamental_analysis
+from .load_data import load_portfolio_data
+
 logger = logging.getLogger(__name__)
 session_logger = logging.getLogger("controllers.portfolio.session")
 
@@ -466,9 +480,7 @@ def _record_fingerprint_event(status: str, elapsed_ms: float, cache_key: str) ->
             extra={"status": status},
         )
     except Exception:  # pragma: no cover - telemetry should not break rendering
-        logger.debug(
-            "No se pudo registrar métricas de fingerprint cache", exc_info=True
-        )
+        logger.debug("No se pudo registrar métricas de fingerprint cache", exc_info=True)
 
 
 def _publish_visual_cache_debug() -> None:
@@ -480,7 +492,8 @@ def _publish_visual_cache_debug() -> None:
         st.session_state["portfolio_visual_cache_debug"] = visual_cache_registry.snapshot()
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug(
-            "No se pudo exponer el estado de depuración de la caché visual", exc_info=True
+            "No se pudo exponer el estado de depuración de la caché visual",
+            exc_info=True,
         )
 
 
@@ -489,12 +502,8 @@ def _dataset_filters_key(controls: Any) -> str:
 
     payload = {
         "hide_cash": getattr(controls, "hide_cash", None),
-        "selected_syms": sorted(
-            str(sym) for sym in getattr(controls, "selected_syms", []) or ()
-        ),
-        "selected_types": sorted(
-            str(tp) for tp in getattr(controls, "selected_types", []) or ()
-        ),
+        "selected_syms": sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()),
+        "selected_types": sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()),
         "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
         "order_by": getattr(controls, "order_by", None),
         "desc": getattr(controls, "desc", None),
@@ -528,8 +537,7 @@ def _compute_portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
 
     totals = getattr(viewmodel, "totals", None)
     totals_sig = "|".join(
-        str(getattr(totals, attr, ""))
-        for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
+        str(getattr(totals, attr, "")) for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
     )
     history = _hash_dataframe(getattr(viewmodel, "historical_total", None))
     contributions = getattr(viewmodel, "contributions", None)
@@ -597,9 +605,7 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
         "ccl_rate": getattr(metrics, "ccl_rate", None),
         "snapshot": getattr(snapshot, "storage_id", None) or getattr(snapshot, "id", None),
         "favorites": _favorites_signature(favorites),
-        "pending": ";".join(
-            sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())
-        ),
+        "pending": ";".join(sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())),
     }
     return json.dumps(payload, sort_keys=True, default=str)
 
@@ -664,7 +670,9 @@ def _store_component_metadata(
     _INCREMENTAL_CACHE.set(key, payload, ttl=_CACHE_TTL_SECONDS)
 
 
-def _ensure_component_store(tab_cache: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+def _ensure_component_store(
+    tab_cache: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
     """Return the component cache store associated with the current tab."""
 
     if tab_cache is None:
@@ -917,6 +925,7 @@ def _record_ui_persist_visibility(block: dict[str, Any], *, visible: bool) -> No
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug("No se pudo persistir ui_persist_ms", exc_info=True)
 
+
 def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | None) -> bool:
     """Render a persistent widget that toggles the lazy loading flag."""
 
@@ -970,14 +979,20 @@ def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | Non
             result = bool(widget_callable(label, key=session_key))
         except TypeError:
             try:
-                result = bool(
-                    widget_callable(label, key=session_key, value=current_value)
-                )
+                result = bool(widget_callable(label, key=session_key, value=current_value))
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+                logger.debug(
+                    "No se pudo renderizar el control diferido %s",
+                    session_key,
+                    exc_info=True,
+                )
                 result = current_value
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo renderizar el control diferido %s", session_key, exc_info=True)
+            logger.debug(
+                "No se pudo renderizar el control diferido %s",
+                session_key,
+                exc_info=True,
+            )
             result = current_value
     else:
         button_callable = getattr(placeholder, "button", None)
@@ -987,14 +1002,22 @@ def _render_lazy_trigger(placeholder: Any, *, label: str, session_key: str | Non
             try:
                 result = bool(button_callable(label, key=session_key))
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo renderizar el botón diferido %s", session_key, exc_info=True)
+                logger.debug(
+                    "No se pudo renderizar el botón diferido %s",
+                    session_key,
+                    exc_info=True,
+                )
                 result = current_value
             else:
                 if result:
                     try:
                         st.session_state[session_key] = True
                     except Exception:  # pragma: no cover - defensive safeguard
-                        logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
+                        logger.debug(
+                            "No se pudo persistir la llave diferida %s",
+                            session_key,
+                            exc_info=True,
+                        )
 
     try:
         state_value = st.session_state.get(session_key)
@@ -1078,17 +1101,17 @@ def _prompt_lazy_block(
         try:
             st.session_state.setdefault(session_key, False)
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo inicializar la llave diferida %s", session_key, exc_info=True)
+            logger.debug(
+                "No se pudo inicializar la llave diferida %s",
+                session_key,
+                exc_info=True,
+            )
 
     trigger_state = False
     has_loaded_flag = block.get("status") == "loaded" or "loaded_at" in block
-    should_render_trigger = (
-        not ready or block.get("auto_loaded") is True or has_loaded_flag
-    ) and not force_ready
+    should_render_trigger = (not ready or block.get("auto_loaded") is True or has_loaded_flag) and not force_ready
     if should_render_trigger:
-        trigger_state = _render_lazy_trigger(
-            placeholder, label=button_label, session_key=session_key
-        )
+        trigger_state = _render_lazy_trigger(placeholder, label=button_label, session_key=session_key)
         if trigger_state and not session_ready:
             action = "lazy_block_trigger"
             if "load_table" in (key or ""):
@@ -1102,11 +1125,7 @@ def _prompt_lazy_block(
         ready = ready or trigger_state
 
     explicit_hide_during_run = False
-    if (
-        primary_ready
-        and not trigger_state
-        and block.get("status") == "loaded"
-    ):
+    if primary_ready and not trigger_state and block.get("status") == "loaded":
         current_flag = False
         if session_key:
             try:
@@ -1130,7 +1149,11 @@ def _prompt_lazy_block(
             try:
                 st.session_state[session_key] = True
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo persistir la llave diferida %s", session_key, exc_info=True)
+                logger.debug(
+                    "No se pudo persistir la llave diferida %s",
+                    session_key,
+                    exc_info=True,
+                )
         _mark_lazy_flag_ready(key, dataset_token)
         _mark_lazy_flag_ready(fallback_key, dataset_token)
         _record_ui_persist_visibility(block, visible=True)
@@ -1196,11 +1219,15 @@ def _record_lazy_component_load(
         )
     except Exception:  # pragma: no cover - best-effort logging
         logger.debug(
-            "No se pudo registrar la telemetría diferida para %s", component, exc_info=True
+            "No se pudo registrar la telemetría diferida para %s",
+            component,
+            exc_info=True,
         )
 
 
-def _log_quotes_refresh_event(dataset_hash: str | None, *, source: str, detail: Mapping[str, Any] | None = None) -> None:
+def _log_quotes_refresh_event(
+    dataset_hash: str | None, *, source: str, detail: Mapping[str, Any] | None = None
+) -> None:
     """Persist a user action entry describing a quotes refresh."""
 
     payload: dict[str, Any] = {"source": source}
@@ -1297,10 +1324,7 @@ def render_basic_tab(
     partial_update_start = time.perf_counter()
     should_render_summary = False
     with _record_stage("render_summary", timings):
-        should_render_summary = (
-            summary_entry.get("dataset_hash") != dataset_token
-            or not summary_entry.get("rendered")
-        )
+        should_render_summary = summary_entry.get("dataset_hash") != dataset_token or not summary_entry.get("rendered")
         if should_render_summary:
             placeholder = summary_entry["placeholder"]
             references = summary_refs.get("references")
@@ -1346,9 +1370,7 @@ def render_basic_tab(
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
             with _VISUAL_STATE_LOCK:
-                visual_cache_entry.setdefault(
-                    "summary_placeholder", summary_entry.get("placeholder")
-                )
+                visual_cache_entry.setdefault("summary_placeholder", summary_entry.get("placeholder"))
                 visual_cache_entry.setdefault("summary_rendered", True)
                 if summary_timestamp is not None:
                     visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
@@ -1386,11 +1408,7 @@ def render_basic_tab(
             table_entry["skeleton_displayed"] = True
     table_refs["placeholder"] = table_placeholder
     table_entry_dataset = table_entry.get("dataset_hash")
-    if (
-        has_positions
-        and table_entry_dataset == dataset_token
-        and table_entry.get("rendered")
-    ):
+    if has_positions and table_entry_dataset == dataset_token and table_entry.get("rendered"):
         if table_lazy.get("status") != "loaded":
             table_lazy["status"] = "loaded"
     if _should_reset_rendered_flag(
@@ -1417,9 +1435,8 @@ def render_basic_tab(
         should_render_table = False
         if table_ready:
             with _record_stage("render_table", timings):
-                should_render_table = (
-                    table_entry.get("dataset_hash") != dataset_token
-                    or not table_entry.get("rendered")
+                should_render_table = table_entry.get("dataset_hash") != dataset_token or not table_entry.get(
+                    "rendered"
                 )
                 if should_render_table:
                     placeholder = table_placeholder
@@ -1448,7 +1465,10 @@ def render_basic_tab(
                     mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
                     elapsed_ms = mount_latency_ms
                     if isinstance(start_trigger, (int, float)):
-                        elapsed_ms = max((mount_end - float(start_trigger)) * 1000.0, mount_latency_ms)
+                        elapsed_ms = max(
+                            (mount_end - float(start_trigger)) * 1000.0,
+                            mount_latency_ms,
+                        )
                     table_entry["signature"] = table_signature
                     table_entry["rendered"] = True
                     table_entry["updated_at"] = table_timestamp
@@ -1493,15 +1513,12 @@ def render_basic_tab(
                     with _VISUAL_STATE_LOCK:
                         visual_cache_entry.setdefault("table_placeholder", table_placeholder)
                         visual_cache_entry.setdefault("table_rendered", True)
+                        visual_cache_entry.setdefault("table_lazy_load_ms", table_entry.get("lazy_load_ms"))
                         visual_cache_entry.setdefault(
-                            "table_lazy_load_ms", table_entry.get("lazy_load_ms")
+                            "table_mount_latency_ms",
+                            table_entry.get("mount_latency_ms"),
                         )
-                        visual_cache_entry.setdefault(
-                            "table_mount_latency_ms", table_entry.get("mount_latency_ms")
-                        )
-                        visual_cache_entry.setdefault(
-                            "table_timestamp", table_entry.get("updated_at")
-                        )
+                        visual_cache_entry.setdefault("table_timestamp", table_entry.get("updated_at"))
 
         if table_ready:
             table_ctx.stop()
@@ -1552,9 +1569,8 @@ def render_basic_tab(
         should_render_charts = False
         if charts_ready:
             with _record_stage("render_charts", timings):
-                should_render_charts = (
-                    charts_entry.get("dataset_hash") != dataset_token
-                    or not charts_entry.get("rendered")
+                should_render_charts = charts_entry.get("dataset_hash") != dataset_token or not charts_entry.get(
+                    "rendered"
                 )
                 if should_render_charts:
                     placeholder = charts_placeholder
@@ -1594,7 +1610,10 @@ def render_basic_tab(
                     mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
                     elapsed_ms = mount_latency_ms
                     if isinstance(start_trigger, (int, float)):
-                        elapsed_ms = max((mount_end - float(start_trigger)) * 1000.0, mount_latency_ms)
+                        elapsed_ms = max(
+                            (mount_end - float(start_trigger)) * 1000.0,
+                            mount_latency_ms,
+                        )
                     charts_entry["signature"] = charts_signature
                     charts_entry["rendered"] = True
                     charts_entry["updated_at"] = charts_timestamp
@@ -1637,19 +1656,14 @@ def render_basic_tab(
                     charts_entry.setdefault("signature", charts_signature)
                     charts_refs.setdefault("dataset_hash", dataset_token)
                     with _VISUAL_STATE_LOCK:
-                        visual_cache_entry.setdefault(
-                            "charts_placeholder", charts_entry.get("placeholder")
-                        )
+                        visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
                         visual_cache_entry.setdefault("charts_rendered", True)
+                        visual_cache_entry.setdefault("charts_lazy_load_ms", charts_entry.get("lazy_load_ms"))
                         visual_cache_entry.setdefault(
-                            "charts_lazy_load_ms", charts_entry.get("lazy_load_ms")
+                            "charts_mount_latency_ms",
+                            charts_entry.get("mount_latency_ms"),
                         )
-                        visual_cache_entry.setdefault(
-                            "charts_mount_latency_ms", charts_entry.get("mount_latency_ms")
-                        )
-                        visual_cache_entry.setdefault(
-                            "charts_timestamp", charts_entry.get("updated_at")
-                        )
+                        visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
 
         if charts_ready:
             charts_ctx.stop()
@@ -1670,9 +1684,7 @@ def render_basic_tab(
     partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
     incremental_render = not should_render_summary and not should_render_table and not should_render_charts
     if isinstance(tab_cache, dict):
-        tab_cache["lazy_pending"] = (
-            table_lazy.get("status") != "loaded" or charts_lazy.get("status") != "loaded"
-        )
+        tab_cache["lazy_pending"] = table_lazy.get("status") != "loaded" or charts_lazy.get("status") != "loaded"
     if not incremental_render:
         cached_dataset = render_refs.get("dataset_hash")
         if cached_dataset == dataset_token:
@@ -1694,9 +1706,7 @@ def render_basic_tab(
         st.session_state["portfolio_incremental_render"] = incremental_render
         st.session_state["portfolio_ui_partial_update_ms"] = partial_update_ms
     except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug(
-            "No se pudo persistir el estado incremental del portafolio", exc_info=True
-        )
+        logger.debug("No se pudo persistir el estado incremental del portafolio", exc_info=True)
 
 
 def render_risk_tab(
@@ -1861,35 +1871,17 @@ def render_technical_tab(
 
     with ui.expander("Parámetros adicionales"):
         c1, c2, c3 = ui.columns(3)
-        macd_fast = c1.number_input(
-            "MACD rápida", min_value=5, max_value=50, value=12, step=1
-        )
-        macd_slow = c2.number_input(
-            "MACD lenta", min_value=10, max_value=200, value=26, step=1
-        )
-        macd_signal = c3.number_input(
-            "MACD señal", min_value=5, max_value=50, value=9, step=1
-        )
+        macd_fast = c1.number_input("MACD rápida", min_value=5, max_value=50, value=12, step=1)
+        macd_slow = c2.number_input("MACD lenta", min_value=10, max_value=200, value=26, step=1)
+        macd_signal = c3.number_input("MACD señal", min_value=5, max_value=50, value=9, step=1)
         c4, c5, c6 = ui.columns(3)
-        atr_win = c4.number_input(
-            "ATR ventana", min_value=5, max_value=200, value=14, step=1
-        )
-        stoch_win = c5.number_input(
-            "Estocástico ventana", min_value=5, max_value=200, value=14, step=1
-        )
-        stoch_smooth = c6.number_input(
-            "Estocástico suavizado", min_value=1, max_value=50, value=3, step=1
-        )
+        atr_win = c4.number_input("ATR ventana", min_value=5, max_value=200, value=14, step=1)
+        stoch_win = c5.number_input("Estocástico ventana", min_value=5, max_value=200, value=14, step=1)
+        stoch_smooth = c6.number_input("Estocástico suavizado", min_value=1, max_value=50, value=3, step=1)
         c7, c8, c9 = ui.columns(3)
-        ichi_conv = c7.number_input(
-            "Ichimoku conv.", min_value=1, max_value=50, value=9, step=1
-        )
-        ichi_base = c8.number_input(
-            "Ichimoku base", min_value=2, max_value=100, value=26, step=1
-        )
-        ichi_span = c9.number_input(
-            "Ichimoku span B", min_value=2, max_value=200, value=52, step=1
-        )
+        ichi_conv = c7.number_input("Ichimoku conv.", min_value=1, max_value=50, value=9, step=1)
+        ichi_base = c8.number_input("Ichimoku base", min_value=2, max_value=100, value=26, step=1)
+        ichi_span = c9.number_input("Ichimoku span B", min_value=2, max_value=200, value=52, step=1)
 
     indicator_latency: float | None = None
     try:
@@ -1954,9 +1946,7 @@ def render_technical_tab(
             ui.caption("Sin alertas técnicas en la última vela.")
 
         ui.subheader("Backtesting")
-        strat = ui.selectbox(
-            "Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0
-        )
+        strat = ui.selectbox("Estrategia", ["SMA", "MACD", "Estocástico", "Ichimoku"], index=0)
         backtest_latency: float | None = None
         try:
             start_time = timer()
@@ -1980,9 +1970,7 @@ def render_technical_tab(
             ui.info("Sin datos suficientes para el backtesting.")
         else:
             ui.line_chart(bt["equity"])
-            ui.caption(
-                "La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada."
-            )
+            ui.caption("La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada.")
             ui.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
 
 
@@ -2124,9 +2112,7 @@ def render_portfolio_section(
                     exc_info=True,
                 )
                 precomputed_dataset_hash = None
-        skip_invalidation_flag = bool(
-            st.session_state.pop("_dataset_skip_invalidation", False)
-        )
+        skip_invalidation_flag = bool(st.session_state.pop("_dataset_skip_invalidation", False))
 
         if skip_invalidation_flag:
             logger.info(
@@ -2147,9 +2133,7 @@ def render_portfolio_section(
                 skip_invalidation=skip_invalidation_flag,
             )
 
-            soft_refresh_guard = bool(
-                getattr(snapshot, "soft_refresh_guard", False)
-            )
+            soft_refresh_guard = bool(getattr(snapshot, "soft_refresh_guard", False))
 
             viewmodel = build_portfolio_viewmodel(
                 snapshot=snapshot,
@@ -2187,7 +2171,10 @@ def render_portfolio_section(
             try:
                 dataset_hash = _hash_dataframe(df_view)
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo calcular el hash del dataset del portafolio", exc_info=True)
+                logger.debug(
+                    "No se pudo calcular el hash del dataset del portafolio",
+                    exc_info=True,
+                )
                 dataset_hash = ""
         dataset_hash = str(dataset_hash or "")
         hydration_wait_start = time.perf_counter()
@@ -2197,20 +2184,16 @@ def render_portfolio_section(
             st.session_state["portfolio_guardian_hydrated"] = bool(guardian_hydrated)
             st.session_state["portfolio_guardian_wait_ms"] = round(guardian_wait_ms, 3)
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo registrar el estado de hidratación del guardian", exc_info=True)
+            logger.debug(
+                "No se pudo registrar el estado de hidratación del guardian",
+                exc_info=True,
+            )
         if controls_changed:
             log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
         manual_refresh_flag = bool(st.session_state.pop("refresh_pending", False))
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
-        if (
-            previous_hash
-            and dataset_hash
-            and previous_hash != dataset_hash
-            and not skip_invalidation_flag
-        ):
-            visual_cache_registry.invalidate_dataset(
-                previous_hash, reason="dataset_hash_changed"
-            )
+        if previous_hash and dataset_hash and previous_hash != dataset_hash and not skip_invalidation_flag:
+            visual_cache_registry.invalidate_dataset(previous_hash, reason="dataset_hash_changed")
             _log_quotes_refresh_event(
                 dataset_hash,
                 source="dataset_update",
@@ -2238,16 +2221,12 @@ def render_portfolio_section(
             try:
                 st.session_state["_soft_refresh_applied"] = True
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug(
-                    "No se pudo registrar el soft refresh activo", exc_info=True
-                )
+                logger.debug("No se pudo registrar el soft refresh activo", exc_info=True)
         else:
             try:
                 st.session_state.pop("_soft_refresh_applied", None)
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug(
-                    "No se pudo limpiar la marca de soft refresh", exc_info=True
-                )
+                logger.debug("No se pudo limpiar la marca de soft refresh", exc_info=True)
 
         if manual_refresh_flag:
             last_refresh = st.session_state.get(_REFRESH_LOG_STATE_KEY)
@@ -2292,9 +2271,7 @@ def render_portfolio_section(
             first_visit = not bool(tab_loaded.get(tab_slug))
             lazy_pending = bool(cache_entry.get("lazy_pending"))
             should_render = (
-                cache_entry.get("signature") != tab_signature
-                or not cache_entry.get("rendered")
-                or lazy_pending
+                cache_entry.get("signature") != tab_signature or not cache_entry.get("rendered") or lazy_pending
             )
             source = "fresh" if not cache_entry.get("rendered") else "cache"
             latency_ms: float | None = cache_entry.get("latency_ms")
@@ -2378,9 +2355,7 @@ def render_portfolio_section(
         elif latency_ms is not None:
             overhead_ms = max(latency_ms, 0.0)
 
-        incremental_render = bool(
-            st.session_state.get("portfolio_incremental_render", False)
-        )
+        incremental_render = bool(st.session_state.get("portfolio_incremental_render", False))
         partial_update_ms = st.session_state.get("portfolio_ui_partial_update_ms")
         if not isinstance(partial_update_ms, (int, float)):
             partial_update_ms = None
@@ -2407,9 +2382,7 @@ def render_portfolio_section(
             dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
         except Exception:  # pragma: no cover - defensive safeguard
             dataset_hash = None
-        reused_visual_cache = bool(
-            st.session_state.get(_DATASET_REUSE_FLAG_KEY)
-        )
+        reused_visual_cache = bool(st.session_state.get(_DATASET_REUSE_FLAG_KEY))
         streamlit_overhead = overhead_ms
         if streamlit_overhead is None and reused_visual_cache:
             streamlit_overhead = 0.0
@@ -2438,7 +2411,10 @@ def render_portfolio_section(
         try:
             st.session_state[_VISUAL_CACHE_EVENT_STATE_KEY] = cache_event_state
         except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo persistir el estado de eventos de caché visual", exc_info=True)
+            logger.debug(
+                "No se pudo persistir el estado de eventos de caché visual",
+                exc_info=True,
+            )
 
         telemetry_extra = {
             "reused_visual_cache": reused_visual_cache,
@@ -2464,6 +2440,8 @@ def render_portfolio_section(
         _publish_visual_cache_debug()
 
         return refresh_secs
+
+
 @contextmanager
 def _record_stage(name: str, timings: dict[str, float] | None = None) -> Iterator[None]:
     """Measure a render stage while recording diagnostics and timings."""
@@ -2655,7 +2633,10 @@ def _maybe_reset_visual_cache_state() -> bool:
             dataset_hash = state.get(_DATASET_HASH_STATE_KEY)
         except Exception:  # pragma: no cover - defensive safeguard
             dataset_hash = None
-        detail = {"previous_user": previous_user or "", "current_user": current_user or ""}
+        detail = {
+            "previous_user": previous_user or "",
+            "current_user": current_user or "",
+        }
         action = "logout" if current_user is None else "user_switch"
         log_user_action(action, detail, dataset_hash=str(dataset_hash or ""))
 
@@ -2780,4 +2761,8 @@ def _update_status_message(placeholder, base_label: str, latency_ms: float | Non
     try:
         placeholder.markdown(message)
     except Exception:  # pragma: no cover - defensive safeguard
-        logger.debug("No se pudo actualizar el estado de la pestaña %s", base_label, exc_info=True)
+        logger.debug(
+            "No se pudo actualizar el estado de la pestaña %s",
+            base_label,
+            exc_info=True,
+        )

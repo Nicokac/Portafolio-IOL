@@ -66,9 +66,7 @@ def _resolve_placeholder(container: Any):
         try:
             return container.empty()
         except StreamlitAPIException:  # pragma: no cover - requires missing context
-            _LOGGER.debug(
-                "[preload] No se pudo obtener placeholder del contenedor", exc_info=True
-            )
+            _LOGGER.debug("[preload] No se pudo obtener placeholder del contenedor", exc_info=True)
         except Exception:  # pragma: no cover - defensive guard
             _LOGGER.debug(
                 "[preload] Error inesperado al obtener placeholder del contenedor",
@@ -80,9 +78,7 @@ def _resolve_placeholder(container: Any):
         _LOGGER.debug("[preload] st.empty() indisponible, se omite placeholder", exc_info=True)
         return None
     except Exception:  # pragma: no cover - defensive guard
-        _LOGGER.debug(
-            "[preload] Error inesperado al crear placeholder global", exc_info=True
-        )
+        _LOGGER.debug("[preload] Error inesperado al crear placeholder global", exc_info=True)
         return None
 
 
@@ -112,13 +108,9 @@ def _resolve_spinner(message: str) -> ContextManager[Any]:
         try:
             return spinner(message)
         except StreamlitAPIException:  # pragma: no cover - requires missing context
-            _LOGGER.debug(
-                "[preload] Spinner de Streamlit indisponible, se omite", exc_info=True
-            )
+            _LOGGER.debug("[preload] Spinner de Streamlit indisponible, se omite", exc_info=True)
         except Exception:  # pragma: no cover - defensive guard
-            _LOGGER.debug(
-                "[preload] Error inesperado al crear spinner", exc_info=True
-            )
+            _LOGGER.debug("[preload] Error inesperado al crear spinner", exc_info=True)
     return nullcontext()
 
 
@@ -126,9 +118,7 @@ def _set_session_ready(value: bool) -> None:
     try:
         st.session_state[_SESSION_KEY] = value
     except StreamlitAPIException:  # pragma: no cover - requires missing context
-        _LOGGER.debug(
-            "[preload] session_state no disponible, se omite bandera", exc_info=True
-        )
+        _LOGGER.debug("[preload] session_state no disponible, se omite bandera", exc_info=True)
     except Exception:  # pragma: no cover - safety when Streamlit state unavailable
         pass
 
@@ -155,8 +145,7 @@ def _resolve_worker_api(
     if is_complete is _MISSING or not callable(is_complete):
         available = [name for name in dir(worker) if not name.startswith("_")]
         _LOGGER.warning(
-            "[preload] El módulo %s está incompleto; falta is_preload_complete. "
-            "Atributos disponibles: %s",
+            "[preload] El módulo %s está incompleto; falta is_preload_complete. Atributos disponibles: %s",
             _WORKER_MODULE,
             ", ".join(sorted(available)) or "<ninguno>",
         )
@@ -262,8 +251,7 @@ def ensure_scientific_preload_ready(
     ready = _call_is_complete(is_complete)
     if not ready and wait_timeout is not None and not completed:
         _LOGGER.warning(
-            "[preload] La precarga científica no finalizó tras %.2f segundos; "
-            "se continúa sin bloquear la interfaz.",
+            "[preload] La precarga científica no finalizó tras %.2f segundos; se continúa sin bloquear la interfaz.",
             wait_timeout,
         )
     _set_session_ready(ready)

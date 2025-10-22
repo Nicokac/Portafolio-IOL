@@ -5,10 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
 
-from services.auth import AuthTokenError, refresh_active_token, get_current_user
 from api.routers.base_models import _BaseModel
+from services.auth import AuthTokenError, get_current_user, refresh_active_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
 
 class RefreshTokenResponse(_BaseModel):
     """Standard response payload for refreshed tokens."""
@@ -20,8 +21,14 @@ class RefreshTokenResponse(_BaseModel):
     session_id: str = Field(..., description="Session identifier associated with the token")
 
 
-@router.post("/refresh", response_model=RefreshTokenResponse, summary="Refresh authentication token")
-async def refresh_token_endpoint(claims: dict = Depends(get_current_user)) -> RefreshTokenResponse:
+@router.post(
+    "/refresh",
+    response_model=RefreshTokenResponse,
+    summary="Refresh authentication token",
+)
+async def refresh_token_endpoint(
+    claims: dict = Depends(get_current_user),
+) -> RefreshTokenResponse:
     """Issue a new token when the current one is close to expiring."""
 
     try:

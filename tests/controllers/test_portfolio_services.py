@@ -1,11 +1,11 @@
-from pathlib import Path
 import sys
+from pathlib import Path
+
+from controllers.portfolio import portfolio
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from controllers.portfolio import portfolio
 
 
 class _StreamlitStub:
@@ -37,4 +37,3 @@ def test_get_portfolio_view_service_without_session_state_is_not_shared(monkeypa
     assert service_one is first_instance
     assert service_two is second_instance
     assert service_one is not service_two
-

@@ -20,6 +20,7 @@ try:  # pragma: no cover - exercised indirectly via integration tests
 
     logger.info("FastAPI active ✅")
 except ModuleNotFoundError:  # pragma: no cover - depends on optional dependency
+
     class _StatusStub:
         HTTP_401_UNAUTHORIZED = 401
 
@@ -83,18 +84,14 @@ def _get_tokens_key() -> bytes:
 
     key = os.getenv("FASTAPI_TOKENS_KEY")
     if not key:
-        raise RuntimeError(
-            "FASTAPI_TOKENS_KEY environment variable is not configured for authentication tokens."
-        )
+        raise RuntimeError("FASTAPI_TOKENS_KEY environment variable is not configured for authentication tokens.")
     normalized = key.strip()
     if not normalized:
         raise RuntimeError("FASTAPI_TOKENS_KEY cannot be empty.")
 
     iol_key = os.getenv("IOL_TOKENS_KEY", "").strip()
     if iol_key and iol_key == normalized:
-        raise RuntimeError(
-            "FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to avoid key reuse."
-        )
+        raise RuntimeError("FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to avoid key reuse.")
     return normalized.encode()
 
 

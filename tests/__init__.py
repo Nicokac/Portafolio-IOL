@@ -8,12 +8,8 @@ import os
 import sys
 from pathlib import Path
 
-os.environ.setdefault(
-    "FASTAPI_TOKENS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
-)
-os.environ.setdefault(
-    "IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE="
-)
+os.environ.setdefault("FASTAPI_TOKENS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+os.environ.setdefault("IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=")
 
 
 def _ensure_ui_settings_compat() -> None:
@@ -36,7 +32,13 @@ def _ensure_ui_settings_compat() -> None:
     sys.modules.setdefault(spec.name, compat_module)
     spec.loader.exec_module(compat_module)
 
-    for attr in ("apply_settings", "init_ui", "render_ui_controls", "UISettings", "get_settings"):
+    for attr in (
+        "apply_settings",
+        "init_ui",
+        "render_ui_controls",
+        "UISettings",
+        "get_settings",
+    ):
         value = getattr(compat_module, attr, None)
         if value is not None and not hasattr(module, attr):
             setattr(module, attr, value)
@@ -44,4 +46,3 @@ def _ensure_ui_settings_compat() -> None:
 
 if not os.environ.get("FAST_TEST_STUBS"):
     _ensure_ui_settings_compat()
-

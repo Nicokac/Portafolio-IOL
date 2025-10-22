@@ -20,7 +20,9 @@ class _DummyResponse:
         return self._payload
 
 
-def test_check_for_update_returns_remote_version(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_for_update_returns_remote_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: dict[str, object] = {}
 
     def fake_get(url: str, *, timeout: int) -> _DummyResponse:
@@ -79,10 +81,7 @@ def test_run_update_script_executes_commands(monkeypatch: pytest.MonkeyPatch) ->
     result = update_checker._run_update_script("0.5.8")
 
     assert result is True
-    assert [
-        call[0]
-        for call in calls
-    ] == [
+    assert [call[0] for call in calls] == [
         ("git", "pull"),
         (
             sys.executable,

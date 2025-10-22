@@ -1,4 +1,5 @@
 """Project version and release metadata."""
+
 from __future__ import annotations
 
 import os
@@ -6,13 +7,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-
 VERSION = "0.7.0"
 RELEASE_NAME = "Portafolio IOL v0.7.0"
 RELEASE_DATE = "2026-03-24"
-CHANGELOG_REF = (
-    "Versionamiento unificado con telemetría y diagnósticos enriquecidos",
-)
+CHANGELOG_REF = ("Versionamiento unificado con telemetría y diagnósticos enriquecidos",)
 
 
 def _resolve_build_signature() -> str:

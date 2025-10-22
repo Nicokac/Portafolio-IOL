@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import ui.lazy.runtime as lazy_runtime
-from tests.ui.test_portfolio_ui import _ContextManager, _DummyContainer, FakeStreamlit
+from tests.ui.test_portfolio_ui import FakeStreamlit, _ContextManager, _DummyContainer
 
 
 @pytest.fixture
@@ -19,9 +19,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
     return portfolio_ui._portfolio_setup._fixture_function(monkeypatch)
 
 
-def test_portfolio_panel_renders_without_lazy_toggle(
-    monkeypatch: pytest.MonkeyPatch, _portfolio_setup
-) -> None:
+def test_portfolio_panel_renders_without_lazy_toggle(monkeypatch: pytest.MonkeyPatch, _portfolio_setup) -> None:
     telemetry_events: list[dict[str, object]] = []
 
     def _capture_telemetry(**kwargs):
@@ -87,4 +85,3 @@ def test_portfolio_panel_renders_without_lazy_toggle(
     components = {event.get("extra", {}).get("lazy_loaded_component") for event in visibility_events}
     assert components == {"table", "charts"}
     assert all(event.get("extra", {}).get("portfolio.fragment_visible") is True for event in visibility_events)
-

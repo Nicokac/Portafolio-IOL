@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ui.lazy.runtime as lazy_runtime
 
+
 class _GuardianStub:
     def __init__(self) -> None:
         self.calls: list[str | None] = []

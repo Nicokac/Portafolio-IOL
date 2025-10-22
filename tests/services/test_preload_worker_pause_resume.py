@@ -58,7 +58,9 @@ def test_preload_worker_pauses_and_resumes(monkeypatch: pytest.MonkeyPatch) -> N
     assert any(entry.startswith("preload") for entry in events)
 
 
-def test_resume_ignored_when_worker_already_running(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resume_ignored_when_worker_already_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         preload,
         "importlib",
@@ -79,7 +81,9 @@ def test_resume_ignored_when_worker_already_running(monkeypatch: pytest.MonkeyPa
     assert preload.wait_for_preload_completion(timeout=1.0) is True
 
 
-def test_wait_for_completion_returns_false_when_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_wait_for_completion_returns_false_when_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class BlockingEvent:
         def wait(self, timeout: float | None = None) -> bool:
             return False

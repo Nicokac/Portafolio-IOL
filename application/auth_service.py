@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-"""Servicios de autenticación para la aplicación."""
-
-from pathlib import Path
-from typing import Protocol, Tuple, Any
-import re
 import hashlib
-from uuid import uuid4
 import logging
-
-from services.performance_timer import performance_timer
-from services.auth import revoke_token
+import re
+from pathlib import Path
+from typing import Any, Protocol, Tuple
+from uuid import uuid4
 
 import streamlit as st
 
 from infrastructure.iol.auth import IOLAuth
+from services.auth import revoke_token
+from services.performance_timer import performance_timer
 from shared.cache import cache
 from shared.config import settings
 from shared.fragment_state import persist_fragment_state_snapshot
+
+"""Servicios de autenticación para la aplicación."""
 
 
 class AuthenticationError(Exception):
@@ -77,11 +76,12 @@ class IOLAuthenticationProvider(AuthenticationProvider):
                 ).clear_tokens()
         finally:
             from services.cache import (
-                get_client_cached,
+                fetch_fx_rates,
                 fetch_portfolio,
                 fetch_quotes_bulk,
-                fetch_fx_rates,
+                get_client_cached,
             )
+
             cache_key = st.session_state.get("cache_key")
             if cache_key:
                 cache_user = user or st.session_state.get("IOL_USERNAME", "")
@@ -187,4 +187,3 @@ def logout(user: str = "", password: str = "") -> None:
     finally:
         st.session_state["force_login"] = True
         st.rerun()
-

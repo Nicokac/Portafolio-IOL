@@ -118,7 +118,13 @@ def test_invalid_login_rerun_stays_on_login(monkeypatch):
 
 
 def test_expired_session_forces_login(monkeypatch):
-    for mod in ("streamlit", "controllers.auth", "app", "shared.config", "ui.ui_settings"):
+    for mod in (
+        "streamlit",
+        "controllers.auth",
+        "app",
+        "shared.config",
+        "ui.ui_settings",
+    ):
         sys.modules.pop(mod, None)
     st = _make_streamlit()
     sys.modules["streamlit"] = st

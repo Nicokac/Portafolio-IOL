@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from itertools import combinations
 import logging
+from itertools import combinations
 
 import numpy as np
-from numpy.random import SeedSequence
 import pandas as pd
-
+from numpy.random import SeedSequence
 
 LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +50,7 @@ def annualized_volatility(returns: pd.Series, periods_per_year: int = 252) -> fl
         return 0.0
     return float(returns.std() * np.sqrt(periods_per_year))
 
+
 def beta(
     portfolio_returns: pd.Series,
     benchmark_returns: pd.Series,
@@ -68,9 +68,7 @@ def beta(
     if len(port) != len(bench) or len(port) == 0:
         return float("nan")
 
-    if min_periods is not None and (
-        len(port) < int(min_periods) or len(bench) < int(min_periods)
-    ):
+    if min_periods is not None and (len(port) < int(min_periods) or len(bench) < int(min_periods)):
         return float("nan")
 
     cov = np.cov(port, bench)
@@ -204,7 +202,11 @@ def markowitz_optimize(returns: pd.DataFrame, risk_free: float = 0.0) -> pd.Seri
 
     rank = np.linalg.matrix_rank(cov_values)
     if rank < cov_values.shape[0]:
-        LOGGER.warning("markowitz_optimize: covariance matrix is singular (rank %s < %s)", rank, cov_values.shape[0])
+        LOGGER.warning(
+            "markowitz_optimize: covariance matrix is singular (rank %s < %s)",
+            rank,
+            cov_values.shape[0],
+        )
         return pd.Series(np.nan, index=returns.columns)
 
     try:

@@ -1,18 +1,16 @@
-from pathlib import Path
-import sys
-from types import SimpleNamespace
 import logging
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from services import health  # noqa: E402
+from tests.fixtures.time import FakeTime
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-
-from services import health  # noqa: E402
-from tests.fixtures.time import FakeTime
 
 
 class ExplodingStr:
@@ -78,10 +76,7 @@ def test_record_diagnostics_snapshot_warns_on_malformed_payload(monkeypatch, fak
     with caplog.at_level(logging.WARNING):
         health.record_diagnostics_snapshot(bad_payload, source="ui")
 
-    assert any(
-        "⚠️ No se pudo registrar el diagnóstico de inicio" in record.getMessage()
-        for record in caplog.records
-    )
+    assert any("⚠️ No se pudo registrar el diagnóstico de inicio" in record.getMessage() for record in caplog.records)
 
     metrics = health.get_health_metrics()["diagnostics"]
     latest = metrics["latest"]

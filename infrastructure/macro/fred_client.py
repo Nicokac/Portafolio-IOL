@@ -5,6 +5,7 @@ rest of the application can focus on business logic. It only exposes the
 minimal surface required for the opportunities screener enrichment but is
 extensible for future indicators.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,6 +16,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping, MutableMapping, Optio
 import requests
 
 from infrastructure.http.session import build_session
+
 from .rate_limiter import RateLimiter
 
 
@@ -62,9 +64,7 @@ class FredClient:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._session = session or build_session(user_agent or "Portafolio-IOL/1.0")
-        self._rate_limiter = RateLimiter(
-            calls_per_minute=calls_per_minute, monotonic=monotonic, sleeper=sleeper
-        )
+        self._rate_limiter = RateLimiter(calls_per_minute=calls_per_minute, monotonic=monotonic, sleeper=sleeper)
 
     # Public API -----------------------------------------------------------
     def get_latest_observation(
@@ -78,9 +78,7 @@ class FredClient:
                 "series_id": series_id,
                 "sort_order": "desc",
                 "limit": 5,
-                "observation_start": params.get("observation_start")
-                if params
-                else None,
+                "observation_start": params.get("observation_start") if params else None,
                 "observation_end": params.get("observation_end") if params else None,
             },
         )
@@ -95,17 +93,13 @@ class FredClient:
                 value = float(raw_value)
             except (TypeError, ValueError):
                 continue
-            as_of = str(
-                item.get("observation_date") or item.get("date") or ""
-            ).strip()
+            as_of = str(item.get("observation_date") or item.get("date") or "").strip()
             if not as_of:
                 continue
             return MacroSeriesObservation(series_id=series_id, value=value, as_of=as_of)
         return None
 
-    def get_latest_observations(
-        self, series_map: Mapping[str, str]
-    ) -> Dict[str, MacroSeriesObservation]:
+    def get_latest_observations(self, series_map: Mapping[str, str]) -> Dict[str, MacroSeriesObservation]:
         """Return observations for the provided mapping of label -> series ID."""
 
         results: Dict[str, MacroSeriesObservation] = {}
@@ -119,9 +113,7 @@ class FredClient:
         return results
 
     # Internal helpers ----------------------------------------------------
-    def _request_json(
-        self, endpoint: str, params: Optional[MutableMapping[str, Any]] = None
-    ) -> Mapping[str, Any]:
+    def _request_json(self, endpoint: str, params: Optional[MutableMapping[str, Any]] = None) -> Mapping[str, Any]:
         url = f"{self._base_url}/{endpoint.lstrip('/')}"
         query: Dict[str, Any] = {"file_type": "json", "api_key": self._api_key}
         if params:

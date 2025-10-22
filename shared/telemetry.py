@@ -122,9 +122,7 @@ def _normalize_context_value(value: object) -> object:
     if isinstance(value, (str, int, float, bool)):
         return value
     if isinstance(value, Mapping):
-        return {
-            str(k): _normalize_context_value(v) for k, v in value.items()
-        }
+        return {str(k): _normalize_context_value(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [_normalize_context_value(v) for v in value]
     try:
@@ -159,9 +157,7 @@ def _ensure_schema(path: Path) -> bool:
         if backup.exists():
             backup.unlink()
         path.rename(backup)
-        logger.warning(
-            "Telemetry schema changed for %s; previous data moved to %s", path, backup
-        )
+        logger.warning("Telemetry schema changed for %s; previous data moved to %s", path, backup)
     except OSError:  # pragma: no cover - fallback when rename fails
         path.unlink(missing_ok=True)
     return False
@@ -195,9 +191,7 @@ def _ensure_qa_schema(path: Path) -> bool:
     return False
 
 
-def _merge_context(
-    target: MutableMapping[str, object], source: Mapping[str, object] | None
-) -> None:
+def _merge_context(target: MutableMapping[str, object], source: Mapping[str, object] | None) -> None:
     if not source:
         return
     for key, value in source.items():
@@ -219,9 +213,7 @@ def _normalize_metric_name(metric_name: object | None, phase: object | None) -> 
     return text or "unknown"
 
 
-def _normalize_duration(
-    duration_ms: float | None, elapsed_s: float | None
-) -> float | None:
+def _normalize_duration(duration_ms: float | None, elapsed_s: float | None) -> float | None:
     if duration_ms is not None:
         try:
             return max(float(duration_ms), 0.0)
@@ -317,9 +309,7 @@ def log_telemetry(
             if not file_exists:
                 writer.writeheader()
             writer.writerow(row)
-        logger.info(
-            "Telemetry logged to %s metric=%s status=%s", path, metric, row["status"]
-        )
+        logger.info("Telemetry logged to %s metric=%s status=%s", path, metric, row["status"])
 
 
 DEFAULT_TELEMETRY_FILES: tuple[Path, Path] = (

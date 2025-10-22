@@ -5,8 +5,9 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from ._base import FONT_FAMILY, _apply_layout
 from ui.palette import get_active_palette
+
+from ._base import FONT_FAMILY, _apply_layout
 
 
 def _collect_labels(*matrices: pd.DataFrame | None, beta_shift: pd.Series | None = None) -> list[str]:
@@ -108,11 +109,15 @@ def build_correlation_figure(
                 col=3,
             )
 
-    fig.update_layout(coloraxis=dict(colorscale=[
-        [0.0, get_active_palette().negative],
-        [0.5, get_active_palette().plot_bg],
-        [1.0, get_active_palette().positive],
-    ]))
+    fig.update_layout(
+        coloraxis=dict(
+            colorscale=[
+                [0.0, get_active_palette().negative],
+                [0.5, get_active_palette().plot_bg],
+                [1.0, get_active_palette().positive],
+            ]
+        )
+    )
 
     return _apply_layout(fig, title=title, show_legend=False)
 

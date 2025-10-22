@@ -1,23 +1,23 @@
 # infrastructure\iol\legacy\iol_client.py
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Dict, Any, Optional, Iterable, Tuple
-import time
 import logging
-import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import requests
 
+from infrastructure.iol.auth import InvalidCredentialsError, IOLAuth
+from infrastructure.iol.legacy.session import LegacySession
+from services.quote_rate_limit import quote_rate_limiter
 from shared.config import settings
 from shared.settings import legacy_login_backoff_base, legacy_login_max_retries
 from shared.utils import _to_float
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
-from services.quote_rate_limit import quote_rate_limiter
-from infrastructure.iol.legacy.session import LegacySession
+
 DEFAULT_COUNTRY = "argentina"
 PORTFOLIO_URL = "https://api.invertironline.com/api/v2/portafolio/{pais}"
 
@@ -41,6 +41,7 @@ def _elapsed_ms(start_ts: float) -> int:
 # =========================
 # Cliente de API
 # =========================
+
 
 class IOLClient:
     """
@@ -86,13 +87,9 @@ class IOLClient:
             delay = BACKOFF_SEC * (attempt + 1)
             try:
                 quote_rate_limiter.wait_for_slot("legacy")
-                r = self.session.request(
-                    method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
-                )
+                r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
                 if r.status_code == 429:
-                    wait_time = quote_rate_limiter.penalize(
-                        "legacy", minimum_wait=_parse_retry_after_seconds(r)
-                    )
+                    wait_time = quote_rate_limiter.penalize("legacy", minimum_wait=_parse_retry_after_seconds(r))
                     logger.info(
                         "Legacy IOL 429 %s %s, esperando %.3fs antes de reintentar",
                         method,
@@ -110,15 +107,11 @@ class IOLClient:
                     headers = kwargs.pop("headers", {})
                     headers.update(self.auth.auth_header())
                     quote_rate_limiter.wait_for_slot("legacy")
-                    r = self.session.request(
-                        method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs
-                    )
+                    r = self.session.request(method, url, headers=headers, timeout=REQ_TIMEOUT, **kwargs)
                     if r.status_code == 401:
                         raise InvalidCredentialsError("Credenciales inválidas")
                     if r.status_code == 429:
-                        wait_time = quote_rate_limiter.penalize(
-                            "legacy", minimum_wait=_parse_retry_after_seconds(r)
-                        )
+                        wait_time = quote_rate_limiter.penalize("legacy", minimum_wait=_parse_retry_after_seconds(r))
                         logger.info(
                             "Legacy IOL 429 tras refresh %s, espera %.3fs",
                             url,
@@ -134,11 +127,7 @@ class IOLClient:
                 if status_code == 404:
                     logger.warning("%s %s devolvió 404", method, url)
                     return None
-                if (
-                    e.response is not None
-                    and e.response.status_code == 429
-                    and attempt < RETRIES
-                ):
+                if e.response is not None and e.response.status_code == 429 and attempt < RETRIES:
                     wait_time = quote_rate_limiter.penalize(
                         "legacy",
                         minimum_wait=_parse_retry_after_seconds(e.response),
@@ -198,7 +187,15 @@ class IOLClient:
         """
         if not isinstance(d, dict):
             return None
-        for k in ("ultimoPrecio", "ultimo", "last", "lastPrice", "precio", "cierre", "close"):
+        for k in (
+            "ultimoPrecio",
+            "ultimo",
+            "last",
+            "lastPrice",
+            "precio",
+            "cierre",
+            "close",
+        ):
             v = d.get(k)
             if isinstance(v, (int, float)):
                 return float(v)
@@ -225,7 +222,12 @@ class IOLClient:
             return None
 
         # Campos que pueden traer el porcentaje explícito
-        for k in ("variacion", "variacionPorcentual", "cambioPorcentual", "changePercent"):
+        for k in (
+            "variacion",
+            "variacionPorcentual",
+            "cambioPorcentual",
+            "changePercent",
+        ):
             v = d.get(k)
             if isinstance(v, (int, float)):
                 return float(v)
@@ -311,7 +313,7 @@ class IOLClient:
     def get_quotes_bulk(
         self,
         items: Iterable[Tuple[str, str] | Tuple[str, str, str | None]],
-        max_workers: int = 8
+        max_workers: int = 8,
     ) -> Dict[Tuple[str, str], Dict[str, Optional[float]]]:
         """
         Descarga cotizaciones para múltiples (mercado, símbolo) en paralelo.
@@ -345,10 +347,7 @@ class IOLClient:
             return {}
         out: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
         with ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(requests)))) as ex:
-            fut_map = {
-                ex.submit(self.get_quote, m, s, panel): (m, s)
-                for (m, s, panel) in requests
-            }
+            fut_map = {ex.submit(self.get_quote, m, s, panel): (m, s) for (m, s, panel) in requests}
             for fut in as_completed(fut_map):
                 key = fut_map[fut]
                 try:
@@ -357,6 +356,8 @@ class IOLClient:
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
                     out[key] = {"last": None, "chg_pct": None}
         return out
+
+
 def _parse_retry_after_seconds(response) -> Optional[float]:
     if response is None:
         return None
@@ -377,4 +378,3 @@ def _parse_retry_after_seconds(response) -> Optional[float]:
             dt = dt.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         return max(0.0, (dt - now).total_seconds())
-

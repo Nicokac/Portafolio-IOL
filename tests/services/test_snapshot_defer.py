@@ -17,7 +17,9 @@ def _reset_snapshot_defer():
     snapshot_defer.reset_for_tests()
 
 
-def _dummy_persist(kind: str, payload: Mapping[str, Any], metadata: Mapping[str, Any] | None) -> Mapping[str, Any] | None:
+def _dummy_persist(
+    kind: str, payload: Mapping[str, Any], metadata: Mapping[str, Any] | None
+) -> Mapping[str, Any] | None:
     return {"kind": kind, "payload": payload, "metadata": metadata}
 
 
@@ -90,7 +92,12 @@ def test_snapshot_defer_enriches_telemetry(monkeypatch):
 
     monkeypatch.setattr(snapshot_async, "persist_async", fake_persist_async)
 
-    def base_telemetry(phase: str, elapsed_s: float | None, dataset_hash: str | None, extra: Mapping[str, object] | None) -> None:
+    def base_telemetry(
+        phase: str,
+        elapsed_s: float | None,
+        dataset_hash: str | None,
+        extra: Mapping[str, object] | None,
+    ) -> None:
         telemetry_payloads.append(dict(extra or {}))
 
     snapshot_defer.mark_ui_busy()

@@ -40,7 +40,9 @@ def _reset_skeleton_state(monkeypatch: pytest.MonkeyPatch) -> None:
     skeletons._FALLBACK_LABEL = None  # type: ignore[attr-defined]
 
 
-def test_mark_placeholder_logs_and_returns_container(caplog: pytest.LogCaptureFixture) -> None:
+def test_mark_placeholder_logs_and_returns_container(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """mark_placeholder should log the render and return a valid container."""
 
     caplog.set_level(logging.INFO, logger="shared.skeletons")

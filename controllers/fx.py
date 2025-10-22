@@ -1,8 +1,8 @@
-import streamlit as st  # Streamlit UI components
 import pandas as pd
+import streamlit as st  # Streamlit UI components
 
 from shared.config import settings
-from ui.fx_panels import render_spreads, render_fx_history
+from ui.fx_panels import render_fx_history, render_spreads
 
 
 def render_fx_section(container, rates):
@@ -30,4 +30,3 @@ def render_fx_section(container, rates):
             if not fx_hist_df.empty:
                 fx_hist_df["ts_dt"] = pd.to_datetime(fx_hist_df["ts"], unit="s")
                 render_fx_history(fx_hist_df)
-

@@ -3,13 +3,10 @@ import json
 import sys
 import types
 
-import pytest
 import streamlit as st
 
 # Stub dotenv to avoid external dependency
-sys.modules.setdefault(
-    "dotenv", types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None)
-)
+sys.modules.setdefault("dotenv", types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None))
 
 
 def test_get_config_sanitizes_types(monkeypatch, tmp_path):
@@ -33,6 +30,7 @@ def test_get_config_sanitizes_types(monkeypatch, tmp_path):
     assert data["fci_symbols"] == []
     assert data["scale_overrides"] == {}
     assert data["classification_patterns"] == {}
+
 
 def test_secrets_take_priority(monkeypatch):
     st_stub = types.SimpleNamespace(secrets={"IOL_USERNAME": "secret"})

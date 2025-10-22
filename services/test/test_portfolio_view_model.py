@@ -46,18 +46,22 @@ def test_dataset_change_invalidates_cache(monkeypatch):
     new_df = pd.DataFrame({"simbolo": ["AL35"], "mercado": ["BCBA"]})
 
     outputs = [
-        pd.DataFrame({
-            "simbolo": ["AL30"],
-            "mercado": ["BCBA"],
-            "valor_actual": [100.0],
-            "costo": [80.0],
-        }),
-        pd.DataFrame({
-            "simbolo": ["AL35"],
-            "mercado": ["BCBA"],
-            "valor_actual": [200.0],
-            "costo": [150.0],
-        }),
+        pd.DataFrame(
+            {
+                "simbolo": ["AL30"],
+                "mercado": ["BCBA"],
+                "valor_actual": [100.0],
+                "costo": [80.0],
+            }
+        ),
+        pd.DataFrame(
+            {
+                "simbolo": ["AL35"],
+                "mercado": ["BCBA"],
+                "valor_actual": [200.0],
+                "costo": [150.0],
+            }
+        ),
     ]
 
     def fake_apply(df, controls, cli, psvc, *, dataset_hash=None, skip_invalidation=False):
@@ -78,12 +82,14 @@ def test_filter_change_triggers_recomputation(monkeypatch):
     svc = PortfolioViewModelService()
 
     df_pos = pd.DataFrame({"simbolo": ["AL30"], "mercado": ["BCBA"]})
-    df_view = pd.DataFrame({
-        "simbolo": ["AL30"],
-        "mercado": ["BCBA"],
-        "valor_actual": [100.0],
-        "costo": [90.0],
-    })
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["AL30"],
+            "mercado": ["BCBA"],
+            "valor_actual": [100.0],
+            "costo": [90.0],
+        }
+    )
 
     calls = {"count": 0}
 

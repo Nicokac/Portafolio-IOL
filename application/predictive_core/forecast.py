@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import pandas as pd
 
+
 def run_backtest(
     service: object,
     symbol: str,

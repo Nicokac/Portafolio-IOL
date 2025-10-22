@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from application.recommendation_service import RecommendationService
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from application.recommendation_service import RecommendationService
 
 
 @pytest.fixture(autouse=True)
@@ -31,11 +31,7 @@ def patch_predictive(monkeypatch: pytest.MonkeyPatch) -> None:
         frame = opportunities.copy()
         if "symbol" not in frame.columns and "ticker" in frame.columns:
             frame = frame.rename(columns={"ticker": "symbol"})
-        sectors = (
-            frame.get("sector", pd.Series(dtype=str))
-            .astype("string")
-            .fillna("Sin sector")
-        )
+        sectors = frame.get("sector", pd.Series(dtype=str)).astype("string").fillna("Sin sector")
         seen: list[str] = []
         rows: list[dict[str, object]] = []
         for sector in sectors:
@@ -186,9 +182,7 @@ def test_diversify_mode_prioritises_underrepresented_sectors(
     assert any("Healthcare" in rationale for rationale in result["rationale"])
     assert all("Aporta" in text for text in result["rationale_extended"])
     assert result["predicted_return_pct"].notna().any()
-    assert any(
-        "Predicción sectorial" in text for text in result["rationale_extended"]
-    )
+    assert any("Predicción sectorial" in text for text in result["rationale_extended"])
 
 
 def test_low_risk_mode_favours_defensive_assets(
@@ -271,4 +265,3 @@ def test_profile_bias_downweights_high_risk_when_conservative(
     assert tech_weight_aggressive >= tech_weight_conservative
     assert any(row["beta"] <= 1.0 for _, row in conservative.iterrows())
     assert len(conservative) == len(aggressive) == 5
-

@@ -43,9 +43,7 @@ def _decode_key(name: str, raw_value: str) -> bytes:
     try:
         decoded = base64.urlsafe_b64decode(padded_value.encode("ascii"))
     except (binascii.Error, ValueError) as exc:
-        raise SecurityValidationError(
-            f"La variable {name} no contiene una clave base64 válida."
-        ) from exc
+        raise SecurityValidationError(f"La variable {name} no contiene una clave base64 válida.") from exc
 
     if len(decoded) != _EXPECTED_KEY_BYTES:
         raise SecurityValidationError(
@@ -132,18 +130,14 @@ def validate_security_environment(
     if len(results) == len(_REQUIRED_KEYS):
         fastapi_key, iol_key = results
         if fastapi_key.value == iol_key.value:
-            warnings.append(
-                "FASTAPI_TOKENS_KEY e IOL_TOKENS_KEY reutilizan la misma clave: genere valores distintos."
-            )
+            warnings.append("FASTAPI_TOKENS_KEY e IOL_TOKENS_KEY reutilizan la misma clave: genere valores distintos.")
             error_msg = "Las claves FASTAPI_TOKENS_KEY e IOL_TOKENS_KEY no pueden ser iguales."
             errors.append(error_msg)
 
     if errors:
         error_text = "\n".join(errors)
         _log_warnings(app_env, warnings)
-        raise SecurityValidationError(
-            "Configuración de seguridad inválida:\n" f"{error_text}"
-        )
+        raise SecurityValidationError(f"Configuración de seguridad inválida:\n{error_text}")
 
     _log_warnings(app_env, warnings)
 

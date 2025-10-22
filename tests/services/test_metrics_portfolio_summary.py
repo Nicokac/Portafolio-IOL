@@ -4,7 +4,9 @@ from collections import deque
 
 import pytest
 
-from services.health import _summarize_portfolio_stats as summarize_portfolio_stats_alias
+from services.health import (
+    _summarize_portfolio_stats as summarize_portfolio_stats_alias,
+)
 from services.health.metrics_portfolio import summarize_portfolio_stats
 
 
@@ -34,7 +36,9 @@ def sample_portfolio_stats() -> dict[str, object]:
     }
 
 
-def test_default_summary_includes_all_sections(sample_portfolio_stats: dict[str, object]) -> None:
+def test_default_summary_includes_all_sections(
+    sample_portfolio_stats: dict[str, object],
+) -> None:
     summary = summarize_portfolio_stats(sample_portfolio_stats)
 
     assert summary["invocations"] == 5
@@ -78,7 +82,9 @@ def test_can_skip_latency_block(sample_portfolio_stats: dict[str, object]) -> No
     assert "success" in summary
 
 
-def test_alias_matches_canonical_implementation(sample_portfolio_stats: dict[str, object]) -> None:
+def test_alias_matches_canonical_implementation(
+    sample_portfolio_stats: dict[str, object],
+) -> None:
     expected = summarize_portfolio_stats(
         sample_portfolio_stats,
         include_success=False,

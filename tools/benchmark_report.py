@@ -64,9 +64,7 @@ def load_metrics(source: Path) -> dict[str, list[float]]:
     """Load QA metrics from ``qa_metrics.csv``."""
 
     path = resolve_metrics_path(source)
-    metric_values: MutableMapping[str, list[float]] = {
-        name: [] for name in METRIC_ORDER
-    }
+    metric_values: MutableMapping[str, list[float]] = {name: [] for name in METRIC_ORDER}
 
     with path.open("r", newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
@@ -103,9 +101,7 @@ def load_metrics(source: Path) -> dict[str, list[float]]:
             try:
                 value = float(raw_value)
             except ValueError as exc:  # pragma: no cover - defensive guard
-                raise ValueError(
-                    f"Invalid numeric value '{raw_value}' for metric '{canonical}'"
-                ) from exc
+                raise ValueError(f"Invalid numeric value '{raw_value}' for metric '{canonical}'") from exc
 
             metric_values.setdefault(canonical, []).append(value)
 
@@ -132,9 +128,7 @@ def compute_delta_pct(baseline: float, current: float) -> float | None:
     return ((current - baseline) / baseline) * 100
 
 
-def summarize_metrics(
-    baseline_avgs: Mapping[str, float], current_avgs: Mapping[str, float]
-) -> list[MetricSummary]:
+def summarize_metrics(baseline_avgs: Mapping[str, float], current_avgs: Mapping[str, float]) -> list[MetricSummary]:
     """Create metric summaries comparing baseline and current averages."""
 
     summaries: list[MetricSummary] = []
@@ -165,15 +159,10 @@ def summarize_metrics(
     return summaries
 
 
-def format_console_table(
-    summaries: Iterable[MetricSummary], baseline_label: str, current_label: str
-) -> str:
+def format_console_table(summaries: Iterable[MetricSummary], baseline_label: str, current_label: str) -> str:
     """Return a console-friendly table of the summary values."""
 
-    header = (
-        f"{'Metric':<15}{baseline_label:<15}{current_label:<15}"
-        f"{'Δ%':<10}{'Status':<12}"
-    )
+    header = f"{'Metric':<15}{baseline_label:<15}{current_label:<15}{'Δ%':<10}{'Status':<12}"
     lines = [header, "-" * len(header)]
 
     for summary in summaries:
@@ -199,9 +188,7 @@ def generate_markdown_report(
     """Create a Markdown report summarizing the benchmark comparison."""
 
     lines = ["# Benchmark Comparison", ""]
-    lines.append(
-        "| Metric | {} | {} | Δ% | Status |".format(baseline_label, current_label)
-    )
+    lines.append("| Metric | {} | {} | Δ% | Status |".format(baseline_label, current_label))
     lines.append("| --- | --- | --- | --- | --- |")
 
     for summary in summaries:

@@ -1,6 +1,7 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
-from types import SimpleNamespace
 
 from services import portfolio_view
 from services.portfolio_view import PortfolioTotals, PortfolioViewModelService

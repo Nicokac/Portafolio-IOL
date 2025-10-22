@@ -116,9 +116,7 @@ def test_accion_local_tab_renders_independent_heatmap(monkeypatch, streamlit_stu
         if len(history_calls) >= 2:
             return pd.DataFrame()
         idx = pd.date_range("2024-01-01", periods=10, freq="B")
-        data = {
-            sym: np.linspace(100.0 + i * 2, 110.0 + i * 2, len(idx)) for i, sym in enumerate(symbols_list)
-        }
+        data = {sym: np.linspace(100.0 + i * 2, 110.0 + i * 2, len(idx)) for i, sym in enumerate(symbols_list)}
         return pd.DataFrame(data, index=idx)
 
     tasvc = SimpleNamespace(portfolio_history=fake_history)
@@ -271,7 +269,15 @@ def test_all_asset_tabs_render_with_warnings_for_insufficient_data(monkeypatch, 
         df,
         tasvc,
         favorites=favorites,
-        available_types=["CEDEAR", "ACCION_LOCAL", "BONO", "LETRA", "FCI", "ETF", "OTRO"],
+        available_types=[
+            "CEDEAR",
+            "ACCION_LOCAL",
+            "BONO",
+            "LETRA",
+            "FCI",
+            "ETF",
+            "OTRO",
+        ],
     )
 
     assert history_calls, "portfolio_history should be invoked"

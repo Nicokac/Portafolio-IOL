@@ -7,6 +7,7 @@ import streamlit as st
 
 from shared.utils import _as_float_or_none, format_percent
 
+
 def render_spreads(rates: dict):
     st.subheader("🔀 Brechas de dólar")
     if not rates:
@@ -36,6 +37,7 @@ def render_spreads(rates: dict):
     _ = st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
     st.caption("Muestra la diferencia porcentual entre distintas cotizaciones del dólar.")
 
+
 def render_fx_history(history: pd.DataFrame):
     st.subheader("⏱️ Serie intradía del dólar")
     if history is None or history.empty:
@@ -53,4 +55,3 @@ def render_fx_history(history: pd.DataFrame):
     fig.update_layout(xaxis_title="", yaxis_title="ARS / USD", legend_title_text="Tipo")
     st.plotly_chart(fig, width="stretch")
     st.caption("Línea que refleja cómo cambian las cotizaciones del dólar a lo largo del día.")
-

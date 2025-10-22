@@ -11,8 +11,10 @@ def test_get_rates_returns_cached_data(tmp_path):
     cache_file.write_text(json.dumps(data), encoding="utf-8")
 
     mock_session = MagicMock()
-    with patch("infrastructure.fx.provider.CACHE_FILE", cache_file), \
-         patch("infrastructure.fx.provider.build_session", return_value=mock_session):
+    with (
+        patch("infrastructure.fx.provider.CACHE_FILE", cache_file),
+        patch("infrastructure.fx.provider.build_session", return_value=mock_session),
+    ):
         with FXProviderAdapter() as adapter:
             rates, err = adapter.get_rates()
         assert err is None
@@ -35,8 +37,10 @@ def test_get_rates_fetches_and_saves_cache(tmp_path):
     mock_session = MagicMock()
     mock_session.get.side_effect = fake_get
 
-    with patch("infrastructure.fx.provider.CACHE_FILE", cache_file), \
-         patch("infrastructure.fx.provider.build_session", return_value=mock_session):
+    with (
+        patch("infrastructure.fx.provider.CACHE_FILE", cache_file),
+        patch("infrastructure.fx.provider.build_session", return_value=mock_session),
+    ):
         with FXProviderAdapter() as adapter:
             rates, err = adapter.get_rates()
         assert rates["blue"] == 100

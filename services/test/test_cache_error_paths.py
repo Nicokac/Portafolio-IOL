@@ -10,6 +10,7 @@ from shared.errors import ExternalAPIError, NetworkError, TimeoutError
 
 # --- _trigger_logout ---
 
+
 def test_trigger_logout_exception(monkeypatch, caplog):
     state = {"IOL_USERNAME": "u"}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
@@ -21,6 +22,7 @@ def test_trigger_logout_exception(monkeypatch, caplog):
 
 
 # --- fetch_portfolio ---
+
 
 def test_fetch_portfolio_handles_invalid_credentials(monkeypatch):
     state = {}
@@ -113,6 +115,7 @@ def test_fetch_fx_rates_closes_provider(monkeypatch):
 
 # --- _get_quote_cached ---
 
+
 def test_get_quote_cached_handles_invalid_credentials(monkeypatch):
     state = {}
     monkeypatch.setattr(svc_cache, "st", SimpleNamespace(session_state=state))
@@ -178,6 +181,7 @@ def test_get_quote_cached_purges_expired_entries(monkeypatch):
 
 
 # --- build_iol_client ---
+
 
 def test_build_iol_client_missing_user(monkeypatch):
     state = {}

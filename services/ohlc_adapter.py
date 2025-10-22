@@ -1,4 +1,5 @@
 """Unified OHLC data adapter with Alpha Vantage and Polygon fallbacks."""
+
 from __future__ import annotations
 
 import datetime as dt
@@ -10,7 +11,6 @@ import requests
 
 from services.adapters.base_adapter import AdapterProvider, BaseMarketDataAdapter
 from shared.settings import settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +87,7 @@ class OHLCAdapter(BaseMarketDataAdapter):
     ) -> None:
         self._settings = settings_module
         self._session = session or requests.Session()
-        cache_seconds = (
-            cache_ttl
-            if cache_ttl is not None
-            else getattr(settings_module, "cache_ttl_yf_history", None)
-        )
+        cache_seconds = cache_ttl if cache_ttl is not None else getattr(settings_module, "cache_ttl_yf_history", None)
         providers = self._build_providers()
         super().__init__(
             providers=providers,
@@ -125,19 +121,13 @@ class OHLCAdapter(BaseMarketDataAdapter):
         providers: list[AdapterProvider] = []
         for name in order:
             if name == "alpha_vantage":
-                providers.append(
-                    AdapterProvider(name="alpha_vantage", fetcher=self._alpha_vantage_fetch)
-                )
+                providers.append(AdapterProvider(name="alpha_vantage", fetcher=self._alpha_vantage_fetch))
             elif name == "polygon":
-                providers.append(
-                    AdapterProvider(name="polygon", fetcher=self._polygon_fetch)
-                )
+                providers.append(AdapterProvider(name="polygon", fetcher=self._polygon_fetch))
         return tuple(providers)
 
     # ------------------------------------------------------------------
-    def _alpha_vantage_fetch(
-        self, symbol: str, params: Mapping[str, Any]
-    ) -> pd.DataFrame:
+    def _alpha_vantage_fetch(self, symbol: str, params: Mapping[str, Any]) -> pd.DataFrame:
         api_key = getattr(self._settings, "ALPHA_VANTAGE_API_KEY", None)
         if not api_key:
             raise RuntimeError("Alpha Vantage API key is not configured")

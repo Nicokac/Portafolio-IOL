@@ -12,13 +12,13 @@ from uuid import uuid4
 
 import streamlit as st
 
-from infrastructure.iol.auth import IOLAuth, InvalidCredentialsError
-from infrastructure.iol.client import IIOLProvider, build_iol_client as _build_iol_client
+from infrastructure.iol.auth import InvalidCredentialsError, IOLAuth
+from infrastructure.iol.client import IIOLProvider
+from infrastructure.iol.client import build_iol_client as _build_iol_client
 from services.health import record_fx_cache_usage, record_iol_refresh
 from shared.cache import cache
 from shared.qa_profiler import track_cache_load
 from shared.settings import cache_ttl_fx, settings
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,7 @@ def _trigger_logout() -> None:
 
 
 @cache.cache_resource
-def get_client_cached(
-    cache_key: str, user: str, tokens_file: Path | str | None
-) -> IIOLProvider:
+def get_client_cached(cache_key: str, user: str, tokens_file: Path | str | None) -> IIOLProvider:
     auth = IOLAuth(
         user,
         "",
@@ -99,9 +97,7 @@ def build_iol_client(
         user_hash = hashlib.sha256(user.encode()).hexdigest()[:12]
         tokens_file = Path("tokens") / f"{sanitized}-{user_hash}.json"
         cache.set("tokens_file", str(tokens_file))
-    cache_key = hashlib.sha256(
-        f"{tokens_file}:{salt}".encode()
-    ).hexdigest()
+    cache_key = hashlib.sha256(f"{tokens_file}:{salt}".encode()).hexdigest()
     st.session_state["cache_key"] = cache_key
     try:
         cli = get_client_cached(cache_key, user, tokens_file)

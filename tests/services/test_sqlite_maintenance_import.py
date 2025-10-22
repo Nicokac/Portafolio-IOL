@@ -1,9 +1,11 @@
 """Regression tests for SQLite maintenance lazy imports."""
+
 from __future__ import annotations
 
 import importlib
 import sys
 import types
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -15,12 +17,8 @@ def test_app_import_triggers_sqlite_maintenance(monkeypatch):
 
     called: dict[str, bool] = {}
 
-    monkeypatch.setenv(
-        "FASTAPI_TOKENS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
-    )
-    monkeypatch.setenv(
-        "IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE="
-    )
+    monkeypatch.setenv("FASTAPI_TOKENS_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
+    monkeypatch.setenv("IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=")
 
     def _fake_start() -> bool:
         called["invoked"] = True
@@ -96,6 +94,7 @@ def test_app_import_triggers_sqlite_maintenance(monkeypatch):
         "ui.controllers.portfolio_ui",
         _make_stub("ui.controllers.portfolio_ui", render_portfolio_ui=lambda: None),
     )
+
     class _StubCacheService:
         def __init__(self, *args, **kwargs):
             self.ttl = None

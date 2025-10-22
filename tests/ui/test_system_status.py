@@ -19,9 +19,7 @@ def system_status_panel(monkeypatch: pytest.MonkeyPatch, streamlit_stub):
     return module
 
 
-def test_system_status_panel_renders_tabs_and_metrics(
-    system_status_panel, streamlit_stub
-) -> None:
+def test_system_status_panel_renders_tabs_and_metrics(system_status_panel, streamlit_stub) -> None:
     streamlit_stub.reset()
     streamlit_stub.session_state["prometheus_metrics"] = {
         "uptime_seconds": 7200.0,
@@ -79,4 +77,3 @@ def test_system_status_panel_renders_tabs_and_metrics(
 
     buttons = streamlit_stub.get_records("button")
     assert any(entry["label"] == "🔄 Refrescar token" for entry in buttons)
-

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Callable, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+)
 
 from infrastructure.macro import (
     FredClient,
@@ -12,10 +22,8 @@ from infrastructure.macro import (
     MacroSeriesObservation,
     WorldBankClient,
 )
-
 from services.base_adapter import BaseProviderAdapter
 from shared import settings as shared_settings
-
 
 _DEFAULT_PROVIDER_SEQUENCE = ("fred",)
 _PROVIDER_LABELS = {
@@ -60,7 +68,12 @@ class MacroAdapter(BaseProviderAdapter):
         sequence = providers or self._parse_provider_sequence(
             getattr(settings, "macro_api_provider", ""),
         )
-        super().__init__(sequence or _DEFAULT_PROVIDER_SEQUENCE, labels=_PROVIDER_LABELS, timer=timer, clock=clock)
+        super().__init__(
+            sequence or _DEFAULT_PROVIDER_SEQUENCE,
+            labels=_PROVIDER_LABELS,
+            timer=timer,
+            clock=clock,
+        )
         self._client_factories = dict(client_factories or {})
 
     # Public API ---------------------------------------------------------
@@ -337,9 +350,7 @@ class MacroAdapter(BaseProviderAdapter):
                 "https://api.worldbank.org/v2",
             )
             try:
-                rate_limit = int(
-                    getattr(self._settings, "world_bank_api_rate_limit_per_minute", 60) or 0
-                )
+                rate_limit = int(getattr(self._settings, "world_bank_api_rate_limit_per_minute", 60) or 0)
             except (TypeError, ValueError):
                 rate_limit = 0
             return WorldBankClient(
@@ -356,4 +367,3 @@ class MacroAdapter(BaseProviderAdapter):
 
 
 __all__ = ["MacroAdapter", "MacroFetchResult"]
-

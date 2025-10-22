@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 import pytest
 from cryptography.fernet import Fernet
 
-from services.performance_metrics import MetricSummary
 from application.predictive_service import PredictiveSnapshot
+from services.performance_metrics import MetricSummary
 
 
 @pytest.fixture()
@@ -59,7 +59,10 @@ def test_run_diagnostics_detects_degradation_and_logs(
     monkeypatch.setattr(
         module,
         "get_recent_metrics",
-        lambda: [_summary("predictive_compute", 120.0), _summary("apply_filters", 90.0)],
+        lambda: [
+            _summary("predictive_compute", 120.0),
+            _summary("apply_filters", 90.0),
+        ],
     )
     first_snapshot = module.run_system_diagnostics_once()
     assert any(entry.name == "predictive_compute" for entry in first_snapshot.endpoints)
@@ -68,7 +71,10 @@ def test_run_diagnostics_detects_degradation_and_logs(
     monkeypatch.setattr(
         module,
         "get_recent_metrics",
-        lambda: [_summary("predictive_compute", 260.0), _summary("apply_filters", 190.0)],
+        lambda: [
+            _summary("predictive_compute", 260.0),
+            _summary("apply_filters", 190.0),
+        ],
     )
     second_snapshot = module.run_system_diagnostics_once()
     degraded = {entry.name for entry in second_snapshot.endpoints if entry.degraded}

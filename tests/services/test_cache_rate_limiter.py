@@ -1,13 +1,13 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
+
+from services import cache as svc_cache
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from services import cache as svc_cache
 
 
 def test_rate_limiter_waits_when_bucket_empty() -> None:

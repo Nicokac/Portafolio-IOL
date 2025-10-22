@@ -58,9 +58,7 @@ def test_configure_logging_adds_rotating_file_handler(tmp_path, monkeypatch, jso
     try:
         config.configure_logging(level="INFO", json_format=json_format)
         file_handlers = [
-            handler
-            for handler in root_logger.handlers
-            if isinstance(handler, config.DailyTimedRotatingFileHandler)
+            handler for handler in root_logger.handlers if isinstance(handler, config.DailyTimedRotatingFileHandler)
         ]
         assert len(file_handlers) == 1
 

@@ -49,9 +49,7 @@ def lazy_attr(module: str, attr: str):
     return getattr(lazy_module(module), attr)
 
 
-def start_preload_worker(
-    *, paused: bool = False, libraries: Iterable[str] | None = None
-) -> bool:
+def start_preload_worker(*, paused: bool = False, libraries: Iterable[str] | None = None) -> bool:
     if _PRELOAD_WORKER is None:
         return False
     try:
@@ -61,15 +59,11 @@ def start_preload_worker(
         return False
 
 
-def resume_preload_worker(
-    *, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None
-) -> bool:
+def resume_preload_worker(*, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None) -> bool:
     if _PRELOAD_WORKER is None:
         return False
     try:
-        return _PRELOAD_WORKER.resume_preload_worker(
-            delay_seconds=delay_seconds, libraries=libraries
-        )
+        return _PRELOAD_WORKER.resume_preload_worker(delay_seconds=delay_seconds, libraries=libraries)
     except Exception:  # pragma: no cover - defensive guard
         logger.debug("No se pudo reanudar el preload worker", exc_info=True)
         return False
@@ -87,9 +81,7 @@ def is_preload_complete() -> bool:
 
 def record_startup_checkpoint(label: str) -> float:
     elapsed = max((time.perf_counter() - TOTAL_LOAD_START) * 1000.0, 0.0)
-    log_startup_event(
-        f"startup_checkpoint | label={label} | startup_load_ms={elapsed:.2f}"
-    )
+    log_startup_event(f"startup_checkpoint | label={label} | startup_load_ms={elapsed:.2f}")
     return elapsed
 
 
@@ -111,10 +103,7 @@ def record_post_lazy_checkpoint(total_ms: float) -> None:
             return
     except Exception:
         pass
-    log_startup_event(
-        "startup_checkpoint | label=post_lazy_imports | "
-        f"startup_load_ms={float(total_ms):.2f}"
-    )
+    log_startup_event(f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}")
     try:
         st.session_state[_POST_LAZY_LOGGED_KEY] = True
         st.session_state["startup_load_ms_after_lazy"] = float(total_ms)
@@ -124,9 +113,7 @@ def record_post_lazy_checkpoint(total_ms: float) -> None:
 
 def update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
     try:
-        update_metric = lazy_attr(
-            "services.performance_timer", "update_ui_total_load_metric"
-        )
+        update_metric = lazy_attr("services.performance_timer", "update_ui_total_load_metric")
     except Exception:
         logger.debug("No se pudo importar update_ui_total_load_metric", exc_info=True)
         return
@@ -138,9 +125,7 @@ def update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
 
 def update_ui_startup_metric_lazy(total_ms: float | int | None) -> None:
     try:
-        update_metric = lazy_attr(
-            "services.performance_timer", "update_ui_startup_load_metric"
-        )
+        update_metric = lazy_attr("services.performance_timer", "update_ui_startup_load_metric")
     except Exception:
         logger.debug("No se pudo importar update_ui_startup_load_metric", exc_info=True)
         return
@@ -226,16 +211,11 @@ def _run_initialization_stage(label: str, action: Callable[[], None]) -> None:
     try:
         action()
     except Exception as exc:
-        log_startup_event(
-            f"post_login_init | stage={label} | status=error | error={exc!r}"
-        )
+        log_startup_event(f"post_login_init | stage={label} | status=error | error={exc!r}")
         logger.debug("Post login init stage %s failed", label, exc_info=True)
     else:
         elapsed = (time.perf_counter() - start) * 1000.0
-        log_startup_event(
-            "post_login_init | "
-            f"stage={label} | status=success | duration_ms={elapsed:.2f}"
-        )
+        log_startup_event(f"post_login_init | stage={label} | status=success | duration_ms={elapsed:.2f}")
 
 
 def _post_login_initialization_worker() -> None:
@@ -292,9 +272,7 @@ def schedule_post_login_initialization() -> None:
         try:
             thread.start()
         except Exception:
-            logger.debug(
-                "No se pudo iniciar la inicialización post-login", exc_info=True
-            )
+            logger.debug("No se pudo iniciar la inicialización post-login", exc_info=True)
             return
         _POST_LOGIN_INIT_STARTED = True
         try:
