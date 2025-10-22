@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import os
 from contextlib import contextmanager
 from dataclasses import asdict
 from textwrap import shorten
@@ -9,8 +10,100 @@ from textwrap import shorten
 import streamlit as st
 
 from domain.models import Controls
+from ui.actions import render_action_menu
 
 _FLASH_FLAG_KEY = "_sidebar_controls_flash_flag"
+_SYMBOLS_STATE_KEY = "_sidebar_all_symbols"
+_TYPES_STATE_KEY = "_sidebar_available_types"
+
+
+def _store_reference_data(symbols: list[str], types: list[str]) -> None:
+    try:
+        st.session_state[_SYMBOLS_STATE_KEY] = list(symbols)
+        st.session_state[_TYPES_STATE_KEY] = list(types)
+    except Exception:  # pragma: no cover - session state may be read-only
+        pass
+
+
+def _get_reference_data() -> tuple[list[str], list[str]]:
+    try:
+        symbols = list(st.session_state.get(_SYMBOLS_STATE_KEY, []))
+    except Exception:  # pragma: no cover - defensive guard
+        symbols = []
+    try:
+        types = list(st.session_state.get(_TYPES_STATE_KEY, []))
+    except Exception:  # pragma: no cover - defensive guard
+        types = []
+    return symbols, types
+
+
+def _build_control_defaults(
+    all_symbols: list[str],
+    available_types: list[str],
+) -> dict[str, object]:
+    selected_types_state = st.session_state.get("selected_types")
+    if selected_types_state is None:
+        selected_types_state = st.session_state.get("selected_asset_types")
+
+    return {
+        "refresh_secs": st.session_state.get("refresh_secs", 30),
+        "hide_cash": st.session_state.get("hide_cash", True),
+        "show_usd": st.session_state.get("show_usd", False),
+        "order_by": st.session_state.get("order_by", "valor_actual"),
+        "desc": st.session_state.get("desc", True),
+        "top_n": st.session_state.get("top_n", 20),
+        "selected_syms": st.session_state.get("selected_syms", all_symbols),
+        "selected_types": selected_types_state if selected_types_state is not None else available_types,
+        "symbol_query": st.session_state.get("symbol_query", ""),
+    }
+
+
+def _finalize_controls(controls: Controls) -> Controls:
+    snap = st.session_state.get("controls_snapshot")
+    if isinstance(snap, dict):
+        selected = list(snap.get("selected_types", []))
+        try:
+            st.session_state["selected_asset_types"] = selected
+        except Exception:  # pragma: no cover - defensive guard
+            pass
+        return Controls(**snap)
+
+    try:
+        st.session_state["selected_asset_types"] = list(controls.selected_types)
+    except Exception:  # pragma: no cover - defensive guard
+        pass
+    return controls
+
+
+def get_active_controls(
+    all_symbols: list[str] | None = None,
+    available_types: list[str] | None = None,
+) -> Controls:
+    stored_symbols, stored_types = _get_reference_data()
+    symbols = list(all_symbols) if all_symbols is not None else stored_symbols
+    types = list(available_types) if available_types is not None else stored_types
+    defaults = _build_control_defaults(symbols, types)
+
+    controls = Controls(
+        refresh_secs=int(defaults["refresh_secs"]),
+        hide_cash=bool(defaults["hide_cash"]),
+        show_usd=bool(defaults["show_usd"]),
+        order_by=str(defaults["order_by"]),
+        desc=bool(defaults["desc"]),
+        top_n=int(defaults["top_n"]),
+        selected_syms=list(defaults["selected_syms"] or symbols),
+        selected_types=list(defaults["selected_types"] or types),
+        symbol_query=str(defaults["symbol_query"] or "").strip().upper(),
+    )
+    return _finalize_controls(controls)
+
+
+def get_controls_reference_data() -> tuple[list[str], list[str]]:
+    """Return cached symbols/types used to build the controls panel."""
+
+    return _get_reference_data()
+_SYMBOLS_STATE_KEY = "_sidebar_all_symbols"
+_TYPES_STATE_KEY = "_sidebar_available_types"
 
 
 def _show_apply_feedback() -> None:
@@ -78,7 +171,7 @@ def _section_card(host, *, extra_classes: str = ""):
     host.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_sidebar(
+def render_controls_panel(
     all_symbols: list[str],
     available_types: list[str],
     *,
@@ -88,23 +181,10 @@ def render_sidebar(
 
     all_symbols = list(all_symbols or [])
     available_types = list(available_types or [])
+    _store_reference_data(all_symbols, available_types)
 
     flash_active = bool(st.session_state.get(_FLASH_FLAG_KEY))
-    selected_types_state = st.session_state.get("selected_types")
-    if selected_types_state is None:
-        selected_types_state = st.session_state.get("selected_asset_types")
-
-    defaults = {
-        "refresh_secs": st.session_state.get("refresh_secs", 30),
-        "hide_cash": st.session_state.get("hide_cash", True),
-        "show_usd": st.session_state.get("show_usd", False),
-        "order_by": st.session_state.get("order_by", "valor_actual"),
-        "desc": st.session_state.get("desc", True),
-        "top_n": st.session_state.get("top_n", 20),
-        "selected_syms": st.session_state.get("selected_syms", all_symbols),
-        "selected_types": selected_types_state if selected_types_state is not None else available_types,
-        "symbol_query": st.session_state.get("symbol_query", ""),
-    }
+    defaults = _build_control_defaults(all_symbols, available_types)
 
     order_options = [
         "valor_actual",
@@ -126,9 +206,9 @@ def render_sidebar(
             unsafe_allow_html=True,
         )
         body_opened = True
-        host.markdown("### 🎛️ Controles")
+        host.markdown("### 🎯 Controles del portafolio")
         if hasattr(host, "caption"):
-            host.caption("Configura filtros, orden y visualizaciones del portafolio.")
+            host.caption("Ajustá filtros, orden y visualizaciones desde el centro de monitoreo.")
 
     form = host.form("controls_form") if hasattr(host, "form") else st.form("controls_form")
 
@@ -248,22 +328,62 @@ def render_sidebar(
     )
 
     if reset_btn:
-        for k in asdict(controls).keys():
-            st.session_state.pop(k, None)
+        for key in asdict(controls).keys():
+            st.session_state.pop(key, None)
         st.session_state["controls_snapshot"] = None
         st.session_state.pop("selected_asset_types", None)
         st.rerun()
 
     if apply_btn:
-        st.session_state.update(asdict(controls))
-        st.session_state["controls_snapshot"] = asdict(controls)
+        snapshot = asdict(controls)
+        st.session_state.update(snapshot)
+        st.session_state["controls_snapshot"] = snapshot
         st.session_state[_FLASH_FLAG_KEY] = True
         st.session_state["selected_asset_types"] = list(controls.selected_types)
         _show_apply_feedback()
 
-    snap = st.session_state.get("controls_snapshot")
-    if snap:
-        st.session_state["selected_asset_types"] = list(snap.get("selected_types", []))
-        return Controls(**snap)
-    st.session_state["selected_asset_types"] = list(controls.selected_types)
-    return controls
+    return _finalize_controls(controls)
+
+
+def _environment_label() -> str:
+    for key in ("PORTAFOLIO_ENV", "APP_ENV", "ENVIRONMENT"):
+        raw = os.environ.get(key)
+        if raw:
+            label = raw.replace("_", " ").strip()
+            return label.title() if label else raw
+    return "Operativo"
+
+
+def _render_sidebar_shell(host) -> None:
+    if hasattr(host, "markdown"):
+        host.markdown("## 📈 Portafolio IOL")
+        host.caption("Monitoreo en vivo en modo solo lectura.")
+
+    username = st.session_state.get("IOL_USERNAME")
+    session_id = st.session_state.get("session_id")
+
+    if username:
+        host.markdown(f"**Sesión activa:** {html.escape(str(username))}")
+    else:
+        host.markdown("_Sesión no autenticada._")
+
+    env_label = _environment_label()
+    host.caption(f"Entorno actual: {env_label}")
+    if session_id:
+        host.caption(f"ID de sesión: `{session_id}`")
+
+    render_action_menu(container=host, show_refresh=False)
+
+
+def render_sidebar(
+    all_symbols: list[str],
+    available_types: list[str],
+    *,
+    container=None,
+) -> Controls:
+    host = container if container is not None else st.sidebar
+    all_symbols = list(all_symbols or [])
+    available_types = list(available_types or [])
+    _store_reference_data(all_symbols, available_types)
+    _render_sidebar_shell(host)
+    return get_active_controls(all_symbols, available_types)
