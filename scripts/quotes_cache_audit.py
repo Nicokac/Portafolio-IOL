@@ -1,19 +1,24 @@
-"""Audit helper for quotes_refresh telemetry exported as JSONL logs."""
+"""CLI utilities to audit quotes cache telemetry and portfolio metrics."""
 
 from __future__ import annotations
 
 import argparse
 import json
+import logging
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
-from typing import Iterable, List
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
 class QuoteBatchEvent:
+    """Aggregate information for a quotes batch processed by the cache."""
+
     group: str
-    symbols: List[str]
+    symbols: list[str]
     duration_s: float
     mode: str | None = None
     stale: bool | None = None
@@ -23,6 +28,8 @@ class QuoteBatchEvent:
 
 @dataclass
 class RefreshSummary:
+    """Summary metrics for a quotes refresh cycle."""
+
     count: int
     fresh: int
     stale: int
@@ -40,8 +47,10 @@ class RefreshSummary:
 
 @dataclass
 class AuditReport:
+    """Full report combining summary metrics and individual batch events."""
+
     summary: RefreshSummary
-    batches: List[QuoteBatchEvent]
+    batches: list[QuoteBatchEvent]
 
     def quotes_refresh_total_s(self) -> float:
         return self.summary.elapsed_s
@@ -63,6 +72,8 @@ class AuditReport:
         return self.summary.stale_ratio
 
     def anomalous_batches(self, threshold_s: float = 1.0) -> list[QuoteBatchEvent]:
+        """Return batches whose duration exceeds ``threshold_s`` seconds."""
+
         return [batch for batch in self.batches if batch.duration_s > threshold_s]
 
     def served_modes(self) -> dict[str, int]:
@@ -75,6 +86,8 @@ class AuditReport:
 
 @dataclass
 class PortfolioCacheSnapshot:
+    """Runtime metrics exported by the portfolio memoization layer."""
+
     render_total_s: float
     hit_ratio: float
     miss_count: int
@@ -140,7 +153,10 @@ def _parse_batches(events: Iterable[dict]) -> list[QuoteBatchEvent]:
         refresh_scheduled = payload.get("refresh_scheduled")
         background = payload.get("background")
         if event.get("event") == "quotes_batch_served":
-            existing = next((b for b in batches if b.symbols == symbols and b.group == group), None)
+            existing = next(
+                (b for b in batches if b.symbols == symbols and b.group == group),
+                None,
+            )
             if existing:
                 existing.mode = str(mode) if mode is not None else existing.mode
                 existing.stale = bool(stale) if stale is not None else existing.stale
@@ -157,7 +173,11 @@ def _parse_batches(events: Iterable[dict]) -> list[QuoteBatchEvent]:
                 duration_s=duration,
                 mode=str(mode) if mode is not None else None,
                 stale=bool(stale) if stale is not None else None,
-                refresh_scheduled=(bool(refresh_scheduled) if refresh_scheduled is not None else None),
+                refresh_scheduled=(
+                    bool(refresh_scheduled)
+                    if refresh_scheduled is not None
+                    else None
+                ),
                 background=bool(background) if background is not None else None,
             )
         )
@@ -207,9 +227,7 @@ def load_portfolio_metrics(path: Path) -> PortfolioCacheSnapshot:
             for reason, count in miss_reasons_raw.items()
             if count is not None
         },
-        recent_misses=[
-            miss for miss in recent_misses if isinstance(miss, dict)
-        ],
+        recent_misses=[miss for miss in recent_misses if isinstance(miss, dict)],
         recent_invalidations=[
             entry for entry in recent_invalidations if isinstance(entry, dict)
         ],
@@ -241,6 +259,7 @@ def export_metrics(
         f"Detalle: {portfolio.invalidation_breakdown()}\n",
     ]
     output.write_text("".join(lines), encoding="utf-8")
+    LOGGER.info("Reporte CSV generado en %s", output)
 
 
 def render_quotes_cli(report: AuditReport) -> str:
@@ -259,7 +278,8 @@ def render_quotes_cli(report: AuditReport) -> str:
         lines.append("Sub-lotes >1s detectados:")
         for batch in anomalous:
             lines.append(
-                f"  * {batch.group} ({', '.join(batch.symbols)}) -> {batch.duration_s:.2f}s"
+                "  * "
+                f"{batch.group} ({', '.join(batch.symbols)}) -> {batch.duration_s:.2f}s"
             )
     else:
         lines.append("No se detectaron sub-lotes por encima de 1 segundo")
@@ -270,7 +290,11 @@ def render_portfolio_cli(metrics: PortfolioCacheSnapshot) -> str:
     lines = [
         "Resumen portfolio_view.render:",
         f"- Tiempo total: {metrics.render_total_s:.2f} s",
-        f"- Invocaciones: {metrics.render_invocations} (hits={metrics.hits}, misses={metrics.miss_count})",
+        (
+            "- Invocaciones: "
+            f"{metrics.render_invocations} "
+            f"(hits={metrics.hits}, misses={metrics.miss_count})"
+        ),
         f"- Hit ratio: {metrics.hit_ratio:.2f}%",
         f"- Razones de miss: {metrics.miss_breakdown()}",
         f"- Invalidaciones: {metrics.invalidation_breakdown()}",
@@ -289,12 +313,13 @@ def render_portfolio_cli(metrics: PortfolioCacheSnapshot) -> str:
                 render_ms = float(miss.get("render_elapsed") or 0.0)
                 lines.append(
                     "  * "
-                    f"apply={apply_ms:.3f}s totals={totals_ms:.3f}s render={render_ms:.3f}s"
+                    f"apply={apply_ms:.3f}s totals={totals_ms:.3f}s "
+                    f"render={render_ms:.3f}s"
                 )
     return "\n".join(lines)
 
 
-def main(argv: Iterable[str] | None = None) -> int:
+def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Audita logs de quotes_refresh")
     parser.add_argument(
         "--input",
@@ -314,9 +339,16 @@ def main(argv: Iterable[str] | None = None) -> int:
         default=Path("performance_metrics_9.csv"),
         help="Ruta de salida para el CSV de métricas",
     )
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    return parser.parse_args(list(argv) if argv is not None else None)
 
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    LOGGER.info("Cargando eventos desde %s", args.input)
     report = load_report(args.input)
+    LOGGER.info("Cargando métricas de portfolio desde %s", args.portfolio_input)
     portfolio_metrics = load_portfolio_metrics(args.portfolio_input)
     export_metrics(report, portfolio_metrics, args.output)
     print(render_quotes_cli(report))

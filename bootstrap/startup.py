@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable, Iterable
 from functools import lru_cache
+from types import ModuleType
 
 import streamlit as st
 
@@ -22,6 +23,7 @@ from shared.settings import (
 
 logger = logging.getLogger(__name__)
 
+_PRELOAD_WORKER: ModuleType | None
 try:
     _PRELOAD_WORKER = importlib.import_module("services.preload_worker")
 except Exception as preload_exc:  # pragma: no cover - defensive guard
@@ -47,7 +49,9 @@ def lazy_attr(module: str, attr: str):
     return getattr(lazy_module(module), attr)
 
 
-def start_preload_worker(*, paused: bool = False, libraries: Iterable[str] | None = None) -> bool:
+def start_preload_worker(
+    *, paused: bool = False, libraries: Iterable[str] | None = None
+) -> bool:
     if _PRELOAD_WORKER is None:
         return False
     try:
@@ -108,7 +112,8 @@ def record_post_lazy_checkpoint(total_ms: float) -> None:
     except Exception:
         pass
     log_startup_event(
-        f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}"
+        "startup_checkpoint | label=post_lazy_imports | "
+        f"startup_load_ms={float(total_ms):.2f}"
     )
     try:
         st.session_state[_POST_LAZY_LOGGED_KEY] = True
@@ -183,11 +188,12 @@ def record_ui_startup_metric() -> None:
         logger.debug("No se pudo marcar _ui_startup_logged", exc_info=True)
 
     try:
-        log_startup_event(
-            f"ui_startup_load | value_ms={elapsed:.2f}"
-        )
+        log_startup_event(f"ui_startup_load | value_ms={elapsed:.2f}")
     except Exception:
-        logger.debug("No se pudo registrar ui_startup_load en startup_logger", exc_info=True)
+        logger.debug(
+            "No se pudo registrar ui_startup_load en startup_logger",
+            exc_info=True,
+        )
 
 
 def flush_ui_startup_metric(startup_ms: float | int | None) -> None:
@@ -227,7 +233,8 @@ def _run_initialization_stage(label: str, action: Callable[[], None]) -> None:
     else:
         elapsed = (time.perf_counter() - start) * 1000.0
         log_startup_event(
-            f"post_login_init | stage={label} | status=success | duration_ms={elapsed:.2f}"
+            "post_login_init | "
+            f"stage={label} | status=success | duration_ms={elapsed:.2f}"
         )
 
 
@@ -285,7 +292,9 @@ def schedule_post_login_initialization() -> None:
         try:
             thread.start()
         except Exception:
-            logger.debug("No se pudo iniciar la inicialización post-login", exc_info=True)
+            logger.debug(
+                "No se pudo iniciar la inicialización post-login", exc_info=True
+            )
             return
         _POST_LOGIN_INIT_STARTED = True
         try:

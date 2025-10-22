@@ -1,26 +1,18 @@
-"""Benchmark comparison utility for QA performance metrics.
-
-This script compares QA metrics captured from two different builds and
-generates both a console summary and an optional Markdown report.
-
-Usage:
-    python tools/benchmark_report.py --baseline /path/to/v0.6.x \
-        --current /path/to/v0.7.0
-
-By default it expects a ``qa_metrics.csv`` file inside the supplied directory
-and writes a ``benchmark_report.md`` file in the current working directory.
-"""
+"""Compare QA benchmark metrics between two builds and emit a Markdown report."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import statistics
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, MutableMapping, Optional
 
-METRIC_ORDER = ["Startup", "Cache", "Auth", "UI Render"]
+LOGGER = logging.getLogger(__name__)
+
+METRIC_ORDER: list[str] = ["Startup", "Cache", "Auth", "UI Render"]
 
 METRIC_ALIASES: Mapping[str, str] = {
     "startup": "Startup",
@@ -41,6 +33,8 @@ METRIC_ALIASES: Mapping[str, str] = {
 
 @dataclass
 class MetricSummary:
+    """Aggregate data comparing baseline and current measurements."""
+
     name: str
     baseline: float
     current: float
@@ -49,11 +43,7 @@ class MetricSummary:
 
 
 def resolve_metrics_path(source: Path) -> Path:
-    """Return the path to ``qa_metrics.csv`` from the given source.
-
-    ``source`` can either be a direct path to the CSV file or a directory that
-    contains a file named ``qa_metrics.csv``.
-    """
+    """Return the path to ``qa_metrics.csv`` from the given source."""
 
     if source.is_dir():
         candidate = source / "qa_metrics.csv"
@@ -62,9 +52,7 @@ def resolve_metrics_path(source: Path) -> Path:
         raise FileNotFoundError(f"qa_metrics.csv not found in directory: {source}")
 
     if source.name != "qa_metrics.csv":
-        raise ValueError(
-            f"Expected qa_metrics.csv but received: {source.name}"
-        )
+        raise ValueError(f"Expected qa_metrics.csv but received: {source.name}")
 
     if not source.exists():
         raise FileNotFoundError(f"qa_metrics.csv not found at: {source}")
@@ -72,17 +60,13 @@ def resolve_metrics_path(source: Path) -> Path:
     return source
 
 
-def load_metrics(source: Path) -> Dict[str, List[float]]:
-    """Load QA metrics from ``qa_metrics.csv``.
-
-    The CSV must contain a ``metric`` column and either a ``value`` or
-    ``duration`` column. The values are aggregated according to the
-    ``METRIC_ALIASES`` mapping and returned as a dictionary where each key holds
-    a list of numeric samples.
-    """
+def load_metrics(source: Path) -> dict[str, list[float]]:
+    """Load QA metrics from ``qa_metrics.csv``."""
 
     path = resolve_metrics_path(source)
-    metric_values: MutableMapping[str, List[float]] = {name: [] for name in METRIC_ORDER}
+    metric_values: MutableMapping[str, list[float]] = {
+        name: [] for name in METRIC_ORDER
+    }
 
     with path.open("r", newline="", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file)
@@ -118,7 +102,7 @@ def load_metrics(source: Path) -> Dict[str, List[float]]:
 
             try:
                 value = float(raw_value)
-            except ValueError as exc:
+            except ValueError as exc:  # pragma: no cover - defensive guard
                 raise ValueError(
                     f"Invalid numeric value '{raw_value}' for metric '{canonical}'"
                 ) from exc
@@ -128,10 +112,10 @@ def load_metrics(source: Path) -> Dict[str, List[float]]:
     return dict(metric_values)
 
 
-def average_metrics(metric_samples: Mapping[str, Iterable[float]]) -> Dict[str, float]:
+def average_metrics(metric_samples: Mapping[str, Iterable[float]]) -> dict[str, float]:
     """Compute the average for each metric, ignoring empty samples."""
 
-    averages: Dict[str, float] = {}
+    averages: dict[str, float] = {}
     for metric in METRIC_ORDER:
         samples = list(metric_samples.get(metric, []))
         if not samples:
@@ -150,10 +134,10 @@ def compute_delta_pct(baseline: float, current: float) -> float | None:
 
 def summarize_metrics(
     baseline_avgs: Mapping[str, float], current_avgs: Mapping[str, float]
-) -> List[MetricSummary]:
+) -> list[MetricSummary]:
     """Create metric summaries comparing baseline and current averages."""
 
-    summaries: List[MetricSummary] = []
+    summaries: list[MetricSummary] = []
     for metric in METRIC_ORDER:
         baseline_value = baseline_avgs[metric]
         current_value = current_avgs[metric]
@@ -186,7 +170,10 @@ def format_console_table(
 ) -> str:
     """Return a console-friendly table of the summary values."""
 
-    header = f"{'Metric':<15}{baseline_label:<15}{current_label:<15}{'Δ%':<10}{'Status':<12}"
+    header = (
+        f"{'Metric':<15}{baseline_label:<15}{current_label:<15}"
+        f"{'Δ%':<10}{'Status':<12}"
+    )
     lines = [header, "-" * len(header)]
 
     for summary in summaries:
@@ -229,6 +216,7 @@ def generate_markdown_report(
         )
 
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    LOGGER.info("Reporte Markdown escrito en %s", output_path)
 
 
 def run_report(
@@ -236,11 +224,13 @@ def run_report(
     current_source: Path,
     baseline_label: str,
     current_label: str,
-    markdown_output: Optional[Path] = None,
-) -> List[MetricSummary]:
+    markdown_output: Path | None = None,
+) -> list[MetricSummary]:
     """Load metrics, compute summaries, and write the Markdown report."""
 
+    LOGGER.info("Cargando métricas base desde %s", baseline_source)
     baseline_metrics = load_metrics(baseline_source)
+    LOGGER.info("Cargando métricas actuales desde %s", current_source)
     current_metrics = load_metrics(current_source)
 
     baseline_avgs = average_metrics(baseline_metrics)
@@ -252,12 +242,17 @@ def run_report(
     print(console_table)
 
     if markdown_output is not None:
-        generate_markdown_report(summaries, baseline_label, current_label, markdown_output)
+        generate_markdown_report(
+            summaries,
+            baseline_label,
+            current_label,
+            markdown_output,
+        )
 
     return summaries
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compare QA performance metrics")
     parser.add_argument(
         "--baseline",
@@ -285,11 +280,13 @@ def parse_args() -> argparse.Namespace:
         help="Path to write the Markdown report (use '' to skip)",
     )
 
-    return parser.parse_args()
+    return parser.parse_args(list(argv) if argv is not None else None)
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     baseline_path = Path(args.baseline)
     current_path = Path(args.current)
     output_arg = args.output.strip()
@@ -303,6 +300,8 @@ def main() -> None:
         markdown_output=markdown_output,
     )
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

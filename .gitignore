@@ -66,6 +66,7 @@ logs/*
 !logs/.gitkeep
 dist/
 build/
+benchmark_report.md
 
 # --- Versionado generado
 version.py
