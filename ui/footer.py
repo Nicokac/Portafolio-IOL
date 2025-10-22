@@ -17,8 +17,8 @@ def render_footer() -> None:
     st.markdown(
         f"""
         <hr>
-        <div class='footer-container'>
-            <div class='footer-column'>
+        <div class='footer-container' style='display: flex; justify-content: space-between; align-items: flex-start; gap: 3rem; flex-wrap: wrap;'>
+            <div class='footer-column' style='flex: 1; min-width: 280px;'>
                 <div class='footer-title'>Información operativa</div>
                 <div class='footer-meta'>
                     <p><strong>Versión:</strong> {version}</p>
@@ -26,7 +26,7 @@ def render_footer() -> None:
                     <p>&copy; {year} Portafolio IOL · Datos provistos en modo lectura.</p>
                 </div>
             </div>
-            <div class='footer-links-card-wrapper'>
+            <div class='footer-links-card-wrapper' style='flex: 1; min-width: 280px;'>
                 <div class='footer-links-card'>
                     <div class='footer-links-card__title'>Enlaces útiles</div>
                     <div class='footer-links-card__list'>
