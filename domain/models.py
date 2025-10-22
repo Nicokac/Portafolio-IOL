@@ -1,7 +1,7 @@
-# domain\models.py
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import List
+
 
 @dataclass(frozen=True)
 class Controls:
@@ -25,7 +25,7 @@ class Controls:
     order_by: str = "valor_actual"
     desc: bool = True
     top_n: int = 20
-    selected_syms: List[str] = field(default_factory=list)  # avoid shared mutable defaults
-    selected_types: List[str] = field(default_factory=list)  # avoid shared mutable defaults
+    selected_syms: list[str] = field(default_factory=list)
+    selected_types: list[str] = field(default_factory=list)
     symbol_query: str = ""
 
