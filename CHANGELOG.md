@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - UI Minimalista y Reorganización
+### Overview
+Primera entrega de la nueva interfaz minimalista y reorganización visual de Portafolio-IOL.
+
+### Changes
+- Moved duplicated sidebar components to the Monitoreo tab.
+- Simplified the home screen to show only login, title, and footer.
+- Removed “Resumen de release” section from the footer.
+- Reorganized sidebar logic and orchestrator layout.
+- Prepared UI for upcoming monitoring dashboard and typed login state.
+
+### Technical
+- ✅ Lint: passes cleanly
+- ⚠️ Typing: legacy modules pending cleanup
+- ⚠️ Tests: partial Streamlit stub dependencies remain
+
 ## [0.7.2] - Clean Final Release
 ### Overview
 Consolidation and final cleanup of the Portafolio-IOL codebase after modular refactoring (phases 1–6).
