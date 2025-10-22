@@ -170,28 +170,51 @@ def scale_for(sym: str, tipo: str) -> float:
     return 1.0
 
 
+def _match_declared_type(text: str) -> str | None:
+    """Return portfolio type based on labels declared by IOL."""
+
+    label = (text or "").strip().lower()
+    if not label:
+        return None
+
+    if "bono" in label or "oblig" in label or "negociable" in label:
+        return "Bono"
+    if "letra" in label:
+        return "Letra"
+    if "fci" in label or "fondo" in label or "money market" in label:
+        return "FCI"
+    if "cedear" in label:
+        return "CEDEAR"
+    if "etf" in label:
+        return "ETF"
+    if "acción" in label or "accion" in label or "equity" in label:
+        return "Acción"
+
+    return None
+
+
 def classify_asset(it: dict) -> str:
     """
     Clasifica activo según 'titulo.tipo/descripcion' si existe, o heurística por símbolo.
     Devuelve una de: 'CEDEAR','ETF','Bono','Letra','FCI','Acción','Otro'
     """
+
     t = it.get("titulo") or {}
-    tipo_txt = (t.get("tipo") or t.get("descripcion") or "").strip().lower()
     sym = clean_symbol(it.get("simbolo", ""))
 
-    # Si IOL lo declara, priorizamos esa etiqueta:
-    if "bono" in tipo_txt:
-        return "Bono"
-    if "letra" in tipo_txt:
-        return "Letra"
-    if "fci" in tipo_txt or "fondo" in tipo_txt:
-        return "FCI"
-    if "cedear" in tipo_txt:
-        return "CEDEAR"
-    if "etf" in tipo_txt:
-        return "ETF"
-    if "acción" in tipo_txt or "accion" in tipo_txt:
-        return "Acción"
+    candidates = []
+    tipo_value = t.get("tipo")
+    descripcion_value = t.get("descripcion")
+
+    if tipo_value:
+        candidates.append(tipo_value)
+    if descripcion_value and descripcion_value not in candidates:
+        candidates.append(descripcion_value)
+
+    for candidate in candidates:
+        matched = _match_declared_type(candidate)
+        if matched:
+            return matched
 
     # Fallback por símbolo
     return classify_symbol(sym)
