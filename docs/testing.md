@@ -11,6 +11,8 @@ Esta guía resume los prerequisitos y comandos necesarios para ejecutar la suite
   ```
   > `requirements.txt` se sincroniza desde `[project.dependencies]` de `pyproject.toml` con `python scripts/sync_requirements.py`. Ejecutalo si actualizás versiones antes de reinstalar dependencias.
 - No es necesario instalar Streamlit. Los tests utilizan el stub definido en `tests/conftest.py`.
+- Toda la suite activa vive en `tests/` (incluyendo `tests/legacy/` para referencias históricas); la carpeta `test/` fue
+  retirada en la serie 0.7.x para evitar duplicaciones.
 - Variables de entorno opcionales para pruebas específicas:
   - `RUN_LIVE_YF=1` habilita los tests que consultan Yahoo Finance en vivo.
   - `FRED_API_KEY` y `FRED_SECTOR_SERIES` permiten validar integraciones macro con datos reales. Por defecto se usan stubs deterministas.

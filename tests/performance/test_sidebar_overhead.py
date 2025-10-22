@@ -9,9 +9,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from test.test_app_main import _make_streamlit
-
-
 if "plotly" not in sys.modules:
     plotly_mod = ModuleType("plotly")
     plotly_express = ModuleType("plotly.express")
@@ -82,7 +79,27 @@ def _fresh_app(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     monkeypatch.setenv("IOL_TOKENS_KEY", "MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=")
     sys.modules.pop("app", None)
     sys.modules.pop("shared.config", None)
-    st = _make_streamlit()
+    st = ModuleType("streamlit")
+    st.session_state = {}
+    st.set_page_config = MagicMock()
+    st.markdown = MagicMock()
+    st.stop = MagicMock(side_effect=RuntimeError("stop"))
+    st.columns = MagicMock(return_value=[MagicMock(), MagicMock()])
+    st.caption = MagicMock()
+    st.warning = MagicMock()
+    st.error = MagicMock()
+    st.container = MagicMock()
+    st.rerun = MagicMock()
+    st.cache_resource = lambda func=None, **_kwargs: func
+    st.cache_data = st.cache_resource
+    st.title = MagicMock()
+
+    def _auto_mock(name: str) -> MagicMock:
+        mock = MagicMock()
+        setattr(st, name, mock)
+        return mock
+
+    st.__getattr__ = _auto_mock  # type: ignore[attr-defined]
 
     class _SidebarExpander:
         def __enter__(self) -> "_SidebarExpander":
