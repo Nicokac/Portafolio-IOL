@@ -30,8 +30,8 @@ _BADGE_CONFIG: dict[BadgeVariant, dict[str, str]] = {
 
 def _build_badge_html(variant: BadgeVariant, *, text: str | None = None, help_text: str | None = None) -> str:
     config = _BADGE_CONFIG[variant]
-    label = html.escape(text or config["label"])  # noqa: S703 - html escape is explicit
-    icon = html.escape(config["icon"])  # noqa: S703 - html escape is explicit
+    label = html.escape(text or config["label"])
+    icon = html.escape(config["icon"])
     badge = (
         "<span class='notification-badge notification-badge--{variant}'>"
         "<span class='notification-badge__icon'>{icon}</span>"
