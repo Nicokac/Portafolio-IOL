@@ -2163,6 +2163,9 @@ def _serialize_snapshot_payload(
             "total_pl": float(totals.total_pl),
             "total_pl_pct": float(totals.total_pl_pct),
             "total_cash": float(totals.total_cash),
+            "total_cash_ars": float(totals.total_cash_ars),
+            "total_cash_usd": float(totals.total_cash_usd),
+            "total_cash_combined": float(totals.total_cash_combined),
         },
     }
 

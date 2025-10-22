@@ -12,11 +12,13 @@ def test_calc_rows_integration():
                 "cantidad": 100,
                 "costoUnitario": 90,
             }
-        ]
+        ],
+        "_cash_balances": {"cash_ars": 200.0},
     }
     svc = PortfolioService()
     df_pos = svc.normalize_positions(payload)
     assert not df_pos.empty
+    assert df_pos.attrs.get("cash_balances", {}).get("cash_ars") == 200.0
 
     def quote_fn(mkt, sym):
         assert mkt == "bcba"
@@ -25,6 +27,7 @@ def test_calc_rows_integration():
 
     df = svc.calc_rows(quote_fn, df_pos)
     assert len(df) == 1
+    assert df.attrs.get("cash_balances", {}).get("cash_ars") == 200.0
     row = df.iloc[0]
     assert row["tipo"] == "Bono / ON"
     assert row["costo"] == pytest.approx(90.0)

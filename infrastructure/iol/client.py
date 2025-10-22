@@ -21,6 +21,7 @@ from shared.errors import InvalidCredentialsError
 from shared.time_provider import TimeProvider
 from shared.utils import _to_float
 
+from .account_client import IOLAccountClient
 from .auth import IOLAuth
 from .ports import IIOLProvider
 
@@ -80,6 +81,11 @@ class IOLClient(IIOLProvider):
         self._quotes_lock = threading.RLock()
         self._legacy_session = LegacySession.get()
         self._ensure_market_auth()
+        self.account_client = IOLAccountClient(
+            auth=self.auth,
+            session=self.session,
+            api_base=self.api_base,
+        )
 
         safe_user = f"{self.user[:3]}***" if self.user else ""
         tokens_path = getattr(self.auth, "tokens_path", str(tokens_file))
@@ -153,6 +159,16 @@ class IOLClient(IIOLProvider):
     def _request(self, method: str, url: str, **kwargs) -> Optional[requests.Response]:
         last_exc: Optional[Exception] = None
         for attempt in range(RETRIES + 1):
+            try:
+                self.auth.ensure_token(silent=True)
+            except InvalidCredentialsError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                if attempt >= RETRIES:
+                    raise
+                time.sleep(BACKOFF_SEC * (attempt + 1))
+                continue
             headers = kwargs.pop("headers", {})
             headers.update(self.auth.auth_header())
             delay = BACKOFF_SEC * (attempt + 1)
@@ -254,6 +270,16 @@ class IOLClient(IIOLProvider):
             logger.exception("get_portfolio falló inesperadamente")
             raise
         else:
+            try:
+                cash_summary = self.account_client.fetch_balances()
+            except InvalidCredentialsError:
+                raise
+            except requests.RequestException as exc:
+                logger.info("No se pudo obtener /estadocuenta: %s", exc)
+            except Exception:
+                logger.debug("Error inesperado consultando /estadocuenta", exc_info=True)
+            else:
+                data.setdefault("_cash_balances", cash_summary.to_payload())
             self._write_portfolio_cache(data)
             return data
 

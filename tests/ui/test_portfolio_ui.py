@@ -211,6 +211,9 @@ def sample_export_snapshot() -> dict[str, Any]:
         totals_raw.get("total_pl", 0.0) or 0.0,
         totals_raw.get("total_pl_pct", 0.0) or 0.0,
         totals_raw.get("total_cash", 0.0) or 0.0,
+        total_cash_ars=totals_raw.get("total_cash_ars", 0.0) or 0.0,
+        total_cash_usd=totals_raw.get("total_cash_usd", 0.0) or 0.0,
+        total_cash_combined=totals_raw.get("total_cash_combined"),
     )
 
     df_view = base.positions.copy()

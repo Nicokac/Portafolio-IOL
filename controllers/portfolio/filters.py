@@ -222,6 +222,12 @@ def apply_filters(
                 df_pos,
                 exclude_syms=[],
             )
+        try:
+            attrs = getattr(df_pos, "attrs", {}) or {}
+            if attrs:
+                df_view.attrs.update(attrs)
+        except Exception:  # pragma: no cover - defensive
+            pass
         _record_stage("calc_rows", stage_calc)
         telemetry["result_rows"] = int(len(df_view))
         if df_view.empty:

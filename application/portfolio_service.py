@@ -21,13 +21,29 @@ from shared.utils import _to_float
 
 @dataclass(frozen=True)
 class PortfolioTotals:
-    """Totales básicos del portafolio."""
+    """Totales básicos del portafolio con desglose de efectivo."""
 
     total_value: float
     total_cost: float
     total_pl: float
     total_pl_pct: float
     total_cash: float = 0.0
+    total_cash_ars: float = 0.0
+    total_cash_usd: float = 0.0
+    total_cash_combined: float | None = None
+
+    def __post_init__(self) -> None:
+        cash = _to_float(self.total_cash)
+        cash_ars = _to_float(self.total_cash_ars)
+        cash_usd = _to_float(self.total_cash_usd)
+        combined = _to_float(self.total_cash_combined)
+
+        object.__setattr__(self, "total_cash", float(cash or 0.0))
+        object.__setattr__(self, "total_cash_ars", float(cash_ars or 0.0))
+        object.__setattr__(self, "total_cash_usd", float(cash_usd or 0.0))
+        if combined is None:
+            combined = float(self.total_cash) + float(self.total_cash_ars) + float(self.total_cash_usd)
+        object.__setattr__(self, "total_cash_combined", float(combined or 0.0))
 
 
 def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
@@ -58,7 +74,26 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     else:
         total_pl_pct = float("nan")
 
-    return PortfolioTotals(total_val, total_cost, total_pl, total_pl_pct, total_cash)
+    cash_info: Mapping[str, Any] = getattr(df_view, "attrs", {}).get("cash_balances", {})
+    cash_ars = _to_float(cash_info.get("cash_ars")) or 0.0
+    cash_usd = _to_float(cash_info.get("cash_usd")) or 0.0
+    usd_equiv = _to_float(cash_info.get("cash_usd_ars_equivalent"))
+    combined = total_cash + cash_ars
+    if usd_equiv is not None:
+        combined += usd_equiv
+    else:
+        combined += cash_usd
+
+    return PortfolioTotals(
+        total_val,
+        total_cost,
+        total_pl,
+        total_pl_pct,
+        total_cash,
+        total_cash_ars=cash_ars,
+        total_cash_usd=cash_usd,
+        total_cash_combined=combined,
+    )
 
 
 def detect_currency(sym: str, tipo: str | None) -> str:
@@ -247,6 +282,20 @@ def classify_asset(it: dict) -> str:
 # ---------- Normalización de payload ----------
 
 
+def _extract_cash_balances(payload: Mapping[str, Any] | None) -> dict[str, float]:
+    if not isinstance(payload, Mapping):
+        return {}
+    raw = payload.get("_cash_balances")
+    if not isinstance(raw, Mapping):
+        return {}
+    balances: dict[str, float] = {}
+    for key in ("cash_ars", "cash_usd", "cash_usd_ars_equivalent", "usd_rate"):
+        value = _to_float(raw.get(key))
+        if value is not None:
+            balances[key] = float(value)
+    return balances
+
+
 def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
     """
     Devuelve columnas: simbolo, mercado, cantidad, costo_unitario
@@ -325,7 +374,11 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                 }
             )
 
-    return pd.DataFrame(items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"])
+    df = pd.DataFrame(items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"])
+    balances = _extract_cash_balances(payload)
+    if balances:
+        df.attrs.setdefault("cash_balances", {}).update(balances)
+    return df
 
 
 # ---------- Cálculo de métricas ----------
@@ -341,6 +394,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
       * Las métricas ``valor_actual``, ``costo`` y P/L se derivan mediante
         operaciones vectorizadas de ``pandas``.
     """
+    attrs: dict[str, Any] = dict(getattr(df_pos, "attrs", {}) or {})
     cols = [
         "simbolo",
         "mercado",
@@ -357,7 +411,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     ]
 
     if df_pos is None or df_pos.empty:
-        return pd.DataFrame(columns=cols)
+        empty_df = pd.DataFrame(columns=cols)
+        if attrs:
+            empty_df.attrs.update(attrs)
+        return empty_df
 
     # Normalización básica y exclusiones ---------------------------------
     df = df_pos.copy()
@@ -367,7 +424,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     df = df[~df["simbolo"].isin(ex)]
     if df.empty:
-        return pd.DataFrame(columns=cols)
+        empty_df = pd.DataFrame(columns=cols)
+        if attrs:
+            empty_df.attrs.update(attrs)
+        return empty_df
 
     df["cantidad"] = df["cantidad"].map(_to_float).fillna(0.0)
     df["ppc"] = df.get("costo_unitario", np.nan).map(_to_float).fillna(0.0)
@@ -436,7 +496,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     # return pd.DataFrame(rows)
     # Orden final --------------------------------------------------------
     df["mercado"] = df["mercado"].str.upper()
-    return df[cols]
+    result = df[cols]
+    if attrs:
+        result.attrs.update(attrs)
+    return result
 
 
 @lru_cache(maxsize=1024)
