@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.3] — Reconciliación de efectivo y tasa de cambio
+### Changed
+- `calculate_totals` evita el doble conteo del efectivo al detectar saldos duplicados entre filas IOLPORA/PARKING y `_cash_balances`, preservando la visibilidad en la tabla pero sin inflar los totales combinados.
+- `PortfolioTotals` propaga `usd_rate` y la UI de totales muestra el desglose de ARS/USD junto con el tipo de cambio informado por `/estadocuenta`, incluyendo un tooltip que aclara si corresponde a la cotización oficial, MEP o es desconocida.
+
 ## [0.8.2] — Clasificación y valorizado alineados con API IOL
 ### Changed
 - `classify_asset` ahora devuelve tanto la etiqueta normalizada como el texto original provisto por IOL, y `calc_rows` propaga las columnas `tipo_estandar` y `tipo_iol` hacia la vista final para mantener trazabilidad.

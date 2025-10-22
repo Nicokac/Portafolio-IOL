@@ -180,3 +180,25 @@ def test_render_basic_section_handles_empty_frame(
     )
 
     assert "No hay datos del portafolio para mostrar." in fake_streamlit.infos
+
+
+def test_render_totals_includes_usd_rate_tooltip(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeStreamlit()
+    fake.session_state["fx_rates"] = {"mep": 1_200.0}
+    monkeypatch.setattr(tables_mod, "st", fake)
+
+    df = pd.DataFrame({"valor_actual": [1_200.0], "costo": [0.0], "simbolo": ["PARKING"]})
+    df.attrs["cash_balances"] = {
+        "cash_ars": 0.0,
+        "cash_usd": 1.0,
+        "cash_usd_ars_equivalent": 1_200.0,
+        "usd_rate": 1_200.0,
+    }
+
+    totals = calculate_totals(df)
+    tables_mod.render_totals(df, ccl_rate=None, totals=totals)
+
+    tooltip_map = {label: kwargs.get("help") for label, _, _, kwargs in fake.metrics}
+    assert tooltip_map.get("Tipo de cambio") == "Tipo de cambio: MEP"
+    rate_value = next((value for label, value, _, _ in fake.metrics if label == "Tipo de cambio"), None)
+    assert rate_value is not None and rate_value != "—"
