@@ -1,13 +1,14 @@
-# shared\utils.py
 from __future__ import annotations
 
-import numpy as np
 import logging
+from typing import Any
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
-def _as_float_or_none(x, log: bool = True) -> float | None:
+def _as_float_or_none(x: Any, log: bool = True) -> float | None:
     """Convert the input to ``float`` if possible, handling localized formats."""
 
     f = _to_float(x, log=log)
@@ -17,7 +18,9 @@ def _as_float_or_none(x, log: bool = True) -> float | None:
         return None
     return f
 
-def _is_none_nan_inf(x) -> bool:
+def _is_none_nan_inf(x: Any) -> bool:
+    """Return ``True`` when ``x`` cannot be represented as a finite float."""
+
     return _as_float_or_none(x) is None
 
 def format_money(value: float | int | None, currency: str = "ARS") -> str:
@@ -54,7 +57,9 @@ def format_percent(value: float | None, spaced: bool = False) -> str:
     suffix = " %" if spaced else "%"
     return f"{v:.2f}{suffix}"
 
-def _to_float(x, log: bool = True) -> float | None:
+def _to_float(x: Any, log: bool = True) -> float | None:
+    """Return ``x`` coerced to ``float`` when the representation is valid."""
+
     if x is None:
         return None
     if isinstance(x, (int, float)):

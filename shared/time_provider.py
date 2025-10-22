@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 TIMEZONE = "America/Argentina/Buenos_Aires"
@@ -29,7 +28,7 @@ class TimeSnapshot:
 class TimeProvider:
     """Centralised time provider to generate formatted timestamps."""
 
-    _zone = ZoneInfo(TIMEZONE)
+    _zone: ZoneInfo = ZoneInfo(TIMEZONE)
 
     @classmethod
     def timezone(cls) -> ZoneInfo:
@@ -45,13 +44,13 @@ class TimeProvider:
     def now(cls) -> str:
         """Return the current timestamp as a formatted string.
 
-        Call :meth:`now_datetime` when the :class:`~datetime.datetime` object is required.
+        Call :meth:`now_datetime` when the datetime object is required.
         """
 
         return cls.now_datetime().strftime(TIME_FORMAT)
 
     @classmethod
-    def from_timestamp(cls, ts: Optional[float | int | str]) -> Optional[TimeSnapshot]:
+    def from_timestamp(cls, ts: float | int | str | None) -> TimeSnapshot | None:
         """Convert a POSIX timestamp into a formatted snapshot.
 
         Invalid or missing values yield ``None`` to mirror previous behaviour
