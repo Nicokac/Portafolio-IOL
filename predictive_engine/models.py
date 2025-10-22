@@ -46,9 +46,7 @@ class SectorPredictionSet:
                 ],
             )
         frame = pd.DataFrame([row.to_dict() for row in self.rows])
-        return frame.sort_values("predicted_return", ascending=False).reset_index(
-            drop=True
-        )
+        return frame.sort_values("predicted_return", ascending=False).reset_index(drop=True)
 
     def __iter__(self) -> Iterable[SectorPrediction]:
         return iter(self.rows)
@@ -168,6 +166,4 @@ class AdaptiveForecastResult:
 
 
 def empty_history_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        columns=["timestamp", "sector", "predicted_return", "actual_return"]
-    )
+    return pd.DataFrame(columns=["timestamp", "sector", "predicted_return", "actual_return"])

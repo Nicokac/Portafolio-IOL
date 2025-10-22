@@ -1,4 +1,5 @@
 """UI helpers to highlight risk, technical signals and upcoming earnings."""
+
 from __future__ import annotations
 
 import html
@@ -38,10 +39,9 @@ def _build_badge_html(variant: BadgeVariant, *, text: str | None = None, help_te
         "</span>"
     ).format(variant=variant, icon=icon, label=label)
     if help_text:
-        badge = (
-            "<span class='notification-badge__wrapper' title='{title}'>"
-            "{badge}</span>"
-        ).format(title=html.escape(help_text), badge=badge)
+        badge = ("<span class='notification-badge__wrapper' title='{title}'>{badge}</span>").format(
+            title=html.escape(help_text), badge=badge
+        )
     return badge
 
 

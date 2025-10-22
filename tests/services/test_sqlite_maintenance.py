@@ -95,7 +95,5 @@ def test_sqlite_maintenance_stress(tmp_path, monkeypatch):
     assert perf_report["size_after"] <= perf_report["size_before"]
 
     with sqlite3.connect(perf_store.get_database_path()) as conn:
-        remaining = conn.execute(
-            "SELECT COUNT(*) FROM performance_metrics"
-        ).fetchone()[0]
+        remaining = conn.execute("SELECT COUNT(*) FROM performance_metrics").fetchone()[0]
     assert remaining == 1

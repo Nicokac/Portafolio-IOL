@@ -122,13 +122,14 @@ def render_system_diagnostics_panel() -> None:
         f"""
         <div style="padding:0.8rem 1rem; border-radius:0.75rem; background:rgba(15,23,42,0.05);">
             <div style="display:flex; flex-wrap:wrap; gap:1.2rem; align-items:center;">
-                <div><strong>APP_ENV</strong><br>{env.app_env or 's/d'}</div>
-                <div><strong>Zona horaria</strong><br>{env.timezone or 's/d'}</div>
+                <div><strong>APP_ENV</strong><br>{env.app_env or "s/d"}</div>
+                <div><strong>Zona horaria</strong><br>{env.timezone or "s/d"}</div>
                 <div><strong>Python</strong><br>{env.python_version}</div>
                 <div><strong>Plataforma</strong><br>{env.platform}</div>
             </div>
             <p style="margin:0.6rem 0 0; font-size:0.85rem; color:rgba(15,23,42,0.75);">
-                Los fingerprints muestran los primeros 10 caracteres del hash SHA-1 de cada clave para identificar cambios sin exponer su valor.
+                Los fingerprints muestran los primeros 10 caracteres del hash SHA-1
+                de cada clave para identificar cambios sin exponer su valor.
             </p>
         </div>
         """,
@@ -164,10 +165,12 @@ def _render_memory_diagnostics(frame: pd.DataFrame) -> None:
 
     timestamp_series = pd.to_datetime(frame.get("timestamp"), errors="coerce")
     memory_series = pd.to_numeric(frame[column], errors="coerce")
-    chart_data = pd.DataFrame({
-        "timestamp": timestamp_series,
-        "peak_ram_mb": memory_series,
-    }).dropna()
+    chart_data = pd.DataFrame(
+        {
+            "timestamp": timestamp_series,
+            "peak_ram_mb": memory_series,
+        }
+    ).dropna()
 
     if chart_data.empty:
         st.caption("Aún no hay registros de memoria para graficar.")

@@ -23,7 +23,8 @@ try:
     if current_renderer != "browser":
         pio.renderers.default = "browser"
         logger.info(
-            "Plotly renderer fallback set to browser mode", extra={"previous_renderer": current_renderer}
+            "Plotly renderer fallback set to browser mode",
+            extra={"previous_renderer": current_renderer},
         )
 except Exception:  # pragma: no cover - defensive guard
     logger.debug("No se pudo configurar el renderer de Plotly", exc_info=True)
@@ -32,11 +33,17 @@ except Exception:  # pragma: no cover - defensive guard
 def _detect_chromium() -> bool:
     """Return ``True`` when a Chromium binary is available in PATH."""
 
-    candidates = ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable")
+    candidates = (
+        "chromium",
+        "chromium-browser",
+        "google-chrome",
+        "google-chrome-stable",
+    )
     for candidate in candidates:
         if shutil.which(candidate):
             return True
     return False
+
 
 try:  # pragma: no cover - detection is lightweight
     _KALEIDO_AVAILABLE = importlib.util.find_spec("kaleido") is not None
@@ -46,9 +53,7 @@ except Exception:  # pragma: no cover - defensive guard
 _CHROMIUM_AVAILABLE = _detect_chromium()
 
 if not _CHROMIUM_AVAILABLE and _KALEIDO_AVAILABLE:
-    logger.warning(
-        "⚠️ Kaleido deshabilitado: Chromium no está disponible en el entorno"
-    )
+    logger.warning("⚠️ Kaleido deshabilitado: Chromium no está disponible en el entorno")
     _KALEIDO_AVAILABLE = False
 
 if not _KALEIDO_AVAILABLE:
@@ -170,9 +175,7 @@ def _lazy_import_kaleido() -> bool:
         record_kaleido_lazy_load(duration_ms, completed_at=end)
 
     if not _CHROMIUM_AVAILABLE:
-        logger.warning(
-            "⚠️ Kaleido detectado pero sin Chromium disponible — export limitada"
-        )
+        logger.warning("⚠️ Kaleido detectado pero sin Chromium disponible — export limitada")
 
     return True
 

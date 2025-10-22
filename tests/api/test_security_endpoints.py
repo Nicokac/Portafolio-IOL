@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from services import auth as auth_module
 from services.auth import (
     ACTIVE_TOKENS,
-    USED_REFRESH_NONCES,
     MAX_TOKEN_TTL_SECONDS,
+    USED_REFRESH_NONCES,
     generate_token,
 )
 
@@ -51,9 +51,7 @@ def test_refresh_endpoint_enforces_window(monkeypatch: pytest.MonkeyPatch, clien
     token = generate_token("tester", expiry=MAX_TOKEN_TTL_SECONDS)
 
     # With more than five minutes remaining the refresh is rejected.
-    monkeypatch.setattr(
-        auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 360
-    )
+    monkeypatch.setattr(auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 360)
     response = client.post("/auth/refresh", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
 
@@ -65,9 +63,7 @@ def test_refresh_endpoint_rotates_token(monkeypatch: pytest.MonkeyPatch, client:
     headers = {"Authorization": f"Bearer {token}"}
 
     # Move into the refresh window and request a new token.
-    monkeypatch.setattr(
-        auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 120
-    )
+    monkeypatch.setattr(auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 120)
     response = client.post("/auth/refresh", headers=headers)
     assert response.status_code == 200
     payload = response.json()
@@ -79,12 +75,8 @@ def test_refresh_endpoint_rotates_token(monkeypatch: pytest.MonkeyPatch, client:
     assert new_token != token
 
     # Old token should now be invalid while the new one grants access.
-    old_response = client.get(
-        "/profile/summary", headers={"Authorization": f"Bearer {token}"}
-    )
+    old_response = client.get("/profile/summary", headers={"Authorization": f"Bearer {token}"})
     assert old_response.status_code == 401
 
-    profile_response = client.get(
-        "/profile/summary", headers={"Authorization": f"Bearer {new_token}"}
-    )
+    profile_response = client.get("/profile/summary", headers={"Authorization": f"Bearer {new_token}"})
     assert profile_response.status_code == 200

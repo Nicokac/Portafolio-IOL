@@ -1,17 +1,12 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
-
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-import logging
 
 import application.predictive_service as predictive_service
 from application.predictive_core.state import PredictiveCacheState
@@ -21,6 +16,10 @@ from application.predictive_service import (
     predict_sector_performance,
 )
 from shared.settings import PREDICTIVE_TTL_HOURS
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 @pytest.fixture()
@@ -69,7 +68,9 @@ def _last_cache_entry(cache: DummyCache) -> tuple[str, float | None]:
     return last_key, cache.ttl[last_key]
 
 
-def test_predict_sector_performance_aggregates_correlations(cache_state: PredictiveCacheState) -> None:
+def test_predict_sector_performance_aggregates_correlations(
+    cache_state: PredictiveCacheState,
+) -> None:
     returns_a = pd.Series([0.01, 0.012, 0.014, 0.015])
     returns_b = pd.Series([0.009, 0.011, 0.013, 0.014])
     returns_c = pd.Series([0.004, 0.006, 0.007, 0.008])
@@ -115,7 +116,9 @@ def test_predict_sector_performance_aggregates_correlations(cache_state: Predict
     assert "AAA" in cache_key and "CCC" in cache_key
 
 
-def test_predict_sector_performance_uses_cache_and_stats(cache_state: PredictiveCacheState) -> None:
+def test_predict_sector_performance_uses_cache_and_stats(
+    cache_state: PredictiveCacheState,
+) -> None:
     returns = pd.Series([0.01, 0.011, 0.012, 0.014])
     data = {"AAA": _make_backtest(returns)}
     service = DummyBacktestingService(data)
@@ -155,14 +158,18 @@ def test_predict_sector_performance_uses_cache_and_stats(cache_state: Predictive
     assert cache_state.hits == 1
 
 
-def test_predict_sector_performance_accepts_custom_ttl(cache_state: PredictiveCacheState) -> None:
+def test_predict_sector_performance_accepts_custom_ttl(
+    cache_state: PredictiveCacheState,
+) -> None:
     returns = pd.Series([0.01, 0.012, 0.013])
     data = {"AAA": _make_backtest(returns)}
     service = DummyBacktestingService(data)
     cache = DummyCache()
-    opportunities = pd.DataFrame([
-        {"symbol": "AAA", "sector": "Technology"},
-    ])
+    opportunities = pd.DataFrame(
+        [
+            {"symbol": "AAA", "sector": "Technology"},
+        ]
+    )
 
     predict_sector_performance(
         opportunities,
@@ -186,9 +193,11 @@ def test_predictive_ttl_respects_monkeypatch(monkeypatch, cache_state: Predictiv
     data = {"AAA": _make_backtest(returns)}
     service = DummyBacktestingService(data)
     cache = DummyCache()
-    opportunities = pd.DataFrame([
-        {"symbol": "AAA", "sector": "Finance"},
-    ])
+    opportunities = pd.DataFrame(
+        [
+            {"symbol": "AAA", "sector": "Finance"},
+        ]
+    )
 
     predict_sector_performance(
         opportunities,
@@ -244,7 +253,9 @@ def test_build_adaptive_history_real_mode_uses_cache() -> None:
     assert len(service.calls) == 2
 
 
-def test_build_adaptive_history_synthetic_clips_and_warns(caplog: pytest.LogCaptureFixture) -> None:
+def test_build_adaptive_history_synthetic_clips_and_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     recommendations = pd.DataFrame(
         [
             {"symbol": "AAA", "sector": "Tech", "predicted_return_pct": 0.75},

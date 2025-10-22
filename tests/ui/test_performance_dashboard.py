@@ -111,7 +111,9 @@ def _collect_metric_records(streamlit_stub) -> List[dict]:
     return records
 
 
-def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard) -> None:
+def test_performance_dashboard_renders_metrics(
+    monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard
+) -> None:
     entries = _sample_entries()
     streamlit_stub.reset()
     monkeypatch.setattr(performance_dashboard, "read_recent_entries", lambda limit=200: entries)
@@ -141,9 +143,7 @@ def test_performance_dashboard_renders_metrics(monkeypatch: pytest.MonkeyPatch, 
     metric_records = _collect_metric_records(streamlit_stub)
     assert metric_records
     assert any(record["label"] == "Duración última (s)" for record in metric_records)
-    duration_metric = next(
-        record for record in metric_records if record["label"] == "Duración última (s)"
-    )
+    duration_metric = next(record for record in metric_records if record["label"] == "Duración última (s)")
     assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_POSITIVE)
 
     ui_total_metric = next(
@@ -184,15 +184,10 @@ def test_performance_dashboard_historical_mode(
 
     performance_dashboard.render_performance_dashboard_tab(limit=50)
 
-    assert (
-        streamlit_stub.session_state[performance_dashboard._VIEW_MODE_STATE_KEY]
-        == "historical"
-    )
+    assert streamlit_stub.session_state[performance_dashboard._VIEW_MODE_STATE_KEY] == "historical"
 
     metric_records = _collect_metric_records(streamlit_stub)
-    duration_metric = next(
-        record for record in metric_records if record["label"] == "Duración promedio (s)"
-    )
+    duration_metric = next(record for record in metric_records if record["label"] == "Duración promedio (s)")
     assert duration_metric.get("chart_color") == list(performance_dashboard._GRADIENT_POSITIVE)
 
     sparkline_download = next(
@@ -205,14 +200,22 @@ def test_performance_dashboard_historical_mode(
     assert "historical" in csv_payload
 
 
-def test_performance_dashboard_keyword_filter(monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard) -> None:
+def test_performance_dashboard_keyword_filter(
+    monkeypatch: pytest.MonkeyPatch, streamlit_stub, performance_dashboard
+) -> None:
     entries = _sample_entries()
     streamlit_stub.reset()
     monkeypatch.setattr(performance_dashboard, "read_recent_entries", lambda limit=200: entries)
 
     original_text_input = streamlit_stub.text_input
 
-    def fake_text_input(label: str, *, key: str | None = None, value: str | None = None, help: str | None = None) -> str:
+    def fake_text_input(
+        label: str,
+        *,
+        key: str | None = None,
+        value: str | None = None,
+        help: str | None = None,
+    ) -> str:
         return original_text_input(label, key=key, value="spike", help=help)
 
     monkeypatch.setattr(streamlit_stub, "text_input", fake_text_input, raising=False)

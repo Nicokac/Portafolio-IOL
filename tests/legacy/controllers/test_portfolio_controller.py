@@ -1,26 +1,25 @@
 import contextlib
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import ANY, MagicMock, patch
 
 import pandas as pd
 import pytest
 
-pytestmark = pytest.mark.skip(
-    reason="Legacy portfolio controller coverage is deprecated in v0.7"
-)
-
-# NOTE: Casos heredados previos a la refactorización de `tests/controllers/`.
-# Se conservan aquí para comparaciones manuales hasta completar la migración
-# definitiva del controlador de portafolio.
+from application.portfolio_service import calculate_totals
 from controllers.portfolio import (
     PortfolioMetrics,
     PortfolioViewModel,
     get_portfolio_tabs,
     render_portfolio_section,
 )
-from application.portfolio_service import calculate_totals
 from domain.models import Controls
 from services.portfolio_view import PortfolioContributionMetrics
+
+pytestmark = pytest.mark.skip(reason="Legacy portfolio controller coverage is deprecated in v0.7")
+
+# NOTE: Casos heredados previos a la refactorización de `tests/controllers/`.
+# Se conservan aquí para comparaciones manuales hasta completar la migración
+# definitiva del controlador de portafolio.
 
 
 def _make_viewmodel(df: pd.DataFrame, controls: Controls, all_symbols=None, ccl_rate=None):
@@ -54,9 +53,7 @@ def _make_snapshot(vm: PortfolioViewModel, *, apply_elapsed: float = 0.0, totals
 
 def _notifications_stub() -> SimpleNamespace:
     return SimpleNamespace(
-        get_flags=lambda: SimpleNamespace(
-            risk_alert=False, technical_signal=False, upcoming_earnings=False
-        )
+        get_flags=lambda: SimpleNamespace(risk_alert=False, technical_signal=False, upcoming_earnings=False)
     )
 
 
@@ -67,30 +64,35 @@ def test_render_portfolio_section_returns_refresh_secs_and_handles_empty():
     mock_st.session_state = {}
     mock_st.radio.return_value = 0
 
-    empty_df = pd.DataFrame(columns=['simbolo'])
+    empty_df = pd.DataFrame(columns=["simbolo"])
     controls = Controls(refresh_secs=55)
     vm = _make_viewmodel(empty_df, controls, all_symbols=[])
 
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.charts.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService'), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch(
-             'controllers.portfolio.portfolio.get_notifications_service',
-             return_value=_notifications_stub(),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
-         patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'):
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.charts.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService"),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(pd.DataFrame(), [], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch(
+            "controllers.portfolio.portfolio.get_notifications_service",
+            return_value=_notifications_stub(),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch("controllers.portfolio.portfolio.render_advanced_analysis"),
+        patch("controllers.portfolio.portfolio.render_risk_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis"),
+    ):
         refresh = render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     assert refresh == 55
@@ -107,36 +109,41 @@ def test_ta_section_without_symbols_shows_message():
     vm = _make_viewmodel(pd.DataFrame(), controls, all_symbols=[])
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService'), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(pd.DataFrame(), [], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch(
-             'controllers.portfolio.portfolio.get_notifications_service',
-             return_value=_notifications_stub(),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.render_basic_section'), \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
-         patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'):
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService"),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(pd.DataFrame(), [], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch(
+            "controllers.portfolio.portfolio.get_notifications_service",
+            return_value=_notifications_stub(),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch("controllers.portfolio.portfolio.render_basic_section"),
+        patch("controllers.portfolio.portfolio.render_advanced_analysis"),
+        patch("controllers.portfolio.portfolio.render_risk_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis"),
+    ):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.info.assert_any_call("No hay símbolos en el portafolio para analizar.")
 
 
 @pytest.mark.parametrize(
-    'tab_idx,func_name',
+    "tab_idx,func_name",
     [
-        (0, 'render_basic_section'),
-        (1, 'render_advanced_analysis'),
-        (2, 'render_risk_analysis'),
-        (3, 'render_fundamental_analysis'),
+        (0, "render_basic_section"),
+        (1, "render_advanced_analysis"),
+        (2, "render_risk_analysis"),
+        (3, "render_fundamental_analysis"),
     ],
 )
 def test_tabs_render_expected_sections(tab_idx, func_name):
@@ -146,37 +153,42 @@ def test_tabs_render_expected_sections(tab_idx, func_name):
     mock_st.session_state = {}
     mock_st.radio.return_value = tab_idx
 
-    df = pd.DataFrame({'simbolo': ['AAA']})
+    df = pd.DataFrame({"simbolo": ["AAA"]})
     controls = Controls(refresh_secs=0)
-    vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    vm = _make_viewmodel(df, controls, all_symbols=["AAA"])
 
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService'), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch(
-             'controllers.portfolio.portfolio.get_notifications_service',
-             return_value=_notifications_stub(),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.render_basic_section') as basic, \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis') as adv, \
-         patch('controllers.portfolio.portfolio.render_risk_analysis') as risk, \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis') as fund:
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService"),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(df, ["AAA"], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch(
+            "controllers.portfolio.portfolio.get_notifications_service",
+            return_value=_notifications_stub(),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch("controllers.portfolio.portfolio.render_basic_section") as basic,
+        patch("controllers.portfolio.portfolio.render_advanced_analysis") as adv,
+        patch("controllers.portfolio.portfolio.render_risk_analysis") as risk,
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis") as fund,
+    ):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     calls = {
-        'render_basic_section': basic,
-        'render_advanced_analysis': adv,
-        'render_risk_analysis': risk,
-        'render_fundamental_analysis': fund,
+        "render_basic_section": basic,
+        "render_advanced_analysis": adv,
+        "render_risk_analysis": risk,
+        "render_fundamental_analysis": fund,
     }
     for name, fn in calls.items():
         if name == func_name:
@@ -191,32 +203,40 @@ def test_ta_section_symbol_without_us_ticker():
     mock_st = MagicMock()
     mock_st.session_state = {}
     mock_st.radio.return_value = 4
-    mock_st.selectbox.return_value = 'AAA'
+    mock_st.selectbox.return_value = "AAA"
     mock_st.columns.return_value = [MagicMock(), MagicMock(), MagicMock()]
 
-    df = pd.DataFrame({'simbolo': ['AAA']})
+    df = pd.DataFrame({"simbolo": ["AAA"]})
     controls = Controls(refresh_secs=0)
-    vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    vm = _make_viewmodel(df, controls, all_symbols=["AAA"])
 
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService'), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.map_to_us_ticker', side_effect=ValueError('invalid')), \
-         patch('controllers.portfolio.portfolio.render_basic_section'), \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
-         patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
-         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
-         patch('controllers.portfolio.portfolio.render_favorite_badges'):
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService"),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(df, ["AAA"], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch(
+            "controllers.portfolio.portfolio.map_to_us_ticker",
+            side_effect=ValueError("invalid"),
+        ),
+        patch("controllers.portfolio.portfolio.render_basic_section"),
+        patch("controllers.portfolio.portfolio.render_advanced_analysis"),
+        patch("controllers.portfolio.portfolio.render_risk_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis"),
+        patch("controllers.portfolio.portfolio.render_favorite_toggle"),
+        patch("controllers.portfolio.portfolio.render_favorite_badges"),
+    ):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
     mock_st.info.assert_any_call("No se encontró ticker US para este activo.")
@@ -227,7 +247,7 @@ def _mock_columns(seq):
     for n in seq:
         col = MagicMock()
         col.number_input.return_value = 1
-        col.selectbox.return_value = 'X'
+        col.selectbox.return_value = "X"
         cols.append(col)
     return cols
 
@@ -238,7 +258,7 @@ def test_ta_section_symbol_with_empty_df():
     mock_st = MagicMock()
     mock_st.session_state = {}
     mock_st.radio.return_value = 4
-    mock_st.selectbox.side_effect = ['AAA', '3mo', '1d', 'SMA']
+    mock_st.selectbox.side_effect = ["AAA", "3mo", "1d", "SMA"]
     mock_st.number_input.return_value = 1
     mock_st.columns.side_effect = [
         _mock_columns(range(4)),
@@ -248,38 +268,41 @@ def test_ta_section_symbol_with_empty_df():
     ]
     mock_st.expander.return_value.__enter__.return_value = MagicMock()
 
-    df = pd.DataFrame({'simbolo': ['AAA']})
+    df = pd.DataFrame({"simbolo": ["AAA"]})
     mock_tasvc = MagicMock()
     mock_tasvc.fundamentals.return_value = {}
     mock_tasvc.indicators_for.return_value = pd.DataFrame()
     controls = Controls(refresh_secs=0)
-    vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    vm = _make_viewmodel(df, controls, all_symbols=["AAA"])
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService', return_value=mock_tasvc), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
-         patch('controllers.portfolio.portfolio.render_basic_section'), \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
-         patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_data'), \
-         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart'), \
-         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
-         patch('controllers.portfolio.portfolio.render_favorite_badges'):
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService", return_value=mock_tasvc),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(df, ["AAA"], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch("controllers.portfolio.portfolio.map_to_us_ticker", return_value="AA"),
+        patch("controllers.portfolio.portfolio.render_basic_section"),
+        patch("controllers.portfolio.portfolio.render_advanced_analysis"),
+        patch("controllers.portfolio.portfolio.render_risk_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_data"),
+        patch("controllers.portfolio.portfolio.plot_technical_analysis_chart"),
+        patch("controllers.portfolio.portfolio.render_favorite_toggle"),
+        patch("controllers.portfolio.portfolio.render_favorite_badges"),
+    ):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
-    mock_st.info.assert_any_call(
-        "No se pudo descargar histórico para ese símbolo/periodo/intervalo."
-    )
+    mock_st.info.assert_any_call("No se pudo descargar histórico para ese símbolo/periodo/intervalo.")
 
 
 def test_ta_section_symbol_with_data():
@@ -288,7 +311,7 @@ def test_ta_section_symbol_with_data():
     mock_st = MagicMock()
     mock_st.session_state = {}
     mock_st.radio.return_value = 4
-    mock_st.selectbox.side_effect = ['AAA', '3mo', '1d', 'SMA']
+    mock_st.selectbox.side_effect = ["AAA", "3mo", "1d", "SMA"]
     mock_st.number_input.return_value = 1
     mock_st.columns.side_effect = [
         _mock_columns(range(4)),
@@ -298,38 +321,44 @@ def test_ta_section_symbol_with_data():
     ]
     mock_st.expander.return_value.__enter__.return_value = MagicMock()
 
-    df = pd.DataFrame({'simbolo': ['AAA']})
-    df_ind = pd.DataFrame({'close': [1, 2]})
+    df = pd.DataFrame({"simbolo": ["AAA"]})
+    df_ind = pd.DataFrame({"close": [1, 2]})
     mock_tasvc = MagicMock()
     mock_tasvc.fundamentals.return_value = {}
     mock_tasvc.indicators_for.return_value = df_ind
     mock_tasvc.alerts_for.return_value = []
-    mock_tasvc.backtest.return_value = pd.DataFrame({'equity': [1.0, 1.1]})
+    mock_tasvc.backtest.return_value = pd.DataFrame({"equity": [1.0, 1.1]})
     controls = Controls(refresh_secs=0)
-    vm = _make_viewmodel(df, controls, all_symbols=['AAA'])
+    vm = _make_viewmodel(df, controls, all_symbols=["AAA"])
     snapshot = _make_snapshot(vm)
 
-    with patch('controllers.portfolio.portfolio.st', mock_st), \
-         patch('controllers.portfolio.portfolio.PortfolioService'), \
-         patch('controllers.portfolio.portfolio.TAService', return_value=mock_tasvc), \
-         patch('controllers.portfolio.portfolio.load_portfolio_data', return_value=(df, ['AAA'], [])), \
-         patch('controllers.portfolio.portfolio.render_sidebar', return_value=controls), \
-         patch(
-             'controllers.portfolio.portfolio.get_portfolio_view_service',
-             return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
-         ), \
-         patch('controllers.portfolio.portfolio.build_portfolio_viewmodel', return_value=vm), \
-         patch('controllers.portfolio.portfolio.map_to_us_ticker', return_value='AA'), \
-         patch('controllers.portfolio.portfolio.render_basic_section'), \
-         patch('controllers.portfolio.portfolio.render_advanced_analysis'), \
-         patch('controllers.portfolio.portfolio.render_risk_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_analysis'), \
-         patch('controllers.portfolio.portfolio.render_fundamental_data'), \
-         patch('controllers.portfolio.portfolio.plot_technical_analysis_chart', return_value='fig'), \
-         patch('controllers.portfolio.portfolio.render_favorite_toggle'), \
-         patch('controllers.portfolio.portfolio.render_favorite_badges'):
+    with (
+        patch("controllers.portfolio.portfolio.st", mock_st),
+        patch("controllers.portfolio.portfolio.PortfolioService"),
+        patch("controllers.portfolio.portfolio.TAService", return_value=mock_tasvc),
+        patch(
+            "controllers.portfolio.portfolio.load_portfolio_data",
+            return_value=(df, ["AAA"], []),
+        ),
+        patch("controllers.portfolio.portfolio.render_sidebar", return_value=controls),
+        patch(
+            "controllers.portfolio.portfolio.get_portfolio_view_service",
+            return_value=SimpleNamespace(get_portfolio_view=lambda **_: snapshot),
+        ),
+        patch("controllers.portfolio.portfolio.build_portfolio_viewmodel", return_value=vm),
+        patch("controllers.portfolio.portfolio.map_to_us_ticker", return_value="AA"),
+        patch("controllers.portfolio.portfolio.render_basic_section"),
+        patch("controllers.portfolio.portfolio.render_advanced_analysis"),
+        patch("controllers.portfolio.portfolio.render_risk_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_analysis"),
+        patch("controllers.portfolio.portfolio.render_fundamental_data"),
+        patch(
+            "controllers.portfolio.portfolio.plot_technical_analysis_chart",
+            return_value="fig",
+        ),
+        patch("controllers.portfolio.portfolio.render_favorite_toggle"),
+        patch("controllers.portfolio.portfolio.render_favorite_badges"),
+    ):
         render_portfolio_section(container, cli=mock_cli, fx_rates={})
 
-    mock_st.plotly_chart.assert_called_once_with(
-        'fig', width="stretch", key='ta_chart', config=ANY
-    )
+    mock_st.plotly_chart.assert_called_once_with("fig", width="stretch", key="ta_chart", config=ANY)

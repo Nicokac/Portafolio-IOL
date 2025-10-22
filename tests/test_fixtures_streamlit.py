@@ -25,7 +25,10 @@ def test_logging_mixin_records_spinner_and_messages() -> None:
     fake.error("boom")
 
     assert fake.spinner_messages == ["loading portfolio"]
-    assert fake.spinner_events == [("start", "loading portfolio"), ("stop", "loading portfolio")]
+    assert fake.spinner_events == [
+        ("start", "loading portfolio"),
+        ("stop", "loading portfolio"),
+    ]
     assert fake.messages == [
         ("info", "warming up"),
         ("warning", "almost ready"),

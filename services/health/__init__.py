@@ -1,36 +1,29 @@
 from __future__ import annotations
 
-"""Helpers to capture health metrics and expose them via ``st.session_state``."""
-
-from collections import deque
 import logging
 import math
-from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 import time
+from collections import deque
+from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 
 from .constants import (
     _ACTIVE_SESSIONS_KEY,
     _ADAPTER_FALLBACK_KEY,
     _DEPENDENCIES_KEY,
     _DIAGNOSTICS_SNAPSHOT_KEY,
-    _ENVIRONMENT_SNAPSHOT_KEY,
-    _FX_API_HISTORY_LIMIT,
-    _FX_CACHE_HISTORY_LIMIT,
-    _HEALTH_KEY,
     _LAST_HTTP_ERROR_KEY,
     _LATENCY_FAST_THRESHOLD_MS,
     _LATENCY_MEDIUM_THRESHOLD_MS,
     _LOGIN_TO_RENDER_STATS_KEY,
     _MARKET_DATA_INCIDENT_LIMIT,
     _MARKET_DATA_INCIDENTS_KEY,
-    _PORTFOLIO_HISTORY_LIMIT,
     _PROVIDER_HISTORY_LIMIT,
     _PROVIDER_LABELS,
     _QUOTE_HISTORY_LIMIT,
     _QUOTE_PROVIDER_HISTORY_LIMIT,
     _QUOTE_RATE_LIMIT_KEY,
-    _RISK_INCIDENTS_KEY,
     _RISK_INCIDENT_HISTORY_LIMIT,
+    _RISK_INCIDENTS_KEY,
     _SESSION_MONITORING_KEY,
     _SESSION_MONITORING_TTL_SECONDS,
     _SNAPSHOT_EVENT_KEY,
@@ -45,46 +38,36 @@ from .metrics_fx import (
 from .metrics_portfolio import (
     portfolio_metrics_snapshot,
     record_portfolio_load,
+)
+from .metrics_portfolio import (
     summarize_portfolio_stats as _summarize_portfolio_stats,
 )
 from .session_adapter import (
-    ensure_session_monitoring_store as _ensure_session_monitoring_store,
     get_store as _store,
+)
+from .session_adapter import (
     record_http_error,
     record_login_to_render,
     record_session_started,
-    st,
 )
 from .snapshots import (
     record_environment_snapshot,
     record_snapshot_event,
-    snapshot_event_summary,
 )
 from .telemetry import log_analysis_event as _log_analysis_event
 from .utils import (
-    _as_optional_float,
-    _as_optional_int,
     _clean_detail,
-    _compute_ratio_map,
-    _ensure_event_history,
-    _ensure_history_deque,
-    _ensure_latency_history,
-    _ensure_sequence,
-    _merge_entry,
     _normalize_backend_details,
-    _normalize_counter_map,
-    _normalize_environment_snapshot,
     _normalize_metadata,
     _serialize_event_history,
     _summarize_metric_block,
 )
 
+"""Helpers to capture health metrics and expose them via ``st.session_state``."""
+
 
 logger = logging.getLogger(__name__)
 analysis_logger = logging.getLogger("analysis")
-
-
- 
 
 
 def _normalize_diagnostics_snapshot_entry(
@@ -125,9 +108,7 @@ def _normalize_diagnostics_snapshot_entry(
             normalized_snapshot["message"] = message_text
 
     checks_raw = result.get("checks")
-    if isinstance(checks_raw, Iterable) and not isinstance(
-        checks_raw, (str, bytes, bytearray)
-    ):
+    if isinstance(checks_raw, Iterable) and not isinstance(checks_raw, (str, bytes, bytearray)):
         checks: list[Dict[str, Any]] = []
         for item in checks_raw:
             if not isinstance(item, Mapping):
@@ -293,9 +274,7 @@ def _ensure_history_deque(raw_history: Any, *, limit: int) -> Deque[Dict[str, An
         return raw_history
 
     history: Deque[Dict[str, Any]] = deque(maxlen=limit)
-    if isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
+    if isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
         for entry in raw_history:
             normalized = _normalize_provider_event(entry)
             if normalized is not None:
@@ -310,9 +289,7 @@ def _ensure_latency_history(raw_history: Any, *, limit: int) -> Deque[float]:
         return raw_history
 
     history: Deque[float] = deque(maxlen=limit)
-    if isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
+    if isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
         for value in raw_history:
             numeric = _as_optional_float(value)
             if numeric is None:
@@ -328,9 +305,7 @@ def _ensure_event_history(raw_history: Any, *, limit: int) -> Deque[Dict[str, An
         return raw_history
 
     history: Deque[Dict[str, Any]] = deque(maxlen=limit)
-    if isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
+    if isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
         for entry in raw_history:
             if isinstance(entry, Mapping):
                 history.append(dict(entry))
@@ -530,9 +505,7 @@ def record_risk_incident(
     raw_categories = risk_data.get("by_category")
     if isinstance(raw_categories, Mapping):
         categories: Dict[str, Any] = {
-            str(key): dict(value)
-            for key, value in raw_categories.items()
-            if isinstance(value, Mapping)
+            str(key): dict(value) for key, value in raw_categories.items() if isinstance(value, Mapping)
         }
     else:
         categories = {}
@@ -551,24 +524,18 @@ def record_risk_incident(
     if fallback_flag:
         category_fallback += 1
     category_stats["fallback_count"] = category_fallback
-    category_stats["fallback_ratio"] = (
-        category_fallback / category_total if category_total else 0.0
-    )
+    category_stats["fallback_ratio"] = category_fallback / category_total if category_total else 0.0
 
     severity_counts_raw = category_stats.get("severity_counts")
     if isinstance(severity_counts_raw, Mapping):
         severity_counts = {
-            str(key): int(value)
-            for key, value in severity_counts_raw.items()
-            if _as_optional_int(value) is not None
+            str(key): int(value) for key, value in severity_counts_raw.items() if _as_optional_int(value) is not None
         }
     else:
         severity_counts = {}
     severity_counts[severity_key] = int(severity_counts.get(severity_key, 0)) + 1
     category_stats["severity_counts"] = severity_counts
-    category_stats["severity_ratios"] = _compute_ratio_map(
-        severity_counts, category_total
-    )
+    category_stats["severity_ratios"] = _compute_ratio_map(severity_counts, category_total)
 
     category_stats["last_severity"] = severity_key
     category_stats["last_ts"] = now
@@ -587,9 +554,7 @@ def record_risk_incident(
     raw_severities = risk_data.get("by_severity")
     if isinstance(raw_severities, Mapping):
         severities: Dict[str, Any] = {
-            str(key): dict(value)
-            for key, value in raw_severities.items()
-            if isinstance(value, Mapping)
+            str(key): dict(value) for key, value in raw_severities.items() if isinstance(value, Mapping)
         }
     else:
         severities = {}
@@ -608,9 +573,7 @@ def record_risk_incident(
     if fallback_flag:
         severity_fallback += 1
     severity_stats["fallback_count"] = severity_fallback
-    severity_stats["fallback_ratio"] = (
-        severity_fallback / severity_total if severity_total else 0.0
-    )
+    severity_stats["fallback_ratio"] = severity_fallback / severity_total if severity_total else 0.0
 
     categories_by_severity_raw = severity_stats.get("categories")
     if isinstance(categories_by_severity_raw, Mapping):
@@ -621,13 +584,9 @@ def record_risk_incident(
         }
     else:
         categories_by_severity = {}
-    categories_by_severity[category_text] = (
-        int(categories_by_severity.get(category_text, 0)) + 1
-    )
+    categories_by_severity[category_text] = int(categories_by_severity.get(category_text, 0)) + 1
     severity_stats["categories"] = categories_by_severity
-    severity_stats["category_ratios"] = _compute_ratio_map(
-        categories_by_severity, severity_total
-    )
+    severity_stats["category_ratios"] = _compute_ratio_map(categories_by_severity, severity_total)
     severity_stats["last_ts"] = now
     severity_stats["last_category"] = category_text
 
@@ -640,9 +599,7 @@ def record_risk_incident(
     raw_latest_by_category = risk_data.get("latest_by_category")
     if isinstance(raw_latest_by_category, Mapping):
         latest_by_category: Dict[str, Any] = {
-            str(key): dict(value)
-            for key, value in raw_latest_by_category.items()
-            if isinstance(value, Mapping)
+            str(key): dict(value) for key, value in raw_latest_by_category.items() if isinstance(value, Mapping)
         }
     else:
         latest_by_category = {}
@@ -652,9 +609,7 @@ def record_risk_incident(
     history_raw = risk_data.get("history")
     if isinstance(history_raw, deque):
         history = history_raw
-    elif isinstance(history_raw, Iterable) and not isinstance(
-        history_raw, (str, bytes, bytearray)
-    ):
+    elif isinstance(history_raw, Iterable) and not isinstance(history_raw, (str, bytes, bytearray)):
         history = deque(history_raw, maxlen=_RISK_INCIDENT_HISTORY_LIMIT)
     else:
         history = deque(maxlen=_RISK_INCIDENT_HISTORY_LIMIT)
@@ -763,15 +718,9 @@ def record_macro_api_usage(
                 providers[key] = dict(value)
 
     def _update_provider_stats(entry: Mapping[str, Any]) -> None:
-        provider_key = str(
-            entry.get("provider_key") or entry.get("provider") or "unknown"
-        ).casefold()
-        provider_label = str(
-            entry.get("provider_label") or entry.get("label") or provider_key
-        ).strip() or provider_key
-        status_value = str(
-            entry.get("status_normalized") or entry.get("status") or "unknown"
-        ).casefold() or "unknown"
+        provider_key = str(entry.get("provider_key") or entry.get("provider") or "unknown").casefold()
+        provider_label = str(entry.get("provider_label") or entry.get("label") or provider_key).strip() or provider_key
+        status_value = str(entry.get("status_normalized") or entry.get("status") or "unknown").casefold() or "unknown"
         elapsed_value = _as_optional_float(entry.get("elapsed_ms"))
         fallback_flag = bool(entry.get("fallback"))
         detail_value = _clean_detail(entry.get("detail"))
@@ -814,21 +763,15 @@ def record_macro_api_usage(
         _increment_latency_bucket(provider_stats, "latency", elapsed_value)
 
         if fallback_flag:
-            provider_stats["fallback_count"] = int(
-                provider_stats.get("fallback_count", 0) or 0
-            ) + 1
+            provider_stats["fallback_count"] = int(provider_stats.get("fallback_count", 0) or 0) + 1
 
         if status_value == "error":
-            provider_stats["error_count"] = int(
-                provider_stats.get("error_count", 0) or 0
-            ) + 1
+            provider_stats["error_count"] = int(provider_stats.get("error_count", 0) or 0) + 1
 
         history_raw = provider_stats.get("history")
         if isinstance(history_raw, deque):
             history = deque(history_raw, maxlen=_PROVIDER_HISTORY_LIMIT)
-        elif isinstance(history_raw, Iterable) and not isinstance(
-            history_raw, (bytes, bytearray, str)
-        ):
+        elif isinstance(history_raw, Iterable) and not isinstance(history_raw, (bytes, bytearray, str)):
             history = deque(history_raw, maxlen=_PROVIDER_HISTORY_LIMIT)
         else:
             history = deque(maxlen=_PROVIDER_HISTORY_LIMIT)
@@ -847,9 +790,7 @@ def record_macro_api_usage(
 
         total = int(provider_stats.get("total", 0) or 0)
         provider_stats["count"] = total
-        provider_stats["status_counts"] = {
-            str(key): int(value) for key, value in status_counts.items()
-        }
+        provider_stats["status_counts"] = {str(key): int(value) for key, value in status_counts.items()}
         provider_stats["status_ratios"] = _compute_ratio_map(status_counts, total)
 
         error_total = int(provider_stats.get("error_count", 0) or 0)
@@ -920,9 +861,7 @@ def record_tab_latency(
     numeric_latency = _as_optional_float(elapsed_ms)
     if numeric_latency is not None and math.isfinite(numeric_latency):
         value = float(numeric_latency)
-        history = _ensure_latency_history(
-            stats.get("history"), limit=_TAB_LATENCY_HISTORY_LIMIT
-        )
+        history = _ensure_latency_history(stats.get("history"), limit=_TAB_LATENCY_HISTORY_LIMIT)
         history.append(value)
         stats["history"] = history
         stats["count"] = int(stats.get("count", 0) or 0) + 1
@@ -1015,9 +954,8 @@ def record_adapter_fallback(
     adapters[adapter_key] = entry
     store[_ADAPTER_FALLBACK_KEY] = adapters
 
-def record_quote_load(
-    elapsed_ms: Optional[float], *, source: str, count: Optional[int] = None
-) -> None:
+
+def record_quote_load(elapsed_ms: Optional[float], *, source: str, count: Optional[int] = None) -> None:
     """Persist response time and source for the latest quote load."""
 
     store = _store()
@@ -1085,16 +1023,12 @@ def record_quote_load(
         value = float(numeric_latency)
         stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
         stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
-        stats["latency_sum_sq"] = (
-            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
-        )
+        stats["latency_sum_sq"] = float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
         current_min = _as_optional_float(stats.get("latency_min"))
         stats["latency_min"] = value if current_min is None else min(current_min, value)
         current_max = _as_optional_float(stats.get("latency_max"))
         stats["latency_max"] = value if current_max is None else max(current_max, value)
-        latency_history = _ensure_latency_history(
-            stats.get("latency_history"), limit=_QUOTE_HISTORY_LIMIT
-        )
+        latency_history = _ensure_latency_history(stats.get("latency_history"), limit=_QUOTE_HISTORY_LIMIT)
         latency_history.append(value)
         stats["latency_history"] = latency_history
         stats["last_elapsed_ms"] = value
@@ -1105,20 +1039,12 @@ def record_quote_load(
         count_value = float(numeric_count)
         stats["batch_count"] = int(stats.get("batch_count", 0) or 0) + 1
         stats["batch_sum"] = float(stats.get("batch_sum", 0.0) or 0.0) + count_value
-        stats["batch_sum_sq"] = (
-            float(stats.get("batch_sum_sq", 0.0) or 0.0) + count_value * count_value
-        )
+        stats["batch_sum_sq"] = float(stats.get("batch_sum_sq", 0.0) or 0.0) + count_value * count_value
         current_min = _as_optional_float(stats.get("batch_min"))
-        stats["batch_min"] = (
-            count_value if current_min is None else min(current_min, count_value)
-        )
+        stats["batch_min"] = count_value if current_min is None else min(current_min, count_value)
         current_max = _as_optional_float(stats.get("batch_max"))
-        stats["batch_max"] = (
-            count_value if current_max is None else max(current_max, count_value)
-        )
-        batch_history = _ensure_latency_history(
-            stats.get("batch_history"), limit=_QUOTE_HISTORY_LIMIT
-        )
+        stats["batch_max"] = count_value if current_max is None else max(current_max, count_value)
+        batch_history = _ensure_latency_history(stats.get("batch_history"), limit=_QUOTE_HISTORY_LIMIT)
         batch_history.append(count_value)
         stats["batch_history"] = batch_history
         stats["last_count"] = int(numeric_count)
@@ -1129,9 +1055,7 @@ def record_quote_load(
     stats["last_ts"] = now
 
     latest_event = dict(summary)
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_QUOTE_HISTORY_LIMIT
-    )
+    event_history = _ensure_event_history(stats.get("event_history"), limit=_QUOTE_HISTORY_LIMIT)
     event_history.append(latest_event)
     stats["event_history"] = event_history
 
@@ -1290,12 +1214,7 @@ def _normalize_provider_event(entry: Any) -> Optional[Dict[str, Any]]:
     provider_raw = entry.get("provider") or entry.get("source") or "unknown"
     provider_text = str(provider_raw or "unknown").strip() or "unknown"
 
-    result_raw = (
-        entry.get("result")
-        or entry.get("status")
-        or entry.get("latest_result")
-        or entry.get("mode")
-    )
+    result_raw = entry.get("result") or entry.get("status") or entry.get("latest_result") or entry.get("mode")
     result_text = str(result_raw).strip() if result_raw is not None else None
 
     fallback_raw = entry.get("fallback")
@@ -1343,11 +1262,7 @@ def _summarize_diagnostics(raw_entry: Any, *, now: Optional[float] = None) -> Di
     snapshot_raw = raw_entry.get("snapshot")
     snapshot: Dict[str, Any] = {}
     if isinstance(snapshot_raw, Mapping):
-        snapshot = {
-            str(key): value
-            for key, value in snapshot_raw.items()
-            if str(key or "").strip()
-        }
+        snapshot = {str(key): value for key, value in snapshot_raw.items() if str(key or "").strip()}
 
     latest: Dict[str, Any] = {}
     if snapshot:
@@ -1374,7 +1289,14 @@ def _summarize_dependencies(raw_entry: Any) -> Dict[str, Any]:
         return {}
 
     items: Dict[str, Any] = {}
-    status_priority = {"critical": 3, "error": 3, "warning": 2, "degraded": 2, "ok": 1, "success": 1}
+    status_priority = {
+        "critical": 3,
+        "error": 3,
+        "warning": 2,
+        "degraded": 2,
+        "ok": 1,
+        "success": 1,
+    }
     overall_status = "unknown"
     overall_score = -1
 
@@ -1424,9 +1346,7 @@ def _summarize_dependencies(raw_entry: Any) -> Dict[str, Any]:
     return summary
 
 
-def _summarize_session_monitoring(
-    raw_monitoring: Any, *, now: Optional[float] = None
-) -> Dict[str, Any]:
+def _summarize_session_monitoring(raw_monitoring: Any, *, now: Optional[float] = None) -> Dict[str, Any]:
     if not isinstance(raw_monitoring, Mapping):
         return {}
 
@@ -1441,17 +1361,11 @@ def _summarize_session_monitoring(
         for key, value in active_raw.items():
             if not isinstance(value, Mapping):
                 continue
-            entry: Dict[str, Any] = {
-                "session_id": str(value.get("session_id") or key)
-            }
+            entry: Dict[str, Any] = {"session_id": str(value.get("session_id") or key)}
             session_ts = _as_optional_float(value.get("ts"))
             if session_ts is not None:
                 entry["ts"] = session_ts
-                latest_session_ts = (
-                    session_ts
-                    if latest_session_ts is None
-                    else max(latest_session_ts, session_ts)
-                )
+                latest_session_ts = session_ts if latest_session_ts is None else max(latest_session_ts, session_ts)
             metadata_raw = value.get("metadata")
             if isinstance(metadata_raw, Mapping):
                 metadata = _normalize_metadata(metadata_raw)
@@ -1551,9 +1465,7 @@ def _normalize_risk_entry(entry: Any) -> Optional[Dict[str, Any]]:
 
     tags_list: Optional[list[str]] = None
     raw_tags = entry.get("tags")
-    if isinstance(raw_tags, Iterable) and not isinstance(
-        raw_tags, (str, bytes, bytearray)
-    ):
+    if isinstance(raw_tags, Iterable) and not isinstance(raw_tags, (str, bytes, bytearray)):
         collected: list[str] = []
         for tag in raw_tags:
             text = str(tag).strip()
@@ -1601,9 +1513,7 @@ def _serialize_provider_history(raw_history: Any) -> list[Dict[str, Any]]:
 
     if isinstance(raw_history, deque):
         iterable = list(raw_history)
-    elif isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
+    elif isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
         iterable = list(raw_history)
     else:
         return []
@@ -1646,11 +1556,7 @@ def _serialize_provider_metrics(raw_metrics: Any) -> Any:
     elif "latest_provider" in data:
         del data["latest_provider"]
 
-    latest_result = (
-        raw_metrics.get("latest_result")
-        or raw_metrics.get("result")
-        or raw_metrics.get("status")
-    )
+    latest_result = raw_metrics.get("latest_result") or raw_metrics.get("result") or raw_metrics.get("status")
     if isinstance(latest_result, str):
         data["latest_result"] = latest_result
     elif "latest_result" in data:
@@ -1721,9 +1627,7 @@ def _compute_ratio_map(counts: Mapping[str, Any], total: int) -> Dict[str, float
     return ratios
 
 
-def _compute_percentiles(
-    samples: Sequence[float], points: Sequence[float]
-) -> Dict[str, float]:
+def _compute_percentiles(samples: Sequence[float], points: Sequence[float]) -> Dict[str, float]:
     if not samples:
         return {}
 
@@ -1889,9 +1793,7 @@ def get_health_metrics() -> Dict[str, Any]:
                 entry["message"] = message_text
 
         checks_raw = raw_entry.get("checks")
-        if isinstance(checks_raw, Iterable) and not isinstance(
-            checks_raw, (str, bytes, bytearray)
-        ):
+        if isinstance(checks_raw, Iterable) and not isinstance(checks_raw, (str, bytes, bytearray)):
             checks: list[Dict[str, Any]] = []
             for item in checks_raw:
                 if not isinstance(item, Mapping):
@@ -1917,6 +1819,7 @@ def get_health_metrics() -> Dict[str, Any]:
                 entry["checks"] = checks
 
         return entry
+
     def _merge_entry(entry: Any, stats_summary: Dict[str, Any]) -> Any:
         if not stats_summary:
             if isinstance(entry, Mapping):
@@ -1951,9 +1854,7 @@ def get_health_metrics() -> Dict[str, Any]:
             if total_modes:
                 summary["mode_counts"] = modes
                 summary["mode_total"] = total_modes
-                summary["mode_ratios"] = {
-                    name: count / total_modes for name, count in modes.items()
-                }
+                summary["mode_ratios"] = {name: count / total_modes for name, count in modes.items()}
                 hit_count = modes.get("hit", 0)
                 summary["hit_ratio"] = hit_count / total_modes
 
@@ -2069,18 +1970,14 @@ def get_health_metrics() -> Dict[str, Any]:
             samples: list[float] = []
             if isinstance(history_raw, deque):
                 samples = [float(item) for item in history_raw]
-            elif isinstance(history_raw, Iterable) and not isinstance(
-                history_raw, (str, bytes, bytearray)
-            ):
+            elif isinstance(history_raw, Iterable) and not isinstance(history_raw, (str, bytes, bytearray)):
                 for value in history_raw:
                     numeric = _as_optional_float(value)
                     if numeric is None:
                         continue
                     samples.append(float(numeric))
 
-            percentiles = (
-                _compute_percentiles(samples, (0.5, 0.9, 0.95, 0.99)) if samples else {}
-            )
+            percentiles = _compute_percentiles(samples, (0.5, 0.9, 0.95, 0.99)) if samples else {}
 
             status_counts_raw = raw_stats.get("status_counts")
             status_counts: Dict[str, int] = {}
@@ -2116,9 +2013,7 @@ def get_health_metrics() -> Dict[str, Any]:
 
         return summary
 
-    def _summarize_quote_providers(
-        raw_providers: Any, raw_rate_limits: Any
-    ) -> Dict[str, Any]:
+    def _summarize_quote_providers(raw_providers: Any, raw_rate_limits: Any) -> Dict[str, Any]:
         if not isinstance(raw_providers, Mapping):
             return {}
 
@@ -2154,9 +2049,7 @@ def get_health_metrics() -> Dict[str, Any]:
 
             history_raw = entry.get("elapsed_history")
             latencies: list[float] = []
-            if isinstance(history_raw, Iterable) and not isinstance(
-                history_raw, (str, bytes, bytearray)
-            ):
+            if isinstance(history_raw, Iterable) and not isinstance(history_raw, (str, bytes, bytearray)):
                 for value in history_raw:
                     numeric = _as_optional_float(value)
                     if numeric is not None:
@@ -2214,9 +2107,7 @@ def get_health_metrics() -> Dict[str, Any]:
                     if last_wait is not None:
                         provider_summary["rate_limit_last_ms"] = last_wait * 1000.0
                     if wait_total and rate_count:
-                        provider_summary["rate_limit_avg_ms"] = (
-                            wait_total / rate_count
-                        ) * 1000.0
+                        provider_summary["rate_limit_avg_ms"] = (wait_total / rate_count) * 1000.0
                     last_reason = rate_entry.get("last_reason")
                     if last_reason:
                         provider_summary["rate_limit_last_reason"] = str(last_reason)
@@ -2285,9 +2176,7 @@ def get_health_metrics() -> Dict[str, Any]:
                     "label": provider_label,
                     "count": count,
                     "fallback_count": fallback_count,
-                    "fallback_ratio": (fallback_count / total_attempts)
-                    if total_attempts
-                    else 0.0,
+                    "fallback_ratio": (fallback_count / total_attempts) if total_attempts else 0.0,
                     "status_counts": status_counts,
                     "status_ratios": _compute_ratio_map(status_counts, total_attempts),
                     "latest": {
@@ -2310,9 +2199,7 @@ def get_health_metrics() -> Dict[str, Any]:
                     },
                 )
                 aggregate["count"] = int(aggregate.get("count", 0)) + count
-                aggregate["fallback_count"] = int(
-                    aggregate.get("fallback_count", 0)
-                ) + fallback_count
+                aggregate["fallback_count"] = int(aggregate.get("fallback_count", 0)) + fallback_count
 
                 agg_status = aggregate.get("status_counts")
                 if not isinstance(agg_status, dict):
@@ -2340,7 +2227,10 @@ def get_health_metrics() -> Dict[str, Any]:
                             }
 
             if providers_summary:
-                adapters[str(adapter_key)] = {"label": label, "providers": providers_summary}
+                adapters[str(adapter_key)] = {
+                    "label": label,
+                    "providers": providers_summary,
+                }
 
         for provider_key, aggregate in provider_totals.items():
             total_attempts = int(aggregate.get("count", 0))
@@ -2349,9 +2239,7 @@ def get_health_metrics() -> Dict[str, Any]:
                 status_counts = {}
             aggregate["status_ratios"] = _compute_ratio_map(status_counts, total_attempts)
             fallback_count = int(aggregate.get("fallback_count", 0))
-            aggregate["fallback_ratio"] = (
-                fallback_count / total_attempts if total_attempts else 0.0
-            )
+            aggregate["fallback_ratio"] = fallback_count / total_attempts if total_attempts else 0.0
 
         return {"adapters": adapters, "providers": provider_totals}
 
@@ -2399,9 +2287,7 @@ def get_health_metrics() -> Dict[str, Any]:
                         total_categories += numeric
                     if categories_counts:
                         entry["categories"] = categories_counts
-                        entry["category_ratios"] = _compute_ratio_map(
-                            categories_counts, total_categories
-                        )
+                        entry["category_ratios"] = _compute_ratio_map(categories_counts, total_categories)
                 last_ts = _as_optional_float(raw_stats.get("last_ts"))
                 if last_ts is not None:
                     entry["last_ts"] = last_ts
@@ -2438,9 +2324,7 @@ def get_health_metrics() -> Dict[str, Any]:
                         severity_counts[str(severity_name)] = numeric
                     if severity_counts:
                         entry["severity_counts"] = severity_counts
-                        entry["severity_ratios"] = _compute_ratio_map(
-                            severity_counts, count
-                        )
+                        entry["severity_ratios"] = _compute_ratio_map(severity_counts, count)
                 last_ts = _as_optional_float(raw_stats.get("last_ts"))
                 if last_ts is not None:
                     entry["last_ts"] = last_ts
@@ -2457,14 +2341,8 @@ def get_health_metrics() -> Dict[str, Any]:
                 if last_source:
                     entry["last_source"] = last_source
                 last_tags = raw_stats.get("last_tags")
-                if isinstance(last_tags, Iterable) and not isinstance(
-                    last_tags, (str, bytes, bytearray)
-                ):
-                    collected_tags = [
-                        str(tag).strip()
-                        for tag in last_tags
-                        if str(tag).strip()
-                    ]
+                if isinstance(last_tags, Iterable) and not isinstance(last_tags, (str, bytes, bytearray)):
+                    collected_tags = [str(tag).strip() for tag in last_tags if str(tag).strip()]
                     if collected_tags:
                         entry["last_tags"] = collected_tags
                 categories_summary[str(key)] = entry
@@ -2490,9 +2368,7 @@ def get_health_metrics() -> Dict[str, Any]:
         history_entries: list[Dict[str, Any]] = []
         if isinstance(history_raw, deque):
             iterable_history = list(history_raw)
-        elif isinstance(history_raw, Iterable) and not isinstance(
-            history_raw, (str, bytes, bytearray)
-        ):
+        elif isinstance(history_raw, Iterable) and not isinstance(history_raw, (str, bytes, bytearray)):
             iterable_history = list(history_raw)
         else:
             iterable_history = []
@@ -2553,15 +2429,11 @@ def get_health_metrics() -> Dict[str, Any]:
                             continue
                         status_key = str(status_name)
                         status_counts[status_key] = count
-                        overall_status_counts[status_key] = (
-                            overall_status_counts.get(status_key, 0) + count
-                        )
+                        overall_status_counts[status_key] = overall_status_counts.get(status_key, 0) + count
                 if status_counts:
                     provider_summary["status_counts"] = status_counts
                     provider_summary["status_ratios"] = {
-                        status: count / total_count
-                        for status, count in status_counts.items()
-                        if total_count
+                        status: count / total_count for status, count in status_counts.items() if total_count
                     }
 
                 fallback_count = _as_optional_int(raw_stats.get("fallback_count")) or 0
@@ -2577,9 +2449,7 @@ def get_health_metrics() -> Dict[str, Any]:
                 overall_errors += error_count
 
                 raw_history = raw_stats.get("history")
-                if isinstance(raw_history, Iterable) and not isinstance(
-                    raw_history, (str, bytes, bytearray)
-                ):
+                if isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
                     history_entries: list[Dict[str, Any]] = []
                     for entry in raw_history:
                         if isinstance(entry, Mapping):
@@ -2607,11 +2477,7 @@ def get_health_metrics() -> Dict[str, Any]:
                     provider_summary["latency_buckets"] = {
                         "counts": bucket_counts,
                         "total": bucket_total,
-                        "ratios": {
-                            name: count / bucket_total
-                            for name, count in bucket_counts.items()
-                            if bucket_total
-                        },
+                        "ratios": {name: count / bucket_total for name, count in bucket_counts.items() if bucket_total},
                     }
 
                 providers[provider_name] = provider_summary
@@ -2626,20 +2492,14 @@ def get_health_metrics() -> Dict[str, Any]:
                 latency_summary = {
                     "counts": dict(overall_buckets),
                     "total": latency_total,
-                    "ratios": {
-                        name: count / latency_total
-                        for name, count in overall_buckets.items()
-                        if latency_total
-                    },
+                    "ratios": {name: count / latency_total for name, count in overall_buckets.items() if latency_total},
                 }
 
             summary["overall"] = {
                 "count": overall_total,
                 "status_counts": overall_status_counts,
                 "status_ratios": {
-                    name: count / overall_total
-                    for name, count in overall_status_counts.items()
-                    if overall_total
+                    name: count / overall_total for name, count in overall_status_counts.items() if overall_total
                 },
                 "fallback_count": overall_fallbacks,
                 "fallback_ratio": overall_fallbacks / overall_total,
@@ -2652,30 +2512,22 @@ def get_health_metrics() -> Dict[str, Any]:
         return summary
 
     now = time.time()
-    diagnostics_data = _summarize_diagnostics(
-        store.get(_DIAGNOSTICS_SNAPSHOT_KEY), now=now
-    )
-    session_monitoring_data = _summarize_session_monitoring(
-        store.get(_SESSION_MONITORING_KEY), now=now
-    )
+    diagnostics_data = _summarize_diagnostics(store.get(_DIAGNOSTICS_SNAPSHOT_KEY), now=now)
+    session_monitoring_data = _summarize_session_monitoring(store.get(_SESSION_MONITORING_KEY), now=now)
 
     fx_metrics = fx_metrics_snapshot(store)
     portfolio_metrics = portfolio_metrics_snapshot(store)
     fx_api_data = fx_metrics.get("fx_api")
     fx_cache_data = fx_metrics.get("fx_cache")
     portfolio_data = portfolio_metrics.get("portfolio")
-    quotes_data = _merge_entry(
-        store.get("quotes"), _summarize_quote_stats(store.get("quotes_stats"))
-    )
+    quotes_data = _merge_entry(store.get("quotes"), _summarize_quote_stats(store.get("quotes_stats")))
 
     return {
         "iol_refresh": store.get("iol_refresh"),
         "snapshot_event": _normalize_snapshot_event_entry(store.get(_SNAPSHOT_EVENT_KEY)),
         "diagnostics": diagnostics_data,
         "session_monitoring": session_monitoring_data,
-        "startup_diagnostics": _normalize_diagnostics_entry(
-            store.get(_DIAGNOSTICS_SNAPSHOT_KEY)
-        ),
+        "startup_diagnostics": _normalize_diagnostics_entry(store.get(_DIAGNOSTICS_SNAPSHOT_KEY)),
         "yfinance": _serialize_provider_metrics(store.get("yfinance")),
         "market_data": list(store.get(_MARKET_DATA_INCIDENTS_KEY, [])),
         "risk_incidents": _summarize_risk(store.get(_RISK_INCIDENTS_KEY)),
@@ -2684,9 +2536,7 @@ def get_health_metrics() -> Dict[str, Any]:
         "macro_api": _summarize_macro(store.get("macro_api")),
         "portfolio": portfolio_data,
         "quotes": quotes_data,
-        "quote_providers": _summarize_quote_providers(
-            store.get("quote_providers"), store.get(_QUOTE_RATE_LIMIT_KEY)
-        ),
+        "quote_providers": _summarize_quote_providers(store.get("quote_providers"), store.get(_QUOTE_RATE_LIMIT_KEY)),
         "tab_latencies": _summarize_tab_latencies(store.get(_TAB_LATENCIES_KEY)),
         "adapter_fallbacks": _summarize_adapter_fallbacks(store.get(_ADAPTER_FALLBACK_KEY)),
         "dependencies": _summarize_dependencies(store.get(_DEPENDENCIES_KEY)),

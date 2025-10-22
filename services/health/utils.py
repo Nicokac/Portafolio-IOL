@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections import deque
 import math
+from collections import deque
 from typing import Any, Deque, Dict, Iterable, Mapping, Optional, Sequence
 
 
@@ -82,10 +82,7 @@ def _normalize_environment_value(value: Any) -> Any:
     if isinstance(value, (list, tuple, set)):
         normalized_list = [
             item
-            for item in (
-                _normalize_environment_value(entry)
-                for entry in value
-            )
+            for item in (_normalize_environment_value(entry) for entry in value)
             if item is not None and (not isinstance(item, (list, tuple, Mapping)) or item)
         ]
         return normalized_list
@@ -109,9 +106,7 @@ def _normalize_environment_snapshot(snapshot: Mapping[str, Any]) -> Dict[str, An
     return normalized
 
 
-def _ensure_history_deque(
-    history: Any, *, limit: int = 32
-) -> Deque[Mapping[str, Any]]:
+def _ensure_history_deque(history: Any, *, limit: int = 32) -> Deque[Mapping[str, Any]]:
     if isinstance(history, deque):
         return deque(history, maxlen=limit)
     if isinstance(history, Iterable):
@@ -119,9 +114,7 @@ def _ensure_history_deque(
     return deque(maxlen=limit)
 
 
-def _ensure_event_history(
-    history: Any, *, limit: int = 32
-) -> Deque[Mapping[str, Any]]:
+def _ensure_event_history(history: Any, *, limit: int = 32) -> Deque[Mapping[str, Any]]:
     return _ensure_history_deque(history, limit=limit)
 
 
@@ -133,9 +126,7 @@ def _ensure_latency_history(history: Any, *, limit: int = 32) -> Deque[float]:
     return deque(maxlen=limit)
 
 
-def _merge_entry(
-    existing: Any, summary: Mapping[str, Any] | None
-) -> Dict[str, Any] | None:
+def _merge_entry(existing: Any, summary: Mapping[str, Any] | None) -> Dict[str, Any] | None:
     if not isinstance(existing, Mapping) and not summary:
         return None
 
@@ -147,9 +138,7 @@ def _merge_entry(
     return merged or None
 
 
-def _compute_ratio_map(
-    counts: Mapping[str, int], total: int
-) -> Dict[str, float]:
+def _compute_ratio_map(counts: Mapping[str, int], total: int) -> Dict[str, float]:
     if total <= 0:
         return {key: 0.0 for key in counts}
     return {key: value / total for key, value in counts.items()}
@@ -165,9 +154,7 @@ def _normalize_numeric(value: float) -> float | int:
 def _serialize_event_history(raw_history: Any) -> list[Dict[str, Any]]:
     if isinstance(raw_history, deque):
         iterable = raw_history
-    elif isinstance(raw_history, Iterable) and not isinstance(
-        raw_history, (str, bytes, bytearray)
-    ):
+    elif isinstance(raw_history, Iterable) and not isinstance(raw_history, (str, bytes, bytearray)):
         iterable = raw_history
     else:
         return []

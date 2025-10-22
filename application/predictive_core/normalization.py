@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-
 _SIN_SECTOR = "Sin sector"
 
 
@@ -27,21 +26,10 @@ def normalise_symbol_sector(frame: pd.DataFrame | None) -> pd.DataFrame:
     if "symbol" not in normalised.columns:
         normalised["symbol"] = pd.Series(dtype="string")
 
-    symbols = (
-        normalised.get("symbol", pd.Series(dtype="string"))
-        .astype("string")
-        .fillna("")
-        .str.upper()
-        .str.strip()
-    )
+    symbols = normalised.get("symbol", pd.Series(dtype="string")).astype("string").fillna("").str.upper().str.strip()
     normalised["symbol"] = symbols
 
-    sectors = (
-        normalised.get("sector", pd.Series(dtype="string"))
-        .astype("string")
-        .fillna("")
-        .str.strip()
-    )
+    sectors = normalised.get("sector", pd.Series(dtype="string")).astype("string").fillna("").str.strip()
     sectors = sectors.mask(sectors.str.len() == 0, _SIN_SECTOR)
     sectors = sectors.mask(sectors.str.casefold() == _SIN_SECTOR.casefold(), _SIN_SECTOR)
     normalised["sector"] = sectors.fillna(_SIN_SECTOR)

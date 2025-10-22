@@ -1,8 +1,5 @@
 import csv
 import time
-
-import csv
-import time
 from types import SimpleNamespace
 
 import pytest
@@ -61,7 +58,11 @@ def test_worker_failure_reports_telemetry(monkeypatch):
     def fake_log_default_telemetry(**kwargs):
         telemetry_calls.append(kwargs)
 
-    monkeypatch.setattr(user_actions, "_write_rows", lambda events: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        user_actions,
+        "_write_rows",
+        lambda events: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
     monkeypatch.setattr(user_actions, "log_default_telemetry", fake_log_default_telemetry, raising=False)
 
     user_actions.log_user_action("test_event", "detail")

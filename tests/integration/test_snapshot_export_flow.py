@@ -11,16 +11,14 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
 from domain.models import Controls
 from services import snapshots
 from services.portfolio_view import PortfolioViewModelService
 from shared import export as export_tools
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture
@@ -103,15 +101,11 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     service = PortfolioViewModelService(snapshot_backend=backend)
     controls = Controls()
 
-    snapshot_a = service.get_portfolio_view(
-        positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace()
-    )
+    snapshot_a = service.get_portfolio_view(positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace())
 
     service.invalidate_filters("refresh")
 
-    snapshot_b = service.get_portfolio_view(
-        positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace()
-    )
+    snapshot_b = service.get_portfolio_view(positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace())
 
     persisted: list[dict[str, object]] = []
     for snapshot in (snapshot_a, snapshot_b):
@@ -131,9 +125,7 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     assert history_latest["total_value"].iloc[-1] > history_latest["total_value"].iloc[0]
 
     health_service.record_iol_refresh(True, detail="tokens ok")
-    health_service.record_yfinance_usage(
-        "fallback", detail="cache", status="fallback", fallback=True
-    )
+    health_service.record_yfinance_usage("fallback", detail="cache", status="fallback", fallback=True)
     health_service.record_fx_api_response(error="timeout", elapsed_ms=812.0)
     health_service.record_fx_cache_usage("hit", age=33.0)
     health_service.record_macro_api_usage(
@@ -205,9 +197,7 @@ def test_snapshot_export_and_health_flow(monkeypatch, streamlit_stub, snapshot_s
     portfolio_stats = metrics.get("portfolio", {}).get("stats", {})
     assert portfolio_stats.get("invocations") == 1
     assert portfolio_stats.get("latency", {}).get("avg") == pytest.approx(123.0)
-    assert (
-        portfolio_stats.get("sources", {}).get("counts", {}).get("api") == 1
-    )
+    assert portfolio_stats.get("sources", {}).get("counts", {}).get("api") == 1
 
     quote_stats = metrics.get("quotes", {}).get("stats", {})
     assert quote_stats.get("invocations") == 1

@@ -1,6 +1,5 @@
 """Lazy rendering helpers for isolating Streamlit reruns."""
 
-from .table_fragment import table_fragment
 from .charts_fragment import charts_fragment
 from .runtime import (
     FragmentContext,
@@ -9,6 +8,7 @@ from .runtime import (
     in_form_scope,
     lazy_fragment,
 )
+from .table_fragment import table_fragment
 
 __all__ = [
     "FragmentContext",

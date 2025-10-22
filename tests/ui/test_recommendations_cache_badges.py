@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-import sys
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
@@ -36,9 +36,7 @@ def recommendations_tab(streamlit_stub, monkeypatch: pytest.MonkeyPatch):
         (0.2, "red"),
     ],
 )
-def test_render_cache_status_uses_threshold_colors(
-    recommendations_tab, streamlit_stub, ratio, expected_state
-) -> None:
+def test_render_cache_status_uses_threshold_colors(recommendations_tab, streamlit_stub, ratio, expected_state) -> None:
     cache_stats = {
         "hit_ratio": ratio,
         "remaining_ttl": 180.0,

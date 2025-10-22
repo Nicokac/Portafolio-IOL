@@ -10,9 +10,10 @@ from typing import Callable, Dict
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from services.auth import describe_active_token
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
+
+from services.auth import describe_active_token
 
 
 @dataclass

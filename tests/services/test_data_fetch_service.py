@@ -21,7 +21,9 @@ def _dataset_frame() -> pd.DataFrame:
     return pd.DataFrame({"simbolo": ["GGAL"], "mercado": ["bcba"]})
 
 
-def _builder_factory(counter: list[int]) -> Callable[[object, object], PortfolioDataset]:
+def _builder_factory(
+    counter: list[int],
+) -> Callable[[object, object], PortfolioDataset]:
     def _builder(_cli, _psvc):
         counter.append(1)
         frame = _dataset_frame()

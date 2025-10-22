@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-import os
 
 import pytest
-
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "app.py"
 sys.path.insert(0, str(MODULE_PATH.parent))

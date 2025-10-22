@@ -30,8 +30,7 @@ LOGGER = logging.getLogger(__name__)
 def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Exporta KPIs, rankings y gráficos del portafolio en CSV/Excel a partir "
-            "de snapshots serializados (JSON)."
+            "Exporta KPIs, rankings y gráficos del portafolio en CSV/Excel a partir de snapshots serializados (JSON)."
         )
     )
     parser.add_argument(
@@ -46,10 +45,7 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
         "-o",
         type=Path,
         default=Path("exports"),
-        help=(
-            "Directorio raíz donde se almacenarán los reportes "
-            "(por defecto ./exports)."
-        ),
+        help=("Directorio raíz donde se almacenarán los reportes (por defecto ./exports)."),
     )
     parser.add_argument(
         "--metrics",
@@ -59,10 +55,7 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--charts",
         nargs="+",
-        help=(
-            "Lista de gráficos a embeber en el Excel "
-            "(usar --charts help para ver opciones)."
-        ),
+        help=("Lista de gráficos a embeber en el Excel (usar --charts help para ver opciones)."),
     )
     parser.add_argument(
         "--limit",
@@ -98,10 +91,7 @@ def _parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
 
 
 def _available(options: Sequence) -> dict[str, str]:
-    return {
-        spec.key: getattr(spec, "label", getattr(spec, "title", spec.key))
-        for spec in options
-    }
+    return {spec.key: getattr(spec, "label", getattr(spec, "title", spec.key)) for spec in options}
 
 
 def _resolve_metric_keys(raw: Sequence[str] | None) -> list[str]:
@@ -214,11 +204,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not kpis.empty:
             row = {
                 "snapshot": name,
-                "generated_at": (
-                    snapshot.generated_at.isoformat()
-                    if snapshot.generated_at
-                    else ""
-                ),
+                "generated_at": (snapshot.generated_at.isoformat() if snapshot.generated_at else ""),
             }
             for _, metric in kpis.iterrows():
                 row[metric["metric"]] = metric.get("raw_value")

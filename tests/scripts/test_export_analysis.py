@@ -4,8 +4,8 @@ import base64
 import json
 import subprocess
 import sys
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 from importlib import util
 from pathlib import Path
 
@@ -192,9 +192,7 @@ def test_main_generates_excel_with_charts(tmp_path: Path) -> None:
     assert "Gráficos" in sheet_names
 
 
-def test_main_handles_multiple_snapshots_with_combined_exports(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_handles_multiple_snapshots_with_combined_exports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     snapshots_dir = tmp_path / "snapshots"
     names = ["alpha", "beta"]
     for name in names:

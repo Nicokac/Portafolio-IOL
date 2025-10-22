@@ -1,7 +1,8 @@
-from shared.export import df_to_csv_bytes, fig_to_png_bytes
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
+
+from shared.export import df_to_csv_bytes, fig_to_png_bytes
 
 
 def test_df_to_csv_bytes():

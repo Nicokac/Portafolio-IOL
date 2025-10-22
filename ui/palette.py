@@ -1,11 +1,14 @@
 # ui\palette.py
 from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Dict
+
 
 @dataclass(frozen=True)
 class Palette:
     """Color palette with accessibility in mind."""
+
     bg: str
     plot_bg: str
     grid: str
@@ -16,6 +19,7 @@ class Palette:
     categories: Dict[str, str]
     highlight_bg: str
     highlight_text: str
+
 
 # Okabe & Ito colorblind-friendly palette
 OI_BLUE = "#0072B2"
@@ -69,10 +73,12 @@ PALETTES = {
     ),
 }
 
+
 def get_palette(theme: str = "light") -> Palette:
     return PALETTES.get(theme, PALETTES["light"])
 
 
 def get_active_palette() -> Palette:
     from .ui_settings import get_settings
+
     return get_palette(get_settings().theme)

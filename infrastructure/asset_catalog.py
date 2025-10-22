@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "assets_catalog.json")
 
+
 @lru_cache(maxsize=1)
 def get_asset_catalog(path: str | None = None) -> Dict[str, str]:
     """Carga un catálogo centralizado de clasificación de activos.

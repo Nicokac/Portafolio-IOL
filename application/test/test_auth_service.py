@@ -1,8 +1,8 @@
-import pytest
-from unittest.mock import patch
-from pathlib import Path
 import hashlib
+from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 import streamlit as st
 
 from application import auth_service
@@ -79,6 +79,7 @@ def test_logout_clears_session_state(monkeypatch):
 
 def test_logout_generates_new_session_id(monkeypatch):
     from types import SimpleNamespace
+
     import app
 
     monkeypatch.setattr(st, "session_state", {"session_id": "old"})
@@ -97,7 +98,11 @@ def test_logout_generates_new_session_id(monkeypatch):
     monkeypatch.setattr(app, "build_iol_client", lambda: object())
     monkeypatch.setattr(app, "configure_logging", lambda level=None, json_format=None: None)
     monkeypatch.setattr(app, "ensure_tokens_key", lambda: None)
-    monkeypatch.setattr(app, "_parse_args", lambda argv: SimpleNamespace(log_level=None, log_format=None))
+    monkeypatch.setattr(
+        app,
+        "_parse_args",
+        lambda argv: SimpleNamespace(log_level=None, log_format=None),
+    )
     monkeypatch.setattr(app, "uuid4", lambda: SimpleNamespace(hex="new_session"))
     monkeypatch.setattr(st, "stop", lambda: (_ for _ in ()).throw(SystemExit))
 
@@ -108,10 +113,10 @@ def test_logout_generates_new_session_id(monkeypatch):
 
 
 def test_logout_clears_cached_queries(monkeypatch):
+    import streamlit as st
+
     from application import auth_service
     from services import cache as svc_cache
-
-    import streamlit as st
 
     # Compartir session_state entre módulos y evitar rerun
     monkeypatch.setattr(st, "session_state", {"IOL_USERNAME": "user"})

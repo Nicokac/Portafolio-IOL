@@ -20,9 +20,7 @@ class Cache:
         """Session state is delegated to Streamlit's native session."""
         pass
 
-    def cache_resource(
-        self, func: Callable | None = None, *, maxsize: int | None = None
-    ) -> Callable:
+    def cache_resource(self, func: Callable | None = None, *, maxsize: int | None = None) -> Callable:
         """Cache resources keyed by user session and function arguments.
 
         Parameters
@@ -43,9 +41,7 @@ class Cache:
             def make_hashable(value: Any) -> Any:
                 """Convert values into hashable, comparable representations."""
                 if isinstance(value, dict):
-                    return tuple(
-                        (k, make_hashable(v)) for k, v in sorted(value.items())
-                    )
+                    return tuple((k, make_hashable(v)) for k, v in sorted(value.items()))
                 if isinstance(value, (list, tuple)):
                     return tuple(make_hashable(v) for v in value)
                 if isinstance(value, (set, frozenset)):
@@ -72,7 +68,7 @@ class Cache:
 
                     result = func(*args, **kwargs)
                     resources[key] = result
-                    
+
                     # <== De tu rama: Lógica para limitar el tamaño máximo de la caché.
                     if maxsize is not None:
                         while len(resources) > maxsize:
@@ -91,7 +87,7 @@ class Cache:
                         if call_args or call_kwargs:
                             key = _arg_key(call_args, call_kwargs)
                         resources.pop((func, sid, key), None)
-            
+
             wrapper.clear = clear
             return wrapper
 
@@ -204,10 +200,7 @@ class VisualCacheRegistry:
                 return str(signature)
         if isinstance(signature, dict):
             try:
-                return tuple(
-                    (k, VisualCacheRegistry._hash_signature(v))
-                    for k, v in sorted(signature.items())
-                )
+                return tuple((k, VisualCacheRegistry._hash_signature(v)) for k, v in sorted(signature.items()))
             except Exception:
                 return str(signature)
         return signature
@@ -270,9 +263,7 @@ class VisualCacheRegistry:
         normalized_hash = self._normalize_hash(dataset_hash)
         with self._lock:
             affected = [
-                component
-                for component, entry in self._entries.items()
-                if entry.get("dataset_hash") == normalized_hash
+                component for component, entry in self._entries.items() if entry.get("dataset_hash") == normalized_hash
             ]
             for component in affected:
                 self._entries.pop(component, None)
@@ -296,11 +287,7 @@ class VisualCacheRegistry:
         """Return a read-only snapshot of registry state."""
 
         with self._lock:
-            entries = {
-                component: dict(value)
-                for component, value in self._entries.items()
-                if isinstance(value, dict)
-            }
+            entries = {component: dict(value) for component, value in self._entries.items() if isinstance(value, dict)}
             stats = dict(self._stats)
         return {"entries": entries, "stats": stats}
 
@@ -337,7 +324,9 @@ class VisualCacheRegistry:
                 writer.writerow([timestamp, reason, normalized_hash, component])
         except Exception:
             logger.debug(
-                "No se pudo registrar invalidación de caché visual para %s", component, exc_info=True
+                "No se pudo registrar invalidación de caché visual para %s",
+                component,
+                exc_info=True,
             )
 
 

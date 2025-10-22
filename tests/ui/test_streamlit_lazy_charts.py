@@ -6,8 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from controllers.portfolio import portfolio as portfolio_mod
-from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 def _get_checkbox_key(fake_st: FakeStreamlit, label_prefix: str) -> str:

@@ -30,8 +30,6 @@ from ui.charts.correlation_matrix import build_correlation_figure
 from .cache_badge import _normalise_cache_stats, _render_cache_status
 from .correlation_tab import _compute_adaptive_payload, _render_correlation_tab
 from .formatting import (
-    _format_currency,
-    _format_currency_delta,
     _format_float,
     _format_float_delta,
     _format_percent,
@@ -76,9 +74,7 @@ _PROFILE_HORIZON_OPTIONS = [
     ("mediano", "12 meses"),
     ("largo", "24 meses o más"),
 ]
-_BENCHMARK_LABELS = {
-    key: value.get("name", key.upper()) for key, value in BENCHMARK_BASELINES.items()
-}
+_BENCHMARK_LABELS = {key: value.get("name", key.upper()) for key, value in BENCHMARK_BASELINES.items()}
 
 __all__ = [
     "render_recommendations_tab",
@@ -135,11 +131,7 @@ def _expected_return_map(opportunities: pd.DataFrame) -> dict[str, float]:
         LOGGER.debug("Fallo al calcular rentabilidad esperada desde oportunidades", exc_info=True)
         return {}
     expected = pd.to_numeric(expected, errors="coerce")
-    return {
-        str(sym): float(value)
-        for sym, value in zip(frame["symbol"], expected)
-        if str(sym) and np.isfinite(value)
-    }
+    return {str(sym): float(value) for sym, value in zip(frame["symbol"], expected) if str(sym) and np.isfinite(value)}
 
 
 def _beta_lookup(
@@ -175,9 +167,7 @@ def _render_profile_panel(service: ProfileService) -> dict[str, str]:
     profile = service.get_profile()
     st.markdown(f"**{service.badge_label(profile)}**")
     with st.expander("Configurar perfil inversor", expanded=False):
-        st.caption(
-            "Guardamos tus preferencias en el dispositivo para ajustar futuras recomendaciones."
-        )
+        st.caption("Guardamos tus preferencias en el dispositivo para ajustar futuras recomendaciones.")
         risk_choice = st.selectbox(
             "Tolerancia al riesgo",
             options=_PROFILE_RISK_OPTIONS,
@@ -200,12 +190,8 @@ def _render_profile_panel(service: ProfileService) -> dict[str, str]:
             key=f"{_FORM_KEY}_profile_mode",
         )
     risk_value = risk_choice[0] if isinstance(risk_choice, tuple) else str(risk_choice)
-    horizon_value = (
-        horizon_choice[0] if isinstance(horizon_choice, tuple) else str(horizon_choice)
-    )
-    mode_value = (
-        preferred_choice[0] if isinstance(preferred_choice, tuple) else str(preferred_choice)
-    )
+    horizon_value = horizon_choice[0] if isinstance(horizon_choice, tuple) else str(horizon_choice)
+    mode_value = preferred_choice[0] if isinstance(preferred_choice, tuple) else str(preferred_choice)
     updated = service.update_profile(
         risk_tolerance=risk_value,
         investment_horizon=horizon_value,
@@ -224,9 +210,7 @@ def _mean_numeric(series: pd.Series | None) -> float:
     return float(numeric.mean())
 
 
-def _weighted_mean(
-    values: pd.Series | None, weights: pd.Series | None
-) -> float:
+def _weighted_mean(values: pd.Series | None, weights: pd.Series | None) -> float:
     if values is None:
         return float("nan")
     numeric = pd.to_numeric(values, errors="coerce")
@@ -256,16 +240,10 @@ def _render_automatic_insight(
 
     weight_series = None
     if "allocation_%" in recommendations.columns:
-        weight_series = pd.to_numeric(
-            recommendations.get("allocation_%"), errors="coerce"
-        )
+        weight_series = pd.to_numeric(recommendations.get("allocation_%"), errors="coerce")
 
-    expected_mean = _weighted_mean(
-        recommendations.get("expected_return"), weight_series
-    )
-    predicted_mean = _weighted_mean(
-        recommendations.get("predicted_return_pct"), weight_series
-    )
+    expected_mean = _weighted_mean(recommendations.get("expected_return"), weight_series)
+    predicted_mean = _weighted_mean(recommendations.get("predicted_return_pct"), weight_series)
 
     beta_series = None
     if "beta" in recommendations.columns:
@@ -283,9 +261,7 @@ def _render_automatic_insight(
     if np.isfinite(expected_mean):
         metrics_parts.append(f"Rentabilidad esperada promedio: {_format_percent(expected_mean)}")
     if np.isfinite(predicted_mean):
-        metrics_parts.append(
-            f"Predicción sectorial ponderada: {_format_percent(predicted_mean)}"
-        )
+        metrics_parts.append(f"Predicción sectorial ponderada: {_format_percent(predicted_mean)}")
     if np.isfinite(beta_mean):
         metrics_parts.append(f"Beta promedio: {_format_float(beta_mean)}")
     sector_series = recommendations.get("sector")
@@ -312,18 +288,9 @@ def _render_automatic_insight(
 def _build_numeric_lookup(df: pd.DataFrame, column: str) -> dict[str, float]:
     if df.empty or column not in df.columns:
         return {}
-    symbols = (
-        df.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .fillna("")
-        .str.upper()
-    )
+    symbols = df.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
     values = pd.to_numeric(df[column], errors="coerce")
-    return {
-        str(symbol): float(value)
-        for symbol, value in zip(symbols, values)
-        if symbol and np.isfinite(value)
-    }
+    return {str(symbol): float(value) for symbol, value in zip(symbols, values) if symbol and np.isfinite(value)}
 
 
 def _enrich_recommendations(
@@ -336,12 +303,7 @@ def _enrich_recommendations(
         return recommendations
 
     enriched = recommendations.copy()
-    symbols = (
-        enriched.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .fillna("")
-        .str.upper()
-    )
+    symbols = enriched.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
 
     expected_lookup: dict[str, float] = {}
     for key, value in (expected_returns or {}).items():
@@ -368,16 +330,13 @@ def _enrich_recommendations(
             beta_lookup[symbol] = beta_val
 
     expected_series = pd.Series(
-        [expected_lookup.get(symbol, np.nan) for symbol in symbols], index=enriched.index
+        [expected_lookup.get(symbol, np.nan) for symbol in symbols],
+        index=enriched.index,
     )
-    enriched["expected_return"] = pd.to_numeric(
-        enriched.get("expected_return", expected_series), errors="coerce"
-    )
+    enriched["expected_return"] = pd.to_numeric(enriched.get("expected_return", expected_series), errors="coerce")
     enriched["expected_return"] = enriched["expected_return"].fillna(expected_series)
 
-    beta_series = pd.Series(
-        [beta_lookup.get(symbol, np.nan) for symbol in symbols], index=enriched.index
-    )
+    beta_series = pd.Series([beta_lookup.get(symbol, np.nan) for symbol in symbols], index=enriched.index)
     enriched["beta"] = pd.to_numeric(enriched.get("beta", beta_series), errors="coerce")
     enriched["beta"] = enriched["beta"].fillna(beta_series)
 
@@ -457,9 +416,7 @@ def _render_analysis_summary(source: RecommendationService | dict[str, object]) 
 
     beta_dist = analysis.get("beta_distribution")
     if isinstance(beta_dist, pd.Series) and not beta_dist.empty:
-        beta_summary = ", ".join(
-            f"{bucket}: {share * 100:.1f}%" for bucket, share in beta_dist.items()
-        )
+        beta_summary = ", ".join(f"{bucket}: {share * 100:.1f}%" for bucket, share in beta_dist.items())
         st.caption(f"Distribución de beta: {beta_summary}")
 
 
@@ -481,17 +438,11 @@ def _render_benchmark_block(recommendations: pd.DataFrame) -> None:
         benchmark_ret = _format_percent(float(metrics.get("benchmark_return", float("nan"))))
         with col:
             st.markdown(f"**{label}**")
-            st.caption(
-                f"ΔRetorno: {delta_return} | ΔBeta: {delta_beta} | Tracking Error: {tracking}"
-            )
-            st.caption(
-                f"Portafolio: {portfolio_ret} &nbsp;/&nbsp; Índice: {benchmark_ret}"
-            )
+            st.caption(f"ΔRetorno: {delta_return} | ΔBeta: {delta_beta} | Tracking Error: {tracking}")
+            st.caption(f"Portafolio: {portfolio_ret} &nbsp;/&nbsp; Índice: {benchmark_ret}")
 
 
-def _render_recommendations_table(
-    result: pd.DataFrame, *, show_predictions: bool
-) -> None:
+def _render_recommendations_table(result: pd.DataFrame, *, show_predictions: bool) -> None:
     if result.empty:
         st.info("Ingresá un monto para calcular sugerencias personalizadas.")
         return
@@ -501,20 +452,14 @@ def _render_recommendations_table(
         formatted = formatted.drop(columns=["expected_return"])
     predicted_formatted = None
     if "predicted_return_pct" in formatted.columns:
-        predicted_values = pd.to_numeric(
-            formatted["predicted_return_pct"], errors="coerce"
-        )
+        predicted_values = pd.to_numeric(formatted["predicted_return_pct"], errors="coerce")
         if show_predictions:
-            predicted_formatted = predicted_values.map(
-                lambda v: f"{v:.2f}%" if np.isfinite(v) else "-"
-            )
+            predicted_formatted = predicted_values.map(lambda v: f"{v:.2f}%" if np.isfinite(v) else "-")
         formatted = formatted.drop(columns=["predicted_return_pct"])
     if "beta" in formatted.columns:
         formatted = formatted.drop(columns=["beta"])
     formatted["allocation_%"] = formatted["allocation_%"].map(lambda v: f"{v:.2f}%")
-    formatted["allocation_amount"] = formatted["allocation_amount"].map(
-        lambda v: f"${v:,.0f}".replace(",", ".")
-    )
+    formatted["allocation_amount"] = formatted["allocation_amount"].map(lambda v: f"${v:,.0f}".replace(",", "."))
     if predicted_formatted is not None:
         formatted.insert(
             3,
@@ -551,13 +496,9 @@ def _render_recommendations_table(
     numeric_beta = pd.to_numeric(export_df["beta"], errors="coerce")
     expected_mean = numeric_return.dropna().mean()
     beta_mean = numeric_beta.dropna().mean()
-    summary["expected_return"] = (
-        round(float(expected_mean), 4) if pd.notna(expected_mean) else ""
-    )
+    summary["expected_return"] = round(float(expected_mean), 4) if pd.notna(expected_mean) else ""
     summary["beta"] = round(float(beta_mean), 4) if pd.notna(beta_mean) else ""
-    export_with_summary = pd.concat(
-        [export_df, pd.DataFrame([summary])], ignore_index=True
-    )
+    export_with_summary = pd.concat([export_df, pd.DataFrame([summary])], ignore_index=True)
 
     csv_bytes = export_with_summary.to_csv(index=False).encode("utf-8")
     excel_buffer = BytesIO()
@@ -582,17 +523,12 @@ def _render_recommendations_table(
         )
 
 
-def _render_recommendations_visuals(
-    result: pd.DataFrame, *, mode_label: str, amount: float
-) -> None:
+def _render_recommendations_visuals(result: pd.DataFrame, *, mode_label: str, amount: float) -> None:
     if result.empty:
         return
 
     amount_text = f"${amount:,.0f}".replace(",", ".")
-    st.markdown(
-        f"**Modo seleccionado:** {mode_label} &nbsp;|&nbsp; "
-        f"**Monto a invertir:** {amount_text}"
-    )
+    st.markdown(f"**Modo seleccionado:** {mode_label} &nbsp;|&nbsp; **Monto a invertir:** {amount_text}")
 
     pie_fig = px.pie(
         result,
@@ -639,9 +575,7 @@ def _render_recommendations_visuals(
 def _render_recommendations_tab_impl() -> None:
     positions = _get_portfolio_positions()
     st.header("🔮 Recomendaciones personalizadas")
-    st.caption(
-        "Proyectá cómo complementar tu cartera con nuevas ideas balanceadas según tu perfil."
-    )
+    st.caption("Proyectá cómo complementar tu cartera con nuevas ideas balanceadas según tu perfil.")
 
     profile_service = ProfileService()
     active_profile = _render_profile_panel(profile_service)
@@ -858,9 +792,7 @@ def _render_recommendations_tab_impl() -> None:
         recommendations,
         mode_key=mode_key_to_display,
         beta_lookup=beta_lookup,
-        adaptive_summary=(
-            adaptive_payload.get("summary") if isinstance(adaptive_payload, dict) else None
-        ),
+        adaptive_summary=(adaptive_payload.get("summary") if isinstance(adaptive_payload, dict) else None),
     )
 
     render_simulation_panel(
@@ -970,9 +902,7 @@ def _render_for_test(recommendations_df: pd.DataFrame, state: object) -> None:
             ),
             "opportunities": pd.DataFrame(),
             "risk_metrics": pd.DataFrame(),
-            "amount": float(
-                pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()
-            ),
+            "amount": float(pd.to_numeric(payload_df.get("allocation_amount"), errors="coerce").sum()),
             "mode_label": mode_label,
             "mode_key": mode_key,
             "analysis": {},

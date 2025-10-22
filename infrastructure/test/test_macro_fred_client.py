@@ -55,9 +55,7 @@ def test_client_adds_authentication_and_defaults() -> None:
         calls_per_minute=0,
     )
     observation = client.get_latest_observation("IPUSN")
-    assert observation == FredSeriesObservation(
-        series_id="IPUSN", value=1.5, as_of="2023-07-01"
-    )
+    assert observation == FredSeriesObservation(series_id="IPUSN", value=1.5, as_of="2023-07-01")
     assert session.calls
     params = session.calls[0]["params"]
     assert params["api_key"] == "secret"

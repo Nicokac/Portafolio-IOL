@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
 import sys
+from contextlib import nullcontext
 from types import ModuleType, SimpleNamespace
 
 import pandas as pd
@@ -44,6 +44,7 @@ if "streamlit" not in sys.modules:
     fake_streamlit.cache_data = lambda *a, **k: (lambda fn: fn)
     fake_streamlit.cache_resource = lambda *a, **k: (lambda fn: fn)
     fake_streamlit.empty = lambda: SimpleNamespace(container=lambda: nullcontext(), empty=lambda: None)
+
     class _SidebarStub:
         def __enter__(self) -> "_SidebarStub":
             return self
@@ -222,6 +223,7 @@ class _DummySidebar:
     def radio(self, *args, **kwargs):  # noqa: ANN002, ANN003 - stub signature
         return 0
 
+
 class _Container:
     def __enter__(self) -> "_Container":
         return self
@@ -268,8 +270,6 @@ def _make_viewmodel(df: pd.DataFrame) -> SimpleNamespace:
         pending_metrics=(),
         tab_options=("📂 Portafolio",),
     )
-
-
 
 
 def test_soft_refresh_guard_preserves_table_fragment(
@@ -460,9 +460,7 @@ def test_soft_refresh_guard_preserves_table_fragment(
     monkeypatch.setattr(
         portfolio,
         "fragment_state_soft_refresh",
-        lambda dataset_hash=None: fake_st.session_state.setdefault(
-            "_fragment_soft_refresh", dataset_hash
-        ),
+        lambda dataset_hash=None: fake_st.session_state.setdefault("_fragment_soft_refresh", dataset_hash),
     )
     monkeypatch.setattr(
         portfolio,

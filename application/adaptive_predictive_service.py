@@ -13,16 +13,19 @@ import pandas as pd
 from application.backtesting_service import BacktestingService
 from application.predictive_core import PredictiveCacheState
 from application.predictive_service import build_adaptive_history
+from domain.adaptive_cache_lock import adaptive_cache_lock
+from predictive_engine import __version__ as ENGINE_VERSION
+from predictive_engine import utils as engine_utils
+from predictive_engine.adapters import run_adaptive_forecast
+from predictive_engine.models import (
+    AdaptiveState,
+    AdaptiveUpdateResult,
+    empty_history_frame,
+)
 from services.cache import CacheService
 from services.performance_metrics import track_function
 from services.performance_timer import ProfileBlockResult, profile_block
 from shared.settings import ADAPTIVE_TTL_HOURS
-
-from predictive_engine import __version__ as ENGINE_VERSION
-from predictive_engine.adapters import run_adaptive_forecast
-from predictive_engine.models import AdaptiveUpdateResult, AdaptiveState, empty_history_frame
-from predictive_engine import utils as engine_utils
-from domain.adaptive_cache_lock import adaptive_cache_lock
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,9 +84,7 @@ def _cache_last_updated(cache: CacheService) -> str | None:
     return str(value)
 
 
-def _resolve_identifier_column(
-    predictions: pd.DataFrame | None, actuals: pd.DataFrame | None
-) -> str | None:
+def _resolve_identifier_column(predictions: pd.DataFrame | None, actuals: pd.DataFrame | None) -> str | None:
     candidates = ("ticker", "symbol", "isin", "asset", "sector")
     for column in candidates:
         for frame in (predictions, actuals):
@@ -167,8 +168,7 @@ def _process_prediction_batches(
     successes = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(_normalize_batch, preds, acts, timestamp=timestamp): index
-            for index, preds, acts in batches
+            executor.submit(_normalize_batch, preds, acts, timestamp=timestamp): index for index, preds, acts in batches
         }
         for future in as_completed(futures):
             batch_index = futures[future]
@@ -225,11 +225,11 @@ def _write_performance_metrics(runtime_s: float, success_pct: float) -> None:
         "metric,value,notes",
         (
             "recommendations.predictive_runtime_s,"
-            f"{max(runtime_s, 0.0):.4f},\"Duración total del procesamiento adaptativo\""
+            f'{max(runtime_s, 0.0):.4f},"Duración total del procesamiento adaptativo"'
         ),
         (
             "recommendations.batch_success_rate_pct,"
-            f"{max(success_pct, 0.0):.2f},\"Porcentaje de sub-batches procesados con éxito\""
+            f'{max(success_pct, 0.0):.2f},"Porcentaje de sub-batches procesados con éxito"'
         ),
     ]
     metrics_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -251,11 +251,7 @@ def update_model(
 
     LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
 
-    effective_ttl_hours = (
-        float(ttl_hours)
-        if ttl_hours is not None
-        else float(ADAPTIVE_TTL_HOURS)
-    )
+    effective_ttl_hours = float(ttl_hours) if ttl_hours is not None else float(ADAPTIVE_TTL_HOURS)
 
     if persist:
         active_cache = cache or _CACHE
@@ -382,11 +378,7 @@ def update_model(
         )
 
     runtime_s = time.perf_counter() - overall_start
-    success_pct = (
-        float(successful_batches) / float(total_batches) * 100.0
-        if total_batches
-        else 0.0
-    )
+    success_pct = float(successful_batches) / float(total_batches) * 100.0 if total_batches else 0.0
     try:
         _write_performance_metrics(runtime_s, success_pct)
     except Exception:  # pragma: no cover - metrics should not break flow
@@ -415,9 +407,7 @@ def prepare_adaptive_history(
     )
 
 
-def generate_synthetic_history(
-    recommendations: pd.DataFrame, periods: int = 6
-) -> pd.DataFrame:
+def generate_synthetic_history(recommendations: pd.DataFrame, periods: int = 6) -> pd.DataFrame:
     """Wrapper maintained for compatibility, delegates to build_adaptive_history."""
 
     return build_adaptive_history(
@@ -442,15 +432,9 @@ def simulate_adaptive_forecast(
 
     LOGGER.debug("Ejecutando predictive engine %s", ENGINE_VERSION)
 
-    effective_ttl_hours = (
-        float(ttl_hours)
-        if ttl_hours is not None
-        else float(ADAPTIVE_TTL_HOURS)
-    )
+    effective_ttl_hours = float(ttl_hours) if ttl_hours is not None else float(ADAPTIVE_TTL_HOURS)
     ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
-    working_cache = cache or (
-        _CACHE if persist else CacheService(namespace=f"{_CACHE_NAMESPACE}_sim")
-    )
+    working_cache = cache or (_CACHE if persist else CacheService(namespace=f"{_CACHE_NAMESPACE}_sim"))
     if isinstance(working_cache, CacheService):
         working_cache.set_ttl_override(ttl_seconds)
 
@@ -597,8 +581,14 @@ def export_adaptive_report(results: dict[str, Any]) -> Path:
 
     interpretation_lines = [
         "## Interpretación del β-shift y dispersión sectorial",
-        "El β-shift promedio refleja la magnitud media de los ajustes aplicados en cada iteración del modelo.",
-        "Una mayor σ sectorial indica mayor heterogeneidad en los retornos proyectados entre sectores, guiando la diversificación.",
+        (
+            "El β-shift promedio refleja la magnitud media de los ajustes aplicados "
+            "en cada iteración del modelo."
+        ),
+        (
+            "Una mayor σ sectorial indica mayor heterogeneidad en los retornos proyectados "
+            "entre sectores, guiando la diversificación."
+        ),
     ]
     if summary and isinstance(summary, dict):
         interpretation_lines.append(f"Resumen generado: {summary.get('text', '')}")

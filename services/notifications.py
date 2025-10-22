@@ -1,4 +1,5 @@
 """Notification services and helpers for section badges."""
+
 from __future__ import annotations
 
 import logging
@@ -11,9 +12,15 @@ import requests
 
 from infrastructure.http.session import build_session
 from shared.settings import (
-    settings,
     earnings_upcoming_days as _default_earnings_threshold,
+)
+from shared.settings import (
     risk_badge_threshold as _default_risk_threshold,
+)
+from shared.settings import (
+    settings,
+)
+from shared.settings import (
     technical_signal_threshold as _default_technical_threshold,
 )
 from shared.time_provider import TimeProvider
@@ -25,6 +32,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Helpers para coerción y parsing
 # ---------------------------------------------------------------------------
+
 
 def _coerce_bool(value: Any) -> bool:
     """Best-effort conversion of arbitrary payload values to ``bool``."""
@@ -62,6 +70,7 @@ def _to_int(value: Any) -> int:
 # Flags simples basados en payload remoto
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class NotificationFlags:
     """Boolean flags signalling additional attention required in each section."""
@@ -85,14 +94,15 @@ class NotificationFlags:
         if not isinstance(raw_flags, Mapping):
             return cls()
 
-        risk = _coerce_bool(
-            raw_flags.get("risk_alert", raw_flags.get("risk", raw_flags.get("riesgo")))
-        )
+        risk = _coerce_bool(raw_flags.get("risk_alert", raw_flags.get("risk", raw_flags.get("riesgo"))))
         technical = _coerce_bool(
             raw_flags.get("technical_signal", raw_flags.get("technical", raw_flags.get("tecnico")))
         )
         earnings = _coerce_bool(
-            raw_flags.get("upcoming_earnings", raw_flags.get("earnings", raw_flags.get("earnings_upcoming")))
+            raw_flags.get(
+                "upcoming_earnings",
+                raw_flags.get("earnings", raw_flags.get("earnings_upcoming")),
+            )
         )
 
         return cls(
@@ -154,6 +164,7 @@ class NotificationsService:
 # Builder de badges enriquecidos desde métricas locales
 # ---------------------------------------------------------------------------
 
+
 def build_notification_badges(
     *,
     risk_metrics: Mapping[str, Any] | float | int | None,
@@ -166,16 +177,18 @@ def build_notification_badges(
     """Return badge flags derived from analytics data."""
 
     risk_threshold = float(risk_threshold if risk_threshold is not None else _default_risk_threshold)
-    technical_threshold = float(technical_threshold if technical_threshold is not None else _default_technical_threshold)
-    earnings_days_threshold = int(earnings_days_threshold if earnings_days_threshold is not None else _default_earnings_threshold)
+    technical_threshold = float(
+        technical_threshold if technical_threshold is not None else _default_technical_threshold
+    )
+    earnings_days_threshold = int(
+        earnings_days_threshold if earnings_days_threshold is not None else _default_earnings_threshold
+    )
 
     risk_value = _extract_risk_value(risk_metrics)
     risk_numeric = _as_float_or_none(risk_value)
     risk_threshold_numeric = _as_float_or_none(risk_threshold)
     risk_active = bool(
-        risk_numeric is not None
-        and risk_threshold_numeric is not None
-        and risk_numeric >= risk_threshold_numeric
+        risk_numeric is not None and risk_threshold_numeric is not None and risk_numeric >= risk_threshold_numeric
     )
 
     bullish_count, bearish_count = _extract_signal_counts(technical_indicators)
@@ -193,18 +206,28 @@ def build_notification_badges(
 
     next_event = _find_next_earnings_event(earnings_calendar)
     earnings_active = bool(
-        next_event is not None and next_event.get("days_until") is not None and next_event["days_until"] <= earnings_days_threshold
+        next_event is not None
+        and next_event.get("days_until") is not None
+        and next_event["days_until"] <= earnings_days_threshold
     )
 
     return {
-        "risk": {"active": risk_active, "value": risk_value, "threshold": risk_threshold},
+        "risk": {
+            "active": risk_active,
+            "value": risk_value,
+            "threshold": risk_threshold,
+        },
         "technical": {
             "active": technical_active,
             "direction": technical_direction,
             "counts": {"bullish": bullish_count, "bearish": bearish_count},
             "threshold": technical_threshold,
         },
-        "earnings": {"active": earnings_active, "next_event": next_event, "threshold_days": earnings_days_threshold},
+        "earnings": {
+            "active": earnings_active,
+            "next_event": next_event,
+            "threshold_days": earnings_days_threshold,
+        },
     }
 
 
@@ -230,7 +253,9 @@ def _extract_signal_counts(data: Mapping[str, Any] | None) -> tuple[int, int]:
     return bullish, bearish
 
 
-def _find_next_earnings_event(calendar: Iterable[Mapping[str, Any]] | None) -> MutableMapping[str, Any] | None:
+def _find_next_earnings_event(
+    calendar: Iterable[Mapping[str, Any]] | None,
+) -> MutableMapping[str, Any] | None:
     if not calendar:
         return None
     closest: MutableMapping[str, Any] | None = None

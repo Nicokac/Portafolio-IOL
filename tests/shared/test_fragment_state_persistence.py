@@ -20,7 +20,13 @@ def persistence_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
     fake_st = _FakeStreamlit(session_state={})
     events: list[tuple[str, Any, Any]] = []
 
-    def _capture(action: str, detail: Any, *, dataset_hash: str | None = None, latency_ms: Any | None = None) -> None:
+    def _capture(
+        action: str,
+        detail: Any,
+        *,
+        dataset_hash: str | None = None,
+        latency_ms: Any | None = None,
+    ) -> None:
         events.append((action, detail, dataset_hash))
 
     monkeypatch.setattr(fragment_state, "st", fake_st)

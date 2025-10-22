@@ -1,17 +1,18 @@
 import importlib
+import sys
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-import sys
+from typing import Any
 
+import pandas as pd
 import pytest
 
+from shared.time_provider import TimeSnapshot
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from shared.time_provider import TimeSnapshot
 
 
 @pytest.fixture
@@ -95,10 +96,6 @@ def test_history_sidebar_renders_chart_and_annotations(history_module, streamlit
     assert any("Ambiente:" in text and "`CI`" in text for text in markdowns)
     assert any("Último error:" in text and "Fallback detectado" in text for text in markdowns)
     assert any("2024-05-18 10:01:00" in text and "Fallback" in text for text in markdowns)
-from typing import Any
-
-import pandas as pd
-import pytest
 
 
 def _render(module, metrics: dict[str, Any]) -> None:
@@ -159,26 +156,21 @@ def test_recent_stats_render_charts_and_badge(health_sidebar, streamlit_stub) ->
 
     _render(health_sidebar, metrics)
 
-    assert any(
-        "🐍" in markdown and "Streamlit" in markdown
-        for markdown in streamlit_stub.sidebar.markdowns
-    ), "Expected environment badge in sidebar"
+    assert any("🐍" in markdown and "Streamlit" in markdown for markdown in streamlit_stub.sidebar.markdowns), (
+        "Expected environment badge in sidebar"
+    )
 
-    line_charts = [
-        element for element in streamlit_stub.sidebar.elements if element["type"] == "line_chart"
-    ]
+    line_charts = [element for element in streamlit_stub.sidebar.elements if element["type"] == "line_chart"]
     assert line_charts, "Expected a line chart with latency samples"
     assert isinstance(line_charts[0]["data"], pd.DataFrame)
 
-    area_charts = [
-        element for element in streamlit_stub.sidebar.elements if element["type"] == "area_chart"
-    ]
+    area_charts = [element for element in streamlit_stub.sidebar.elements if element["type"] == "area_chart"]
     assert area_charts, "Expected an area chart with cache age samples"
     assert isinstance(area_charts[0]["data"], pd.DataFrame)
 
-    assert any(
-        "Último error HTTP" in markdown for markdown in streamlit_stub.sidebar.markdowns
-    ), "Expected last HTTP error note"
+    assert any("Último error HTTP" in markdown for markdown in streamlit_stub.sidebar.markdowns), (
+        "Expected last HTTP error note"
+    )
 
 
 def test_recent_stats_section_handles_missing_samples(health_sidebar, streamlit_stub) -> None:
@@ -192,17 +184,10 @@ def test_recent_stats_section_handles_missing_samples(health_sidebar, streamlit_
 
     _render(health_sidebar, metrics)
 
-    recent_section = [
-        markdown
-        for markdown in streamlit_stub.sidebar.markdowns
-        if "Estadísticas recientes" in markdown
-    ]
+    recent_section = [markdown for markdown in streamlit_stub.sidebar.markdowns if "Estadísticas recientes" in markdown]
     assert recent_section, "Section header should be rendered"
 
     assert "_Sin estadísticas recientes._" in streamlit_stub.sidebar.markdowns
     assert not [
-        element
-        for element in streamlit_stub.sidebar.elements
-        if element["type"] in {"line_chart", "area_chart"}
+        element for element in streamlit_stub.sidebar.elements if element["type"] in {"line_chart", "area_chart"}
     ]
-

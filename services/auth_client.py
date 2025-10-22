@@ -119,7 +119,8 @@ def build_client(
         prepare_persistent_fragment_restore()
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug(
-            "No se pudo preparar la restauración persistente de fragmentos", exc_info=True
+            "No se pudo preparar la restauración persistente de fragmentos",
+            exc_info=True,
         )
 
     return AuthClientResult(
@@ -132,4 +133,3 @@ def build_client(
 
 
 __all__ = ["AuthClientResult", "build_client", "get_auth_provider"]
-

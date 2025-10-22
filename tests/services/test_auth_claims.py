@@ -8,12 +8,12 @@ from cryptography.fernet import Fernet
 from services import auth as auth_module
 from services.auth import (
     ACTIVE_TOKENS,
-    USED_REFRESH_NONCES,
-    AuthTokenError,
     MAX_TOKEN_TTL_SECONDS,
     TOKEN_AUDIENCE,
     TOKEN_ISSUER,
     TOKEN_VERSION,
+    USED_REFRESH_NONCES,
+    AuthTokenError,
     generate_token,
     refresh_active_token,
     revoke_token,
@@ -46,23 +46,21 @@ def test_tokens_include_enriched_claims_and_limited_ttl() -> None:
     assert claims["nonce"]
 
 
-def test_refresh_requires_window_and_preserves_session(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_refresh_requires_window_and_preserves_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     base_time = 1_700_000_000
     monkeypatch.setattr(auth_module.time, "time", lambda: base_time)
     token = generate_token("bob", expiry=MAX_TOKEN_TTL_SECONDS)
 
     # Still outside the refresh window (> 5 minutes remaining).
-    monkeypatch.setattr(
-        auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 400
-    )
+    monkeypatch.setattr(auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 400)
     claims = verify_token(token)
     with pytest.raises(AuthTokenError):
         refresh_active_token(claims)
 
     # Move to the last five minutes and refresh.
-    monkeypatch.setattr(
-        auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 200
-    )
+    monkeypatch.setattr(auth_module.time, "time", lambda: base_time + MAX_TOKEN_TTL_SECONDS - 200)
     refreshed = refresh_active_token(verify_token(token))
     new_token = refreshed["token"]
     new_claims = refreshed["claims"]

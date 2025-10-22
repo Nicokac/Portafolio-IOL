@@ -16,12 +16,16 @@ def sample_snapshot() -> PredictiveSnapshot:
     )
 
 
-def test_load_sector_performance_view_returns_view_model(monkeypatch: pytest.MonkeyPatch, sample_snapshot: PredictiveSnapshot) -> None:
+def test_load_sector_performance_view_returns_view_model(
+    monkeypatch: pytest.MonkeyPatch, sample_snapshot: PredictiveSnapshot
+) -> None:
     opportunities = pd.DataFrame({"symbol": ["TEST"], "sector": ["Tecnología"]})
-    predictions = pd.DataFrame({
-        "sector": ["Tecnología"],
-        "predicted_return": [0.12],
-    })
+    predictions = pd.DataFrame(
+        {
+            "sector": ["Tecnología"],
+            "predicted_return": [0.12],
+        }
+    )
 
     def fake_predict(frame: pd.DataFrame | None, **kwargs):
         assert frame is opportunities
@@ -43,8 +47,17 @@ def test_load_sector_performance_view_returns_view_model(monkeypatch: pytest.Mon
     assert cache_view.to_dict()["hits"] == sample_snapshot.hits
 
 
-def test_run_adaptive_forecast_view_sanitizes_payload(monkeypatch: pytest.MonkeyPatch) -> None:
-    history = pd.DataFrame({"timestamp": ["2024-01-01"], "sector": ["Tech"], "predicted_return": [0.1], "actual_return": [0.08]})
+def test_run_adaptive_forecast_view_sanitizes_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = pd.DataFrame(
+        {
+            "timestamp": ["2024-01-01"],
+            "sector": ["Tech"],
+            "predicted_return": [0.1],
+            "actual_return": [0.08],
+        }
+    )
     summary = {"mae": 0.02, "rmse": 0.03}
     payload = {
         "summary": summary,

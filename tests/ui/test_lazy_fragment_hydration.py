@@ -92,4 +92,3 @@ def test_lazy_fragment_wait_avoids_fallback(monkeypatch: pytest.MonkeyPatch, cap
     extra = payload.get("extra", {})
     assert extra.get("lazy_loaded_component") == "table"
     assert extra.get("portfolio.fragment_visible") is True
-

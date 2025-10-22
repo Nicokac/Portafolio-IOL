@@ -27,9 +27,7 @@ def test_compute_benchmark_comparison_returns_relative_metrics() -> None:
     expected_relative = 9.1 - BENCHMARK_BASELINES["sp500"]["expected_return"]
     assert metrics["relative_return"] == pytest.approx(expected_relative, rel=1e-3)
     assert metrics["portfolio_beta"] == pytest.approx(0.955, rel=1e-3)
-    assert metrics["relative_beta"] == pytest.approx(
-        0.955 - BENCHMARK_BASELINES["sp500"]["beta"], rel=1e-3
-    )
+    assert metrics["relative_beta"] == pytest.approx(0.955 - BENCHMARK_BASELINES["sp500"]["beta"], rel=1e-3)
     assert metrics["tracking_error"] > 0
 
 

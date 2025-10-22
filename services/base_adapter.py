@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import time
+from dataclasses import dataclass, field
 from typing import (
     Any,
     Callable,
@@ -127,16 +127,12 @@ class BaseProviderAdapter:
 
         return True, None
 
-    def build_request(
-        self, provider: str, **context: Any
-    ) -> Tuple[Mapping[str, Any], MutableMapping[str, Any]]:
+    def build_request(self, provider: str, **context: Any) -> Tuple[Mapping[str, Any], MutableMapping[str, Any]]:
         """Return the mapping used to query ``provider`` and metadata."""
 
         raise NotImplementedError
 
-    def call_provider(
-        self, provider: str, request: Mapping[str, Any], **context: Any
-    ) -> Any:
+    def call_provider(self, provider: str, request: Mapping[str, Any], **context: Any) -> Any:
         """Invoke ``provider`` with ``request`` and return the raw payload."""
 
         raise NotImplementedError
@@ -195,9 +191,7 @@ class BaseProviderAdapter:
 
         return "configuración incompleta"
 
-    def describe_failure(
-        self, provider: str, attempt: Mapping[str, Any], **context: Any
-    ) -> Optional[str]:
+    def describe_failure(self, provider: str, attempt: Mapping[str, Any], **context: Any) -> Optional[str]:
         """Return a note summarising ``attempt`` when it fails."""
 
         detail = attempt.get("detail")
@@ -240,9 +234,7 @@ class BaseProviderAdapter:
             text = missing.strip()
             if text:
                 items.append(text)
-        elif isinstance(missing, Iterable) and not isinstance(
-            missing, (bytes, bytearray, str)
-        ):
+        elif isinstance(missing, Iterable) and not isinstance(missing, (bytes, bytearray, str)):
             for item in missing:
                 text = str(item or "").strip()
                 if text:
@@ -276,9 +268,7 @@ class BaseProviderAdapter:
             attempt["missing_series"] = missing
 
         if not request:
-            detail = meta.get("detail") or self.describe_missing_request(
-                provider, meta, **context
-            )
+            detail = meta.get("detail") or self.describe_missing_request(provider, meta, **context)
             if detail:
                 attempt["detail"] = str(detail)
             attempt["status"] = "error"
@@ -318,4 +308,3 @@ class BaseProviderAdapter:
 
 
 __all__ = ["AdapterResult", "BaseProviderAdapter"]
-

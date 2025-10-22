@@ -9,7 +9,9 @@ from application.predictive_service import PredictiveCacheSnapshot
 from services.cache.core import get_cache_stats as service_cache_stats
 
 
-def test_predictive_cache_stats_match_service_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_predictive_cache_stats_match_service_adapter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     predictive_service.reset_cache()
     state = predictive_service.PredictiveCacheState(
         hits=4,
@@ -38,12 +40,12 @@ def test_predictive_cache_stats_match_service_adapter(monkeypatch: pytest.Monkey
     assert adapter_stats["hit_ratio"] == pytest.approx(snapshot.hit_ratio)
     assert adapter_stats["ttl_seconds"] == pytest.approx(snapshot.ttl_seconds or 0.0)
     if snapshot.remaining_ttl is not None and adapter_stats["remaining_ttl"] is not None:
-        assert adapter_stats["remaining_ttl"] == pytest.approx(
-            snapshot.remaining_ttl, rel=0.05
-        )
+        assert adapter_stats["remaining_ttl"] == pytest.approx(snapshot.remaining_ttl, rel=0.05)
 
 
-def test_predictive_cache_snapshot_dict_contains_ttl(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_predictive_cache_snapshot_dict_contains_ttl(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     predictive_service.reset_cache()
     state = predictive_service.PredictiveCacheState(
         hits=1,

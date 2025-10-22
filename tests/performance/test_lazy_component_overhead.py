@@ -2,12 +2,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
-def test_lazy_components_emit_telemetry(
-    monkeypatch: pytest.MonkeyPatch, _portfolio_setup
-) -> None:
+def test_lazy_components_emit_telemetry(monkeypatch: pytest.MonkeyPatch, _portfolio_setup) -> None:
     fake_st = FakeStreamlit(radio_sequence=[0, 0])
 
     (

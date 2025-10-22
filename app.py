@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import importlib
 import sys
-import time
 import types
 from pathlib import Path
 from typing import Any
 
-import streamlit as st
-
-from bootstrap import TOTAL_LOAD_START as _TOTAL_LOAD_START, init_app
+from bootstrap import init_app
 from bootstrap.startup import (
     is_preload_complete,
     resume_preload_worker,
@@ -80,7 +77,10 @@ def __getattr__(name: str) -> Any:
         "_lazy_attr": ("bootstrap.startup", "lazy_attr"),
         "_lazy_module": ("bootstrap.startup", "lazy_module"),
         "_PRELOAD_WORKER": ("bootstrap.startup", "_PRELOAD_WORKER"),
-        "render_portfolio_section": ("controllers.portfolio.portfolio", "render_portfolio_section"),
+        "render_portfolio_section": (
+            "controllers.portfolio.portfolio",
+            "render_portfolio_section",
+        ),
     }
     if name in alias_targets:
         module_name, attr_name = alias_targets[name]

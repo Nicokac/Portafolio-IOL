@@ -1,7 +1,7 @@
 import logging
-from cryptography.fernet import Fernet
 
 import pytest
+from cryptography.fernet import Fernet
 
 from services import auth as auth_module
 from services import diagnostics

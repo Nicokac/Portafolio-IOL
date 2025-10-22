@@ -39,10 +39,17 @@ class _FakeStreamlit:
         return self._Expander(self, label)
 
 
-def test_render_about_panel_shows_update_history(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_about_panel_shows_update_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = _FakeStreamlit()
     history = [
-        {"timestamp": f"2024-05-{day:02d}", "event": "update", "version": f"0.5.{day}", "status": "done"}
+        {
+            "timestamp": f"2024-05-{day:02d}",
+            "event": "update",
+            "version": f"0.5.{day}",
+            "status": "done",
+        }
         for day in range(1, 13)
     ]
 
@@ -62,5 +69,8 @@ def test_render_about_panel_shows_update_history(monkeypatch: pytest.MonkeyPatch
     assert any("Versión: v0.6.0" in caption for caption in fake_st.captions)
     event_captions = [c for c in fake_st.captions if c.startswith("🕒 ")]
     assert len(event_captions) == 10
-    assert fake_st.expanders == ["📜 Últimos eventos de actualización", "🧠 Información del entorno"]
+    assert fake_st.expanders == [
+        "📜 Últimos eventos de actualización",
+        "🧠 Información del entorno",
+    ]
     assert fake_st.json_payloads == [{"cwd": "/app", "environment": {"FOO": "BAR"}}]

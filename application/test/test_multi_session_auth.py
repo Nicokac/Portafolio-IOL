@@ -1,11 +1,10 @@
-import re
 import hashlib
+import re
 from pathlib import Path
 
 import streamlit as st
 
 from application import auth_service
-
 
 
 def _token_file(user: str) -> Path:
@@ -37,7 +36,7 @@ def test_multi_session_tokens_and_logout(monkeypatch, tmp_path):
         def login(self):
             p = Path(self.tokens_file)
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("{\"access_token\": \"x\"}")
+            p.write_text('{"access_token": "x"}')
             return {"access_token": "x"}
 
         def clear_tokens(self):

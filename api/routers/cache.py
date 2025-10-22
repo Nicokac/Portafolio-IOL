@@ -10,11 +10,11 @@ from typing import Any, Mapping
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import Field
 
+from api.routers.base_models import _BaseModel
 from services import performance_timer as perf_timer
 from services.auth import get_current_user
 from services.cache.market_data_cache import MarketDataCache, get_market_data_cache
 from shared.errors import CacheUnavailableError, TimeoutError
-from api.routers.base_models import _BaseModel
 
 try:  # pragma: no cover - optional dependency
     from prometheus_client import Counter, Summary
@@ -70,6 +70,7 @@ _CACHE_OPERATION_DURATION = _get_metric(
     "Duración de operaciones del caché",
     labelnames=("operation", "result"),
 )
+
 
 def _ensure_metrics() -> None:
     global _CACHE_STATUS_COUNTER, _CACHE_INVALIDATE_COUNTER, _CACHE_CLEANUP_COUNTER, _CACHE_OPERATION_DURATION
@@ -128,9 +129,7 @@ def _record_metrics(operation: str, success: bool, elapsed: float) -> None:
             pass
     if _CACHE_OPERATION_DURATION is not None:
         try:
-            _CACHE_OPERATION_DURATION.labels(
-                operation=operation, result=result
-            ).observe(elapsed)
+            _CACHE_OPERATION_DURATION.labels(operation=operation, result=result).observe(elapsed)
         except Exception:  # pragma: no cover - defensive guard against registry issues
             pass
 
@@ -248,9 +247,9 @@ class CacheInvalidateRequest(_BaseModel):
         model_config = ConfigDict(extra="ignore")  # type: ignore[assignment]
 
     else:  # pragma: no cover - fallback for Pydantic v1
+
         class Config:  # type: ignore[override]
             extra = "ignore"
-
 
 
 class CacheInvalidateResponse(_BaseModel):
@@ -276,7 +275,9 @@ def _market_cache() -> MarketDataCache:
 
 
 @router.get("/status", response_model=CacheStatusResponse, summary="Cache statistics")
-async def cache_status(user: Mapping[str, Any] = Depends(get_current_user)) -> CacheStatusResponse:
+async def cache_status(
+    user: Mapping[str, Any] = Depends(get_current_user),
+) -> CacheStatusResponse:
     """Expose cache statistics gathered from the market data cache service."""
 
     started = time.perf_counter()
@@ -335,7 +336,11 @@ async def cache_status(user: Mapping[str, Any] = Depends(get_current_user)) -> C
     return CacheStatusResponse(**stats)
 
 
-@router.post("/invalidate", response_model=CacheInvalidateResponse, summary="Invalidate cache entries")
+@router.post(
+    "/invalidate",
+    response_model=CacheInvalidateResponse,
+    summary="Invalidate cache entries",
+)
 async def cache_invalidate(
     payload: CacheInvalidateRequest,
     user: Mapping[str, Any] = Depends(get_current_user),
@@ -421,7 +426,9 @@ async def cache_invalidate(
 
 
 @router.post("/cleanup", response_model=CacheCleanupResponse, summary="Cleanup cache entries")
-async def cache_cleanup(user: Mapping[str, Any] = Depends(get_current_user)) -> CacheCleanupResponse:
+async def cache_cleanup(
+    user: Mapping[str, Any] = Depends(get_current_user),
+) -> CacheCleanupResponse:
     """Remove expired or inconsistent records from the market data cache."""
 
     started = time.perf_counter()
@@ -468,9 +475,7 @@ async def cache_cleanup(user: Mapping[str, Any] = Depends(get_current_user)) -> 
             detail="Error inesperado durante la limpieza de la caché",
         ) from exc
 
-    total_entries = int(metrics.get("expired_removed", 0) or 0) + int(
-        metrics.get("orphans_removed", 0) or 0
-    )
+    total_entries = int(metrics.get("expired_removed", 0) or 0) + int(metrics.get("orphans_removed", 0) or 0)
     elapsed = _finalize_operation(
         operation="cleanup",
         user=user,

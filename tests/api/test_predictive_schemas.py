@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import pytest
 
+from api.routers.engine import (
+    AdaptiveForecastRequest as EngineAdaptiveForecastRequest,
+)
+from api.routers.engine import (
+    PredictResponse as EnginePredictResponse,
+)
 from api.schemas.predictive import (
     AdaptiveForecastRequest,
     AdaptiveHistoryEntry,
     PredictRequest,
-)
-from api.routers.engine import (
-    AdaptiveForecastRequest as EngineAdaptiveForecastRequest,
-    PredictResponse as EnginePredictResponse,
 )
 
 

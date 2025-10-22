@@ -1,9 +1,9 @@
 """Tests for deferred per-tab rendering and caching in the portfolio UI."""
+
 from __future__ import annotations
 
 from controllers.portfolio.portfolio import render_portfolio_section
-
-from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 def _run_portfolio(

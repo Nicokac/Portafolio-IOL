@@ -41,9 +41,7 @@ def _ensure_logger_configured() -> logging.Logger:
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     handler = logging.FileHandler(_LOG_PATH, mode="a", encoding="utf-8")
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
@@ -61,18 +59,14 @@ def _log_worker() -> None:
                     try:
                         handler.flush()
                     except Exception:
-                        logging.getLogger(__name__).debug(
-                            "Startup logger handler flush failed", exc_info=True
-                        )
+                        logging.getLogger(__name__).debug("Startup logger handler flush failed", exc_info=True)
                 return
             level = getattr(logger, task.level, None)
             if level is None:
                 continue
             level(task.msg, *task.args, **task.kwargs)
         except Exception:
-            logging.getLogger(__name__).debug(
-                "Startup logger worker could not persist a record", exc_info=True
-            )
+            logging.getLogger(__name__).debug("Startup logger worker could not persist a record", exc_info=True)
         finally:
             _LOG_QUEUE.task_done()
     # pragma: no cover - graceful shutdown path
@@ -118,9 +112,7 @@ def _shutdown_worker() -> None:
         try:
             handler.flush()
         except Exception:
-            logging.getLogger(__name__).debug(
-                "Startup logger handler flush failed", exc_info=True
-            )
+            logging.getLogger(__name__).debug("Startup logger handler flush failed", exc_info=True)
     _WORKER_STARTED = False
 
 
@@ -138,9 +130,7 @@ def flush_startup_logger() -> None:
         try:
             handler.flush()
         except Exception:
-            logging.getLogger(__name__).debug(
-                "Startup logger handler flush failed", exc_info=True
-            )
+            logging.getLogger(__name__).debug("Startup logger handler flush failed", exc_info=True)
 
 
 def log_startup_event(message: str) -> None:
@@ -162,9 +152,7 @@ def log_startup_exception(exc: Exception) -> None:
     _submit_log("error", "Traceback:\n%s", traceback.format_exc())
 
 
-def log_ui_total_load_metric(
-    total_ms: float | int | None, *, timestamp: datetime | None = None
-) -> None:
+def log_ui_total_load_metric(total_ms: float | int | None, *, timestamp: datetime | None = None) -> None:
     """Record the total UI load metric with contextual metadata."""
 
     ts = timestamp or datetime.now(timezone.utc)

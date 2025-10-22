@@ -36,7 +36,9 @@ def test_safe_restart_app_invokes_subprocess(monkeypatch: pytest.MonkeyPatch) ->
     assert ("restart", "done") in logs
 
 
-def test_safe_restart_app_respects_disable_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_safe_restart_app_respects_disable_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     logs: list[tuple[str, str]] = []
 
     def fake_log(event: str, version: str, status: str) -> None:

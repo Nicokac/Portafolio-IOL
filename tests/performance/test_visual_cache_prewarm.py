@@ -1,8 +1,8 @@
-from contextlib import nullcontext
 import importlib
 import logging
 import sys
 import types
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -22,7 +22,9 @@ class DummyProvider:
         return object(), None
 
 
-def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_iol_client_triggers_visual_cache_prewarm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     for name in (
         "controllers.auth",
         "application",
@@ -38,8 +40,10 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
     sys.modules["services.performance_timer"] = stub_timer
 
     stub_client = types.ModuleType("infrastructure.iol.client")
+
     class _DummyIIOLProvider:  # pragma: no cover - simple placeholder
         ...
+
     stub_client.IIOLProvider = _DummyIIOLProvider
     stub_client.IOLClient = object
     sys.modules["infrastructure.iol.client"] = stub_client
@@ -65,11 +69,9 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
 
     auth_client_stub.AuthClientResult = _Result
     auth_client_stub.get_auth_provider = lambda: DummyProvider()
-    auth_client_stub.build_client = (
-        lambda session_user, provider=None: _Result(
-            client=(provider or DummyProvider()).build_client()[0],
-            error=None,
-        )
+    auth_client_stub.build_client = lambda session_user, provider=None: _Result(
+        client=(provider or DummyProvider()).build_client()[0],
+        error=None,
     )
     sys.modules["services.auth_client"] = auth_client_stub
 
@@ -82,9 +84,7 @@ def test_build_iol_client_triggers_visual_cache_prewarm(monkeypatch: pytest.Monk
         stub_st.session_state["authenticated"] = True
 
     auth_ui_stub.mark_authenticated = _mark_authenticated
-    auth_ui_stub.record_auth_timestamp = (
-        lambda key: stub_st.session_state.__setitem__(key, 123.0)
-    )
+    auth_ui_stub.record_auth_timestamp = lambda key: stub_st.session_state.__setitem__(key, 123.0)
     auth_ui_stub.rerun = lambda *_args, **_kwargs: None
     sys.modules["ui.adapters.auth_ui"] = auth_ui_stub
 

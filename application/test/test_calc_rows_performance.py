@@ -1,21 +1,22 @@
-import time
-import numpy as np
-import pandas as pd
 import os
 import sys
+import time
+
+import numpy as np
+import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from application.portfolio_service import (
     calc_rows,
-    clean_symbol,
     classify_symbol,
+    clean_symbol,
     scale_for,
 )
 from shared.utils import _to_float
 
-
 # Copia de la implementación original basada en bucles para comparar rendimientos
+
 
 def calc_rows_loop(get_quote_fn, df_pos: pd.DataFrame, exclude_syms):
     cols = [

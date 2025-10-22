@@ -40,7 +40,10 @@ def test_engine_predict_endpoint_returns_predictions(
         ]
     )
 
-    monkeypatch.setattr("api.routers.engine.compute_sector_predictions", lambda *args, **kwargs: fake_predictions)
+    monkeypatch.setattr(
+        "api.routers.engine.compute_sector_predictions",
+        lambda *args, **kwargs: fake_predictions,
+    )
     monkeypatch.setattr("api.routers.engine.BacktestingService", lambda: object())
 
     response = client.post(

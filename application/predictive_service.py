@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-import hashlib
 from typing import Any, Mapping
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from application import predictive_jobs
 from application.backtesting_service import BacktestingService
@@ -23,20 +23,20 @@ from application.predictive_core import (
     run_backtest,
 )
 from domain.adaptive_cache_lock import adaptive_cache_lock
+from predictive_engine import __version__ as ENGINE_VERSION
+from predictive_engine.adapters import build_sector_prediction_frame
 from services.cache import CacheService
 from services.performance_metrics import track_function
 from services.performance_timer import performance_timer
 from shared.settings import PREDICTIVE_TTL_HOURS
-
-from predictive_engine import __version__ as ENGINE_VERSION
-from predictive_engine.adapters import build_sector_prediction_frame
-
 
 LOGGER = logging.getLogger(__name__)
 
 _CACHE_NAMESPACE = "predictive"
 _CACHE_KEY_PREFIX = "sector_predictions"
 _HISTORY_CACHE_PREFIX = "adaptive_history"
+
+
 class FallbackCache:
     """Minimal cache stand-in used when the market data cache is unavailable."""
 
@@ -345,11 +345,7 @@ def _compute_prediction_frame(
             stored_frame = existing
             reused = True
             local_telemetry["cache"] = "hit"
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
+            last_updated = _cache_last_updated(active_cache) if isinstance(active_cache, CacheService) else None
             _CACHE_STATE.record_hit(
                 last_updated=last_updated,
                 ttl_hours=effective_ttl_hours,
@@ -357,11 +353,7 @@ def _compute_prediction_frame(
         else:
             if active_cache is not None:
                 active_cache.set(cache_key, predictions, ttl=prediction_ttl)
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
+            last_updated = _cache_last_updated(active_cache) if isinstance(active_cache, CacheService) else None
             _CACHE_STATE.record_miss(
                 last_updated=last_updated,
                 ttl_hours=effective_ttl_hours,
@@ -388,9 +380,7 @@ def _compute_prediction_frame(
 
 
 def _empty_history_frame() -> pd.DataFrame:
-    return pd.DataFrame(
-        columns=["timestamp", "sector", "predicted_return", "actual_return"]
-    )
+    return pd.DataFrame(columns=["timestamp", "sector", "predicted_return", "actual_return"])
 
 
 def _build_history_cache_key(
@@ -406,9 +396,7 @@ def _build_history_cache_key(
         payload.encode("utf-8"),
         usedforsecurity=False,
     ).hexdigest()
-    return (
-        f"{_HISTORY_CACHE_PREFIX}:{mode}:{span}:{max_symbols}:{periods}:{digest}"
-    )
+    return f"{_HISTORY_CACHE_PREFIX}:{mode}:{span}:{max_symbols}:{periods}:{digest}"
 
 
 def build_adaptive_history(
@@ -427,9 +415,7 @@ def build_adaptive_history(
 
     mode_key = str(mode or "real").strip().lower()
     if mode_key not in {"real", "synthetic"}:
-        raise ValueError(
-            "Modo de histórico adaptativo no soportado: solo se permite 'real' o 'synthetic'"
-        )
+        raise ValueError("Modo de histórico adaptativo no soportado: solo se permite 'real' o 'synthetic'")
 
     frame = normalise_symbol_sector(data)
     if not isinstance(frame, pd.DataFrame) or frame.empty:
@@ -439,19 +425,8 @@ def build_adaptive_history(
     if {"symbol", "sector"} - set(working.columns):
         return _empty_history_frame()
 
-    working["symbol"] = (
-        working.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .fillna("")
-        .str.upper()
-        .str.strip()
-    )
-    working["sector"] = (
-        working.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .fillna("")
-        .str.strip()
-    )
+    working["symbol"] = working.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper().str.strip()
+    working["sector"] = working.get("sector", pd.Series(dtype=str)).astype("string").fillna("").str.strip()
     working = working.dropna(subset=["symbol", "sector"])
     working = working[working["symbol"] != ""]
     if working.empty:
@@ -518,10 +493,14 @@ def build_adaptive_history(
             if aligned.empty:
                 continue
 
-            predicted_series = aligned["predicted"].ewm(
-                span=ema_span,
-                adjust=False,
-            ).mean()
+            predicted_series = (
+                aligned["predicted"]
+                .ewm(
+                    span=ema_span,
+                    adjust=False,
+                )
+                .mean()
+            )
             actual_series = aligned["actual"]
             timestamps = pd.to_datetime(aligned.index, errors="coerce")
             assembled = pd.DataFrame(
@@ -546,30 +525,15 @@ def build_adaptive_history(
         df = frame.copy()
         if "symbol" not in df.columns and "ticker" in df.columns:
             df = df.rename(columns={"ticker": "symbol"})
-        df["symbol"] = (
-            df.get("symbol", pd.Series(dtype=str))
-            .astype("string")
-            .fillna("")
-            .str.upper()
-            .str.strip()
-        )
-        df["sector"] = (
-            df.get("sector", pd.Series(dtype=str))
-            .astype("string")
-            .fillna("")
-            .str.strip()
-        )
+        df["symbol"] = df.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper().str.strip()
+        df["sector"] = df.get("sector", pd.Series(dtype=str)).astype("string").fillna("").str.strip()
         df = df.dropna(subset=["symbol", "sector"])
         df = df[df["symbol"] != ""]
         if df.empty:
             history = _empty_history_frame()
         else:
-            predicted_pct = pd.to_numeric(
-                df.get("predicted_return_pct"), errors="coerce"
-            )
-            predicted_alt = pd.to_numeric(
-                df.get("predicted_return"), errors="coerce"
-            )
+            predicted_pct = pd.to_numeric(df.get("predicted_return_pct"), errors="coerce")
+            predicted_alt = pd.to_numeric(df.get("predicted_return"), errors="coerce")
             if predicted_pct.isna().all():
                 predicted_pct = predicted_alt
             if predicted_pct.isna().all():
@@ -614,9 +578,7 @@ def build_adaptive_history(
                 sector_bias = 0.006 + idx * 0.0035
                 for step in range(int(max(periods, 1))):
                     ts = now - pd.Timedelta(days=int(periods) - step)
-                    seasonal = float(
-                        np.sin((step + 1) / (int(periods) + 1) * np.pi) * 0.04
-                    )
+                    seasonal = float(np.sin((step + 1) / (int(periods) + 1) * np.pi) * 0.04)
                     predicted_decimal = sector_base + seasonal
                     actual_decimal = predicted_decimal - sector_bias + ((step % 2) * 0.015)
                     rows.append(
@@ -662,11 +624,7 @@ def predict_sector_performance(
     a background worker and the latest cached result is returned immediately.
     """
 
-    effective_ttl_hours = (
-        float(ttl_hours)
-        if ttl_hours is not None
-        else float(PREDICTIVE_TTL_HOURS)
-    )
+    effective_ttl_hours = float(ttl_hours) if ttl_hours is not None else float(PREDICTIVE_TTL_HOURS)
     ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     active_cache: CacheService | None = cache if cache is not None else _CACHE
     if isinstance(active_cache, CacheService):
@@ -678,19 +636,8 @@ def predict_sector_performance(
     }
     frame = _prepare_opportunities(opportunities)
     telemetry["opportunities"] = int(len(frame))
-    symbols = (
-        frame.get("symbol", pd.Series(dtype=str))
-        .astype("string")
-        .str.upper()
-        .str.strip()
-        .tolist()
-    )
-    sectors = (
-        frame.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .str.strip()
-        .tolist()
-    )
+    symbols = frame.get("symbol", pd.Series(dtype=str)).astype("string").str.upper().str.strip().tolist()
+    sectors = frame.get("sector", pd.Series(dtype=str)).astype("string").str.strip().tolist()
     cache_key = f"{_CACHE_KEY_PREFIX}:{_MARKET_CACHE.build_prediction_key(symbols, span=span, sectors=sectors)}"
 
     LOGGER.debug(
@@ -717,18 +664,12 @@ def predict_sector_performance(
             cached_frame = cached
             cache_hit = True
             telemetry["cache"] = "hit"
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
+            last_updated = _cache_last_updated(active_cache) if isinstance(active_cache, CacheService) else None
             _CACHE_STATE.record_hit(
                 last_updated=last_updated,
                 ttl_hours=effective_ttl_hours,
             )
-        LOGGER.debug(
-            "Liberando lock adaptativo en predictive_service tras consulta de caché"
-        )
+        LOGGER.debug("Liberando lock adaptativo en predictive_service tras consulta de caché")
 
     if cache_hit and isinstance(cached_frame, pd.DataFrame):
         LOGGER.debug(
@@ -750,18 +691,12 @@ def predict_sector_performance(
             )
             if active_cache is not None:
                 active_cache.set(cache_key, empty, ttl=ttl_seconds)
-            last_updated = (
-                _cache_last_updated(active_cache)
-                if isinstance(active_cache, CacheService)
-                else None
-            )
+            last_updated = _cache_last_updated(active_cache) if isinstance(active_cache, CacheService) else None
             _CACHE_STATE.record_miss(
                 last_updated=last_updated,
                 ttl_hours=effective_ttl_hours,
             )
-            LOGGER.debug(
-                "Lock adaptativo liberado tras almacenar predicciones vacías"
-            )
+            LOGGER.debug("Lock adaptativo liberado tras almacenar predicciones vacías")
         telemetry["result_rows"] = 0
         metadata = {
             "job_id": None,
@@ -850,9 +785,7 @@ def update_cache_metrics(cache: CacheService | None = None) -> PredictiveSnapsho
 
     active_cache: CacheService | None = cache if cache is not None else _CACHE
     with adaptive_cache_lock:
-        LOGGER.debug(
-            "Lock adaptativo adquirido para refrescar métricas de caché predictivo"
-        )
+        LOGGER.debug("Lock adaptativo adquirido para refrescar métricas de caché predictivo")
         hits = _CACHE_STATE.hits
         misses = _CACHE_STATE.misses
         last_updated = _CACHE_STATE.last_updated or "-"
@@ -895,9 +828,7 @@ def update_cache_metrics(cache: CacheService | None = None) -> PredictiveSnapsho
             remaining_ttl=remaining_ttl,
         )
 
-        LOGGER.debug(
-            "Lock adaptativo liberado tras refrescar métricas de caché predictivo"
-        )
+        LOGGER.debug("Lock adaptativo liberado tras refrescar métricas de caché predictivo")
     return snapshot
 
 

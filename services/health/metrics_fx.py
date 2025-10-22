@@ -132,9 +132,7 @@ def _summarize_fx_cache_stats(stats: Any) -> Dict[str, Any]:
     return summary
 
 
-def record_fx_api_response(
-    *, error: Optional[str] = None, elapsed_ms: Optional[float] = None
-) -> None:
+def record_fx_api_response(*, error: Optional[str] = None, elapsed_ms: Optional[float] = None) -> None:
     """Persist metadata about the latest FX API call."""
 
     store = get_store()
@@ -181,16 +179,12 @@ def record_fx_api_response(
         value = float(numeric_latency)
         stats["latency_count"] = int(stats.get("latency_count", 0) or 0) + 1
         stats["latency_sum"] = float(stats.get("latency_sum", 0.0) or 0.0) + value
-        stats["latency_sum_sq"] = (
-            float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
-        )
+        stats["latency_sum_sq"] = float(stats.get("latency_sum_sq", 0.0) or 0.0) + value * value
         current_min = _as_optional_float(stats.get("latency_min"))
         stats["latency_min"] = value if current_min is None else min(current_min, value)
         current_max = _as_optional_float(stats.get("latency_max"))
         stats["latency_max"] = value if current_max is None else max(current_max, value)
-        latency_history = _ensure_latency_history(
-            stats.get("latency_history"), limit=_FX_API_HISTORY_LIMIT
-        )
+        latency_history = _ensure_latency_history(stats.get("latency_history"), limit=_FX_API_HISTORY_LIMIT)
         latency_history.append(value)
         stats["latency_history"] = latency_history
         stats["last_elapsed_ms"] = value
@@ -201,9 +195,7 @@ def record_fx_api_response(
     stats["last_ts"] = now
 
     latest_event = dict(summary)
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_FX_API_HISTORY_LIMIT
-    )
+    event_history = _ensure_event_history(stats.get("event_history"), limit=_FX_API_HISTORY_LIMIT)
     event_history.append(latest_event)
     stats["event_history"] = event_history
 
@@ -269,28 +261,18 @@ def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
     if numeric_age is not None and math.isfinite(numeric_age):
         stats["age_count"] = int(stats.get("age_count", 0) or 0) + 1
         stats["age_sum"] = float(stats.get("age_sum", 0.0) or 0.0) + numeric_age
-        stats["age_sum_sq"] = (
-            float(stats.get("age_sum_sq", 0.0) or 0.0) + numeric_age * numeric_age
-        )
+        stats["age_sum_sq"] = float(stats.get("age_sum_sq", 0.0) or 0.0) + numeric_age * numeric_age
         current_min = _as_optional_float(stats.get("age_min"))
-        stats["age_min"] = (
-            numeric_age if current_min is None else min(current_min, numeric_age)
-        )
+        stats["age_min"] = numeric_age if current_min is None else min(current_min, numeric_age)
         current_max = _as_optional_float(stats.get("age_max"))
-        stats["age_max"] = (
-            numeric_age if current_max is None else max(current_max, numeric_age)
-        )
-        age_history = _ensure_latency_history(
-            stats.get("age_history"), limit=_FX_CACHE_HISTORY_LIMIT
-        )
+        stats["age_max"] = numeric_age if current_max is None else max(current_max, numeric_age)
+        age_history = _ensure_latency_history(stats.get("age_history"), limit=_FX_CACHE_HISTORY_LIMIT)
         age_history.append(numeric_age)
         stats["age_history"] = age_history
 
     stats["last_age"] = numeric_age
 
-    event_history = _ensure_event_history(
-        stats.get("event_history"), limit=_FX_CACHE_HISTORY_LIMIT
-    )
+    event_history = _ensure_event_history(stats.get("event_history"), limit=_FX_CACHE_HISTORY_LIMIT)
     latest_event = dict(entry)
     event_history.append(latest_event)
     stats["event_history"] = event_history
@@ -309,12 +291,8 @@ def record_fx_cache_usage(mode: str, *, age: Optional[float] = None) -> None:
 def fx_metrics_snapshot(store: Mapping[str, Any]) -> Dict[str, Any]:
     """Return the merged FX metrics ready for health dashboards."""
 
-    fx_api_data = _merge_entry(
-        store.get("fx_api"), _summarize_fx_api_stats(store.get("fx_api_stats"))
-    )
-    fx_cache_data = _merge_entry(
-        store.get("fx_cache"), _summarize_fx_cache_stats(store.get("fx_cache_stats"))
-    )
+    fx_api_data = _merge_entry(store.get("fx_api"), _summarize_fx_api_stats(store.get("fx_api_stats")))
+    fx_cache_data = _merge_entry(store.get("fx_cache"), _summarize_fx_cache_stats(store.get("fx_cache_stats")))
 
     return {
         "fx_api": fx_api_data,

@@ -1,9 +1,7 @@
 from types import SimpleNamespace
 
-import pandas as pd
-
-from ui.panels import diagnostics as panel
 from tests.fixtures.streamlit import UIFakeStreamlit
+from ui.panels import diagnostics as panel
 
 
 def test_diagnostics_panel_renders_stage_timings(monkeypatch):
@@ -18,7 +16,10 @@ def test_diagnostics_panel_renders_stage_timings(monkeypatch):
     monkeypatch.setattr(panel, "export_metrics_csv", lambda: b"csv")
     monkeypatch.setattr(panel, "safe_page_link", lambda *a, **k: None)
 
-    fake_st.session_state["portfolio_stage_timings"] = {"render_summary": 12.3, "render_table": 4.5}
+    fake_st.session_state["portfolio_stage_timings"] = {
+        "render_summary": 12.3,
+        "render_table": 4.5,
+    }
 
     panel.render_diagnostics_panel()
 

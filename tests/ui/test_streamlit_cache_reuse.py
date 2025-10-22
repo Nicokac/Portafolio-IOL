@@ -5,6 +5,15 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from application.portfolio_service import PortfolioTotals
+from controllers.portfolio.portfolio import render_portfolio_section
+from services.notifications import NotificationFlags
+from services.portfolio_view import (
+    PortfolioContributionMetrics,
+    PortfolioViewSnapshot,
+)
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+
 # Stub heavy optional dependencies used by portfolio controllers during import time.
 statsmodels_mod = types.ModuleType("statsmodels")
 statsmodels_api = types.ModuleType("statsmodels.api")
@@ -29,15 +38,6 @@ sys.modules.setdefault("scipy.stats._multicomp", scipy_stats_multicomp)
 sys.modules.setdefault("scipy.sparse", scipy_sparse)
 sys.modules.setdefault("scipy.sparse.csgraph", scipy_sparse_csgraph)
 sys.modules.setdefault("scipy.sparse.csgraph._shortest_path", scipy_sparse_shortest)
-
-from application.portfolio_service import PortfolioTotals
-from controllers.portfolio.portfolio import render_portfolio_section
-from services.portfolio_view import (
-    PortfolioContributionMetrics,
-    PortfolioViewSnapshot,
-)
-from services.notifications import NotificationFlags
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 @pytest.fixture

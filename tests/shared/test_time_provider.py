@@ -4,12 +4,11 @@ import re
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-
 from zoneinfo import ZoneInfo
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-from shared.time_provider import TIMEZONE, TIME_FORMAT, TimeProvider
+from shared.time_provider import TIME_FORMAT, TIMEZONE, TimeProvider
 
 
 def test_time_provider_now_returns_formatted_string_and_timezone() -> None:

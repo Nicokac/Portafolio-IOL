@@ -53,12 +53,7 @@ def normalise_predictions(frame: pd.DataFrame | None) -> pd.DataFrame:
     df = frame.copy()
     if "sector" not in df.columns:
         return _empty_predictions_frame()
-    df["sector"] = (
-        df.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .str.strip()
-        .replace({"": "Sin sector"})
-    )
+    df["sector"] = df.get("sector", pd.Series(dtype=str)).astype("string").str.strip().replace({"": "Sin sector"})
     if "timestamp" in df.columns:
         df["timestamp"] = df["timestamp"].apply(ensure_timestamp)
     else:
@@ -82,12 +77,7 @@ def normalise_actuals(frame: pd.DataFrame | None) -> pd.DataFrame:
     df = frame.copy()
     if "sector" not in df.columns:
         return _empty_actuals_frame()
-    df["sector"] = (
-        df.get("sector", pd.Series(dtype=str))
-        .astype("string")
-        .str.strip()
-        .replace({"": "Sin sector"})
-    )
+    df["sector"] = df.get("sector", pd.Series(dtype=str)).astype("string").str.strip().replace({"": "Sin sector"})
     if "timestamp" in df.columns:
         df["timestamp"] = df["timestamp"].apply(ensure_timestamp)
     else:
@@ -110,20 +100,14 @@ def merge_inputs(
     """Merge prediction and actual frames with optional timestamp override."""
 
     if predictions.empty or actuals.empty:
-        return pd.DataFrame(
-            columns=["timestamp", "sector", "predicted_return", "actual_return"]
-        )
+        return pd.DataFrame(columns=["timestamp", "sector", "predicted_return", "actual_return"])
     merged = pd.merge(predictions, actuals, on=["sector", "timestamp"], how="outer")
     if timestamp is not None:
         merged["timestamp"] = ensure_timestamp(timestamp)
     else:
         merged["timestamp"] = merged["timestamp"].apply(ensure_timestamp)
-    merged["predicted_return"] = pd.to_numeric(
-        merged.get("predicted_return"), errors="coerce"
-    ).astype(float)
-    merged["actual_return"] = pd.to_numeric(
-        merged.get("actual_return"), errors="coerce"
-    ).astype(float)
+    merged["predicted_return"] = pd.to_numeric(merged.get("predicted_return"), errors="coerce").astype(float)
+    merged["actual_return"] = pd.to_numeric(merged.get("actual_return"), errors="coerce").astype(float)
     merged = merged.dropna(subset=["sector"])
     return merged
 

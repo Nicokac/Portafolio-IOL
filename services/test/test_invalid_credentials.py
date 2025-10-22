@@ -1,6 +1,7 @@
-import pytest
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from services import cache as svc_cache
 from shared.errors import InvalidCredentialsError

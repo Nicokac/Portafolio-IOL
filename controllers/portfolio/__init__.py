@@ -21,8 +21,14 @@ __all__ = [
 
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
-    "render_portfolio_section": ("controllers.portfolio.portfolio", "render_portfolio_section"),
-    "build_portfolio_viewmodel": ("application.portfolio_viewmodel", "build_portfolio_viewmodel"),
+    "render_portfolio_section": (
+        "controllers.portfolio.portfolio",
+        "render_portfolio_section",
+    ),
+    "build_portfolio_viewmodel": (
+        "application.portfolio_viewmodel",
+        "build_portfolio_viewmodel",
+    ),
     "get_portfolio_tabs": ("application.portfolio_viewmodel", "get_portfolio_tabs"),
     "PortfolioMetrics": ("application.portfolio_viewmodel", "PortfolioMetrics"),
     "PortfolioViewModel": ("application.portfolio_viewmodel", "PortfolioViewModel"),
@@ -30,7 +36,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "apply_filters": ("controllers.portfolio.filters", "apply_filters"),
     "generate_basic_charts": ("controllers.portfolio.charts", "generate_basic_charts"),
     "render_basic_section": ("controllers.portfolio.charts", "render_basic_section"),
-    "render_advanced_analysis": ("controllers.portfolio.charts", "render_advanced_analysis"),
+    "render_advanced_analysis": (
+        "controllers.portfolio.charts",
+        "render_advanced_analysis",
+    ),
     "compute_risk_metrics": ("controllers.portfolio.risk", "compute_risk_metrics"),
     "render_risk_analysis": ("controllers.portfolio.risk", "render_risk_analysis"),
     "render_fundamental_analysis": (

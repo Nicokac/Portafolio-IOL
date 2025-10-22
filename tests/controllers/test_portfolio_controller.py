@@ -1,18 +1,18 @@
 from __future__ import annotations
 
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
-import sys
 
 import pandas as pd
 import pytest
 
+from controllers.portfolio import portfolio
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from controllers.portfolio import portfolio
 
 
 class DummyFavorites:
@@ -132,7 +132,11 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
         ),
     )
     monkeypatch.setattr(portfolio, "_ensure_component_store", lambda cache: {})
-    monkeypatch.setattr(portfolio, "_ensure_component_entry", lambda store, name: {"placeholder": _Placeholder()})
+    monkeypatch.setattr(
+        portfolio,
+        "_ensure_component_entry",
+        lambda store, name: {"placeholder": _Placeholder()},
+    )
     monkeypatch.setattr(portfolio, "render_summary_section", fake_summary)
     monkeypatch.setattr(portfolio, "render_table_section", fake_table)
     monkeypatch.setattr(portfolio, "render_charts_section", fake_charts)
@@ -143,7 +147,9 @@ def test_render_basic_tab_uses_viewmodel(monkeypatch: pytest.MonkeyPatch) -> Non
     assert calls == {"summary": 1, "table": 0, "charts": 0}
 
 
-def test_render_notifications_panel_renders_badges(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_notifications_panel_renders_badges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     favorites = SimpleNamespace()
     notifications = SimpleNamespace(technical_signal=True)
     ui = DummyUI()
@@ -179,9 +185,7 @@ def test_render_technical_tab_smoke(monkeypatch: pytest.MonkeyPatch) -> None:
 
     tasvc = SimpleNamespace(
         fundamentals=lambda _sym: {"pe": 10},
-        indicators_for=lambda *args, **kwargs: pd.DataFrame(
-            {"close": [1, 2, 3], "equity": [1.0, 1.1, 1.2]}
-        ),
+        indicators_for=lambda *args, **kwargs: pd.DataFrame({"close": [1, 2, 3], "equity": [1.0, 1.1, 1.2]}),
         alerts_for=lambda _df: ["Señal alcista"],
         backtest=lambda _df, strategy: pd.DataFrame({"equity": [1.0, 1.2]}),
     )

@@ -40,7 +40,9 @@ def test_adaptive_cache_lock_is_reentrant() -> None:
     assert not adaptive_module.adaptive_cache_lock.locked()
 
 
-def test_adaptive_cache_lock_warns_on_long_wait(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+def test_adaptive_cache_lock_warns_on_long_wait(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     calls = deque([0.0, 5.5, 5.5])
 
     def _fake_monotonic() -> float:
@@ -56,7 +58,9 @@ def test_adaptive_cache_lock_warns_on_long_wait(monkeypatch: pytest.MonkeyPatch,
     assert any("demoró" in record.message and "módulo" in record.message for record in caplog.records)
 
 
-def test_adaptive_cache_lock_warns_on_long_hold(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+def test_adaptive_cache_lock_warns_on_long_hold(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     calls = deque([0.0, 0.0, 5.5])
 
     def _fake_monotonic() -> float:
@@ -72,7 +76,9 @@ def test_adaptive_cache_lock_warns_on_long_hold(monkeypatch: pytest.MonkeyPatch,
     assert any("retenido" in record.message and "owner" in record.message for record in caplog.records)
 
 
-def test_adaptive_cache_lock_warns_on_prolonged_hold(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+def test_adaptive_cache_lock_warns_on_prolonged_hold(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     calls = deque([0.0, 0.0, 130.0])
 
     def _fake_monotonic() -> float:

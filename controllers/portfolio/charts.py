@@ -3,21 +3,21 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
-from ui.favorites import render_favorite_badges, render_favorite_toggle
-from ui.tables import render_totals, render_table as render_positions_table
-from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from services.portfolio_view import compute_symbol_risk_metrics
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from ui.charts import (
     _apply_layout,
-    plot_pl_topn,
-    plot_donut_tipo,
-    plot_pl_daily_topn,
     plot_bubble_pl_vs_costo,
-    plot_heat_pl_pct,
     plot_contribution_heatmap,
+    plot_donut_tipo,
+    plot_heat_pl_pct,
+    plot_pl_daily_topn,
+    plot_pl_topn,
 )
-
+from ui.export import PLOTLY_CONFIG, render_portfolio_exports
+from ui.favorites import render_favorite_badges, render_favorite_toggle
+from ui.tables import render_table as render_positions_table
+from ui.tables import render_totals
 
 _HEAVY_DATA_THRESHOLD = 250
 
@@ -57,11 +57,7 @@ def render_summary(
 ):
     """Render the summary controls, totals and exports for the portfolio."""
     favorites = favorites or get_persistent_favorites()
-    symbols = (
-        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
-        if not df_view.empty
-        else []
-    )
+    symbols = sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()}) if not df_view.empty else []
 
     render_favorite_badges(
         favorites,
@@ -147,7 +143,8 @@ def render_charts(
                 config=PLOTLY_CONFIG,
             )
             st.caption(
-                "Barras que muestran qué activos ganan o pierden más. Las más altas son las que más afectan tu resultado."
+                "Barras que muestran qué activos ganan o pierden más. "
+                "Las más altas son las que más afectan tu resultado."
             )
         else:
             st.info("Sin datos para graficar P/L Top N.")
@@ -162,7 +159,8 @@ def render_charts(
                 config=PLOTLY_CONFIG,
             )
             st.caption(
-                "Indica qué porcentaje de tu inversión está en cada tipo de activo para ver si estás diversificando bien."
+                "Indica qué porcentaje de tu inversión está en cada tipo de activo "
+                "para ver si estás diversificando bien."
             )
         else:
             st.info("No hay datos para el donut por tipo.")
@@ -176,9 +174,7 @@ def render_charts(
             key="pl_diario",
             config=PLOTLY_CONFIG,
         )
-        st.caption(
-            "Muestra las ganancias o pérdidas del día para los activos con mayor movimiento."
-        )
+        st.caption("Muestra las ganancias o pérdidas del día para los activos con mayor movimiento.")
     else:
         st.info("Aún no hay datos de P/L diario.")
 
@@ -187,9 +183,7 @@ def render_charts(
     heatmap_rows = len(by_symbol) if isinstance(by_symbol, pd.DataFrame) else 0
     heatmap_ready_key = "portfolio_heatmap_ready"
     requires_lazy_heatmap = heatmap_rows > _HEAVY_DATA_THRESHOLD
-    heatmap_ready = not requires_lazy_heatmap or st.session_state.get(
-        heatmap_ready_key, False
-    )
+    heatmap_ready = not requires_lazy_heatmap or st.session_state.get(heatmap_ready_key, False)
     if requires_lazy_heatmap and not heatmap_ready and heatmap_rows:
         if st.button(
             "Generar mapa de calor",
@@ -198,9 +192,7 @@ def render_charts(
             st.session_state[heatmap_ready_key] = True
             heatmap_ready = True
         else:
-            st.info(
-                "El mapa de calor se calcula cuando lo necesitás para reducir recomputaciones pesadas."
-            )
+            st.info("El mapa de calor se calcula cuando lo necesitás para reducir recomputaciones pesadas.")
     if heatmap_ready:
         with st.spinner("Generando análisis avanzado…"):
             heatmap_fig = _cached_contribution_heatmap(by_symbol)
@@ -211,31 +203,23 @@ def render_charts(
                 key="portfolio_contribution_heatmap",
                 config=PLOTLY_CONFIG,
             )
-            st.caption(
-                "Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera."
-            )
+            st.caption("Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera.")
         else:
             st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
 
     by_type = getattr(contribution_metrics, "by_type", None)
     if isinstance(by_type, pd.DataFrame) and not by_type.empty:
         display_cols = [
-            col
-            for col in ["tipo", "valor_actual", "valor_actual_pct", "pl", "pl_pct"]
-            if col in by_type.columns
+            col for col in ["tipo", "valor_actual", "valor_actual_pct", "pl", "pl_pct"] if col in by_type.columns
         ]
         df_table = by_type[display_cols].copy()
         for col in df_table.columns:
             if col == "tipo":
                 df_table[col] = df_table[col].astype(str)
             elif col.endswith("_pct"):
-                df_table[col] = df_table[col].apply(
-                    lambda v: f"{float(v):.2f}%" if pd.notna(v) else "—"
-                )
+                df_table[col] = df_table[col].apply(lambda v: f"{float(v):.2f}%" if pd.notna(v) else "—")
             else:
-                df_table[col] = df_table[col].apply(
-                    lambda v: f"{float(v):,.0f}" if pd.notna(v) else "—"
-                )
+                df_table[col] = df_table[col].apply(lambda v: f"{float(v):,.0f}" if pd.notna(v) else "—")
 
         table_fig = go.Figure(
             data=[
@@ -327,11 +311,7 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
         "S&P 500 (^GSPC)": "^GSPC",
     }
 
-    symbols = (
-        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
-        if not df_view.empty
-        else []
-    )
+    symbols = sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()}) if not df_view.empty else []
 
     cols_controls = st.columns(3)
     with cols_controls[0]:
@@ -367,22 +347,14 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
     assets_df = df_view.copy()
     benchmark_row = pd.DataFrame()
     if not metrics_df.empty:
-        asset_metrics = metrics_df.loc[~metrics_df["es_benchmark"]].drop(
-            columns=["es_benchmark"], errors="ignore"
-        )
+        asset_metrics = metrics_df.loc[~metrics_df["es_benchmark"]].drop(columns=["es_benchmark"], errors="ignore")
         assets_df = assets_df.merge(asset_metrics, on="simbolo", how="left")
         for col in ("volatilidad", "drawdown", "beta"):
             if col in assets_df.columns:
-                assets_df[col] = pd.to_numeric(assets_df[col], errors="coerce").astype(
-                    "float32"
-                )
+                assets_df[col] = pd.to_numeric(assets_df[col], errors="coerce").astype("float32")
         benchmark_row = metrics_df.loc[metrics_df["es_benchmark"]]
 
-    axis_candidates = [
-        c
-        for c in ["costo", "pl", "pl_%", "valor_actual", "pl_d"]
-        if c in assets_df.columns
-    ]
+    axis_candidates = [c for c in ["costo", "pl", "pl_%", "valor_actual", "pl_d"] if c in assets_df.columns]
     for c in RISK_METRIC_OPTIONS.values():
         if c in assets_df.columns:
             axis_candidates.append(c)
@@ -405,9 +377,7 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
             y_axis = st.selectbox(
                 "Eje Y",
                 options=axis_options,
-                index=axis_options.index("pl")
-                if "pl" in axis_options
-                else min(1, len(axis_options) - 1),
+                index=axis_options.index("pl") if "pl" in axis_options else min(1, len(axis_options) - 1),
                 key="bubble_y",
             )
             y_log = st.checkbox("Escala log Y", key="bubble_y_log")
@@ -430,13 +400,9 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
             bench_entry.setdefault("simbolo", benchmark_symbol)
             if "valor_actual" in bubble_df.columns:
                 avg_val = bubble_df["valor_actual"].dropna()
-                bench_entry.setdefault(
-                    "valor_actual", float(avg_val.mean()) if not avg_val.empty else 0.0
-                )
+                bench_entry.setdefault("valor_actual", float(avg_val.mean()) if not avg_val.empty else 0.0)
             bench_entry.setdefault("tipo", "Benchmark")
-            bubble_df = pd.concat(
-                [bubble_df, pd.DataFrame([bench_entry])], ignore_index=True
-            )
+            bubble_df = pd.concat([bubble_df, pd.DataFrame([bench_entry])], ignore_index=True)
 
         if "es_benchmark" not in bubble_df.columns:
             if "simbolo" in bubble_df.columns:
@@ -445,9 +411,7 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
                 bubble_df["es_benchmark"] = False
         else:
             bubble_df["es_benchmark"] = bubble_df["es_benchmark"].fillna(False)
-        bubble_df["categoria"] = bubble_df["es_benchmark"].map(
-            {True: "Benchmark", False: "Activo"}
-        )
+        bubble_df["categoria"] = bubble_df["es_benchmark"].map({True: "Benchmark", False: "Activo"})
 
         fig = plot_bubble_pl_vs_costo(
             bubble_df,
@@ -469,12 +433,8 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
 
             metric_col = RISK_METRIC_OPTIONS[metric_label]
             if metric_col in bubble_df.columns:
-                bench_value = bubble_df.loc[
-                    bubble_df["es_benchmark"], metric_col
-                ].dropna()
-                asset_values = bubble_df.loc[
-                    ~bubble_df["es_benchmark"], metric_col
-                ].dropna()
+                bench_value = bubble_df.loc[bubble_df["es_benchmark"], metric_col].dropna()
+                asset_values = bubble_df.loc[~bubble_df["es_benchmark"], metric_col].dropna()
                 if not bench_value.empty and not asset_values.empty:
                     bench_val = float(bench_value.iloc[0])
                     avg_val = float(asset_values.mean())
@@ -488,7 +448,8 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
 
             with st.expander("Descripción"):
                 st.caption(
-                    "Cada burbuja representa un símbolo; el tamaño refleja el valor actual. Cambia ejes, escalas y paleta para explorar distintos ángulos."
+                    "Cada burbuja representa un símbolo; el tamaño refleja el valor actual. "
+                    "Cambia ejes, escalas y paleta para explorar distintos ángulos."
                 )
         else:
             st.info("No hay datos suficientes para el gráfico bubble.")
@@ -509,7 +470,8 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
             )
             with st.expander("Descripción"):
                 st.caption(
-                    "El color indica la variación porcentual; prueba diferentes escalas para resaltar ganancias o pérdidas."
+                    "El color indica la variación porcentual; prueba diferentes escalas "
+                    "para resaltar ganancias o pérdidas."
                 )
         else:
             st.info("No hay datos suficientes para el heatmap.")

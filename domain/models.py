@@ -28,4 +28,3 @@ class Controls:
     selected_syms: list[str] = field(default_factory=list)
     selected_types: list[str] = field(default_factory=list)
     symbol_query: str = ""
-

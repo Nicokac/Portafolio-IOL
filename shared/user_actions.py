@@ -245,11 +245,7 @@ def _dedupe_signature(action: str, detail: str, dataset_hash: str, scope: str, u
         _LAST_EVENT_TIMES[signature] = now
         # Opportunistically prune outdated entries to avoid unbounded growth.
         if len(_LAST_EVENT_TIMES) > 1024:
-            expired = [
-                key
-                for key, ts in list(_LAST_EVENT_TIMES.items())
-                if now - ts > 5.0
-            ]
+            expired = [key for key, ts in list(_LAST_EVENT_TIMES.items()) if now - ts > 5.0]
             for key in expired:
                 _LAST_EVENT_TIMES.pop(key, None)
     return True

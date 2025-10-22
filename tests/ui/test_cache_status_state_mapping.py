@@ -1,6 +1,3 @@
-from ui.tabs import recommendations
-
-
 def test_state_mapping_valid_values():
     state_map = {"green": "complete", "yellow": "running", "red": "error"}
     for color in ["green", "yellow", "red", "unknown"]:

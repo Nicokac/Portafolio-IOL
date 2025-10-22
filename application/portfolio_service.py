@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from functools import lru_cache
 import logging
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping
 
 import numpy as np
@@ -64,6 +64,7 @@ def detect_currency(sym: str, tipo: str | None) -> str:
     """Determina la moneda en base al símbolo informado."""
 
     return "USD" if str(sym).upper() in {"PRPEDOB"} else "ARS"
+
 
 logger = logging.getLogger(__name__)
 
@@ -277,17 +278,13 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                 }
             )
 
-    return pd.DataFrame(
-        items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"]
-    )
+    return pd.DataFrame(items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"])
 
 
 # ---------- Cálculo de métricas ----------
 
 
-def calc_rows(
-    get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]
-) -> pd.DataFrame:
+def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
     """Calcula métricas de valuación y P/L para cada posición.
 
     La lógica original iteraba fila por fila; aquí se vectoriza el cálculo:
@@ -379,12 +376,7 @@ def calc_rows(
     # ----- P/L diario ---------------------------------------------------
     chg_series = pd.to_numeric(df["chg_pct"], errors="coerce")
     pct = chg_series / 100.0
-    mask = (
-        chg_series.isna()
-        & df["ultimo"].notna()
-        & df["prev_close"].notna()
-        & (df["prev_close"] != 0)
-    )
+    mask = chg_series.isna() & df["ultimo"].notna() & df["prev_close"].notna() & (df["prev_close"] != 0)
     pct = pct.where(~mask, (df["ultimo"] - df["prev_close"]) / df["prev_close"])
     denom = 1.0 + pct
     df["pl_d"] = np.where(
@@ -444,16 +436,8 @@ class PortfolioService:
     ) -> dict[str, dict[str, float]]:
         """Combina el portafolio actual con nuevas asignaciones y resume métricas."""
 
-        portfolio_df = (
-            portfolio_positions.copy()
-            if isinstance(portfolio_positions, pd.DataFrame)
-            else pd.DataFrame()
-        )
-        rec_df = (
-            recommendations.copy()
-            if isinstance(recommendations, pd.DataFrame)
-            else pd.DataFrame()
-        )
+        portfolio_df = portfolio_positions.copy() if isinstance(portfolio_positions, pd.DataFrame) else pd.DataFrame()
+        rec_df = recommendations.copy() if isinstance(recommendations, pd.DataFrame) else pd.DataFrame()
 
         base_totals = totals if isinstance(totals, PortfolioTotals) else calculate_totals(portfolio_df)
         before_value = float(getattr(base_totals, "total_value", 0.0) or 0.0)
@@ -467,12 +451,7 @@ class PortfolioService:
         before_expected_value = before_value * base_rate
 
         allocation = pd.to_numeric(rec_df.get("allocation_amount"), errors="coerce").fillna(0.0)
-        rec_symbols = (
-            rec_df.get("symbol", pd.Series(dtype=str))
-            .astype("string")
-            .fillna("")
-            .str.upper()
-        )
+        rec_symbols = rec_df.get("symbol", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
         new_capital = float(allocation.sum()) if len(allocation) else 0.0
 
         expected_lookup: dict[str, float] = {}
@@ -502,12 +481,7 @@ class PortfolioService:
         existing_values: dict[str, float] = {}
         if not portfolio_df.empty and "valor_actual" in portfolio_df.columns:
             values = pd.to_numeric(portfolio_df["valor_actual"], errors="coerce").fillna(0.0)
-            symbols = (
-                portfolio_df.get("simbolo", pd.Series(dtype=str))
-                .astype("string")
-                .fillna("")
-                .str.upper()
-            )
+            symbols = portfolio_df.get("simbolo", pd.Series(dtype=str)).astype("string").fillna("").str.upper()
             for symbol, value in zip(symbols, values):
                 if not symbol:
                     continue
@@ -552,11 +526,7 @@ class PortfolioService:
         beta_after = _weighted_metric(combined_values)
 
         projected_before = base_rate * 100.0 if before_value > 0.0 else 0.0
-        projected_after = (
-            after_expected_value / after_value * 100.0
-            if after_value > 0.0
-            else 0.0
-        )
+        projected_after = after_expected_value / after_value * 100.0 if after_value > 0.0 else 0.0
 
         return {
             "before": {

@@ -144,9 +144,7 @@ class AdaptiveForecastRequest(_BaseModel):
     elif root_validator is not None:  # pragma: no cover - fallback for Pydantic v1
 
         @root_validator(skip_on_failure=True)  # type: ignore[misc]
-        def _check_limits_v1(
-            cls, values: dict[str, Any]
-        ) -> dict[str, Any]:
+        def _check_limits_v1(cls, values: dict[str, Any]) -> dict[str, Any]:
             cls._validate_limits(values)
             return values
 

@@ -1,24 +1,30 @@
 # shared/config.py
 from __future__ import annotations
-import os, json
+
+import json
+import logging
+import os
 import re
+import sys
 import time
 from datetime import datetime, timedelta
+from functools import lru_cache
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
-from dotenv import load_dotenv
-from functools import lru_cache
-import logging
-from logging.handlers import TimedRotatingFileHandler
-import sys
+
 import streamlit as st
+from dotenv import load_dotenv
 
 try:  # pragma: no cover - import may fail in tests
     from streamlit.runtime.secrets import StreamlitSecretNotFoundError
 except Exception:  # pragma: no cover - streamlit may not expose runtime module
+
     class StreamlitSecretNotFoundError(Exception):
         """Fallback cuando streamlit no expone StreamlitSecretNotFoundError."""
+
         pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +57,14 @@ class _PatternLevelOverrideFilter(logging.Filter):
         return True
 
 
-def _downgrade_logger_patterns(
-    logger_name: str, patterns: Iterable[str], *, level: int = logging.DEBUG
-) -> None:
+def _downgrade_logger_patterns(logger_name: str, patterns: Iterable[str], *, level: int = logging.DEBUG) -> None:
     compiled = [p for p in (re.compile(pattern) for pattern in patterns) if p]
     if not compiled:
         return
     logger = logging.getLogger(logger_name)
     for pattern in compiled:
         logger.addFilter(_PatternLevelOverrideFilter(pattern, level))
+
 
 def _load_cfg() -> Dict[str, Any]:
     """
@@ -74,6 +79,7 @@ def _load_cfg() -> Dict[str, Any]:
             logger.exception("No se pudo cargar configuración %s: %s", p, e)
     return {}
 
+
 class Settings:
     def __init__(self) -> None:
         cfg = _load_cfg()
@@ -82,28 +88,18 @@ class Settings:
         self.USER_AGENT: str = os.getenv("USER_AGENT", cfg.get("USER_AGENT", "IOL-Portfolio/1.0 (+app)"))
 
         # --- Servicios auxiliares ---
-        self.NOTIFICATIONS_URL: str | None = self.secret_or_env(
-            "NOTIFICATIONS_URL", cfg.get("NOTIFICATIONS_URL")
-        )
+        self.NOTIFICATIONS_URL: str | None = self.secret_or_env("NOTIFICATIONS_URL", cfg.get("NOTIFICATIONS_URL"))
         self.NOTIFICATIONS_TIMEOUT: float = float(
             os.getenv("NOTIFICATIONS_TIMEOUT", cfg.get("NOTIFICATIONS_TIMEOUT", 3.0))
         )
 
         # --- Macro data providers ---
-        self.MACRO_API_PROVIDER: str = os.getenv(
-            "MACRO_API_PROVIDER", cfg.get("MACRO_API_PROVIDER", "fred")
-        )
+        self.MACRO_API_PROVIDER: str = os.getenv("MACRO_API_PROVIDER", cfg.get("MACRO_API_PROVIDER", "fred"))
         raw_series = self.secret_or_env("FRED_SECTOR_SERIES", cfg.get("FRED_SECTOR_SERIES"))
         self.FRED_SECTOR_SERIES: Dict[str, str] = self._parse_sector_series(raw_series)
-        raw_fallback = self.secret_or_env(
-            "MACRO_SECTOR_FALLBACK", cfg.get("MACRO_SECTOR_FALLBACK")
-        )
-        self.MACRO_SECTOR_FALLBACK: Dict[str, Dict[str, Any]] = self._parse_macro_fallback(
-            raw_fallback
-        )
-        self.FRED_API_KEY: str | None = self.secret_or_env(
-            "FRED_API_KEY", cfg.get("FRED_API_KEY")
-        )
+        raw_fallback = self.secret_or_env("MACRO_SECTOR_FALLBACK", cfg.get("MACRO_SECTOR_FALLBACK"))
+        self.MACRO_SECTOR_FALLBACK: Dict[str, Dict[str, Any]] = self._parse_macro_fallback(raw_fallback)
+        self.FRED_API_KEY: str | None = self.secret_or_env("FRED_API_KEY", cfg.get("FRED_API_KEY"))
         self.FRED_API_BASE_URL: str = os.getenv(
             "FRED_API_BASE_URL",
             cfg.get("FRED_API_BASE_URL", "https://api.stlouisfed.org/fred"),
@@ -114,15 +110,9 @@ class Settings:
                 cfg.get("FRED_API_RATE_LIMIT_PER_MINUTE", 120),
             )
         )
-        raw_worldbank_series = self.secret_or_env(
-            "WORLD_BANK_SECTOR_SERIES", cfg.get("WORLD_BANK_SECTOR_SERIES")
-        )
-        self.WORLD_BANK_SECTOR_SERIES: Dict[str, str] = self._parse_sector_series(
-            raw_worldbank_series
-        )
-        self.WORLD_BANK_API_KEY: str | None = self.secret_or_env(
-            "WORLD_BANK_API_KEY", cfg.get("WORLD_BANK_API_KEY")
-        )
+        raw_worldbank_series = self.secret_or_env("WORLD_BANK_SECTOR_SERIES", cfg.get("WORLD_BANK_SECTOR_SERIES"))
+        self.WORLD_BANK_SECTOR_SERIES: Dict[str, str] = self._parse_sector_series(raw_worldbank_series)
+        self.WORLD_BANK_API_KEY: str | None = self.secret_or_env("WORLD_BANK_API_KEY", cfg.get("WORLD_BANK_API_KEY"))
         self.WORLD_BANK_API_BASE_URL: str = os.getenv(
             "WORLD_BANK_API_BASE_URL",
             cfg.get("WORLD_BANK_API_BASE_URL", "https://api.worldbank.org/v2"),
@@ -135,16 +125,12 @@ class Settings:
         )
 
         # --- Financial Modeling Prep ---
-        self.FMP_API_KEY: str | None = self.secret_or_env(
-            "FMP_API_KEY", cfg.get("FMP_API_KEY")
-        )
+        self.FMP_API_KEY: str | None = self.secret_or_env("FMP_API_KEY", cfg.get("FMP_API_KEY"))
         self.FMP_BASE_URL: str = os.getenv(
             "FMP_BASE_URL",
             cfg.get("FMP_BASE_URL", "https://financialmodelingprep.com/api/v3"),
         )
-        self.FMP_TIMEOUT: float = float(
-            os.getenv("FMP_TIMEOUT", cfg.get("FMP_TIMEOUT", 5.0))
-        )
+        self.FMP_TIMEOUT: float = float(os.getenv("FMP_TIMEOUT", cfg.get("FMP_TIMEOUT", 5.0)))
 
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
@@ -152,7 +138,8 @@ class Settings:
 
         # --- Logging ---
         retention_candidate = os.getenv(
-            "LOG_RETENTION_DAYS", cfg.get("LOG_RETENTION_DAYS", DEFAULT_LOG_RETENTION_DAYS)
+            "LOG_RETENTION_DAYS",
+            cfg.get("LOG_RETENTION_DAYS", DEFAULT_LOG_RETENTION_DAYS),
         )
         self.LOG_RETENTION_DAYS: int = self._coerce_positive_int(retention_candidate)
         self.SQLITE_MAINTENANCE_INTERVAL_HOURS: float = float(
@@ -175,20 +162,14 @@ class Settings:
         )
 
         # --- Cache/TTLs usados en app.py ---
-        self.cache_ttl_portfolio: int = int(
-            os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 3600))
-        )
+        self.cache_ttl_portfolio: int = int(os.getenv("CACHE_TTL_PORTFOLIO", cfg.get("CACHE_TTL_PORTFOLIO", 3600)))
         self.cache_ttl_last_price: int = int(os.getenv("CACHE_TTL_LAST_PRICE", cfg.get("CACHE_TTL_LAST_PRICE", 10)))
         self.cache_ttl_fx: int = int(os.getenv("CACHE_TTL_FX", cfg.get("CACHE_TTL_FX", 60)))
-        self.cache_ttl_quotes: int = int(
-            os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 600))
-        )
+        self.cache_ttl_quotes: int = int(os.getenv("CACHE_TTL_QUOTES", cfg.get("CACHE_TTL_QUOTES", 600)))
         self.cache_ttl_yf_indicators: int = int(
             os.getenv("CACHE_TTL_YF_INDICATORS", cfg.get("CACHE_TTL_YF_INDICATORS", 900))
         )
-        self.cache_ttl_yf_history: int = int(
-            os.getenv("CACHE_TTL_YF_HISTORY", cfg.get("CACHE_TTL_YF_HISTORY", 3600))
-        )
+        self.cache_ttl_yf_history: int = int(os.getenv("CACHE_TTL_YF_HISTORY", cfg.get("CACHE_TTL_YF_HISTORY", 3600)))
         self.cache_ttl_yf_fundamentals: int = int(
             os.getenv("CACHE_TTL_YF_FUNDAMENTALS", cfg.get("CACHE_TTL_YF_FUNDAMENTALS", 21600))
         )
@@ -204,13 +185,17 @@ class Settings:
                 cfg.get("VISUAL_CACHE_MAX_PRELOAD_COUNT", 3),
             )
         )
-        self.MARKET_DATA_CACHE_BACKEND: str = str(
-            os.getenv(
-                "MARKET_DATA_CACHE_BACKEND",
-                cfg.get("MARKET_DATA_CACHE_BACKEND", "sqlite"),
+        self.MARKET_DATA_CACHE_BACKEND: str = (
+            str(
+                os.getenv(
+                    "MARKET_DATA_CACHE_BACKEND",
+                    cfg.get("MARKET_DATA_CACHE_BACKEND", "sqlite"),
+                )
+                or "sqlite"
             )
-            or "sqlite"
-        ).strip().lower()
+            .strip()
+            .lower()
+        )
         self.MARKET_DATA_CACHE_PATH: str | None = os.getenv(
             "MARKET_DATA_CACHE_PATH",
             cfg.get("MARKET_DATA_CACHE_PATH", "data/market_cache.db"),
@@ -225,37 +210,19 @@ class Settings:
         self.quotes_hist_maxlen: int = int(os.getenv("QUOTES_HIST_MAXLEN", cfg.get("QUOTES_HIST_MAXLEN", 500)))
         self.max_quote_workers: int = int(os.getenv("MAX_QUOTE_WORKERS", cfg.get("MAX_QUOTE_WORKERS", 12)))
         default_quotes_batch = cfg.get("QUOTES_BATCH_SIZE", max(self.max_quote_workers, 8))
-        self.quotes_batch_size: int = int(
-            os.getenv("QUOTES_BATCH_SIZE", default_quotes_batch)
-        )
+        self.quotes_batch_size: int = int(os.getenv("QUOTES_BATCH_SIZE", default_quotes_batch))
         default_swr_ttl = cfg.get("QUOTES_SWR_TTL_SECONDS", 30.0)
-        self.quotes_swr_ttl_seconds: float = float(
-            os.getenv("QUOTES_SWR_TTL_SECONDS", default_swr_ttl)
-        )
-        default_swr_grace = cfg.get(
-            "QUOTES_SWR_GRACE_SECONDS", float(self.cache_ttl_quotes)
-        )
-        self.quotes_swr_grace_seconds: float = float(
-            os.getenv("QUOTES_SWR_GRACE_SECONDS", default_swr_grace)
-        )
+        self.quotes_swr_ttl_seconds: float = float(os.getenv("QUOTES_SWR_TTL_SECONDS", default_swr_ttl))
+        default_swr_grace = cfg.get("QUOTES_SWR_GRACE_SECONDS", float(self.cache_ttl_quotes))
+        self.quotes_swr_grace_seconds: float = float(os.getenv("QUOTES_SWR_GRACE_SECONDS", default_swr_grace))
         self.YAHOO_FUNDAMENTALS_TTL: int = int(
             os.getenv("YAHOO_FUNDAMENTALS_TTL", cfg.get("YAHOO_FUNDAMENTALS_TTL", 3600))
         )
-        self.YAHOO_QUOTES_TTL: int = int(
-            os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300))
-        )
-        self.YAHOO_REQUEST_DELAY: float = float(
-            os.getenv("YAHOO_REQUEST_DELAY", cfg.get("YAHOO_REQUEST_DELAY", 0.0))
-        )
-        self.QUOTES_TTL_SECONDS: int = int(
-            os.getenv("QUOTES_TTL_SECONDS", cfg.get("QUOTES_TTL_SECONDS", 300))
-        )
-        self.QUOTES_RPS_IOL: float = float(
-            os.getenv("QUOTES_RPS_IOL", cfg.get("QUOTES_RPS_IOL", 3))
-        )
-        self.QUOTES_RPS_LEGACY: float = float(
-            os.getenv("QUOTES_RPS_LEGACY", cfg.get("QUOTES_RPS_LEGACY", 1))
-        )
+        self.YAHOO_QUOTES_TTL: int = int(os.getenv("YAHOO_QUOTES_TTL", cfg.get("YAHOO_QUOTES_TTL", 300)))
+        self.YAHOO_REQUEST_DELAY: float = float(os.getenv("YAHOO_REQUEST_DELAY", cfg.get("YAHOO_REQUEST_DELAY", 0.0)))
+        self.QUOTES_TTL_SECONDS: int = int(os.getenv("QUOTES_TTL_SECONDS", cfg.get("QUOTES_TTL_SECONDS", 300)))
+        self.QUOTES_RPS_IOL: float = float(os.getenv("QUOTES_RPS_IOL", cfg.get("QUOTES_RPS_IOL", 3)))
+        self.QUOTES_RPS_LEGACY: float = float(os.getenv("QUOTES_RPS_LEGACY", cfg.get("QUOTES_RPS_LEGACY", 1)))
         self.LEGACY_LOGIN_MAX_RETRIES: int = int(
             os.getenv(
                 "LEGACY_LOGIN_MAX_RETRIES",
@@ -269,9 +236,7 @@ class Settings:
             )
         )
 
-        self.min_score_threshold: int = int(
-            os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80))
-        )
+        self.min_score_threshold: int = int(os.getenv("MIN_SCORE_THRESHOLD", cfg.get("MIN_SCORE_THRESHOLD", 80)))
         self.max_results: int = int(os.getenv("MAX_RESULTS", cfg.get("MAX_RESULTS", 20)))
         self.RISK_BADGE_THRESHOLD: float = float(
             os.getenv("RISK_BADGE_THRESHOLD", cfg.get("RISK_BADGE_THRESHOLD", 0.75))
@@ -291,30 +256,20 @@ class Settings:
         )
 
         # --- Snapshots backend configuration ---
-        self.snapshot_backend: str = os.getenv(
-            "SNAPSHOT_BACKEND", cfg.get("SNAPSHOT_BACKEND", "json")
-        )
-        self.snapshot_storage_path: str | None = os.getenv(
-            "SNAPSHOT_STORAGE_PATH", cfg.get("SNAPSHOT_STORAGE_PATH")
-        )
+        self.snapshot_backend: str = os.getenv("SNAPSHOT_BACKEND", cfg.get("SNAPSHOT_BACKEND", "json"))
+        self.snapshot_storage_path: str | None = os.getenv("SNAPSHOT_STORAGE_PATH", cfg.get("SNAPSHOT_STORAGE_PATH"))
         raw_retention = os.getenv("SNAPSHOT_RETENTION", cfg.get("SNAPSHOT_RETENTION"))
         try:
-            self.snapshot_retention: int | None = (
-                int(raw_retention) if raw_retention not in (None, "") else None
-            )
+            self.snapshot_retention: int | None = int(raw_retention) if raw_retention not in (None, "") else None
         except (TypeError, ValueError):
             logger.warning("Valor inválido para SNAPSHOT_RETENTION: %s", raw_retention)
             self.snapshot_retention = None
 
-        primary_raw = os.getenv(
-            "OHLC_PRIMARY_PROVIDER", cfg.get("OHLC_PRIMARY_PROVIDER", "alpha_vantage")
-        )
+        primary_raw = os.getenv("OHLC_PRIMARY_PROVIDER", cfg.get("OHLC_PRIMARY_PROVIDER", "alpha_vantage"))
         primary_text = str(primary_raw or "").strip().lower()
         self.OHLC_PRIMARY_PROVIDER: str = primary_text or "alpha_vantage"
 
-        raw_secondary = self.secret_or_env(
-            "OHLC_SECONDARY_PROVIDERS", cfg.get("OHLC_SECONDARY_PROVIDERS")
-        )
+        raw_secondary = self.secret_or_env("OHLC_SECONDARY_PROVIDERS", cfg.get("OHLC_SECONDARY_PROVIDERS"))
         fallback_secondaries = [] if self.OHLC_PRIMARY_PROVIDER == "polygon" else ["polygon"]
         parsed_secondaries = self._parse_provider_list(
             raw_secondary,
@@ -331,9 +286,7 @@ class Settings:
             "ALPHA_VANTAGE_BASE_URL",
             cfg.get("ALPHA_VANTAGE_BASE_URL", "https://www.alphavantage.co/query"),
         )
-        self.POLYGON_API_KEY: str | None = self.secret_or_env(
-            "POLYGON_API_KEY", cfg.get("POLYGON_API_KEY")
-        )
+        self.POLYGON_API_KEY: str | None = self.secret_or_env("POLYGON_API_KEY", cfg.get("POLYGON_API_KEY"))
         self.POLYGON_BASE_URL: str = os.getenv(
             "POLYGON_BASE_URL", cfg.get("POLYGON_BASE_URL", "https://api.polygon.io")
         )
@@ -341,7 +294,8 @@ class Settings:
         # --- Archivo de tokens (IOLAuth) ---
         # Por defecto lo guardamos en la raíz junto a app.py (compat con tu tokens_iol.json existente)
         self.tokens_file: str = self.secret_or_env(
-            "IOL_TOKENS_FILE", cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json"))
+            "IOL_TOKENS_FILE",
+            cfg.get("IOL_TOKENS_FILE", str(BASE_DIR / "tokens_iol.json")),
         )
         # Clave opcional para cifrar/descifrar el archivo de tokens (Fernet)
         raw_tokens_key = self.secret_or_env("IOL_TOKENS_KEY", cfg.get("IOL_TOKENS_KEY"))
@@ -359,26 +313,25 @@ class Settings:
             self.fastapi_tokens_key = None
 
         if self.fastapi_tokens_key and self.tokens_key and self.fastapi_tokens_key == self.tokens_key:
-            raise RuntimeError(
-                "FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to isolate encryption scopes."
-            )
+            raise RuntimeError("FASTAPI_TOKENS_KEY must be different from IOL_TOKENS_KEY to isolate encryption scopes.")
 
         # Permite (opcionalmente) guardar tokens sin cifrar si falta tokens_key
-        self.allow_plain_tokens: bool = (
-            os.getenv("IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))).lower()
-            in ("1", "true", "yes")
-        )
+        self.allow_plain_tokens: bool = os.getenv(
+            "IOL_ALLOW_PLAIN_TOKENS", str(cfg.get("IOL_ALLOW_PLAIN_TOKENS", ""))
+        ).lower() in ("1", "true", "yes")
         raw_app_env = os.getenv("APP_ENV", cfg.get("APP_ENV", "dev"))
         app_env_text = str(raw_app_env or "dev").strip()
         self.app_env: str = app_env_text.lower() or "dev"
         # TTL máximo para reutilizar tokens guardados (en días)
-        self.tokens_ttl_days: int = int(
-            os.getenv("IOL_TOKENS_TTL_DAYS", cfg.get("IOL_TOKENS_TTL_DAYS", 30))
-        )
+        self.tokens_ttl_days: int = int(os.getenv("IOL_TOKENS_TTL_DAYS", cfg.get("IOL_TOKENS_TTL_DAYS", 30)))
 
         # --- Derivados de dólar (Ahorro/Tarjeta a partir del oficial) ---
-        self.fx_ahorro_multiplier: float = float(os.getenv("FX_AHORRO_MULTIPLIER", cfg.get("FX_AHORRO_MULTIPLIER", 1.30)))
-        self.fx_tarjeta_multiplier: float = float(os.getenv("FX_TARJETA_MULTIPLIER", cfg.get("FX_TARJETA_MULTIPLIER", 1.35)))
+        self.fx_ahorro_multiplier: float = float(
+            os.getenv("FX_AHORRO_MULTIPLIER", cfg.get("FX_AHORRO_MULTIPLIER", 1.30))
+        )
+        self.fx_tarjeta_multiplier: float = float(
+            os.getenv("FX_TARJETA_MULTIPLIER", cfg.get("FX_TARJETA_MULTIPLIER", 1.35))
+        )
 
         # --- Logging ---
         self.LOG_LEVEL: str = os.getenv("LOG_LEVEL", cfg.get("LOG_LEVEL", "INFO")).upper()
@@ -411,14 +364,10 @@ class Settings:
                 return raw
         return raw
 
-    def _parse_provider_list(
-        self, raw: Any, *, fallback: Iterable[str] | None = None
-    ) -> list[str]:
+    def _parse_provider_list(self, raw: Any, *, fallback: Iterable[str] | None = None) -> list[str]:
         parsed = self._parse_jsonish(raw)
         if isinstance(parsed, str):
-            candidates_iter: Iterable[str] = [
-                item.strip() for item in parsed.split(",") if item.strip()
-            ]
+            candidates_iter: Iterable[str] = [item.strip() for item in parsed.split(",") if item.strip()]
         elif isinstance(parsed, Iterable) and not isinstance(parsed, (bytes, bytearray, str)):
             candidates_iter = parsed
         else:
@@ -448,12 +397,7 @@ class Settings:
                 continue
             series_id: str = ""
             if isinstance(value, Mapping):
-                series_id = str(
-                    value.get("series_id")
-                    or value.get("series")
-                    or value.get("id")
-                    or ""
-                ).strip()
+                series_id = str(value.get("series_id") or value.get("series") or value.get("id") or "").strip()
             else:
                 series_id = str(value or "").strip()
             if not series_id:
@@ -501,6 +445,7 @@ class Settings:
             return DEFAULT_LOG_RETENTION_DAYS
         return max(value, 1)
 
+
 settings = Settings()
 
 
@@ -512,9 +457,7 @@ def ensure_tokens_key() -> None:
     """
 
     if not settings.tokens_key and not settings.allow_plain_tokens:
-        logger.error(
-            "IOL_TOKENS_KEY no está configurada y IOL_ALLOW_PLAIN_TOKENS no está habilitado."
-        )
+        logger.error("IOL_TOKENS_KEY no está configurada y IOL_ALLOW_PLAIN_TOKENS no está habilitado.")
         sys.exit(1)
 
 
@@ -714,6 +657,7 @@ def configure_logging(level: str | None = None, json_format: bool | None = None)
         "yfinance.data",
     ):
         _downgrade_logger_patterns(target, (r"(?i)404", r"(?i)not found"))
+
 
 @lru_cache(maxsize=1)
 def get_config() -> dict:

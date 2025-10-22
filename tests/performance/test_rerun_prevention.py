@@ -6,8 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from controllers.portfolio import portfolio as portfolio_mod
-from tests.ui.test_portfolio_ui import _DummyContainer, FakeStreamlit, _portfolio_setup
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 def _patch_renderers(monkeypatch: pytest.MonkeyPatch, portfolio_module):

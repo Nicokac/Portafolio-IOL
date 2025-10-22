@@ -93,22 +93,16 @@ class YahooFinanceClient:
                 LOGGER.debug("Yahoo Finance devolvió 404 para %s", symbol)
                 self._INVALID_SYMBOL_CACHE.set(symbol, True, ttl=self._CACHE_TTL)
                 raise AppError(f"Yahoo Finance no encontró datos para {symbol}") from exc
-            raise AppError(
-                f"Error HTTP al obtener datos para {symbol} desde Yahoo Finance"
-            ) from exc
+            raise AppError(f"Error HTTP al obtener datos para {symbol} desde Yahoo Finance") from exc
         except RequestException as exc:  # pragma: no cover - network issues
-            raise AppError(
-                f"Error de red al obtener datos para {symbol} desde Yahoo Finance"
-            ) from exc
+            raise AppError(f"Error de red al obtener datos para {symbol} desde Yahoo Finance") from exc
         except Exception as exc:  # pragma: no cover - network/parsing issues
             raise AppError(f"Error al obtener datos para {symbol} desde Yahoo Finance") from exc
         finally:
             if session is not None:
                 session.close()
 
-    def list_symbols_by_markets(
-        self, markets: Sequence[str], *, size: int | None = None
-    ) -> list[dict[str, Any]]:
+    def list_symbols_by_markets(self, markets: Sequence[str], *, size: int | None = None) -> list[dict[str, Any]]:
         """Fetch a list of tickers for the requested exchanges."""
 
         normalized_markets: list[str] = []
@@ -144,7 +138,10 @@ class YahooFinanceClient:
                             {
                                 "operator": "or",
                                 "operands": [
-                                    {"operator": "eq", "operands": ["exchange", market]},
+                                    {
+                                        "operator": "eq",
+                                        "operands": ["exchange", market],
+                                    },
                                     {"operator": "eq", "operands": ["market", market]},
                                 ],
                             }
@@ -153,21 +150,15 @@ class YahooFinanceClient:
                 }
 
                 try:
-                    response = session.post(
-                        self._SCREENER_URL, json=payload, timeout=15
-                    )
+                    response = session.post(self._SCREENER_URL, json=payload, timeout=15)
                     response.raise_for_status()
                 except requests.RequestException as exc:  # pragma: no cover - network issues
-                    raise AppError(
-                        f"No se pudo obtener el listado de {market} desde Yahoo Finance"
-                    ) from exc
+                    raise AppError(f"No se pudo obtener el listado de {market} desde Yahoo Finance") from exc
 
                 try:
                     data = response.json()
                 except ValueError as exc:  # pragma: no cover - invalid payload
-                    raise AppError(
-                        "Yahoo Finance devolvió una respuesta inválida para el screener"
-                    ) from exc
+                    raise AppError("Yahoo Finance devolvió una respuesta inválida para el screener") from exc
 
                 finance = data.get("finance") if isinstance(data, dict) else None
                 results = finance.get("result") if isinstance(finance, dict) else None
@@ -316,11 +307,14 @@ class YahooFinanceClient:
             required = {"Close", "Adj Close", "Volume"}
             if not required.issubset(history.columns):
                 missing = required.difference(history.columns)
-                raise AppError(
-                    f"Datos de precios incompletos para {ticker}: faltan columnas {sorted(missing)}"
-                )
+                raise AppError(f"Datos de precios incompletos para {ticker}: faltan columnas {sorted(missing)}")
             df = history.reset_index()
-            rename_map = {"Date": "date", "Close": "close", "Adj Close": "adj_close", "Volume": "volume"}
+            rename_map = {
+                "Date": "date",
+                "Close": "close",
+                "Adj Close": "adj_close",
+                "Volume": "volume",
+            }
             if "index" in df.columns and "Date" not in df.columns:
                 rename_map["index"] = "date"
             df = df.rename(columns=rename_map)

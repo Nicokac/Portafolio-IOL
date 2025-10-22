@@ -8,10 +8,14 @@ from .adaptive_predictive_service import (
     prepare_adaptive_history,
     simulate_adaptive_forecast,
 )
-from .predictive_service import build_adaptive_history
 from .backtesting_service import BacktestingService
 from .portfolio_service import PortfolioService
-from .predictive_service import get_cache_stats, predict_sector_performance, reset_cache
+from .predictive_service import (
+    build_adaptive_history,
+    get_cache_stats,
+    predict_sector_performance,
+    reset_cache,
+)
 from .recommendation_service import RecommendationService
 
 __version__ = _APP_VERSION

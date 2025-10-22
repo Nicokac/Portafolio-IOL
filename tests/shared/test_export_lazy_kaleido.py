@@ -44,9 +44,7 @@ def test_fig_to_png_bytes_triggers_lazy_import(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         export,
         "record_kaleido_lazy_load",
-        lambda duration_ms, completed_at=None: metrics.setdefault(
-            "duration", float(duration_ms)
-        ),
+        lambda duration_ms, completed_at=None: metrics.setdefault("duration", float(duration_ms)),
     )
 
     result = export.fig_to_png_bytes(go.Figure())

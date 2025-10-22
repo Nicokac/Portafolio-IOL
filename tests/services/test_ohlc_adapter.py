@@ -100,7 +100,10 @@ def test_adapter_uses_secondary_when_primary_fails(monkeypatch: pytest.MonkeyPat
 
 def test_adapter_serves_cache_when_all_providers_fail(monkeypatch: pytest.MonkeyPatch, streamlit_stub):
     settings = _build_settings()
-    session = DummySession(alpha_payload=_alpha_payload(), polygon_payload={"status": "ERROR", "error": "bad"})
+    session = DummySession(
+        alpha_payload=_alpha_payload(),
+        polygon_payload={"status": "ERROR", "error": "bad"},
+    )
     adapter = OHLCAdapter(settings_module=settings, session=session, cache_ttl=120)
 
     initial = adapter.fetch("MSFT", period="1mo", interval="1d")

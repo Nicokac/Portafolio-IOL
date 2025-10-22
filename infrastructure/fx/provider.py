@@ -1,16 +1,18 @@
 # infrastructure/fx/provider.py
 from __future__ import annotations
-import time
-import logging
+
 import json
-from pathlib import Path
-from typing import Optional, Dict, Tuple, List
+import logging
+import time
 import traceback
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import requests
 
 from infrastructure.http.session import build_session
 from shared.settings import cache_ttl_fx, settings
 from shared.utils import _to_float
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ FALLBACK_FILE = BASE_DIR / "fallback_rates.json"
 # Helpers de normalización
 # -------------------------
 
+
 def _mul(x, m):
     if x is None:
         return None
@@ -30,6 +33,7 @@ def _mul(x, m):
         return float(x) * float(m)
     except Exception:
         return None
+
 
 def _normalize_rates(raw: dict) -> dict:
     """
@@ -39,16 +43,16 @@ def _normalize_rates(raw: dict) -> dict:
     r = dict(raw or {})
     now = int(time.time())
 
-    oficial    = _to_float(r.get("oficial")    or r.get("oficial_bna") or r.get("oficial_bcra"))
-    mayorista  = _to_float(r.get("mayorista")) or oficial
-    blue       = _to_float(r.get("blue"))
-    mep        = _to_float(r.get("mep"))
-    ccl        = _to_float(r.get("ccl"))
-    cripto     = _to_float(r.get("cripto")) or ccl
+    oficial = _to_float(r.get("oficial") or r.get("oficial_bna") or r.get("oficial_bcra"))
+    mayorista = _to_float(r.get("mayorista")) or oficial
+    blue = _to_float(r.get("blue"))
+    mep = _to_float(r.get("mep"))
+    ccl = _to_float(r.get("ccl"))
+    cripto = _to_float(r.get("cripto")) or ccl
 
     # Derivados configurables desde settings
-    ahorro  = _mul(oficial, settings.fx_ahorro_multiplier)   if oficial else None
-    tarjeta = _mul(oficial, settings.fx_tarjeta_multiplier)  if oficial else None
+    ahorro = _mul(oficial, settings.fx_ahorro_multiplier) if oficial else None
+    tarjeta = _mul(oficial, settings.fx_tarjeta_multiplier) if oficial else None
 
     out = {
         "oficial": oficial,
@@ -127,10 +131,10 @@ class FXProviderAdapter:
 
             # 2) Fuentes
             urls = {
-                "blue":     "https://api.bluelytics.com.ar/v2/latest",
-                "oficial":  "https://dolarapi.com/v1/dolares/oficial",
-                "mep":      "https://dolarapi.com/v1/dolares/bolsa",
-                "ccl":      "https://dolarapi.com/v1/dolares/contadoconliqui",
+                "blue": "https://api.bluelytics.com.ar/v2/latest",
+                "oficial": "https://dolarapi.com/v1/dolares/oficial",
+                "mep": "https://dolarapi.com/v1/dolares/bolsa",
+                "ccl": "https://dolarapi.com/v1/dolares/contadoconliqui",
             }
 
             raw: Dict[str, float] = {}

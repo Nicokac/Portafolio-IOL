@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Render the system status dashboard with observability insights."""
-
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -14,6 +12,8 @@ from services.system_status import (
     get_system_status_snapshot,
 )
 from shared.time_provider import TimeProvider
+
+"""Render the system status dashboard with observability insights."""
 
 
 _DOCS_PATH = Path("docs/operations.md")
@@ -191,4 +191,3 @@ def render_system_status_panel() -> None:
 
 
 __all__ = ["render_system_status_panel"]
-

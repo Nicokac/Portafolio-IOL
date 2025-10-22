@@ -5,6 +5,15 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from application.portfolio_service import PortfolioTotals
+from controllers.portfolio.portfolio import render_portfolio_section
+from services.portfolio_view import (
+    PortfolioContributionMetrics,
+    PortfolioViewModelService,
+    PortfolioViewSnapshot,
+)
+from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+
 # Stub heavy optional dependencies used by portfolio controllers during import time.
 statsmodels_mod = types.ModuleType("statsmodels")
 statsmodels_api = types.ModuleType("statsmodels.api")
@@ -29,11 +38,6 @@ sys.modules.setdefault("scipy.stats._multicomp", scipy_stats_multicomp)
 sys.modules.setdefault("scipy.sparse", scipy_sparse)
 sys.modules.setdefault("scipy.sparse.csgraph", scipy_sparse_csgraph)
 sys.modules.setdefault("scipy.sparse.csgraph._shortest_path", scipy_sparse_shortest)
-
-from application.portfolio_service import PortfolioTotals
-from controllers.portfolio.portfolio import render_portfolio_section
-from services.portfolio_view import PortfolioContributionMetrics, PortfolioViewModelService, PortfolioViewSnapshot
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
 
 
 @pytest.fixture
@@ -133,5 +137,7 @@ def test_lazy_metrics_initial_spinner_and_rerun(
     _render_portfolio(fake_st, service, lazy_metrics=True, setup_factory=_portfolio_setup)
 
     final_spinner_messages = [text for text in fake_st.captions if "Calculando métricas extendidas" in text]
-    assert len(final_spinner_messages) == len(spinner_messages), "El spinner no debe repetirse tras completar las métricas"
+    assert len(final_spinner_messages) == len(spinner_messages), (
+        "El spinner no debe repetirse tras completar las métricas"
+    )
     assert service.pending is False

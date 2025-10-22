@@ -1,17 +1,15 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from services import health  # noqa: E402
+from tests.fixtures.time import FakeTime
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-
-from services import health  # noqa: E402
-from tests.fixtures.time import FakeTime
 
 
 def test_quote_provider_summary_handles_mixed_data(monkeypatch):
@@ -141,4 +139,3 @@ def test_diagnostics_snapshot_summary(monkeypatch):
     assert metrics["field_count"] == 1
     assert metrics["latest"]["source"] == "engine"
     assert metrics["freshness"]["is_fresh"] is True
-

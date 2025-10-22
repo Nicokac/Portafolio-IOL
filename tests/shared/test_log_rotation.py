@@ -1,13 +1,12 @@
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
+from shared.log_rotation import LOG_RETENTION_DAYS, cleanup_log_directory
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
-from shared.log_rotation import LOG_RETENTION_DAYS, cleanup_log_directory
 
 
 def test_cleanup_log_directory_respects_retention(tmp_path):
@@ -34,4 +33,3 @@ def test_cleanup_log_directory_respects_retention(tmp_path):
 
     removed_paths = {path.resolve() for path in removed}
     assert removed_paths == {old_file.resolve()}
-

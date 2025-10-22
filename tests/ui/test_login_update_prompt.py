@@ -109,9 +109,9 @@ def test_login_page_renders_update_prompt(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert fake_st.warnings, "Se espera que aparezca la advertencia de actualización"
     assert "Nueva versión disponible" in fake_st.warnings[-1]
-    assert any(
-        label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons
-    ), "Se espera un enlace al changelog"
+    assert any(label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons), (
+        "Se espera un enlace al changelog"
+    )
     assert "0.5.8" in fake_st.warnings[-1]
     assert "Actualizar ahora" in fake_st.buttons
 

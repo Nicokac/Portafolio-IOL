@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""SQLite persistence helpers for performance telemetry."""
-
 import json
 import logging
 import os
@@ -13,6 +11,9 @@ from threading import RLock
 from typing import TYPE_CHECKING
 
 from shared.settings import app_env
+
+"""SQLite persistence helpers for performance telemetry."""
+
 
 if TYPE_CHECKING:  # pragma: no cover - only used for type checkers
     from services.performance_timer import PerformanceEntry
@@ -135,17 +136,13 @@ def run_maintenance(
 
     path = _get_db_path()
     if not path.exists():
-        LOGGER.debug(
-            "Omitiendo mantenimiento de performance_store: la base %s no existe", path
-        )
+        LOGGER.debug("Omitiendo mantenimiento de performance_store: la base %s no existe", path)
         return None
 
     reference_time = float(now if now is not None else time.time())
     cutoff_iso: str | None = None
     if retention_days is not None and retention_days > 0:
-        cutoff = datetime.fromtimestamp(reference_time, tz=timezone.utc) - timedelta(
-            days=float(retention_days)
-        )
+        cutoff = datetime.fromtimestamp(reference_time, tz=timezone.utc) - timedelta(days=float(retention_days))
         cutoff_iso = cutoff.isoformat()
 
     size_before = float(path.stat().st_size if path.exists() else 0)

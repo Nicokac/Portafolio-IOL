@@ -90,10 +90,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
             if waited > self._warn_after:
                 owner_label = _format_owner_label(thread_id, thread_name)
                 LOGGER.warning(
-                    (
-                        "El lock adaptativo demoró %.2fs en adquirirse "
-                        "(umbral %.2fs, módulo=%s, owner=%s)"
-                    ),
+                    ("El lock adaptativo demoró %.2fs en adquirirse (umbral %.2fs, módulo=%s, owner=%s)"),
                     waited,
                     self._warn_after,
                     caller_module,
@@ -129,9 +126,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
                 # Lock was released by ``run_in_background``.
                 self._released_early = False
                 return None
-            raise RuntimeError(
-                "El lock adaptativo fue liberado por un hilo no propietario"
-            )
+            raise RuntimeError("El lock adaptativo fue liberado por un hilo no propietario")
 
         if self._depth > 1:
             self._depth -= 1
@@ -149,10 +144,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
                 self._last_hold_time = held_for
                 if self._warn_after > 0 and held_for > self._warn_after:
                     LOGGER.warning(
-                        (
-                            "El lock adaptativo permaneció retenido %.2fs "
-                            "(umbral %.2fs, módulo=%s, owner=%s)"
-                        ),
+                        ("El lock adaptativo permaneció retenido %.2fs (umbral %.2fs, módulo=%s, owner=%s)"),
                         held_for,
                         self._warn_after,
                         module_name,
@@ -160,10 +152,7 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
                     )
                 if held_for > _PROLONGED_HOLD_THRESHOLD:
                     LOGGER.warning(
-                        (
-                            "Retención prolongada del lock adaptativo: %.2fs "
-                            "(módulo=%s, owner=%s)"
-                        ),
+                        ("Retención prolongada del lock adaptativo: %.2fs (módulo=%s, owner=%s)"),
                         held_for,
                         module_name,
                         owner_label,
@@ -230,14 +219,9 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
 
         thread_id = threading.get_ident()
         if self._owner != thread_id:
-            raise RuntimeError(
-                "Solo el propietario del lock puede delegar trabajo en segundo plano"
-            )
+            raise RuntimeError("Solo el propietario del lock puede delegar trabajo en segundo plano")
         if self._depth != 1:
-            raise RuntimeError(
-                "No se puede delegar trabajo en segundo plano con "
-                "adquisiciones reentrantes"
-            )
+            raise RuntimeError("No se puede delegar trabajo en segundo plano con adquisiciones reentrantes")
 
         owner_label = _format_owner_label(self._owner, self._owner_name)
         module_name = self._owner_module or _resolve_caller_module()

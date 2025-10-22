@@ -56,4 +56,3 @@ def cleanup_log_directory(directory: Path, *, now: float | None = None) -> list[
 
 
 __all__ = ["LOG_RETENTION_DAYS", "cleanup_log_directory"]
-

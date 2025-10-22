@@ -54,7 +54,9 @@ def _coerce_sequence(value: Any) -> list[str]:
     return labels
 
 
-def _normalise_history(history: Iterable[Mapping[str, Any]] | None) -> list[_HistoryEntry]:
+def _normalise_history(
+    history: Iterable[Mapping[str, Any]] | None,
+) -> list[_HistoryEntry]:
     entries: list[_HistoryEntry] = []
     if history is None:
         return entries
@@ -106,7 +108,13 @@ def _build_history_chart(entries: Sequence[_HistoryEntry]) -> go.Figure:
         hover.append(hover_detail)
 
     figure.add_trace(
-        go.Bar(x=timestamps, y=elapsed, marker_color=colors, hovertext=hover, name="elapsed_ms")
+        go.Bar(
+            x=timestamps,
+            y=elapsed,
+            marker_color=colors,
+            hovertext=hover,
+            name="elapsed_ms",
+        )
     )
     figure.update_layout(
         height=220,
@@ -128,13 +136,7 @@ def _format_environment_badges(environment: Any) -> str | None:
 def _format_last_error(entry: Mapping[str, Any] | None) -> str | None:
     if not isinstance(entry, Mapping):
         return None
-    label = str(
-        entry.get("label")
-        or entry.get("detail")
-        or entry.get("error")
-        or entry.get("message")
-        or ""
-    ).strip()
+    label = str(entry.get("label") or entry.get("detail") or entry.get("error") or entry.get("message") or "").strip()
     ts_snapshot = TimeProvider.from_timestamp(entry.get("ts"))
     components: list[str] = []
     if label:
@@ -177,4 +179,3 @@ def render_history_sidebar(metrics: Mapping[str, Any]) -> None:
 
 
 __all__ = ["render_history_sidebar"]
-

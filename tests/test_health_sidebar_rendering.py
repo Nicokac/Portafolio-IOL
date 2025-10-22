@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict
-
-import importlib
-import sys
+from zoneinfo import ZoneInfo
 
 import pytest
-from zoneinfo import ZoneInfo
+
+from shared.time_provider import TIME_FORMAT, TimeProvider, TimeSnapshot
+from shared.version import __version__
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from shared.time_provider import TIME_FORMAT, TimeProvider, TimeSnapshot
-from shared.version import __version__
 
 
 @pytest.fixture
@@ -25,7 +24,11 @@ def health_sidebar_module(monkeypatch: pytest.MonkeyPatch):
     import ui.health_sidebar as health_sidebar
 
     module = importlib.reload(health_sidebar)
-    monkeypatch.setattr(module, "get_health_metrics", lambda: module.st.session_state.get("health_metrics", {}))
+    monkeypatch.setattr(
+        module,
+        "get_health_metrics",
+        lambda: module.st.session_state.get("health_metrics", {}),
+    )
     return module
 
 
@@ -47,13 +50,11 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
         },
     )
 
-    assert health_sidebar_module.st.sidebar.headers == [
-        f"🩺 Healthcheck (versión {__version__})"
-    ]
+    assert health_sidebar_module.st.sidebar.headers == [f"🩺 Healthcheck (versión {__version__})"]
     captions = list(health_sidebar_module.st.sidebar.captions)
-    assert any(
-        "Monitorea la procedencia" in caption for caption in captions
-    ), "Expected introductory caption to be present"
+    assert any("Monitorea la procedencia" in caption for caption in captions), (
+        "Expected introductory caption to be present"
+    )
 
     markdown_calls = list(health_sidebar_module.st.sidebar.markdowns)
     for expected in [
@@ -76,12 +77,8 @@ def test_sidebar_shows_empty_state_labels(streamlit_stub, health_sidebar_module)
     ]:
         assert expected in markdown_calls
 
-    assert any(
-        "Portafolio: sin registro" in text for text in markdown_calls
-    ), "Expected portfolio latency placeholder"
-    assert any(
-        "Cotizaciones: sin registro" in text for text in markdown_calls
-    ), "Expected quotes latency placeholder"
+    assert any("Portafolio: sin registro" in text for text in markdown_calls), "Expected portfolio latency placeholder"
+    assert any("Cotizaciones: sin registro" in text for text in markdown_calls), "Expected quotes latency placeholder"
 
 
 def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_sidebar_module) -> None:
@@ -165,32 +162,22 @@ def test_sidebar_formats_populated_metrics(monkeypatch, streamlit_stub, health_s
     missing = expected_headers.difference(markdown)
     assert not missing, f"Missing sidebar lines: {missing}"
 
-    assert any(
-        "Refresh correcto" in text and formatted[0] in text for text in markdown
-    ), "Expected IOL refresh summary"
-    assert any(
-        "Fallback local" in text and formatted[1] in text for text in markdown
-    ), "Expected Yahoo Finance summary"
-    assert any(
-        "API FX con errores" in text and formatted[2] in text for text in markdown
-    ), "Expected FX API summary"
-    assert any(
-        "Uso de caché" in text and formatted[3] in text for text in markdown
-    ), "Expected FX cache summary"
-    assert any(
-        "Portafolio: 457 ms" in text and formatted[4] in text for text in markdown
-    ), "Expected portfolio latency entry"
-    assert any(
-        "Cotizaciones: 789 ms" in text and formatted[5] in text for text in markdown
-    ), "Expected quotes latency entry"
+    assert any("Refresh correcto" in text and formatted[0] in text for text in markdown), "Expected IOL refresh summary"
+    assert any("Fallback local" in text and formatted[1] in text for text in markdown), "Expected Yahoo Finance summary"
+    assert any("API FX con errores" in text and formatted[2] in text for text in markdown), "Expected FX API summary"
+    assert any("Uso de caché" in text and formatted[3] in text for text in markdown), "Expected FX cache summary"
+    assert any("Portafolio: 457 ms" in text and formatted[4] in text for text in markdown), (
+        "Expected portfolio latency entry"
+    )
+    assert any("Cotizaciones: 789 ms" in text and formatted[5] in text for text in markdown), (
+        "Expected quotes latency entry"
+    )
     assert len(provider_stub.calls) == len(timestamps)
     for call, expected in zip(provider_stub.calls, timestamps):
         assert call == pytest.approx(expected)
 
 
-def test_tab_latency_metrics_include_p99_and_budget(
-    streamlit_stub, health_sidebar_module
-) -> None:
+def test_tab_latency_metrics_include_p99_and_budget(streamlit_stub, health_sidebar_module) -> None:
     metrics = {
         "tab_latencies": {
             "analisis": {
@@ -233,9 +220,7 @@ def test_tab_latency_metrics_include_p99_and_budget(
     _run_sidebar(health_sidebar_module, metrics)
 
     expanders = health_sidebar_module.st.get_records("expander")
-    latency_expander = next(
-        entry for entry in expanders if entry.get("label") == "Latencias por pestaña"
-    )
+    latency_expander = next(entry for entry in expanders if entry.get("label") == "Latencias por pestaña")
     latency_lines = [
         child.get("text")
         for child in latency_expander.get("children", [])

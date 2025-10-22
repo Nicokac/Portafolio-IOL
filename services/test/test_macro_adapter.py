@@ -24,7 +24,9 @@ def _build_settings(**overrides):
     return SimpleNamespace(**base)
 
 
-def test_macro_adapter_uses_primary_provider_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_macro_adapter_uses_primary_provider_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = _build_settings(
         fred_sector_series={"Finance": "SERIES"},
         macro_sector_fallback={},
@@ -33,11 +35,7 @@ def test_macro_adapter_uses_primary_provider_success(monkeypatch: pytest.MonkeyP
     class DummyFredClient:
         def get_latest_observations(self, mapping):  # type: ignore[no-untyped-def]
             assert mapping == {"Finance": "SERIES"}
-            return {
-                "Finance": MacroSeriesObservation(
-                    series_id="SERIES", value=1.23, as_of="2023-09-01"
-                )
-            }
+            return {"Finance": MacroSeriesObservation(series_id="SERIES", value=1.23, as_of="2023-09-01")}
 
     adapter = MacroAdapter(
         settings=settings,
@@ -55,7 +53,9 @@ def test_macro_adapter_uses_primary_provider_success(monkeypatch: pytest.MonkeyP
     assert result.attempts[0]["status"] == "success"
 
 
-def test_macro_adapter_falls_back_to_secondary_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_macro_adapter_falls_back_to_secondary_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = _build_settings(
         fred_api_key=None,
         fred_sector_series={},
@@ -65,11 +65,7 @@ def test_macro_adapter_falls_back_to_secondary_provider(monkeypatch: pytest.Monk
     class DummyWorldBankClient:
         def get_latest_observations(self, mapping):  # type: ignore[no-untyped-def]
             assert mapping == {"Energy": "WB"}
-            return {
-                "Energy": MacroSeriesObservation(
-                    series_id="WB", value=3.4, as_of="2023-07-01"
-                )
-            }
+            return {"Energy": MacroSeriesObservation(series_id="WB", value=3.4, as_of="2023-07-01")}
 
     adapter = MacroAdapter(
         settings=settings,
@@ -88,7 +84,9 @@ def test_macro_adapter_falls_back_to_secondary_provider(monkeypatch: pytest.Monk
     assert "World Bank" in result.attempts[1]["provider_label"]
 
 
-def test_macro_adapter_uses_static_fallback_when_all_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_macro_adapter_uses_static_fallback_when_all_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = _build_settings(
         fred_sector_series={"Energy": "SERIES"},
         macro_sector_fallback={"Energy": {"value": 2.5, "as_of": "2023-01-01"}},

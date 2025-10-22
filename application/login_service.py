@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, MutableMapping, Literal
+from typing import Any, Literal, MutableMapping
 
 from shared.config import settings
-
 
 Severity = Literal["warning", "error"]
 

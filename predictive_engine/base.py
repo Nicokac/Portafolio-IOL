@@ -308,9 +308,7 @@ def calculate_adaptive_forecast(
             group["actual_return"],
             errors="coerce",
         ).to_numpy(dtype=float)
-        adjustments = (
-            sector_series.map(update.beta_shift).fillna(0.0).to_numpy(dtype=float)
-        )
+        adjustments = sector_series.map(update.beta_shift).fillna(0.0).to_numpy(dtype=float)
         factors = np.clip(1.0 + adjustments, 0.0, 2.0)
         adjusted_predictions = predicted_values * factors
 
@@ -345,20 +343,10 @@ def calculate_adaptive_forecast(
         beta_shift_avg = 0.0
 
     last_beta = last_update.beta_shift if last_update else pd.Series(dtype=float)
-    correlation_matrix = (
-        last_update.correlation_matrix if last_update else pd.DataFrame()
-    )
+    correlation_matrix = last_update.correlation_matrix if last_update else pd.DataFrame()
     sector_dispersion = utils.compute_sector_dispersion(df)
-    raw_errors = (
-        np.concatenate(raw_error_blocks)
-        if raw_error_blocks
-        else np.empty(0, dtype=float)
-    )
-    adjusted_errors = (
-        np.concatenate(adjusted_error_blocks)
-        if adjusted_error_blocks
-        else np.empty(0, dtype=float)
-    )
+    raw_errors = np.concatenate(raw_error_blocks) if raw_error_blocks else np.empty(0, dtype=float)
+    adjusted_errors = np.concatenate(adjusted_error_blocks) if adjusted_error_blocks else np.empty(0, dtype=float)
 
     metrics = evaluate_model_metrics(
         adjusted_errors,

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
 
 import pytest
-
-import sys
 
 if "fastapi" not in sys.modules:
     fake_fastapi = ModuleType("fastapi")
@@ -123,9 +122,9 @@ if "plotly" not in sys.modules:
         }
     )
 
+import ui.lazy.runtime as lazy_runtime
 from controllers.portfolio import portfolio as portfolio_mod
 from ui.lazy import table_fragment
-import ui.lazy.runtime as lazy_runtime
 
 
 class _GuardianStub:
@@ -263,7 +262,9 @@ def test_lazy_fragment_uses_form_fallback(monkeypatch: pytest.MonkeyPatch) -> No
     assert guardian.calls == [dataset_token, dataset_token]
 
 
-def test_lazy_fragment_prefers_streamlit_fragment(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lazy_fragment_prefers_streamlit_fragment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     telemetry_events: list[dict[str, object]] = []
 
     def _capture_telemetry(**kwargs):

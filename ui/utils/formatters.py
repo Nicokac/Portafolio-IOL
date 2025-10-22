@@ -64,9 +64,7 @@ def normalise_hit_ratio(value: object) -> float:
     return float(min(max(ratio, 0.0), 1.0))
 
 
-def resolve_badge_state(
-    ratio: float, thresholds: Mapping[str, object] | None = None
-) -> str:
+def resolve_badge_state(ratio: float, thresholds: Mapping[str, object] | None = None) -> str:
     mapping = thresholds or CACHE_HIT_THRESHOLDS
     try:
         green_threshold = float(mapping.get("green", 0.7))

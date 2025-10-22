@@ -197,7 +197,10 @@ def decompress_payload(payload: Mapping[str, Any] | None) -> dict[str, Any]:
 
     try:
         return json.loads(raw.decode("utf-8"))
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:  # pragma: no cover - defensive
+    except (
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exc:  # pragma: no cover - defensive
         logger.warning("Invalid JSON payload after decompression: %s", exc)
         return {}
 

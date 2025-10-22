@@ -1,11 +1,15 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
-from types import SimpleNamespace
+
 from application import ta_service as tas
+
 
 def test_portfolio_fundamentals_basic(monkeypatch):
     def fake_map(sym):
         return sym
+
     class DummyTicker:
         def __init__(self, ticker):
             self.info = {
@@ -25,6 +29,7 @@ def test_portfolio_fundamentals_basic(monkeypatch):
                 "earningsQuarterlyGrowth": 0.2,
             }
             self.sustainability = pd.DataFrame({"Value": [42]}, index=["totalEsg"])
+
     class DummyFMP:
         api_key = "demo"
 
@@ -33,6 +38,7 @@ def test_portfolio_fundamentals_basic(monkeypatch):
 
         def get_key_metrics_ttm(self, symbol: str):
             return {}
+
     monkeypatch.setattr(tas, "map_to_us_ticker", fake_map)
     monkeypatch.setattr(tas, "yf", SimpleNamespace(Ticker=lambda t: DummyTicker(t)))
     monkeypatch.setattr(tas, "get_fmp_client", lambda: DummyFMP())

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict
 from datetime import datetime
 from typing import Sequence
 
-import logging
 import pandas as pd
 import streamlit as st
 
@@ -18,7 +18,6 @@ from shared.portfolio_export import (
     create_csv_bundle,
     create_excel_workbook,
 )
-
 
 # Configuración común de Plotly para habilitar captura a PNG desde la barra de herramientas
 PLOTLY_CONFIG = {"modeBarButtonsToAdd": ["toImage"]}
@@ -50,14 +49,10 @@ def render_portfolio_exports(
         return
 
     with st.expander("📦 Exportar análisis enriquecido", expanded=False):
-        st.write(
-            "Generá un paquete de CSV y un Excel con KPIs, rankings y gráficos listos para compartir."
-        )
+        st.write("Generá un paquete de CSV y un Excel con KPIs, rankings y gráficos listos para compartir.")
 
         metrics_options = [spec.key for spec in METRIC_SPECS]
-        default_metric_keys = [
-            key for key in (default_metrics or metrics_options[:5]) if key in METRIC_LOOKUP
-        ]
+        default_metric_keys = [key for key in (default_metrics or metrics_options[:5]) if key in METRIC_LOOKUP]
         metric_selection = st.multiselect(
             "Métricas a incluir",
             metrics_options,
@@ -67,9 +62,7 @@ def render_portfolio_exports(
         )
 
         chart_options = [spec.key for spec in CHART_SPECS]
-        default_chart_keys = [
-            key for key in (default_charts or chart_options[:3]) if key in CHART_LOOKUP
-        ]
+        default_chart_keys = [key for key in (default_charts or chart_options[:3]) if key in CHART_LOOKUP]
         chart_selection = st.multiselect(
             "Gráficos a embeber en el Excel",
             chart_options,
@@ -177,10 +170,7 @@ def _build_snapshot_export(
     totals_dict: dict[str, float | None] = {}
     if totals is not None:
         try:
-            totals_dict = {
-                key: float(val) if val is not None else None
-                for key, val in asdict(totals).items()
-            }
+            totals_dict = {key: float(val) if val is not None else None for key, val in asdict(totals).items()}
         except TypeError:
             totals_dict = {}
 

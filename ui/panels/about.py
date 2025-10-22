@@ -21,14 +21,14 @@ def render_about_panel() -> None:
         history = get_update_history()
         if history:
             for entry in reversed(history[-10:]):
-                st.caption(
-                    f"🕒 {entry['timestamp']} — {entry['event']} v{entry['version']} ({entry['status']})"
-                )
+                st.caption(f"🕒 {entry['timestamp']} — {entry['event']} v{entry['version']} ({entry['status']})")
         else:
             st.caption("No se encontraron eventos recientes.")
 
     with st.expander("🧠 Información del entorno"):
-        st.json({
-            "cwd": os.getcwd(),
-            "environment": dict(os.environ) if os.environ else {},
-        })
+        st.json(
+            {
+                "cwd": os.getcwd(),
+                "environment": dict(os.environ) if os.environ else {},
+            }
+        )

@@ -1,15 +1,11 @@
 import base64
+import sys
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-import sys
 
 import pandas as pd
 import pytest
-
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from shared.portfolio_export import (
     PortfolioSnapshotExport,
@@ -19,6 +15,10 @@ from shared.portfolio_export import (
     create_excel_workbook,
     write_tables_to_directory,
 )
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 def _snapshot() -> PortfolioSnapshotExport:
@@ -103,7 +103,9 @@ def test_create_csv_bundle_contains_expected_members() -> None:
     assert any(name.startswith("ranking_") for name in names)
 
 
-def test_create_excel_workbook_generates_sheets(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_excel_workbook_generates_sheets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     snap = _snapshot()
 
     png_bytes = base64.b64decode(

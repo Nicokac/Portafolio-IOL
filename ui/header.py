@@ -1,4 +1,5 @@
 import streamlit as st
+
 from shared.utils import _as_float_or_none
 from ui.palette import get_active_palette
 
@@ -16,7 +17,8 @@ def render_header(rates=None):
                 <div>
                     <h1 style="margin:0; font-size:1.8rem;">IOL — Portafolio en vivo</h1>
                     <p style="margin:0.4rem 0 0; color:#555;">
-                        Acceso operativo en modo <strong>solo lectura</strong> para monitorear posiciones y cotizaciones.
+                        Acceso operativo en modo <strong>solo lectura</strong>
+                        para monitorear posiciones y cotizaciones.
                     </p>
                 </div>
             </div>
@@ -63,17 +65,19 @@ def render_fx_summary_in_header(rates: dict, palette=None):
                 "padding:0.8rem 1rem; border-radius:0.75rem; text-align:center;"
             )
             value_str = (
-                f"$ {value:,.2f}"
-                .replace(",", "_")
-                .replace(".", ",")
-                .replace("_", ".")
+                f"$ {value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
                 if value
                 else "–"
             )
             st.markdown(
                 f"""
                 <div style="{style}">
-                    <span style="font-size:0.85rem; letter-spacing:0.02em; text-transform:uppercase; opacity:0.85;">{label}</span>
+                    <span style="
+                        font-size:0.85rem;
+                        letter-spacing:0.02em;
+                        text-transform:uppercase;
+                        opacity:0.85;
+                    ">{label}</span>
                     <span style="font-size:1.5rem; font-weight:700; line-height:1;">{value_str}</span>
                 </div>
                 """,

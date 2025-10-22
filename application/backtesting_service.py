@@ -96,19 +96,13 @@ def load_prices_from_fixture(symbol: str, *, root: Path | None = None) -> pd.Dat
     )
     if "Close" in normalized.columns:
         if "SMA_FAST" not in normalized.columns:
-            normalized["SMA_FAST"] = (
-                normalized["Close"].rolling(window=3, min_periods=1).mean()
-            )
+            normalized["SMA_FAST"] = normalized["Close"].rolling(window=3, min_periods=1).mean()
         if "SMA_SLOW" not in normalized.columns:
-            normalized["SMA_SLOW"] = (
-                normalized["Close"].rolling(window=5, min_periods=1).mean()
-            )
+            normalized["SMA_SLOW"] = normalized["Close"].rolling(window=5, min_periods=1).mean()
     required = {"Close", "SMA_FAST", "SMA_SLOW"}
     if not required.issubset(set(normalized.columns)):
         missing = ", ".join(sorted(required - set(normalized.columns)))
-        raise AppError(
-            f"El fixture de precios para {symbol} no contiene las columnas necesarias: {missing}."
-        )
+        raise AppError(f"El fixture de precios para {symbol} no contiene las columnas necesarias: {missing}.")
     return normalized
 
 

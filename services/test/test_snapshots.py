@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from services import snapshots
@@ -60,7 +57,10 @@ def test_sqlite_snapshot_backend_persists_and_compares(tmp_path):
         # Reconfigure to exercise reopening the database connection.
         snapshots.configure_storage(backend="sqlite", path=db_path)
         reopened_records = snapshots.list_snapshots("portfolio", limit=2, order="desc")
-        assert [record["id"] for record in reopened_records] == [second["id"], first["id"]]
+        assert [record["id"] for record in reopened_records] == [
+            second["id"],
+            first["id"],
+        ]
 
         comparison = snapshots.compare_snapshots(first["id"], second["id"])
         assert comparison is not None
@@ -70,9 +70,7 @@ def test_sqlite_snapshot_backend_persists_and_compares(tmp_path):
         snapshots.configure_storage(backend="null")
 
 
-def test_configure_storage_records_risk_incident_on_permission_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
-) -> None:
+def test_configure_storage_records_risk_incident_on_permission_error(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     incidents: list[dict[str, object]] = []
 
     def fake_record_incident(**payload: object) -> None:

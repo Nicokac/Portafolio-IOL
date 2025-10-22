@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from contextlib import contextmanager
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
-import sys
-from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -30,8 +30,7 @@ def _fresh_settings(
     original_settings = config.settings
 
     pre_existing_modules = {
-        name: sys.modules.get(name)
-        for name in ("shared.settings", "shared.cache", "application.ta_service")
+        name: sys.modules.get(name) for name in ("shared.settings", "shared.cache", "application.ta_service")
     }
 
     shared_settings_module = pre_existing_modules["shared.settings"]
@@ -153,7 +152,7 @@ def test_shared_settings_reload_reflects_overrides(monkeypatch):
             "MIN_SCORE_THRESHOLD": "88",
             "MAX_RESULTS": "6",
         },
-    ) as settings_override:
+    ) as _:
         reloaded = importlib.reload(shared_settings)
 
         assert reloaded.yahoo_fundamentals_ttl == 111

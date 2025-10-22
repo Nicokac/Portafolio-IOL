@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-"""Lightweight runtime performance instrumentation helpers with observability."""
-
 import atexit
 import json
 import logging
@@ -21,6 +19,9 @@ from typing import Any, Dict, Iterator
 
 from shared.settings import app_env, settings
 
+"""Lightweight runtime performance instrumentation helpers with observability."""
+
+
 _LOG_ENV_NAME = "PERFORMANCE_LOG_PATH"
 _DISABLE_PSUTIL_ENV = "PERFORMANCE_TIMER_DISABLE_PSUTIL"
 _JSON_LOG_ENV = "PERFORMANCE_JSON_LOG_PATH"
@@ -36,7 +37,7 @@ _REDIS_URL = getattr(settings, "REDIS_URL", None)
 _ENABLE_PROMETHEUS = bool(getattr(settings, "ENABLE_PROMETHEUS", True))
 
 try:  # pragma: no cover - optional dependency
-    from prometheus_client import CollectorRegistry, Gauge, Summary, Counter
+    from prometheus_client import CollectorRegistry, Counter, Gauge, Summary
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency missing
     CollectorRegistry = None  # type: ignore[assignment]
     Gauge = None  # type: ignore[assignment]
@@ -48,9 +49,7 @@ try:  # pragma: no cover - optional dependency
 except ModuleNotFoundError:  # pragma: no cover - exercised when dependency missing
     redis = None  # type: ignore[assignment]
 
-_PROMETHEUS_REGISTRY = (
-    CollectorRegistry(auto_describe=True) if CollectorRegistry and _ENABLE_PROMETHEUS else None
-)
+_PROMETHEUS_REGISTRY = CollectorRegistry(auto_describe=True) if CollectorRegistry and _ENABLE_PROMETHEUS else None
 
 if Summary and Gauge and Counter and _PROMETHEUS_REGISTRY is not None:
     PERFORMANCE_DURATION_SECONDS = Summary(
@@ -388,9 +387,7 @@ def _configure_logger(log_path: Path) -> logging.Logger:
         _PerformanceDispatchHandler(),
     ]
     _LISTENER_HANDLERS = handlers
-    _LISTENER = QueueListener(
-        _LOG_QUEUE, *handlers, respect_handler_level=True
-    )
+    _LISTENER = QueueListener(_LOG_QUEUE, *handlers, respect_handler_level=True)
     try:
         _LISTENER.start()
     except Exception:
@@ -402,7 +399,11 @@ def _configure_logger(log_path: Path) -> logging.Logger:
 LOGGER = _configure_logger(LOG_PATH)
 atexit.register(_shutdown_listener)
 
-_FORCE_DISABLE_PSUTIL = os.getenv(_DISABLE_PSUTIL_ENV, "0").strip().lower() in {"1", "true", "yes"}
+_FORCE_DISABLE_PSUTIL = os.getenv(_DISABLE_PSUTIL_ENV, "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
 
 try:  # pragma: no cover - depends on runtime environment
     if _FORCE_DISABLE_PSUTIL:

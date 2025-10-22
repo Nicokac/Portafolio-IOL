@@ -1,18 +1,11 @@
 """Contract tests for the portfolio Streamlit UI."""
 
-import pytest
-from tests.fixtures.streamlit import FakeStreamlit
-from tests.fixtures.common import DummyCtx
-
-import base64
-import zipfile
-import xml.etree.ElementTree as ET
-from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 import controllers.portfolio.charts as charts_mod
 from application.portfolio_service import PortfolioTotals
@@ -25,15 +18,9 @@ from services.portfolio_view import (
     PortfolioViewSnapshot,
 )
 from shared.favorite_symbols import FavoriteSymbols
-from shared.portfolio_export import PortfolioSnapshotExport
+from tests.fixtures.common import DummyCtx
+from tests.fixtures.streamlit import UIFakeStreamlit as FakeStreamlit
 from ui.notifications import tab_badge_label, tab_badge_suffix
-from tests.fixtures.streamlit import (
-    UIFakeStreamlit as _UIFakeStreamlit,
-    _ContextManager,
-    _DummyContainer,
-)
-
-FakeStreamlit = _UIFakeStreamlit
 
 
 @pytest.fixture
@@ -67,14 +54,25 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "PortfolioService", lambda: MagicMock())
         monkeypatch.setattr(portfolio_mod, "TAService", lambda: MagicMock())
 
-        df_positions = pd.DataFrame({"simbolo": ["GGAL"], "mercado": ["bcba"], "cantidad": [10], "costo_unitario": [100.0]})
+        df_positions = pd.DataFrame(
+            {
+                "simbolo": ["GGAL"],
+                "mercado": ["bcba"],
+                "cantidad": [10],
+                "costo_unitario": [100.0],
+            }
+        )
         all_symbols = all_symbols or ["GGAL"]
         available_types = ["ACCION"]
 
         monkeypatch.setattr(
             portfolio_mod,
             "load_portfolio_data",
-            lambda cli, svc: (df_positions.copy(), list(all_symbols), list(available_types)),
+            lambda cli, svc: (
+                df_positions.copy(),
+                list(all_symbols),
+                list(available_types),
+            ),
         )
 
         controls = Controls(
@@ -125,7 +123,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         monkeypatch.setattr(portfolio_mod, "render_summary_section", _summary_stub)
         monkeypatch.setattr(portfolio_mod, "render_table_section", _table_stub)
         monkeypatch.setattr(portfolio_mod, "render_charts_section", _charts_stub)
-        
+
         # risk analysis now lives in a separate module loaded dynamically; provide stub
         monkeypatch.setattr(portfolio_mod, "render_advanced_analysis", advanced)
         monkeypatch.setattr(
@@ -180,6 +178,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
             )
 
         monkeypatch.setattr(portfolio_mod, "_record_lazy_component_load", _record_lazy_stub)
+
         def _notifications_factory():
             return SimpleNamespace(get_flags=lambda: notifications or NotificationFlags())
 
@@ -300,7 +299,9 @@ def test_render_portfolio_section_tab_labels_without_flags(_portfolio_setup) -> 
         assert not any(token and token in label for token in suffixes)
 
 
-def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfolio_setup) -> None:
+def test_render_portfolio_section_applies_tab_badges_when_flags_active(
+    _portfolio_setup,
+) -> None:
     fake_st = FakeStreamlit(radio_sequence=[2])
     flags = NotificationFlags(risk_alert=True, technical_signal=True, upcoming_earnings=True)
     (
@@ -332,10 +333,16 @@ def test_render_portfolio_section_applies_tab_badges_when_flags_active(_portfoli
     technical_badge.assert_not_called()
 
 
-def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfolio_setup, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_portfolio_section_renders_symbol_selector_for_favorites(
+    _portfolio_setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_st = FakeStreamlit(
         radio_sequence=[4],
-        selectbox_defaults={"Seleccioná un símbolo (CEDEAR / ETF)": "GGAL", "Período": "6mo", "Intervalo": "1d"},
+        selectbox_defaults={
+            "Seleccioná un símbolo (CEDEAR / ETF)": "GGAL",
+            "Período": "6mo",
+            "Intervalo": "1d",
+        },
     )
 
     indicators_df = pd.DataFrame(
@@ -394,7 +401,11 @@ def test_render_portfolio_section_renders_symbol_selector_for_favorites(_portfol
     monkeypatch.setattr(portfolio_mod, "TAService", _ta_factory)
     monkeypatch.setattr(portfolio_mod, "map_to_us_ticker", lambda sym: sym)
     monkeypatch.setattr(portfolio_mod, "render_fundamental_data", MagicMock())
-    monkeypatch.setattr(portfolio_mod, "plot_technical_analysis_chart", lambda df, fast, slow: {"df": df, "fast": fast, "slow": slow})
+    monkeypatch.setattr(
+        portfolio_mod,
+        "plot_technical_analysis_chart",
+        lambda df, fast, slow: {"df": df, "fast": fast, "slow": slow},
+    )
 
     render_portfolio_section(
         DummyCtx(),
@@ -480,7 +491,12 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         "compute_returns",
         lambda prices: prices.pct_change().dropna(),
     )
-    monkeypatch.setattr(risk_mod, "beta", lambda returns, bench: 0.75 if not returns.empty else float("nan"))
+    monkeypatch.setattr(
+        risk_mod,
+        "beta",
+        lambda returns, bench: 0.75 if not returns.empty else float("nan"),
+    )
+
     def fake_compute(*args, **kwargs):
         assert kwargs.get("var_confidence") == 0.95
         return (
@@ -570,22 +586,25 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
 
     tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
-    expected_tags = {"volatility_dist", "portfolio_drawdown", "rolling_corr", "returns_hist"}
+    expected_tags = {
+        "volatility_dist",
+        "portfolio_drawdown",
+        "rolling_corr",
+        "returns_hist",
+    }
     assert expected_tags.issubset(tags)
     assert any("CVaR" in label for label, *_ in fake_st.metrics)
     labels = [call["label"] for call in fake_st.selectbox_calls]
     assert "Calcular correlación sobre el último período:" in labels
-    filtered_calls = [
-        call for call in history_calls if call["simbolos"] and not call["simbolos"][0].startswith("^")
-    ]
+    filtered_calls = [call for call in history_calls if call["simbolos"] and not call["simbolos"][0].startswith("^")]
     assert filtered_calls, "Expected history calls for portfolio symbols"
-    assert all(
-        set(call["simbolos"]).issubset({"A1", "A2"}) for call in filtered_calls
-    ), filtered_calls
+    assert all(set(call["simbolos"]).issubset({"A1", "A2"}) for call in filtered_calls), filtered_calls
     assert all("B" not in call["simbolos"] for call in filtered_calls)
 
 
-def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_risk_analysis_ui_handles_missing_series(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import controllers.portfolio.risk as risk_mod
 
     fake_st = FakeStreamlit(
@@ -602,9 +621,8 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame(
-        {"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]}
-    )
+    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]})
+
     def single_history(simbolos=None, period="1y"):
         if simbolos and simbolos[0] == "^GSPC":
             return pd.DataFrame({"^GSPC": [100.0, 101.0, 102.0]})
@@ -633,6 +651,7 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
         ),
     )
     monkeypatch.setattr(risk_mod, "drawdown_series", lambda *_: pd.Series(dtype=float))
+
     class DummyFigure:
         def __init__(self, tag: str) -> None:
             self.tag = tag
@@ -665,7 +684,9 @@ def test_risk_analysis_ui_handles_missing_series(monkeypatch: pytest.MonkeyPatch
     assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
 
 
-def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_risk_analysis_warns_when_selected_type_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import controllers.portfolio.risk as risk_mod
 
     fake_st = FakeStreamlit(
@@ -678,9 +699,7 @@ def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.Monk
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame(
-        {"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]}
-    )
+    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]})
 
     def _should_not_run(*_, **__):
         raise AssertionError("No debería consultarse histórico cuando no hay datos para el tipo")
@@ -695,7 +714,11 @@ def test_risk_analysis_warns_when_selected_type_missing(monkeypatch: pytest.Monk
     )
 
     assert any("No hay datos para los tipos seleccionados" in msg for msg in fake_st.warnings)
-def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPatch) -> None:
+
+
+def test_render_advanced_analysis_controls_display(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
     fake_st.checkbox = lambda *a, **k: False  # type: ignore[attr-defined]
     monkeypatch.setattr(charts_mod, "st", fake_st)
@@ -725,7 +748,11 @@ def test_render_advanced_analysis_controls_display(monkeypatch: pytest.MonkeyPat
     assert "Período de métricas" in labels
     assert "Métrica de riesgo" in labels
     assert "Benchmark" in labels
-def test_render_basic_section_renders_heatmap_without_timeline(monkeypatch: pytest.MonkeyPatch) -> None:
+
+
+def test_render_basic_section_renders_heatmap_without_timeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
 
     import controllers.portfolio.charts as charts_mod
@@ -805,13 +832,13 @@ def test_render_basic_section_renders_heatmap_without_timeline(monkeypatch: pyte
 
     plotted_keys = {call["kwargs"].get("key") for call in fake_st.plot_calls}
     assert "portfolio_timeline" not in plotted_keys
-    assert {"portfolio_contribution_heatmap", "portfolio_contribution_table"}.issubset(
-        plotted_keys
-    )
+    assert {"portfolio_contribution_heatmap", "portfolio_contribution_table"}.issubset(plotted_keys)
     assert not any("históricos" in msg for msg in fake_st.warnings)
 
 
-def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_basic_section_handles_missing_analytics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_st = FakeStreamlit(radio_sequence=[])
 
     import controllers.portfolio.charts as charts_mod
@@ -832,4 +859,5 @@ def test_render_basic_section_handles_missing_analytics(monkeypatch: pytest.Monk
     monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)

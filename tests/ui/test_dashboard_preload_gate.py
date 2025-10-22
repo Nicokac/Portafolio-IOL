@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
 import sys
+from contextlib import contextmanager
 from types import ModuleType
 
 import pytest
+
+import services.preload_worker as preload
+import ui.helpers.preload as preload_helper
 
 
 def _install_ui_stubs() -> None:
@@ -47,9 +50,6 @@ def _install_ui_stubs() -> None:
 
 _install_ui_stubs()
 
-import ui.helpers.preload as preload_helper
-import services.preload_worker as preload
-
 
 @pytest.fixture(autouse=True)
 def restore_session_state(monkeypatch: pytest.MonkeyPatch):
@@ -91,7 +91,9 @@ class _Container:
         return _Placeholder()
 
 
-def test_ensure_scientific_preload_ready_waits_for_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_scientific_preload_ready_waits_for_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     state = preload_helper.st.session_state
     state.clear()
     ready_flag = {"done": False}
@@ -114,7 +116,9 @@ def test_ensure_scientific_preload_ready_waits_for_worker(monkeypatch: pytest.Mo
     assert container.calls == 1
 
 
-def test_ensure_scientific_preload_ready_fast_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ensure_scientific_preload_ready_fast_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(preload, "is_preload_complete", lambda: True)
     container = _Container()
     result = preload_helper.ensure_scientific_preload_ready(container)
@@ -155,9 +159,7 @@ def test_ensure_scientific_preload_ready_times_out(
 
     container = _Container()
     with caplog.at_level("WARNING"):
-        result = preload_helper.ensure_scientific_preload_ready(
-            container, timeout_seconds=0.1
-        )
+        result = preload_helper.ensure_scientific_preload_ready(container, timeout_seconds=0.1)
 
     assert result is False
     assert preload_helper.st.session_state["scientific_preload_ready"] is False

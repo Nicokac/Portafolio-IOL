@@ -31,10 +31,7 @@ def test_validate_adaptive_limits_rejects_duplicate_symbols() -> None:
     with pytest.raises(HTTPException) as exc_info:
         validate_adaptive_limits(history, max_size=5)
 
-    assert (
-        exc_info.value.detail
-        == "Duplicate symbols detected in adaptive forecast history."
-    )
+    assert exc_info.value.detail == "Duplicate symbols detected in adaptive forecast history."
 
 
 def test_validate_adaptive_limits_rejects_history_overflow() -> None:

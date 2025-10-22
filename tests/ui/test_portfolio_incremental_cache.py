@@ -1,7 +1,8 @@
-import pandas as pd
-from types import SimpleNamespace, ModuleType
-from contextlib import nullcontext
 import sys
+from contextlib import nullcontext
+from types import ModuleType, SimpleNamespace
+
+import pandas as pd
 
 from domain.models import Controls
 
@@ -48,9 +49,7 @@ if "streamlit" not in sys.modules:
 
     fake_streamlit.cache_data = _identity_decorator
     fake_streamlit.cache_resource = _identity_decorator
-    fake_streamlit.empty = lambda: SimpleNamespace(
-        container=lambda: nullcontext(), empty=lambda: None
-    )
+    fake_streamlit.empty = lambda: SimpleNamespace(container=lambda: nullcontext(), empty=lambda: None)
     fake_streamlit.spinner = lambda *_a, **_k: nullcontext()
     fake_streamlit.radio = lambda *a, **k: 0
     fake_streamlit.selectbox = lambda *a, **k: None
@@ -117,7 +116,11 @@ def test_table_filters_only_rerender_table(monkeypatch):
     def _charts_stub(*args, **kwargs):
         chart_calls.append((args, kwargs))
 
-    monkeypatch.setattr(portfolio, "st", SimpleNamespace(empty=lambda: _Placeholder(), caption=lambda *_: None))
+    monkeypatch.setattr(
+        portfolio,
+        "st",
+        SimpleNamespace(empty=lambda: _Placeholder(), caption=lambda *_: None),
+    )
     monkeypatch.setattr(portfolio, "render_summary_section", _summary_stub)
     monkeypatch.setattr(portfolio, "render_table_section", _table_stub)
     monkeypatch.setattr(portfolio, "render_charts_section", _charts_stub)
@@ -141,7 +144,13 @@ def test_table_filters_only_rerender_table(monkeypatch):
     assert len(chart_calls) == 1
 
     viewmodel_controls = _make_viewmodel(order_by="pl")
-    portfolio.render_basic_tab(viewmodel_controls, favorites, snapshot, tab_slug="portafolio", tab_cache=tab_cache)
+    portfolio.render_basic_tab(
+        viewmodel_controls,
+        favorites,
+        snapshot,
+        tab_slug="portafolio",
+        tab_cache=tab_cache,
+    )
 
     assert len(summary_calls) == 1
     assert len(table_calls) == 2
@@ -149,7 +158,13 @@ def test_table_filters_only_rerender_table(monkeypatch):
 
     updated_df = pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [1500.0]})
     viewmodel_updated = _make_viewmodel(order_by="pl", df=updated_df)
-    portfolio.render_basic_tab(viewmodel_updated, favorites, snapshot, tab_slug="portafolio", tab_cache=tab_cache)
+    portfolio.render_basic_tab(
+        viewmodel_updated,
+        favorites,
+        snapshot,
+        tab_slug="portafolio",
+        tab_cache=tab_cache,
+    )
 
     assert len(summary_calls) == 2
     assert len(table_calls) == 3

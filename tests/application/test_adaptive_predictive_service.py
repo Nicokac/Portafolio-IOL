@@ -13,16 +13,16 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import application.adaptive_predictive_service as adaptive_predictive_service  # noqa: E402
 from application.adaptive_predictive_service import (  # noqa: E402
-    export_adaptive_report,
     _CORR_KEY,
     _STATE_KEY,
+    export_adaptive_report,
     simulate_adaptive_forecast,
     update_model,
 )
 from application.predictive_core.state import PredictiveCacheState  # noqa: E402
+from predictive_engine.models import AdaptiveState  # noqa: E402
 from services.cache.core import CacheService  # noqa: E402
 from shared.settings import ADAPTIVE_TTL_HOURS  # noqa: E402
-from predictive_engine.models import AdaptiveState  # noqa: E402
 
 
 class TrackingCache(CacheService):
@@ -50,7 +50,9 @@ def adaptive_cache_state(monkeypatch) -> PredictiveCacheState:
     return state
 
 
-def _build_frame(predicted_a: float, predicted_b: float, actual_a: float, actual_b: float, *, ts: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_frame(
+    predicted_a: float, predicted_b: float, actual_a: float, actual_b: float, *, ts: str
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     predictions = pd.DataFrame(
         [
             {"sector": "Technology", "predicted_return": predicted_a, "timestamp": ts},
@@ -66,7 +68,9 @@ def _build_frame(predicted_a: float, predicted_b: float, actual_a: float, actual
     return predictions, actuals
 
 
-def test_update_model_applies_ema_and_persists_state(adaptive_cache_state: PredictiveCacheState) -> None:
+def test_update_model_applies_ema_and_persists_state(
+    adaptive_cache_state: PredictiveCacheState,
+) -> None:
     cache = TrackingCache()
 
     preds1, actuals1 = _build_frame(10.0, 6.0, 5.0, 6.0, ts="2024-01-01")
@@ -227,4 +231,3 @@ def test_export_adaptive_report_generates_markdown() -> None:
                     reports_dir.rmdir()
                 except OSError:
                     pass
-

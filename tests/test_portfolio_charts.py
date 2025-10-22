@@ -6,16 +6,17 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 
+from controllers.portfolio.charts import generate_basic_charts
+from services.portfolio_view import PortfolioContributionMetrics
+from ui.charts import (
+    plot_bubble_pl_vs_costo,
+    plot_contribution_heatmap,
+    plot_portfolio_timeline,
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-
-
-from controllers.portfolio.charts import generate_basic_charts
-from ui.charts import plot_bubble_pl_vs_costo
-from services.portfolio_view import PortfolioContributionMetrics
-from ui.charts import plot_portfolio_timeline, plot_contribution_heatmap
 
 
 def test_generate_basic_charts_produces_figures():
@@ -73,6 +74,8 @@ def test_plot_bubble_with_benchmark_dataset():
     assert {"Activo", "Benchmark"}.issubset(names)
     assert fig.layout.shapes
     assert any(getattr(shape, "type", None) == "line" for shape in fig.layout.shapes)
+
+
 def test_plot_portfolio_timeline_handles_history():
     history = pd.DataFrame(
         {

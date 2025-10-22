@@ -7,10 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 import tests.ui.test_streamlit_lazy_fix as _lazy_stubs  # noqa: F401 - ensure stubs are registered
-
 from controllers.portfolio import portfolio as portfolio_mod
 from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
-from tests.ui.test_streamlit_cache_reuse import _portfolio_setup
 
 
 def test_lazy_trigger_state_survives_reruns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,9 +129,7 @@ def test_ui_persist_metric_tracks_visibility(monkeypatch: pytest.MonkeyPatch) ->
     assert persist_ms >= 3500.0
 
 
-def test_visual_cache_telemetry_never_flips_false(
-    monkeypatch: pytest.MonkeyPatch, _portfolio_setup
-) -> None:
+def test_visual_cache_telemetry_never_flips_false(monkeypatch: pytest.MonkeyPatch, _portfolio_setup) -> None:
     """Once cleared, the visual cache telemetry should not emit a false flag for the same dataset."""
 
     fake_st = FakeStreamlit(radio_sequence=[0, 0])

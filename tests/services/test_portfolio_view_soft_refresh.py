@@ -95,7 +95,7 @@ def test_skip_invalidation_preserves_snapshot(monkeypatch):
     df_pos = _base_positions()
     controls = _controls()
 
-    snapshot_a = service.get_portfolio_view(
+    service.get_portfolio_view(
         df_pos,
         controls,
         cli=SimpleNamespace(),

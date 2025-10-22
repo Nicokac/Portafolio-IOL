@@ -71,9 +71,7 @@ def _row_context(row: Mapping[str, str]) -> dict[str, object]:
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
-            logger.debug(
-                "No se pudo decodificar el contexto de telemetría: %s", raw_context
-            )
+            logger.debug("No se pudo decodificar el contexto de telemetría: %s", raw_context)
     dataset = row.get("dataset_hash")
     if dataset:
         return {"dataset_hash": dataset}
@@ -111,7 +109,10 @@ def resolve_top_datasets(
 
     ordered = sorted(
         stats.items(),
-        key=lambda item: (-int(item[1].get("count", 0)), -float(item[1].get("last_ts", 0.0))),
+        key=lambda item: (
+            -int(item[1].get("count", 0)),
+            -float(item[1].get("last_ts", 0.0)),
+        ),
     )
     return [dataset for dataset, _ in ordered[:limit]]
 
@@ -211,4 +212,3 @@ __all__ = [
     "prewarm_visual_cache",
     "resolve_top_datasets",
 ]
-

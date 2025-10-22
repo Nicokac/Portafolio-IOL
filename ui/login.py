@@ -9,26 +9,23 @@ from requests.exceptions import RequestException
 
 from application.auth_service import get_auth_provider
 from application.login_service import clear_password_keys, validate_tokens_key
+from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate_token
 from services.update_checker import (
+    _run_update_script,
     check_for_update,
     format_last_check,
     get_last_check_time,
-    _run_update_script,
     get_update_history,
     safe_restart_app,
 )
-from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate_token
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
-from shared.version import __version__
 from shared.time_provider import TimeProvider
+from shared.version import __version__
 from ui.security_info import render_security_info
 
-
 FASTAPI_HEALTH_URL = os.environ.get("FASTAPI_HEALTH_URL", "http://localhost:8000/health")
-FASTAPI_ENGINE_INFO_URL = os.environ.get(
-    "FASTAPI_ENGINE_INFO_URL", "http://localhost:8000/engine/info"
-)
+FASTAPI_ENGINE_INFO_URL = os.environ.get("FASTAPI_ENGINE_INFO_URL", "http://localhost:8000/engine/info")
 
 
 logger = logging.getLogger(__name__)
@@ -121,9 +118,7 @@ def _render_auto_restart_control() -> bool:
         disabled=auto_restart_disabled,
     )
     if auto_restart_disabled:
-        st.info(
-            "El reinicio automático está deshabilitado mediante la variable de entorno ``DISABLE_AUTO_RESTART``."
-        )
+        st.info("El reinicio automático está deshabilitado mediante la variable de entorno ``DISABLE_AUTO_RESTART``.")
     return auto_restart and not auto_restart_disabled
 
 
@@ -133,12 +128,15 @@ def _handle_restart(auto_restart_enabled: bool) -> None:
         safe_restart_app()
     else:
         st.markdown(
-            "<span style='display:inline-flex;align-items:center;gap:0.4rem;padding:0.35rem 0.8rem;border-radius:999px;background:rgba(30, 136, 229, 0.15);color:#1e88e5;font-weight:600;'>🕓 Reinicio programado</span>",
+            (
+                "<span style='display:inline-flex;align-items:center;gap:0.4rem;"
+                "padding:0.35rem 0.8rem;border-radius:999px;"
+                "background:rgba(30, 136, 229, 0.15);color:#1e88e5;"
+                "font-weight:600;'>🕓 Reinicio programado</span>"
+            ),
             unsafe_allow_html=True,
         )
-        st.caption(
-            "Podés reiniciar manualmente la aplicación más adelante desde tu entorno de despliegue."
-        )
+        st.caption("Podés reiniciar manualmente la aplicación más adelante desde tu entorno de despliegue.")
 
 
 def render_login_page() -> None:
@@ -153,7 +151,17 @@ def render_login_page() -> None:
         st.markdown(
             """
             <div style="margin:0.5rem 0 1rem;">
-                <span style="display:inline-flex;align-items:center;gap:0.45rem;padding:0.45rem 0.95rem;border-radius:999px;background:rgba(46, 125, 50, 0.16);color:#1b5e20;font-weight:600;letter-spacing:0.02em;">
+                <span style="
+                    display:inline-flex;
+                    align-items:center;
+                    gap:0.45rem;
+                    padding:0.45rem 0.95rem;
+                    border-radius:999px;
+                    background:rgba(46, 125, 50, 0.16);
+                    color:#1b5e20;
+                    font-weight:600;
+                    letter-spacing:0.02em;
+                ">
                     🟢 API mode available
                 </span>
             </div>
@@ -164,7 +172,17 @@ def render_login_page() -> None:
             st.markdown(
                 """
                 <div style="margin:-0.5rem 0 1.25rem;">
-                    <span style="display:inline-flex;align-items:center;gap:0.45rem;padding:0.45rem 1rem;border-radius:999px;background:rgba(123, 31, 162, 0.16);color:#4a148c;font-weight:600;letter-spacing:0.02em;">
+                    <span style="
+                        display:inline-flex;
+                        align-items:center;
+                        gap:0.45rem;
+                        padding:0.45rem 1rem;
+                        border-radius:999px;
+                        background:rgba(123, 31, 162, 0.16);
+                        color:#4a148c;
+                        font-weight:600;
+                        letter-spacing:0.02em;
+                    ">
                         Engine API active 🔮
                     </span>
                 </div>
@@ -176,27 +194,42 @@ def render_login_page() -> None:
         safe_page_link(
             "ui.panels.about",
             label="ℹ️ Acerca de",
-            render_fallback=lambda: _lazy_attr("ui.panels.about", "render_about_panel")(),
+            render_fallback=lambda: _lazy_attr(
+                "ui.panels.about",
+                "render_about_panel",
+            )(),
         )
         safe_page_link(
             "ui.panels.diagnostics",
             label="🩺 Diagnóstico",
-            render_fallback=lambda: _lazy_attr("ui.panels.diagnostics", "render_diagnostics_panel")(),
+            render_fallback=lambda: _lazy_attr(
+                "ui.panels.diagnostics",
+                "render_diagnostics_panel",
+            )(),
         )
         safe_page_link(
             "ui.panels.system_diagnostics",
             label="🔎 Diagnóstico del sistema",
-            render_fallback=lambda: _lazy_attr("ui.panels.system_diagnostics", "render_system_diagnostics_panel")(),
+            render_fallback=lambda: _lazy_attr(
+                "ui.panels.system_diagnostics",
+                "render_system_diagnostics_panel",
+            )(),
         )
         safe_page_link(
             "ui.panels.system_status",
             label="🔍 Estado del Sistema",
-            render_fallback=lambda: _lazy_attr("ui.panels.system_status", "render_system_status_panel")(),
+            render_fallback=lambda: _lazy_attr(
+                "ui.panels.system_status",
+                "render_system_status_panel",
+            )(),
         )
         safe_page_link(
             "ui.tabs.performance_dashboard",
             label="⏱️ Performance",
-            render_fallback=lambda: _lazy_attr("ui.tabs.performance_dashboard", "render_performance_dashboard_tab")(),
+            render_fallback=lambda: _lazy_attr(
+                "ui.tabs.performance_dashboard",
+                "render_performance_dashboard_tab",
+            )(),
         )
 
     latest = check_for_update()
@@ -206,18 +239,32 @@ def render_login_page() -> None:
 
     st.markdown(
         """
-        <div style="margin:1rem 0 1.5rem; padding:1rem 1.2rem; border-radius:0.75rem; background:linear-gradient(135deg, rgba(0, 76, 255, 0.08), rgba(0, 199, 190, 0.08));">
+        <div style="
+            margin:1rem 0 1.5rem;
+            padding:1rem 1.2rem;
+            border-radius:0.75rem;
+            background:linear-gradient(135deg, rgba(0, 76, 255, 0.08), rgba(0, 199, 190, 0.08));
+        ">
             <div style="display:flex; gap:0.8rem; align-items:flex-start;">
                 <span style="font-size:1.8rem;">🛰️</span>
                 <div>
-                    <div style="font-size:1.1rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Observabilidad operativa</div>
+                    <div style="font-size:1.1rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">
+                        Observabilidad operativa
+                    </div>
                     <p style="margin:0.4rem 0 0; line-height:1.4; color:#333;">
-                        Supervisá la salud de tu portafolio con indicadores en tiempo real sin comprometer tus credenciales.
+                        Supervisá la salud de tu portafolio con indicadores en tiempo real
+                        sin comprometer tus credenciales.
                     </p>
                     <div style="display:flex; flex-wrap:wrap; gap:0.6rem; margin-top:0.6rem; font-size:0.9rem;">
-                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">⚡ Actualización en vivo</span>
-                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">📊 Consolidación multi-cuenta</span>
-                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">🔍 Trazabilidad completa</span>
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">
+                            ⚡ Actualización en vivo
+                        </span>
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">
+                            📊 Consolidación multi-cuenta
+                        </span>
+                        <span style="background:rgba(0,0,0,0.05); padding:0.25rem 0.6rem; border-radius:999px;">
+                            🔍 Trazabilidad completa
+                        </span>
                     </div>
                 </div>
             </div>
@@ -229,9 +276,7 @@ def render_login_page() -> None:
     auto_restart_enabled = _render_auto_restart_control()
 
     if latest:
-        st.warning(
-            f"💡 Nueva versión disponible: v{latest} (actual: v{__version__})"
-        )
+        st.warning(f"💡 Nueva versión disponible: v{latest} (actual: v{__version__})")
         st.link_button(
             "📄 Ver cambios en GitHub",
             "https://github.com/Nicokac/portafolio-iol/blob/main/CHANGELOG.md",
@@ -271,9 +316,7 @@ def render_login_page() -> None:
         with st.expander("📜 Historial de actualizaciones recientes"):
             if history:
                 for entry in reversed(history):
-                    st.caption(
-                        f"🕒 {entry['timestamp']} — {entry['event']} v{entry['version']} ({entry['status']})"
-                    )
+                    st.caption(f"🕒 {entry['timestamp']} — {entry['event']} v{entry['version']} ({entry['status']})")
             else:
                 st.caption("No hay registros previos de actualización.")
 

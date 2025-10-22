@@ -1,4 +1,5 @@
 """HTTP client for the World Bank open data API."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,12 @@ import requests
 
 from infrastructure.http.session import build_session
 
-from .fred_client import MacroAPIError, MacroAuthenticationError, MacroRateLimitError, MacroSeriesObservation
+from .fred_client import (
+    MacroAPIError,
+    MacroAuthenticationError,
+    MacroRateLimitError,
+    MacroSeriesObservation,
+)
 from .rate_limiter import RateLimiter
 
 
@@ -30,9 +36,7 @@ class WorldBankClient:
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._session = session or build_session(user_agent or "Portafolio-IOL/1.0")
-        self._rate_limiter = RateLimiter(
-            calls_per_minute=calls_per_minute, monotonic=monotonic, sleeper=sleeper
-        )
+        self._rate_limiter = RateLimiter(calls_per_minute=calls_per_minute, monotonic=monotonic, sleeper=sleeper)
 
     # Public API -----------------------------------------------------------
     def get_latest_observation(
@@ -74,9 +78,7 @@ class WorldBankClient:
             return MacroSeriesObservation(series_id=indicator, value=value, as_of=as_of)
         return None
 
-    def get_latest_observations(
-        self, indicators_map: Mapping[str, str]
-    ) -> Dict[str, MacroSeriesObservation]:
+    def get_latest_observations(self, indicators_map: Mapping[str, str]) -> Dict[str, MacroSeriesObservation]:
         """Return observations for the provided mapping of label -> indicator."""
 
         results: Dict[str, MacroSeriesObservation] = {}
@@ -90,9 +92,7 @@ class WorldBankClient:
         return results
 
     # Internal helpers ----------------------------------------------------
-    def _request_json(
-        self, endpoint: str, params: Optional[MutableMapping[str, Any]] = None
-    ) -> Any:
+    def _request_json(self, endpoint: str, params: Optional[MutableMapping[str, Any]] = None) -> Any:
         url = f"{self._base_url}/{endpoint.lstrip('/')}"
         query: Dict[str, Any] = {}
         headers: Dict[str, str] = {}

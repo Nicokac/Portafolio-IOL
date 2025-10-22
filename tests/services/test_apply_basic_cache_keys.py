@@ -1,6 +1,7 @@
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
-from types import SimpleNamespace
 
 from services import portfolio_view
 from services.portfolio_view import (
@@ -116,9 +117,7 @@ def test_refresh_secs_does_not_invalidate_apply_basic(portfolio_service):
     )
 
     assert counter["apply_calls"] == 1
-    assert snapshot_b.totals.total_value == pytest.approx(
-        snapshot_a.totals.total_value
-    )
+    assert snapshot_b.totals.total_value == pytest.approx(snapshot_a.totals.total_value)
 
 
 def test_dataset_cache_reuses_previous_hash(portfolio_service):

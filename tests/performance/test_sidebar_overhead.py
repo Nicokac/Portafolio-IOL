@@ -24,6 +24,7 @@ if "plotly" not in sys.modules:
     plotly_express.area = _noop_figure  # type: ignore[attr-defined]
     plotly_express.bar = _noop_figure  # type: ignore[attr-defined]
     plotly_express.scatter = _noop_figure  # type: ignore[attr-defined]
+
     class _QualitativePalette:
         def __init__(self) -> None:
             self.Set2: list[str] = []
@@ -129,8 +130,6 @@ def test_startup_render_portfolio_complete_under_ten_seconds(
     _fresh_app: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app = _fresh_app
-    st = sys.modules["streamlit"]
-
     monkeypatch.setattr(app, "get_fx_rates_cached", MagicMock(return_value=({}, None)))
     monkeypatch.setattr(app, "render_header", MagicMock())
     monkeypatch.setattr(app, "render_action_menu", MagicMock())

@@ -5,10 +5,11 @@ import pandas as pd
 import streamlit as st
 
 from domain.adaptive_cache_lock import run_in_background
-from shared.config import settings
 from services.cache import fetch_quotes_bulk
 from services.data_fetch_service import (
     _compute_dataset_hash as compute_dataset_hash,
+)
+from services.data_fetch_service import (
     get_portfolio_data_fetch_service,
 )
 from services.performance_timer import (
@@ -16,6 +17,7 @@ from services.performance_timer import (
     performance_timer,
     profile_block,
 )
+from shared.config import settings
 from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
@@ -25,14 +27,13 @@ def _background_analytics_job(df_view: pd.DataFrame) -> None:
     if df_view.empty:
         return
     try:
-        numeric_cols = [
-            col for col in ("valor_actual", "costo", "pl", "pl_d") if col in df_view.columns
-        ]
+        numeric_cols = [col for col in ("valor_actual", "costo", "pl", "pl_d") if col in df_view.columns]
         if not numeric_cols:
             return
         summary = df_view.loc[:, numeric_cols].sum().to_dict()
         logger.debug(
-            "Resumen analítico preparado en background", extra={"portfolio_metrics": summary}
+            "Resumen analítico preparado en background",
+            extra={"portfolio_metrics": summary},
         )
     except Exception:
         logger.debug("No se pudo calcular el resumen analítico en background", exc_info=True)
@@ -42,7 +43,10 @@ def _background_predictions_job() -> None:
     try:
         from application.predictive_service import update_cache_metrics
     except Exception:
-        logger.debug("No se pudo importar predictive_service para refrescar métricas", exc_info=True)
+        logger.debug(
+            "No se pudo importar predictive_service para refrescar métricas",
+            exc_info=True,
+        )
         return
     try:
         update_cache_metrics()
@@ -104,7 +108,9 @@ def _schedule_background_jobs(df_view: pd.DataFrame, telemetry: dict[str, object
             continue
         scheduled.append(label)
         logger.debug(
-            "Tarea pesada '%s' delegada al hilo %s", label, getattr(thread, "name", "unknown")
+            "Tarea pesada '%s' delegada al hilo %s",
+            label,
+            getattr(thread, "name", "unknown"),
         )
     if scheduled:
         telemetry["background_jobs"] = scheduled
@@ -150,9 +156,7 @@ def apply_filters(
             selected=len(selected_syms),
         ) as stage_filter:
             if controls.hide_cash:
-                df_pos = df_pos[
-                    ~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])
-                ].copy()
+                df_pos = df_pos[~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])].copy()
             if selected_syms:
                 df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
         _record_stage("filter_positions", stage_filter)
@@ -171,13 +175,11 @@ def apply_filters(
         dataset, metadata = service.peek_dataset()
         quotes_map = None
         if metadata is not None:
-            skip_invalidation_flag = skip_invalidation_flag or bool(
-                getattr(metadata, "skip_invalidation", False)
-            )
+            skip_invalidation_flag = skip_invalidation_flag or bool(getattr(metadata, "skip_invalidation", False))
         if skip_invalidation_flag:
             telemetry["skip_invalidation"] = True
             logger.info(
-                "portfolio_filters event=\"skip_invalidation\" dataset_hash=%s",
+                'portfolio_filters event="skip_invalidation" dataset_hash=%s',
                 expected_hash,
             )
         if dataset is not None and dataset.dataset_hash == expected_hash:
@@ -207,11 +209,7 @@ def apply_filters(
                 _record_stage("fetch_quotes", fetch_stage)
         quotes_map = quotes_map or {}
 
-        chg_cnt = sum(
-            1
-            for v in quotes_map.values()
-            if isinstance(v, dict) and v.get("chg_pct") is not None
-        )
+        chg_cnt = sum(1 for v in quotes_map.values() if isinstance(v, dict) and v.get("chg_pct") is not None)
         telemetry["quotes_with_chg"] = int(chg_cnt)
         logger.info(
             "apply_filters solicitó %d pares; %d con chg_pct",
@@ -238,15 +236,11 @@ def apply_filters(
             return df_view
 
         with _profile_stage("classify_assets", rows=len(df_view)) as stage_classify:
-            df_view["tipo"] = df_view["simbolo"].astype(str).map(
-                psvc.classify_asset_cached
-            )
+            df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
         _record_stage("classify_assets", stage_classify)
 
         if controls.selected_types:
-            with _profile_stage(
-                "apply_type_filter", filters=len(controls.selected_types)
-            ) as stage_type:
+            with _profile_stage("apply_type_filter", filters=len(controls.selected_types)) as stage_type:
                 df_view = df_view[df_view["tipo"].isin(controls.selected_types)].copy()
             _record_stage("apply_type_filter", stage_type)
             telemetry["filtered_rows"] = int(len(df_view))
@@ -254,11 +248,7 @@ def apply_filters(
         symbol_q = (controls.symbol_query or "").strip()
         if symbol_q:
             with _profile_stage("apply_symbol_query", query=symbol_q) as stage_query:
-                df_view = df_view[
-                    df_view["simbolo"].astype(str).str.contains(
-                        symbol_q, case=False, na=False
-                    )
-                ].copy()
+                df_view = df_view[df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)].copy()
             _record_stage("apply_symbol_query", stage_query)
             telemetry["query_rows"] = int(len(df_view))
 
@@ -282,26 +272,16 @@ def apply_filters(
             for (mkt, sym), chg in chg_map.items():
                 if isinstance(chg, (int, float)):
                     st.session_state["quotes_hist"].setdefault(sym, [])
-                    if (
-                        not st.session_state["quotes_hist"][sym]
-                        or (
-                            st.session_state["quotes_hist"][sym][-1].get("ts")
-                            != now_ts
-                        )
+                    if not st.session_state["quotes_hist"][sym] or (
+                        st.session_state["quotes_hist"][sym][-1].get("ts") != now_ts
                     ):
-                        st.session_state["quotes_hist"][sym].append(
-                            {"ts": now_ts, "chg_pct": float(chg)}
-                        )
+                        st.session_state["quotes_hist"][sym].append({"ts": now_ts, "chg_pct": float(chg)})
                         maxlen = getattr(settings, "quotes_hist_maxlen", 500)
-                        st.session_state["quotes_hist"][sym] = st.session_state[
-                            "quotes_hist"
-                        ][sym][-maxlen:]
+                        st.session_state["quotes_hist"][sym] = st.session_state["quotes_hist"][sym][-maxlen:]
         _record_stage("update_history", stage_history)
 
         if stage_profiles:
-            telemetry["stage_ms"] = {
-                name: metrics["ms"] for name, metrics in stage_profiles.items()
-            }
+            telemetry["stage_ms"] = {name: metrics["ms"] for name, metrics in stage_profiles.items()}
             try:
                 st.session_state["apply_filters_profiles"] = stage_profiles
             except Exception:

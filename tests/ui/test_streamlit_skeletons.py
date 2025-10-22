@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from types import ModuleType, SimpleNamespace
 import sys
+from types import ModuleType, SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -77,6 +77,7 @@ if "plotly" not in sys.modules:
     plotly_express.area = _noop_figure  # type: ignore[attr-defined]
     plotly_express.bar = _noop_figure  # type: ignore[attr-defined]
     plotly_express.scatter = _noop_figure  # type: ignore[attr-defined]
+
     class _QualitativePalette:
         def __init__(self) -> None:
             self.Set2: list[str] = []
@@ -260,8 +261,6 @@ def test_table_placeholder_precedes_render(monkeypatch: pytest.MonkeyPatch, lazy
     assert ("render", "table") in call_order
 
     placeholder_bodies = [
-        entry["body"]
-        for entry in fake_st.markdowns
-        if entry.get("placeholder") and entry.get("write")
+        entry["body"] for entry in fake_st.markdowns if entry.get("placeholder") and entry.get("write")
     ]
     assert any("⏳ Cargando tabla" in body for body in placeholder_bodies)

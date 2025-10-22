@@ -33,7 +33,12 @@ def _prepare_app(
     if existing_timer and hasattr(existing_timer, "_shutdown_listener"):
         existing_timer._shutdown_listener()
 
-    for name in ["api.routers.metrics", "api.routers", "api.main", "services.performance_timer"]:
+    for name in [
+        "api.routers.metrics",
+        "api.routers",
+        "api.main",
+        "services.performance_timer",
+    ]:
         sys.modules.pop(name, None)
 
     timer_module = importlib.import_module("services.performance_timer")
@@ -55,7 +60,7 @@ def test_metrics_endpoint_returns_prometheus_payload(tmp_path: Path, monkeypatch
     assert response.status_code == 200
     assert "text/plain" in response.headers.get("content-type", "")
     assert "performance_duration_seconds_count" in response.text
-    assert "label=\"api_metrics_test\"" in response.text
+    assert 'label="api_metrics_test"' in response.text
 
 
 def test_metrics_endpoint_respects_disabled_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

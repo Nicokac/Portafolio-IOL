@@ -24,7 +24,9 @@ def valid_env() -> dict[str, str]:
     }
 
 
-def test_validate_security_environment_accepts_valid_keys(valid_env: dict[str, str]) -> None:
+def test_validate_security_environment_accepts_valid_keys(
+    valid_env: dict[str, str],
+) -> None:
     validate_security_environment(valid_env)
 
 

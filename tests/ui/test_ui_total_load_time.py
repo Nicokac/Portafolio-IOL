@@ -1,9 +1,5 @@
-
 from __future__ import annotations
 
-from datetime import datetime
-import importlib
-import sys
 import importlib
 import sys
 from types import ModuleType, SimpleNamespace
@@ -44,9 +40,9 @@ def _build_streamlit_stub() -> ModuleType:
     components_module.v1 = v1_module
     streamlit_module.components = components_module
 
-    sys.modules['streamlit'] = streamlit_module
-    sys.modules['streamlit.components'] = components_module
-    sys.modules['streamlit.components.v1'] = v1_module
+    sys.modules["streamlit"] = streamlit_module
+    sys.modules["streamlit.components"] = components_module
+    sys.modules["streamlit.components.v1"] = v1_module
     return streamlit_module
 
 
@@ -55,7 +51,7 @@ def _build_maintenance_stub() -> None:
     maintenance_module.SQLiteMaintenanceConfiguration = lambda **kwargs: SimpleNamespace(**kwargs)
     maintenance_module.configure_sqlite_maintenance = lambda *a, **k: None
     maintenance_module.ensure_sqlite_maintenance_started = lambda: None
-    sys.modules['services.maintenance'] = maintenance_module
+    sys.modules["services.maintenance"] = maintenance_module
 
 
 def _build_diagnostics_stub() -> None:
@@ -64,7 +60,7 @@ def _build_diagnostics_stub() -> None:
     diagnostics_module.configure_system_diagnostics = lambda *a, **k: None
     diagnostics_module.ensure_system_diagnostics_started = lambda: None
     diagnostics_module.get_system_diagnostics_snapshot = lambda: {}
-    sys.modules['services.system_diagnostics'] = diagnostics_module
+    sys.modules["services.system_diagnostics"] = diagnostics_module
 
 
 def _build_controllers_stub() -> None:
@@ -84,26 +80,22 @@ def _build_controllers_stub() -> None:
     recommendations_module = ModuleType("controllers.recommendations_controller")
     controllers_module.recommendations_controller = recommendations_module
 
-    sys.modules['controllers'] = controllers_module
-    sys.modules['controllers.portfolio'] = portfolio_package
-    sys.modules['controllers.portfolio.portfolio'] = portfolio_module
-    sys.modules['controllers.recommendations_controller'] = recommendations_module
+    sys.modules["controllers"] = controllers_module
+    sys.modules["controllers.portfolio"] = portfolio_package
+    sys.modules["controllers.portfolio.portfolio"] = portfolio_module
+    sys.modules["controllers.recommendations_controller"] = recommendations_module
 
     auth_client_stub = ModuleType("services.auth_client")
     auth_client_stub.AuthClientResult = SimpleNamespace
-    auth_client_stub.get_auth_provider = lambda: SimpleNamespace(
-        build_client=lambda: (None, None)
+    auth_client_stub.get_auth_provider = lambda: SimpleNamespace(build_client=lambda: (None, None))
+    auth_client_stub.build_client = lambda *_args, **_kwargs: SimpleNamespace(
+        client=None,
+        error=None,
+        error_message=None,
+        should_force_login=False,
+        telemetry={},
     )
-    auth_client_stub.build_client = (
-        lambda *_args, **_kwargs: SimpleNamespace(
-            client=None,
-            error=None,
-            error_message=None,
-            should_force_login=False,
-            telemetry={},
-        )
-    )
-    sys.modules['services.auth_client'] = auth_client_stub
+    sys.modules["services.auth_client"] = auth_client_stub
 
     auth_ui_stub = ModuleType("ui.adapters.auth_ui")
     auth_ui_stub.get_session_username = lambda: None
@@ -112,7 +104,7 @@ def _build_controllers_stub() -> None:
     auth_ui_stub.mark_authenticated = lambda *_args, **_kwargs: None
     auth_ui_stub.record_auth_timestamp = lambda *_args, **_kwargs: None
     auth_ui_stub.rerun = lambda *_args, **_kwargs: None
-    sys.modules['ui.adapters.auth_ui'] = auth_ui_stub
+    sys.modules["ui.adapters.auth_ui"] = auth_ui_stub
 
 
 def test_total_load_time_is_recorded_and_rendered(monkeypatch) -> None:
@@ -126,22 +118,22 @@ def test_total_load_time_is_recorded_and_rendered(monkeypatch) -> None:
     _build_diagnostics_stub()
     _build_controllers_stub()
 
-    recommendations_stub = ModuleType('ui.tabs.recommendations')
+    recommendations_stub = ModuleType("ui.tabs.recommendations")
     recommendations_stub.render_recommendations_tab = lambda *a, **k: None
-    sys.modules['ui.tabs.recommendations'] = recommendations_stub
+    sys.modules["ui.tabs.recommendations"] = recommendations_stub
 
-    sys.modules.pop('app', None)
-    main_app = importlib.import_module('app')
+    sys.modules.pop("app", None)
+    main_app = importlib.import_module("app")
 
     record_calls: list[tuple[tuple, dict]] = []
     monkeypatch.setattr(
         main_app,
-        'record_stage',
+        "record_stage",
         lambda *args, **kwargs: record_calls.append((args, kwargs)),
     )
 
     main_app._TOTAL_LOAD_START = 0.0
-    monkeypatch.setattr(main_app.time, 'perf_counter', lambda: 5.0)
+    monkeypatch.setattr(main_app.time, "perf_counter", lambda: 5.0)
 
     session_state = {}
     streamlit_stub.session_state = session_state
@@ -149,6 +141,6 @@ def test_total_load_time_is_recorded_and_rendered(monkeypatch) -> None:
     placeholder = _DummyPlaceholder(placeholders)
     main_app._render_total_load_indicator(placeholder)
 
-    assert session_state['total_load_ms'] == 5000
-    assert any('🕒 Tiempo total de carga: 5 000 ms' in block for block in placeholders)
-    assert record_calls == [(('ui_total_load',), {'total_ms': 5000, 'status': 'success'})]
+    assert session_state["total_load_ms"] == 5000
+    assert any("🕒 Tiempo total de carga: 5 000 ms" in block for block in placeholders)
+    assert record_calls == [(("ui_total_load",), {"total_ms": 5000, "status": "success"})]

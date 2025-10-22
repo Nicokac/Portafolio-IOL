@@ -7,7 +7,6 @@ import pytest
 
 from services.portfolio_view import PortfolioViewModelService
 
-
 METRICS_PATH = Path("performance_metrics_12.csv")
 
 
@@ -86,9 +85,7 @@ def _split_blocks(value: str) -> set[str]:
 
 def test_incremental_reuses_positions_block(monkeypatch, portfolio_service) -> None:
     counter = {"count": 0}
-    monkeypatch.setattr(
-        "services.portfolio_view._apply_filters", _fake_apply_factory(counter)
-    )
+    monkeypatch.setattr("services.portfolio_view._apply_filters", _fake_apply_factory(counter))
 
     service = portfolio_service
     df_pos = _positions_frame()
@@ -122,9 +119,7 @@ def test_incremental_reuses_positions_block(monkeypatch, portfolio_service) -> N
     assert "positions_df" in reused
     assert "returns_df" in recomputed
     assert "totals" in recomputed
-    assert stats["memoization_hit_ratio"] == pytest.approx(
-        len(reused) / (len(reused) + len(recomputed))
-    )
+    assert stats["memoization_hit_ratio"] == pytest.approx(len(reused) / (len(reused) + len(recomputed)))
 
     assert METRICS_PATH.exists()
     with METRICS_PATH.open("r", encoding="utf-8") as handle:
@@ -134,18 +129,12 @@ def test_incremental_reuses_positions_block(monkeypatch, portfolio_service) -> N
     assert last["filters_changed"] == "true"
     assert _split_blocks(last["reused_blocks"]) == reused
     assert _split_blocks(last["recomputed_blocks"]) == recomputed
-    assert float(last["memoization_hit_ratio"]) == pytest.approx(
-        stats["memoization_hit_ratio"]
-    )
+    assert float(last["memoization_hit_ratio"]) == pytest.approx(stats["memoization_hit_ratio"])
 
 
-def test_incremental_recomputes_positions_on_base_filter_change(
-    monkeypatch, portfolio_service
-) -> None:
+def test_incremental_recomputes_positions_on_base_filter_change(monkeypatch, portfolio_service) -> None:
     counter = {"count": 0}
-    monkeypatch.setattr(
-        "services.portfolio_view._apply_filters", _fake_apply_factory(counter)
-    )
+    monkeypatch.setattr("services.portfolio_view._apply_filters", _fake_apply_factory(counter))
 
     service = portfolio_service
     df_pos = _positions_frame()
@@ -173,13 +162,9 @@ def test_incremental_recomputes_positions_on_base_filter_change(
     assert stats["memoization_hit_ratio"] == pytest.approx(0.0)
 
 
-def test_incremental_metrics_csv_contains_expected_columns(
-    monkeypatch, portfolio_service
-) -> None:
+def test_incremental_metrics_csv_contains_expected_columns(monkeypatch, portfolio_service) -> None:
     counter = {"count": 0}
-    monkeypatch.setattr(
-        "services.portfolio_view._apply_filters", _fake_apply_factory(counter)
-    )
+    monkeypatch.setattr("services.portfolio_view._apply_filters", _fake_apply_factory(counter))
 
     service = portfolio_service
     df_pos = _positions_frame()

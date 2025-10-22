@@ -15,9 +15,13 @@ from api.routers.base_models import _BaseModel
 from api.schemas.adaptive_utils import validate_adaptive_limits
 from api.schemas.predictive import (
     AdaptiveForecastRequest as BaseAdaptiveForecastRequest,
+)
+from api.schemas.predictive import (
     PredictRequest,
-    PredictResponse as BasePredictResponse,
     SectorPrediction,
+)
+from api.schemas.predictive import (
+    PredictResponse as BasePredictResponse,
 )
 from application.backtesting_service import BacktestingService
 from application.predictive_core import (
@@ -28,7 +32,11 @@ from application.predictive_core import (
 )
 from predictive_engine.adapters import run_adaptive_forecast
 from predictive_engine.base import compute_sector_predictions
-from predictive_engine.models import AdaptiveForecastResult, AdaptiveUpdateResult, SectorPredictionSet
+from predictive_engine.models import (
+    AdaptiveForecastResult,
+    AdaptiveUpdateResult,
+    SectorPredictionSet,
+)
 from predictive_engine.storage import load_forecast_history
 from predictive_engine.utils import series_to_dict, to_native, to_records
 from services.auth import get_current_user
@@ -37,6 +45,7 @@ from shared.version import __build_signature__, __version__
 
 logger = logging.getLogger(__name__)
 logger.info("Initialising engine router")
+
 
 def _model_dump(model: _BaseModel) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
@@ -131,7 +140,6 @@ class AdaptiveForecastRequest(BaseAdaptiveForecastRequest):
         default=None,
         description="Optional timestamp override for incremental updates.",
     )
-
 
 
 class AdaptiveUpdateResponse(_BaseModel):
@@ -250,14 +258,13 @@ async def engine_forecast_adaptive(
     validate_adaptive_limits(payload.history, max_size=payload.max_history_rows)
 
     history_frame = _frame_or_none(
-        _build_frame(payload.history, ["timestamp", "sector", "predicted_return", "actual_return"])
+        _build_frame(
+            payload.history,
+            ["timestamp", "sector", "predicted_return", "actual_return"],
+        )
     )
-    predictions_frame = _frame_or_none(
-        _build_frame(payload.predictions, ["timestamp", "sector", "predicted_return"])
-    )
-    actuals_frame = _frame_or_none(
-        _build_frame(payload.actuals, ["timestamp", "sector", "actual_return"])
-    )
+    predictions_frame = _frame_or_none(_build_frame(payload.predictions, ["timestamp", "sector", "predicted_return"]))
+    actuals_frame = _frame_or_none(_build_frame(payload.actuals, ["timestamp", "sector", "actual_return"]))
 
     if history_frame is not None and (predictions_frame is not None or actuals_frame is not None):
         raise HTTPException(
@@ -342,7 +349,11 @@ async def engine_forecast_adaptive(
     )
 
 
-@router.get("/history", response_model=HistoryResponse, summary="Retrieve adaptive forecast history")
+@router.get(
+    "/history",
+    response_model=HistoryResponse,
+    summary="Retrieve adaptive forecast history",
+)
 async def engine_history(
     _claims: dict = Depends(get_current_user),
 ) -> HistoryResponse:

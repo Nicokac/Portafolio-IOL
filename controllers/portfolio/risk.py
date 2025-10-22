@@ -1,5 +1,6 @@
 import logging
 import re
+import time
 import unicodedata
 from collections import OrderedDict
 from io import BytesIO, StringIO
@@ -9,34 +10,32 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-import time
 
-from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
-from ui.favorites import render_favorite_badges, render_favorite_toggle
-from application.risk_service import (
-    compute_returns,
-    annualized_volatility,
-    beta,
-    historical_var,
-    expected_shortfall,
-    rolling_correlations,
-    markowitz_optimize,
-    monte_carlo_simulation,
-    asset_risk_breakdown,
-    max_drawdown,
-    drawdown_series,
-)
-from application.portfolio_service import classify_symbol
-from services.notifications import NotificationFlags
-from services.cache.market_data_cache import get_market_data_cache
 from application.benchmark_service import benchmark_analysis
-from ui.charts import plot_correlation_heatmap, plot_factor_betas, _apply_layout
-from ui.export import PLOTLY_CONFIG
-from ui.notifications import render_risk_badge
-from shared.errors import AppError
+from application.portfolio_service import classify_symbol
+from application.risk_service import (
+    annualized_volatility,
+    asset_risk_breakdown,
+    beta,
+    compute_returns,
+    drawdown_series,
+    expected_shortfall,
+    historical_var,
+    markowitz_optimize,
+    max_drawdown,
+    monte_carlo_simulation,
+    rolling_correlations,
+)
+from services.cache.market_data_cache import get_market_data_cache
 from services.health import record_tab_latency
+from services.notifications import NotificationFlags
 from services.performance_timer import ProfileBlockResult, profile_block
-
+from shared.errors import AppError
+from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
+from ui.charts import _apply_layout, plot_correlation_heatmap, plot_factor_betas
+from ui.export import PLOTLY_CONFIG
+from ui.favorites import render_favorite_badges, render_favorite_toggle
+from ui.notifications import render_risk_badge
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +320,9 @@ def _canonical_type(symbol: str, raw_type) -> str:
     return ""
 
 
-def _build_type_metadata(df: pd.DataFrame | None) -> tuple[pd.Series, dict[str, str], dict[str, str]]:
+def _build_type_metadata(
+    df: pd.DataFrame | None,
+) -> tuple[pd.Series, dict[str, str], dict[str, str]]:
     """Return normalized type series, display labels and symbol→type map."""
 
     if df is None or df.empty or "simbolo" not in df.columns:
@@ -412,11 +413,7 @@ def render_risk_analysis(
 
     favorites = favorites or get_persistent_favorites()
     st.subheader("Análisis de Correlación del Portafolio")
-    symbols = (
-        sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()})
-        if not df_view.empty
-        else []
-    )
+    symbols = sorted({str(sym) for sym in df_view.get("simbolo", []) if str(sym).strip()}) if not df_view.empty else []
 
     render_favorite_badges(
         favorites,
@@ -441,9 +438,7 @@ def render_risk_analysis(
     filtered_df = df_view.copy() if isinstance(df_view, pd.DataFrame) else df_view
     selected_type_filters = st.session_state.get("selected_asset_types") or []
     normalized_filters = [
-        _normalize_type_label(t)
-        for t in selected_type_filters
-        if isinstance(t, str) and _normalize_type_label(t)
+        _normalize_type_label(t) for t in selected_type_filters if isinstance(t, str) and _normalize_type_label(t)
     ]
 
     normalized_series, type_display_map, symbol_type_map = _build_type_metadata(
@@ -451,21 +446,14 @@ def render_risk_analysis(
     )
 
     if isinstance(filtered_df, pd.DataFrame):
-        filtered_df["_normalized_type"] = normalized_series.reindex(
-            filtered_df.index
-        )
+        filtered_df["_normalized_type"] = normalized_series.reindex(filtered_df.index)
         if normalized_filters:
-            filtered_df = filtered_df[
-                filtered_df["_normalized_type"].isin(normalized_filters)
-            ].copy()
+            filtered_df = filtered_df[filtered_df["_normalized_type"].isin(normalized_filters)].copy()
 
         if not filtered_df.empty:
-            normalized_symbols = (
-                filtered_df["simbolo"].astype(str).str.strip().str.upper()
-            )
-            blacklist_mask = (
-                filtered_df["_normalized_type"].eq("CEDEAR")
-                & normalized_symbols.isin(_LOCAL_SYMBOL_BLACKLIST)
+            normalized_symbols = filtered_df["simbolo"].astype(str).str.strip().str.upper()
+            blacklist_mask = filtered_df["_normalized_type"].eq("CEDEAR") & normalized_symbols.isin(
+                _LOCAL_SYMBOL_BLACKLIST
             )
             if blacklist_mask.any():
                 filtered_df = filtered_df.loc[~blacklist_mask].copy()
@@ -497,11 +485,7 @@ def render_risk_analysis(
             sym_key = sym_str.upper()
             canon_str = symbol_type_map.get(sym_key)
             if not canon_str:
-                canon_str = (
-                    _normalize_type_label(canon)
-                    if isinstance(canon, str)
-                    else _canonical_type(sym_key, None)
-                )
+                canon_str = _normalize_type_label(canon) if isinstance(canon, str) else _canonical_type(sym_key, None)
             if normalized_filters and canon_str not in normalized_filters:
                 continue
             if canon_str == "CEDEAR" and sym_str.upper() in _LOCAL_SYMBOL_BLACKLIST:
@@ -509,9 +493,7 @@ def render_risk_analysis(
             portfolio_symbols.append(sym_str)
     else:
         portfolio_symbols = [
-            str(sym).strip()
-            for sym in getattr(filtered_df, "get", lambda *_: [])("simbolo", [])
-            if str(sym).strip()
+            str(sym).strip() for sym in getattr(filtered_df, "get", lambda *_: [])("simbolo", []) if str(sym).strip()
         ]
     data_warning_placeholder = st.empty()
     omitted_symbols: set[str] = set()
@@ -536,10 +518,7 @@ def render_risk_analysis(
                 if skipped:
                     omitted_symbols.update(skipped)
                     data_warning_placeholder.caption("⚠️ Datos incompletos")
-                    st.warning(
-                        "No pudimos descargar históricos para: "
-                        + ", ".join(sorted(skipped))
-                    )
+                    st.warning("No pudimos descargar históricos para: " + ", ".join(sorted(skipped)))
             except AppError as err:
                 corr_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", corr_latency, status="error")
@@ -557,9 +536,7 @@ def render_risk_analysis(
                 return _finalize()
             corr_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", corr_latency, status="success")
-        with _profile_stage(
-            "compute_returns_corr", columns=hist_df.shape[1]
-        ) as stage_returns_corr:
+        with _profile_stage("compute_returns_corr", columns=hist_df.shape[1]) as stage_returns_corr:
             returns_for_corr = compute_returns(hist_df)
         _record_stage("compute_returns_corr", stage_returns_corr)
         # Map each historical symbol to its canonical type so tabs remain aligned
@@ -567,9 +544,7 @@ def render_risk_analysis(
         df_symbols_upper = pd.Series(dtype="object")
         df_types_series = pd.Series(dtype="object")
         if isinstance(filtered_df, pd.DataFrame) and "_normalized_type" in filtered_df:
-            df_symbols_upper = (
-                filtered_df["simbolo"].astype(str).str.strip().str.upper()
-            )
+            df_symbols_upper = filtered_df["simbolo"].astype(str).str.strip().str.upper()
             df_types_series = filtered_df["_normalized_type"]
 
         for sym in hist_df.columns:
@@ -625,13 +600,7 @@ def render_risk_analysis(
                 if isinstance(filtered_df, pd.DataFrame)
                 else pd.DataFrame()
             )
-            symbols_for_type = sorted(
-                {
-                    sym
-                    for sym in symbol_groups.get(type_name, [])
-                    if sym in hist_df.columns
-                }
-            )
+            symbols_for_type = sorted({sym for sym in symbol_groups.get(type_name, []) if sym in hist_df.columns})
             subset_df = subset.copy() if isinstance(subset, pd.DataFrame) else pd.DataFrame()
             type_groups.append((type_name, subset_df, symbols_for_type))
 
@@ -662,9 +631,7 @@ def render_risk_analysis(
                     type_name.replace("_", " ").title(),
                 )
                 if len(set(subset_symbols)) < 2:
-                    st.warning(
-                        f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones."
-                    )
+                    st.warning(f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones.")
                     continue
 
                 subset_hist = hist_df[sorted(set(subset_symbols))]
@@ -694,7 +661,11 @@ def render_risk_analysis(
                     )
 
         if returns_for_corr.shape[1] >= 2:
-            window_options = {"1 mes (21)": 21, "3 meses (63)": 63, "6 meses (126)": 126}
+            window_options = {
+                "1 mes (21)": 21,
+                "3 meses (63)": 63,
+                "6 meses (126)": 126,
+            }
             selected_window_label = st.selectbox(
                 "Ventana para correlaciones móviles",
                 list(window_options.keys()),
@@ -702,15 +673,17 @@ def render_risk_analysis(
                 key="rolling_corr_window",
             )
             selected_window = window_options[selected_window_label]
-            with _profile_stage(
-                "rolling_correlations", window=selected_window
-            ) as stage_rolling:
+            with _profile_stage("rolling_correlations", window=selected_window) as stage_rolling:
                 rolling_df = rolling_correlations(returns_for_corr, selected_window)
             _record_stage("rolling_correlations", stage_rolling)
             if not rolling_df.empty:
                 roll_fig = px.line(
                     rolling_df,
-                    labels={"index": "Fecha", "value": "Correlación", "variable": "Par"},
+                    labels={
+                        "index": "Fecha",
+                        "value": "Correlación",
+                        "variable": "Par",
+                    },
                 )
                 roll_fig = _apply_layout(
                     roll_fig,
@@ -724,20 +697,19 @@ def render_risk_analysis(
                 )
                 latest = rolling_df.dropna(how="all").tail(1)
                 if not latest.empty:
-                    latest_tidy = (
-                        latest.T.reset_index().rename(columns={"index": "Par", latest.index[-1]: "Correlación"})
+                    latest_tidy = latest.T.reset_index().rename(
+                        columns={"index": "Par", latest.index[-1]: "Correlación"}
                     )
                     st.markdown(
                         latest_tidy.to_html(index=False, float_format="{:.2f}".format),
                         unsafe_allow_html=True,
                     )
             else:
-                st.info(
-                    "No se pudieron calcular correlaciones móviles con la ventana seleccionada."
-                )
+                st.info("No se pudieron calcular correlaciones móviles con la ventana seleccionada.")
         else:
             st.warning(
-                f"No se pudieron obtener suficientes datos históricos para el período '{corr_period}' para calcular la correlación."
+                "No se pudieron obtener suficientes datos históricos para el período "
+                f"'{corr_period}' para calcular la correlación."
             )
     else:
         st.info(
@@ -757,9 +729,7 @@ def render_risk_analysis(
         with st.spinner("Descargando históricos…"):
             start_time = time.perf_counter()
             try:
-                with _profile_stage(
-                    "fetch_history_risk", symbols=len(portfolio_symbols)
-                ) as stage_risk_fetch:
+                with _profile_stage("fetch_history_risk", symbols=len(portfolio_symbols)) as stage_risk_fetch:
                     prices_df, skipped = _fetch_history_resilient(
                         tasvc,
                         portfolio_symbols,
@@ -769,10 +739,7 @@ def render_risk_analysis(
                 if skipped:
                     omitted_symbols.update(skipped)
                     data_warning_placeholder.caption("⚠️ Datos incompletos")
-                    st.warning(
-                        "Se omitieron del análisis de riesgo por falta de datos: "
-                        + ", ".join(sorted(skipped))
-                    )
+                    st.warning("Se omitieron del análisis de riesgo por falta de datos: " + ", ".join(sorted(skipped)))
             except AppError as err:
                 risk_latency = (time.perf_counter() - start_time) * 1000.0
                 record_tab_latency("riesgo", risk_latency, status="error")
@@ -791,25 +758,17 @@ def render_risk_analysis(
             risk_latency = (time.perf_counter() - start_time) * 1000.0
         record_tab_latency("riesgo", risk_latency, status="success")
         if prices_df.empty:
-            st.info(
-                "No se pudieron obtener datos históricos para calcular métricas de riesgo."
-            )
+            st.info("No se pudieron obtener datos históricos para calcular métricas de riesgo.")
         else:
-            with _profile_stage(
-                "compute_returns_risk", columns=prices_df.shape[1]
-            ) as stage_returns_risk:
+            with _profile_stage("compute_returns_risk", columns=prices_df.shape[1]) as stage_returns_risk:
                 returns_df = compute_returns(prices_df)
             _record_stage("compute_returns_risk", stage_returns_risk)
             weights = (
-                filtered_df.set_index("simbolo")["valor_actual"].astype(float)
-                .reindex(returns_df.columns)
-                .dropna()
+                filtered_df.set_index("simbolo")["valor_actual"].astype(float).reindex(returns_df.columns).dropna()
             )
             weights = weights / weights.sum() if not weights.empty else weights
             if weights.empty or returns_df.empty:
-                st.info(
-                    "No hay suficientes datos para calcular métricas de riesgo."
-                )
+                st.info("No hay suficientes datos para calcular métricas de riesgo.")
             else:
                 benchmark_labels = {
                     "S&P 500 (^GSPC)": "^GSPC",
@@ -839,9 +798,7 @@ def render_risk_analysis(
                     if skipped_bench:
                         omitted_symbols.update(skipped_bench)
                         data_warning_placeholder.caption("⚠️ Datos incompletos")
-                        st.warning(
-                            "Sin datos históricos suficientes para el benchmark seleccionado."
-                        )
+                        st.warning("Sin datos históricos suficientes para el benchmark seleccionado.")
                         return _finalize()
                 except AppError as err:
                     st.error(str(err))
@@ -859,9 +816,7 @@ def render_risk_analysis(
                     bench_ret = compute_returns(bench_df).squeeze()
                 _record_stage("compute_returns_benchmark", stage_bench_ret)
                 if bench_ret.empty:
-                    st.info(
-                        "El benchmark seleccionado no tiene datos suficientes para calcular beta."
-                    )
+                    st.info("El benchmark seleccionado no tiene datos suficientes para calcular beta.")
                     return _finalize()
 
                 factors_df = None
@@ -873,9 +828,7 @@ def render_risk_analysis(
                             benchmark=benchmark_symbol,
                         ) as stage_factor:
                             try:
-                                factors_df = factor_fetcher(
-                                    benchmark=benchmark_symbol, period="1y"
-                                )
+                                factors_df = factor_fetcher(benchmark=benchmark_symbol, period="1y")
                             except TypeError:
                                 try:
                                     factors_df = factor_fetcher(period="1y")
@@ -883,14 +836,10 @@ def render_risk_analysis(
                                     factors_df = factor_fetcher()
                         _record_stage("factor_history", stage_factor)
                     except AppError as err:
-                        st.warning(
-                            f"⚠️ No se pudieron obtener factores para el benchmark seleccionado: {err}"
-                        )
+                        st.warning(f"⚠️ No se pudieron obtener factores para el benchmark seleccionado: {err}")
                     except Exception:
                         logger.exception("Error al obtener factores para análisis de benchmark")
-                        st.warning(
-                            "⚠️ No se pudieron obtener factores para el análisis de benchmark."
-                        )
+                        st.warning("⚠️ No se pudieron obtener factores para el análisis de benchmark.")
 
                 confidence_options = {"90%": 0.90, "95%": 0.95, "99%": 0.99}
                 selected_conf_label = st.selectbox(
@@ -925,9 +874,7 @@ def render_risk_analysis(
                 _record_stage("compute_risk_metrics", stage_risk_metrics)
 
                 with _profile_stage("benchmark_analysis", benchmark=benchmark_symbol) as stage_benchmark:
-                    factor_results = benchmark_analysis(
-                        port_ret, bench_ret, factors_df=factors_df
-                    )
+                    factor_results = benchmark_analysis(port_ret, bench_ret, factors_df=factors_df)
                 _record_stage("benchmark_analysis", stage_benchmark)
 
                 c1, c2, c3, c4, c5 = st.columns(5)
@@ -1022,7 +969,8 @@ def render_risk_analysis(
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(
-                        "La volatilidad refleja la variabilidad de los retornos; aquí se muestra en una ventana móvil de 30 días."
+                        "La volatilidad refleja la variabilidad de los retornos; aquí se muestra "
+                        "en una ventana móvil de 30 días."
                     )
 
                 with st.expander("Distribución de retornos, VaR y CVaR"):
@@ -1056,9 +1004,7 @@ def render_risk_analysis(
                 with st.expander("Beta vs retorno"):
                     scatter_cols = st.columns(1)
                     if returns_df.empty or bench_ret.empty:
-                        scatter_cols[0].info(
-                            "No hay datos suficientes para calcular beta por activo."
-                        )
+                        scatter_cols[0].info("No hay datos suficientes para calcular beta por activo.")
                     else:
                         avg_returns = returns_df.mean().fillna(0.0) * 252
                         betas = returns_df.apply(lambda s: beta(s, bench_ret), axis=0)
@@ -1073,9 +1019,7 @@ def render_risk_analysis(
                             favorite_set = {favorites.normalize(sym) for sym in favorites.list()}
                         else:
                             favorite_set = set()
-                        scatter_df["Favorito"] = scatter_df["Símbolo"].apply(
-                            lambda sym: sym in favorite_set
-                        )
+                        scatter_df["Favorito"] = scatter_df["Símbolo"].apply(lambda sym: sym in favorite_set)
                         scatter_df["Tamaño"] = np.where(
                             scatter_df["Favorito"],
                             18,
@@ -1100,7 +1044,9 @@ def render_risk_analysis(
                                     False: "#636EFA",
                                 },
                             )
-                            fig_scatter.update_traces(marker=dict(line=dict(width=1, color="#2a2a2a")))
+                            fig_scatter.update_traces(
+                                marker={"line": {"width": 1, "color": "#2a2a2a"}}
+                            )
                             fig_scatter = _apply_layout(
                                 fig_scatter,
                                 title="Beta vs retorno anualizado",
@@ -1121,16 +1067,15 @@ def render_risk_analysis(
                         use_container_width=True,
                     )
                     st.caption(
-                        "Barras con la proporción que el modelo recomienda invertir en cada activo para equilibrar riesgo y retorno."
+                        "Barras con la proporción que el modelo recomienda invertir en cada activo "
+                        "para equilibrar riesgo y retorno."
                     )
 
                 with st.expander("Simulación Monte Carlo"):
                     dataset_scale = returns_df.shape[0] * returns_df.shape[1]
                     lazy_key = "risk_montecarlo_ready"
                     requires_lazy_sim = dataset_scale > _MONTE_CARLO_THRESHOLD
-                    run_simulation = not requires_lazy_sim or st.session_state.get(
-                        lazy_key, False
-                    )
+                    run_simulation = not requires_lazy_sim or st.session_state.get(lazy_key, False)
                     if requires_lazy_sim and not run_simulation:
                         if st.button(
                             "Generar simulación Monte Carlo",
@@ -1139,9 +1084,7 @@ def render_risk_analysis(
                             st.session_state[lazy_key] = True
                             run_simulation = True
                         else:
-                            st.info(
-                                "Ejecutá la simulación bajo demanda para evitar cálculos pesados en cada recarga."
-                            )
+                            st.info("Ejecutá la simulación bajo demanda para evitar cálculos pesados en cada recarga.")
                     if run_simulation:
                         sims = st.number_input(
                             "Nº de simulaciones",
@@ -1159,20 +1102,22 @@ def render_risk_analysis(
                         )
                         with st.spinner("Generando análisis avanzado…"):
                             final_prices = monte_carlo_simulation(
-                                returns_df, weights, n_sims=sims, horizon=horizon
+                                returns_df,
+                                weights,
+                                n_sims=sims,
+                                horizon=horizon,
                             )
                         st.line_chart(final_prices)
                         st.caption(
-                            "Simula muchos escenarios posibles para estimar cómo podría variar el valor de la cartera en el futuro."
+                            "Simula muchos escenarios posibles para estimar cómo podría variar "
+                            "el valor de la cartera en el futuro."
                         )
 
                 st.subheader("Análisis de Factores y Benchmark")
 
                 tracking_error = factor_results.get("tracking_error") if factor_results else float("nan")
                 active_return = factor_results.get("active_return") if factor_results else float("nan")
-                information_ratio = (
-                    factor_results.get("information_ratio") if factor_results else float("nan")
-                )
+                information_ratio = factor_results.get("information_ratio") if factor_results else float("nan")
 
                 metrics_cols = st.columns(3)
                 metrics_cols[0].metric(
@@ -1203,9 +1148,7 @@ def render_risk_analysis(
                         st.caption(f"R² del modelo: {r_squared:.2%}")
                 else:
                     if factors_df is None or (isinstance(factors_df, pd.DataFrame) and factors_df.empty):
-                        st.info(
-                            "No hay factores disponibles para estimar betas contra el benchmark seleccionado."
-                        )
+                        st.info("No hay factores disponibles para estimar betas contra el benchmark seleccionado.")
                     else:
                         st.info(
                             "No se pudieron estimar betas estadísticamente significativas con los factores provistos."

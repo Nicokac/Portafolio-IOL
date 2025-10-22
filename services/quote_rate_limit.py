@@ -49,9 +49,7 @@ class _TokenBucket:
             now = time.monotonic()
             elapsed = max(0.0, now - self._updated)
             if elapsed > 0:
-                self._tokens = min(
-                    self._capacity, self._tokens + elapsed * self._rate
-                )
+                self._tokens = min(self._capacity, self._tokens + elapsed * self._rate)
             self._updated = now
 
             required = max(float(tokens), 0.0)

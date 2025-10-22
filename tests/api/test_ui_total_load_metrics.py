@@ -49,9 +49,7 @@ def _prepare_app(
     return timer_module, app_module.app
 
 
-def test_metrics_endpoint_exposes_ui_total_load_gauge(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_metrics_endpoint_exposes_ui_total_load_gauge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     timer, app = _prepare_app(tmp_path, monkeypatch, enable_prometheus=True)
 
     timer.update_ui_total_load_metric(8532)

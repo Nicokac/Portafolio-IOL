@@ -70,10 +70,7 @@ def _render_simulation_results(result: dict[str, dict[str, float]]) -> None:
     st.table(pd.DataFrame(rows))
 
     if np.isfinite(additional) and additional > 0:
-        st.caption(
-            "Se asignan "
-            f"{_format_currency(additional)} adicionales siguiendo la distribución sugerida."
-        )
+        st.caption(f"Se asignan {_format_currency(additional)} adicionales siguiendo la distribución sugerida.")
 
 
 def render_simulation_panel(
@@ -84,9 +81,7 @@ def render_simulation_panel(
     *,
     mode_key: str,
 ) -> None:
-    simulate_key = (
-        f"simulate_button_{mode_key}" if mode_key else "simulate_button"
-    )
+    simulate_key = f"simulate_button_{mode_key}" if mode_key else "simulate_button"
     simulate_clicked = st.button(
         "Simular impacto",
         disabled=recommendations.empty,

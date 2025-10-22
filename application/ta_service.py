@@ -4,7 +4,12 @@ from __future__ import annotations
 import logging
 from typing import List
 
-from .portfolio_service import clean_symbol, map_to_us_ticker
+import numpy as np
+import pandas as pd
+from requests.exceptions import HTTPError
+
+from services.fmp_client import get_fmp_client
+from services.ohlc_adapter import get_ohlc_adapter
 from shared.cache import cache
 from shared.settings import (
     cache_ttl_yf_history,
@@ -13,12 +18,8 @@ from shared.settings import (
     yahoo_quotes_ttl,
 )
 from shared.utils import _to_float
-from services.fmp_client import get_fmp_client
-from services.ohlc_adapter import get_ohlc_adapter
 
-import numpy as np
-import pandas as pd
-from requests.exceptions import HTTPError
+from .portfolio_service import clean_symbol, map_to_us_ticker
 
 # yfinance para históricos
 try:
@@ -32,12 +33,8 @@ try:  # pragma: no cover
     from ta.trend import MACD, IchimokuIndicator
     from ta.volatility import AverageTrueRange
 except ImportError:  # Si la librería no está disponible, usamos stubs
-    logging.warning(
-        "La librería ta no está instalada. Indicadores técnicos deshabilitados."
-    )
-    RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = (
-        AverageTrueRange
-    ) = None
+    logging.warning("La librería ta no está instalada. Indicadores técnicos deshabilitados.")
+    RSIIndicator = StochasticOscillator = MACD = IchimokuIndicator = AverageTrueRange = None
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +54,7 @@ def _flatten_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
         if len(df.columns.levels[-1]) == 1:
             df.columns = df.columns.droplevel(-1)
         else:
-            df.columns = [
-                "_".join([str(c) for c in col if c != ""]) for col in df.columns
-            ]
+            df.columns = ["_".join([str(c) for c in col if c != ""]) for col in df.columns]
     df = df.rename(
         columns={
             "open": "Open",
@@ -233,9 +228,7 @@ def fetch_with_indicators(
         hist = adapter.fetch(ticker, period=period, interval=interval)
     except Exception as exc:
         logger.error("Error al obtener OHLC para %s: %s", ticker, exc)
-        raise RuntimeError(
-            f"Error al descargar datos de mercado para {ticker}"
-        ) from exc
+        raise RuntimeError(f"Error al descargar datos de mercado para {ticker}") from exc
 
     if hist is None or hist.empty:
         logger.warning(
@@ -284,9 +277,7 @@ def fetch_with_indicators(
         df["MACD_SIGNAL"] = macd.macd_signal()
         df["MACD_HIST"] = macd.macd_diff()
     except Exception:
-        df["MACD"] = df["MACD_SIGNAL"] = df["MACD_HIST"] = pd.Series(
-            index=df.index, dtype="float64"
-        )
+        df["MACD"] = df["MACD_SIGNAL"] = df["MACD_HIST"] = pd.Series(index=df.index, dtype="float64")
 
     # ATR
     try:
@@ -328,9 +319,7 @@ def fetch_with_indicators(
         df["ICHI_A"] = ichi.ichimoku_a()
         df["ICHI_B"] = ichi.ichimoku_b()
     except Exception:
-        df["ICHI_CONV"] = df["ICHI_BASE"] = df["ICHI_A"] = df["ICHI_B"] = pd.Series(
-            index=df.index, dtype="float64"
-        )
+        df["ICHI_CONV"] = df["ICHI_BASE"] = df["ICHI_A"] = df["ICHI_B"] = pd.Series(index=df.index, dtype="float64")
 
     # Limpieza de NaNs iniciales por ventanas
     df = df.dropna().copy()
@@ -339,6 +328,8 @@ def fetch_with_indicators(
 
 # allow external code/tests to reset cache
 fetch_with_indicators.cache_clear = fetch_with_indicators.clear  # type: ignore[attr-defined]
+
+
 def simple_alerts(df: pd.DataFrame) -> List[str]:
     """
     Alertas simples:
@@ -367,13 +358,9 @@ def simple_alerts(df: pd.DataFrame) -> List[str]:
         fast_prev, slow_prev = _to_float(prev["SMA_FAST"]), _to_float(prev["SMA_SLOW"])
         if None not in (fast_now, slow_now, fast_prev, slow_prev):
             if fast_prev <= slow_prev and fast_now > slow_now:
-                alerts.append(
-                    "⚡ Cruce alcista: SMA corta cruzó por encima de la SMA larga."
-                )
+                alerts.append("⚡ Cruce alcista: SMA corta cruzó por encima de la SMA larga.")
             elif fast_prev >= slow_prev and fast_now < slow_now:
-                alerts.append(
-                    "⚠️ Cruce bajista: SMA corta cruzó por debajo de la SMA larga."
-                )
+                alerts.append("⚠️ Cruce bajista: SMA corta cruzó por debajo de la SMA larga.")
 
     # Bandas de Bollinger
     close_val = _to_float(last.get("Close"))
@@ -399,9 +386,7 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
         sig = np.where(df["SMA_FAST"] > df["SMA_SLOW"], 1, -1)
     elif strat == "macd" and {"MACD", "MACD_SIGNAL"}.issubset(df.columns):
         sig = np.where(df["MACD"] > df["MACD_SIGNAL"], 1, -1)
-    elif strat in {"estocastico", "stochastic"} and {"STOCH_K", "STOCH_D"}.issubset(
-        df.columns
-    ):
+    elif strat in {"estocastico", "stochastic"} and {"STOCH_K", "STOCH_D"}.issubset(df.columns):
         sig = np.where(df["STOCH_K"] > df["STOCH_D"], 1, -1)
     elif strat == "ichimoku" and {"ICHI_CONV", "ICHI_BASE"}.issubset(df.columns):
         sig = np.where(df["ICHI_CONV"] > df["ICHI_BASE"], 1, -1)
@@ -414,6 +399,7 @@ def run_backtest(df: pd.DataFrame, strategy: str = "sma") -> pd.DataFrame:
     res["strategy_ret"] = res["signal"].shift(1) * res["ret"]
     res["equity"] = (1 + res["strategy_ret"]).cumprod()
     return res.dropna()
+
 
 @cache.cache_data(ttl=yahoo_fundamentals_ttl, maxsize=128)
 def get_fundamental_data(ticker: str) -> dict:
@@ -454,10 +440,7 @@ def get_fundamental_data(ticker: str) -> dict:
         free_cash_flow = _to_float(info.get("freeCashflow"))
         enterprise_value = _to_float(info.get("enterpriseValue"))
         fcf_yield = None
-        if (
-            free_cash_flow is not None
-            and enterprise_value not in (None, 0)
-        ):
+        if free_cash_flow is not None and enterprise_value not in (None, 0):
             fcf_yield = (free_cash_flow / enterprise_value) * 100.0
         interest_coverage = _to_float(info.get("interestCoverage"))
         data = {
@@ -517,10 +500,7 @@ def _portfolio_fundamentals_cached(simbolos: tuple[str, ...]) -> pd.DataFrame:
             free_cash_flow = _to_float(info.get("freeCashflow"))
             enterprise_value = _to_float(info.get("enterpriseValue"))
             fcf_yield = None
-            if (
-                free_cash_flow is not None
-                and enterprise_value not in (None, 0)
-            ):
+            if free_cash_flow is not None and enterprise_value not in (None, 0):
                 fcf_yield = (free_cash_flow / enterprise_value) * 100.0
             interest_coverage = _to_float(info.get("interestCoverage"))
             row = {
@@ -623,6 +603,7 @@ def get_portfolio_history(simbolos: List[str], period: str = "1y") -> pd.DataFra
 
 get_portfolio_history.clear = _get_portfolio_history_cached.clear  # type: ignore[attr-defined]
 get_portfolio_history.cache_clear = _get_portfolio_history_cached.clear  # type: ignore[attr-defined]
+
 
 class TAService:
     """Fachada de análisis técnico que envuelve las funciones existentes."""

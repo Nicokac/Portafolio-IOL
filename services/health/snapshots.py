@@ -32,7 +32,11 @@ def record_snapshot_event(
     storage_id_text = str(storage_id or "").strip()
     detail_text = _clean_detail(detail)
 
-    event: Dict[str, Any] = {"kind": kind_text, "status": status_text, "ts": time.time()}
+    event: Dict[str, Any] = {
+        "kind": kind_text,
+        "status": status_text,
+        "ts": time.time(),
+    }
     if action_text:
         event["action"] = action_text
     if storage_id_text:

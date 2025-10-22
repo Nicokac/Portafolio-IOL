@@ -1,5 +1,5 @@
-from contextlib import contextmanager
 import importlib
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -10,7 +10,9 @@ def _noop_context():
     yield
 
 
-def test_portfolio_visibility_restored_when_unlocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_portfolio_visibility_restored_when_unlocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = importlib.import_module("ui.controllers.portfolio_ui")
 
     calls: list[tuple[str, object | None]] = []

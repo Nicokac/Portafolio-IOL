@@ -115,4 +115,4 @@ def test_prometheus_metrics_capture(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert registry is not None
     payload = generate_latest(registry).decode("utf-8")
     assert "performance_duration_seconds_count" in payload
-    assert "label=\"metrics_block\"" in payload
+    assert 'label="metrics_block"' in payload

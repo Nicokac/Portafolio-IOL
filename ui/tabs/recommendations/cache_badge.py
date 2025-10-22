@@ -69,8 +69,7 @@ def _render_cache_status(cache_stats: Mapping[str, object]) -> str:
     with st.container(border=True):
         state_map = {"green": "complete", "yellow": "running", "red": "error"}
         st.status(
-            f"Cache: {ratio * 100:.1f}% hits · TTL restante: {ttl_display_str}"
-            f"{last_updated_str}",
+            f"Cache: {ratio * 100:.1f}% hits · TTL restante: {ttl_display_str}{last_updated_str}",
             state=state_map.get(color, "running"),
         )
     return color

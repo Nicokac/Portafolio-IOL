@@ -6,14 +6,6 @@ import pandas as pd
 import pytest
 
 from services.portfolio_view import PortfolioViewModelService
-import csv
-from pathlib import Path
-from types import SimpleNamespace
-
-import pandas as pd
-import pytest
-
-from services.portfolio_view import PortfolioViewModelService
 
 
 @pytest.fixture

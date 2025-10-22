@@ -1,17 +1,19 @@
-from pathlib import Path
 import re
-from datetime import datetime, timedelta
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from shared.version import __version__
-from ui.login import render_login_page
+from unittest.mock import MagicMock
+
 import app as main_app
 import ui.footer
-from unittest.mock import MagicMock
-from shared.time_provider import TIMEZONE, TIME_FORMAT, TimeProvider, TimeSnapshot
+from shared.time_provider import TIME_FORMAT, TIMEZONE, TimeSnapshot
+from shared.version import __version__
 from tests.fixtures.common import DummyCtx
+from ui.login import render_login_page
 
 
 class FixedTimeProvider:
@@ -39,6 +41,7 @@ def setup_footer_mocks(monkeypatch):
     mock_markdown = MagicMock()
     monkeypatch.setattr(ui.footer.st, "markdown", mock_markdown)
     return mock_markdown, provider_stub, snapshot
+
 
 def test_version_shown_in_login(monkeypatch):
     monkeypatch.setattr("ui.login.settings.tokens_key", "dummy")

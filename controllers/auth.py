@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from infrastructure.iol.client import IIOLProvider
-
 from services.auth_client import build_client, get_auth_provider
-from ui.adapters import auth_ui
 from shared.qa_profiler import track_auth_latency
+from ui.adapters import auth_ui
 
 LOGIN_AUTH_TIMESTAMP_KEY = "_login_authenticated_at"
 
@@ -33,4 +32,3 @@ def build_iol_client() -> IIOLProvider | None:
 
 
 __all__ = ["build_iol_client", "LOGIN_AUTH_TIMESTAMP_KEY"]
-

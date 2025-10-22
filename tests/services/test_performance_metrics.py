@@ -4,8 +4,7 @@ import time
 
 import pytest
 
-from services import performance_metrics
-from services import update_checker
+from services import performance_metrics, update_checker
 from shared.version import __version__
 
 

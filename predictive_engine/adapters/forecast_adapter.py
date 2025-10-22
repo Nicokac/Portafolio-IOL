@@ -66,9 +66,7 @@ class EngineUpdateContext:
                 persisted = empty_history_frame()
             persisted = persisted.copy()
             if not persisted.empty:
-                persisted = persisted.sort_values("timestamp").tail(
-                    self.max_history_rows
-                )
+                persisted = persisted.sort_values("timestamp").tail(self.max_history_rows)
                 timestamps = pd.to_datetime(
                     persisted.get("timestamp"),
                     errors="coerce",
@@ -226,14 +224,9 @@ def run_adaptive_forecast(
     """Execute adaptive update and/or forecast with persistence helpers."""
 
     has_history = isinstance(history, pd.DataFrame) and not history.empty
-    has_inputs = (
-        isinstance(predictions, pd.DataFrame)
-        or isinstance(actuals, pd.DataFrame)
-    )
+    has_inputs = isinstance(predictions, pd.DataFrame) or isinstance(actuals, pd.DataFrame)
     if has_history and has_inputs:
-        raise ValueError(
-            "history and (predictions, actuals) are mutually exclusive inputs"
-        )
+        raise ValueError("history and (predictions, actuals) are mutually exclusive inputs")
 
     ttl_seconds = max(float(ttl_hours) if ttl_hours is not None else 0.0, 0.0) * 3600.0
     if cache is not None and hasattr(cache, "set_ttl_override"):

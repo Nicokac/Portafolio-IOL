@@ -7,6 +7,12 @@ import pytest
 import requests
 from requests.exceptions import HTTPError, Timeout
 
+from application.ta_service import fetch_with_indicators
+from controllers import auth
+from infrastructure.iol.auth import InvalidCredentialsError
+from services import cache
+from shared.errors import ExternalAPIError
+
 # Stub cryptography to avoid heavy dependency during tests
 crypto_mod = types.ModuleType("cryptography")
 fernet_mod = types.ModuleType("fernet")
@@ -15,12 +21,6 @@ setattr(fernet_mod, "InvalidToken", Exception)
 crypto_mod.fernet = fernet_mod
 sys.modules.setdefault("cryptography", crypto_mod)
 sys.modules.setdefault("cryptography.fernet", fernet_mod)
-
-from application.ta_service import fetch_with_indicators
-from services import cache
-from controllers import auth
-from infrastructure.iol.auth import InvalidCredentialsError
-from shared.errors import ExternalAPIError
 
 
 @pytest.mark.parametrize("exc_cls", [HTTPError, Timeout])

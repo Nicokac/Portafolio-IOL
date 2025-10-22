@@ -16,7 +16,12 @@ from .constants import (
     _SESSION_MONITORING_KEY,
 )
 from .telemetry import log_analysis_event
-from .utils import _as_optional_float, _as_optional_int, _clean_detail, _normalize_metadata
+from .utils import (
+    _as_optional_float,
+    _as_optional_int,
+    _clean_detail,
+    _normalize_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +67,7 @@ def record_session_started(
 
     active_sessions[session_key] = entry
     monitoring[_ACTIVE_SESSIONS_KEY] = active_sessions
-    monitoring["total_session_starts"] = int(
-        monitoring.get("total_session_starts", 0) or 0
-    ) + 1
+    monitoring["total_session_starts"] = int(monitoring.get("total_session_starts", 0) or 0) + 1
     monitoring["active_sessions_ts"] = now
 
     log_analysis_event(

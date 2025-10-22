@@ -82,9 +82,7 @@ def test_read_recent_entries_returns_structured_data(tmp_path: Path, monkeypatch
     assert target.module != "unknown"
 
 
-def test_profile_block_exposes_module_and_metrics(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_profile_block_exposes_module_and_metrics(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     timer, log_path = _reload_timer(tmp_path, monkeypatch)
 
     with timer.profile_block("unit_profile", extra={"detail": "unit"}) as profile:
@@ -104,9 +102,7 @@ def test_profile_block_exposes_module_and_metrics(
     assert "module=test_performance_timer" in content
 
 
-def test_profile_block_marks_outlier_and_logs_warning(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_profile_block_marks_outlier_and_logs_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     timer, log_path = _reload_timer(tmp_path, monkeypatch)
 
     perf_values = iter([10.0, 12.5])

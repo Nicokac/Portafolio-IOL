@@ -14,9 +14,7 @@ from predictive_engine.models import AdaptiveState, empty_history_frame
 def test_evaluate_model_metrics_returns_expected_values():
     adjusted = [0.5, -0.5, 1.0]
     raw = [1.0, -1.0, 2.0]
-    corr_matrix = pd.DataFrame(
-        [[1.0, 0.2], [0.2, 1.0]], index=["A", "B"], columns=["A", "B"]
-    )
+    corr_matrix = pd.DataFrame([[1.0, 0.2], [0.2, 1.0]], index=["A", "B"], columns=["A", "B"])
     metrics = evaluate_model_metrics(
         adjusted,
         raw,

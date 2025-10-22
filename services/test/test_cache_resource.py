@@ -1,8 +1,9 @@
 import pytest
 import streamlit as st
+
+from services import cache as svc_cache
 from shared.cache import cache
 from shared.errors import InvalidCredentialsError
-from services import cache as svc_cache
 
 
 def test_get_client_cached_is_session_isolated(monkeypatch):

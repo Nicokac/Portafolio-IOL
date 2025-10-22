@@ -36,6 +36,7 @@ def test_factor_analysis_section_renders_with_metrics(monkeypatch, streamlit_stu
         cols = original_columns(spec, gap=gap)
 
         for col in cols:
+
             def _plotly_chart(self, fig, **kwargs):
                 record = self._core._record("plotly_chart", fig=fig, kwargs=kwargs)
                 self._entry.setdefault("children", []).append(record)
@@ -56,9 +57,7 @@ def test_factor_analysis_section_renders_with_metrics(monkeypatch, streamlit_stu
     monkeypatch.setattr(
         streamlit_stub,
         "bar_chart",
-        lambda data, *, x=None, y=None: streamlit_stub._record(
-            "bar_chart", data=data, x=x, y=y
-        ),
+        lambda data, *, x=None, y=None: streamlit_stub._record("bar_chart", data=data, x=x, y=y),
         raising=False,
     )
 
@@ -121,7 +120,9 @@ def test_factor_analysis_section_renders_with_metrics(monkeypatch, streamlit_stu
         port_ret = returns_df.mean(axis=1) if not returns_df.empty else pd.Series(dtype=float)
         asset_vols = pd.Series(dtype=float)
         asset_drawdowns = pd.Series(dtype=float)
-        opt_w = pd.Series(1 / max(len(weights), 1), index=weights.index) if not weights.empty else pd.Series(dtype=float)
+        opt_w = (
+            pd.Series(1 / max(len(weights), 1), index=weights.index) if not weights.empty else pd.Series(dtype=float)
+        )
         return (
             0.18,
             1.05,

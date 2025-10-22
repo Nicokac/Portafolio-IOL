@@ -101,7 +101,13 @@ def _store_latest_locked(key: str, value: Any, metadata: Mapping[str, Any], ttl_
     _LATEST[key] = _LatestResult(value=_clone_value(value), metadata=payload, expires_at=expires_at)
 
 
-def _run_job(job_id: str, key: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+def _run_job(
+    job_id: str,
+    key: str,
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> None:
     record = _JOBS[job_id]
     with _LOCK:
         record.status = "running"

@@ -37,6 +37,7 @@ def _patch_streamlit_runtime() -> None:
         st.container = lambda *_, **__: nullcontext()  # type: ignore[attr-defined]
 
     if not hasattr(st, "columns"):
+
         def _dummy_columns(spec: Sequence[int] | int | None = None, *args, **kwargs):
             if isinstance(spec, int):
                 count = max(spec, 1)
@@ -81,9 +82,7 @@ def init_app(argv: list[str] | None = None) -> argparse.Namespace:
     validate_security_environment()
     init_ui()
 
-    message = (
-        f"App initialized — version={__version__} — build={__build_signature__}"
-    )
+    message = f"App initialized — version={__version__} — build={__build_signature__}"
     log_startup_event(message)
     logger.info(message)
 

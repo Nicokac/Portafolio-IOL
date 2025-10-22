@@ -9,15 +9,13 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from domain.models import Controls
+from services import snapshots
+from services.portfolio_view import PortfolioViewModelService
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-
-from domain.models import Controls
-from services import snapshots
-from services.portfolio_view import PortfolioViewModelService
 
 
 def _frame(total_value: float) -> pd.DataFrame:
@@ -87,18 +85,14 @@ def test_snapshot_history_supports_comparisons(monkeypatch, totals, snapshot_sto
     controls = Controls()
     positions = pd.DataFrame({"simbolo": ["AL30"], "mercado": ["BCBA"]})
 
-    first = service.get_portfolio_view(
-        positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace()
-    )
+    first = service.get_portfolio_view(positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace())
 
     assert first.historical_total.shape[0] == 1
     assert first.totals.total_value == pytest.approx(initial_total)
 
     service.invalidate_filters("refresh")
 
-    second = service.get_portfolio_view(
-        positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace()
-    )
+    second = service.get_portfolio_view(positions, controls, cli=SimpleNamespace(), psvc=SimpleNamespace())
 
     assert second.totals.total_value == pytest.approx(refreshed_total)
     assert second.historical_total.shape[0] == 2

@@ -1,21 +1,22 @@
 """Synthetic data tests for TAService and cached helpers."""
+
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
 import pytest
 
+import application.ta_service as ta_mod
+from application.ta_service import TAService
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-import application.ta_service as ta_mod
-from application.ta_service import TAService
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +66,14 @@ class _DummyATR:
 
 
 class _DummyStochastic:
-    def __init__(self, high: pd.Series, low: pd.Series, close: pd.Series, window: int, smooth_window: int) -> None:
+    def __init__(
+        self,
+        high: pd.Series,
+        low: pd.Series,
+        close: pd.Series,
+        window: int,
+        smooth_window: int,
+    ) -> None:
         self.close = close
 
     def stoch(self) -> pd.Series:
@@ -132,7 +140,9 @@ def _setup_indicator_stubs(monkeypatch: pytest.MonkeyPatch, *, frame: pd.DataFra
     return dummy_adapter
 
 
-def test_indicators_for_returns_enriched_dataframe_and_uses_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_indicators_for_returns_enriched_dataframe_and_uses_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     adapter = _setup_indicator_stubs(monkeypatch)
     svc = TAService()
 
@@ -170,7 +180,9 @@ def test_indicators_for_returns_enriched_dataframe_and_uses_cache(monkeypatch: p
     assert adapter.count == 1
 
 
-def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_fundamental_data_includes_extended_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     info = {
         "shortName": "TEST",
         "sector": "Tech",
@@ -253,7 +265,9 @@ def test_get_fundamental_data_includes_extended_metrics(monkeypatch: pytest.Monk
     assert row["current_ratio"] == pytest.approx(1.6)
 
 
-def test_get_fundamental_data_uses_fmp_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_fundamental_data_uses_fmp_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     info = {
         "shortName": "FALLBACK",
         "sector": "Industrials",
@@ -319,7 +333,9 @@ def test_get_fundamental_data_uses_fmp_fallbacks(monkeypatch: pytest.MonkeyPatch
     assert row["debt_to_ebitda"] == pytest.approx(1.05)
 
 
-def test_fmp_failures_do_not_break_fundamental_data(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fmp_failures_do_not_break_fundamental_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     info = {
         "shortName": "BROKEN",
         "sector": "Finance",
@@ -371,7 +387,9 @@ def test_fmp_failures_do_not_break_fundamental_data(monkeypatch: pytest.MonkeyPa
     assert row["debt_to_ebitda"] is None
 
 
-def test_portfolio_history_is_cached_and_renames_columns(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_portfolio_history_is_cached_and_renames_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     idx = pd.date_range("2024-02-01", periods=5, freq="D")
     hist_df = pd.DataFrame(
         {("GGAL", "Adj Close"): np.linspace(50, 55, len(idx))},

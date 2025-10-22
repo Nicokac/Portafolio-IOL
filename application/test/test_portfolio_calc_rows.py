@@ -128,4 +128,3 @@ def test_calc_rows_derives_chg_pct(simbolo, quote_data, tipo, cantidad, costo_un
     expected_pld = row["valor_actual"] * (pct / 100.0) / (1.0 + pct / 100.0)
     assert row["pl_d"] == pytest.approx(expected_pld)
     assert row["pld_%"] == pytest.approx(pct)
-

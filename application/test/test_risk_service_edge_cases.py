@@ -75,5 +75,3 @@ def test_monte_carlo_simulation_empty_df():
     weights = pd.Series(dtype=float)
     result = monte_carlo_simulation(returns, weights)
     assert result.empty
-
-

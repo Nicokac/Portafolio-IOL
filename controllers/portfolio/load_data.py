@@ -12,14 +12,14 @@ import pandas as pd
 import streamlit as st
 
 from services.cache import fetch_quotes_bulk, set_active_dataset_hash
+from services.cache.market_data_cache import (
+    StaleWhileRevalidateCache,
+    create_persistent_cache,
+)
 from services.data_fetch_service import (
     DatasetMetadata,
     PortfolioDataset,
     get_portfolio_data_fetch_service,
-)
-from services.cache.market_data_cache import (
-    StaleWhileRevalidateCache,
-    create_persistent_cache,
 )
 from services.performance_timer import (
     QUOTES_BATCH_LATENCY_SECONDS,
@@ -77,9 +77,7 @@ def _hash_positions(df_pos: pd.DataFrame | None) -> str:
         hashed = pd.util.hash_pandas_object(df_pos, index=True, categorize=True)
         return hashlib.sha1(hashed.values.tobytes()).hexdigest()
     except TypeError:
-        payload = json.dumps(
-            df_pos.to_dict(orient="list"), sort_keys=True, default=str
-        ).encode("utf-8")
+        payload = json.dumps(df_pos.to_dict(orient="list"), sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha1(payload).hexdigest()
 
 
@@ -105,12 +103,8 @@ def _filters_signature(filters: Mapping[str, Any] | None = None) -> str:
     raw_syms = source.get("selected_syms") or []
     raw_types = source.get("selected_types") or []
     symbol_query = str(source.get("symbol_query", "") or "").strip().lower()
-    cleaned_syms = sorted(
-        {str(sym).strip().upper() for sym in raw_syms if str(sym).strip()}
-    )
-    cleaned_types = sorted(
-        {str(tp).strip().lower() for tp in raw_types if str(tp).strip()}
-    )
+    cleaned_syms = sorted({str(sym).strip().upper() for sym in raw_syms if str(sym).strip()})
+    cleaned_types = sorted({str(tp).strip().lower() for tp in raw_types if str(tp).strip()})
     payload = {
         "hide_cash": hide_cash,
         "selected_syms": cleaned_syms,
@@ -121,10 +115,7 @@ def _filters_signature(filters: Mapping[str, Any] | None = None) -> str:
 
 
 def _clone_batches_for_cache(batches: Iterable[QuoteBatch]) -> tuple[QuoteBatch, ...]:
-    return tuple(
-        QuoteBatch(group=batch.group, pairs=tuple(batch.pairs), key=batch.key)
-        for batch in batches
-    )
+    return tuple(QuoteBatch(group=batch.group, pairs=tuple(batch.pairs), key=batch.key) for batch in batches)
 
 
 def _update_last_batch_context(dataset_hash: str, filters_key: str) -> None:
@@ -151,15 +142,9 @@ def _normalize_pairs(df_pos: pd.DataFrame) -> list[tuple[str, str]]:
     cols = [col for col in ("mercado", "simbolo") if col in df_pos.columns]
     if len(cols) < 2:
         return []
-    data = (
-        df_pos[cols]
-        .dropna(subset=["simbolo"])
-        .astype({"mercado": str, "simbolo": str})
-    )
+    data = df_pos[cols].dropna(subset=["simbolo"]).astype({"mercado": str, "simbolo": str})
     data["mercado"] = data["mercado"].str.lower()
-    data["mercado"] = data["mercado"].where(
-        data["mercado"].str.strip().astype(bool), "bcba"
-    )
+    data["mercado"] = data["mercado"].where(data["mercado"].str.strip().astype(bool), "bcba")
     data["simbolo"] = data["simbolo"].str.upper()
     data = data.drop_duplicates()
     return list(data.itertuples(index=False, name=None))
@@ -168,19 +153,11 @@ def _normalize_pairs(df_pos: pd.DataFrame) -> list[tuple[str, str]]:
 def _resolve_asset_groups(df_pos: pd.DataFrame, psvc) -> dict[str, str]:
     mapping: dict[str, str] = {}
     if "tipo" in df_pos.columns:
-        subset = (
-            df_pos[["simbolo", "tipo"]]
-            .dropna(subset=["simbolo"])
-            .astype({"simbolo": str})
-        )
+        subset = df_pos[["simbolo", "tipo"]].dropna(subset=["simbolo"]).astype({"simbolo": str})
         subset["simbolo"] = subset["simbolo"].str.upper()
         subset["tipo"] = subset["tipo"].astype(str)
         mapping.update({row.simbolo: row.tipo for row in subset.itertuples(index=False)})
-    symbols = {
-        str(sym or "").strip().upper()
-        for sym in df_pos.get("simbolo", [])
-        if str(sym or "").strip()
-    }
+    symbols = {str(sym or "").strip().upper() for sym in df_pos.get("simbolo", []) if str(sym or "").strip()}
     for symbol in symbols:
         if symbol not in mapping:
             try:
@@ -228,10 +205,7 @@ def build_quote_batches(
             _BATCH_MEMO_CACHE.move_to_end(cache_key)
     if cached is not None:
         _update_last_batch_context(dataset_hash, filters_key)
-        return [
-            QuoteBatch(group=entry.group, pairs=list(entry.pairs), key=entry.key)
-            for entry in cached
-        ]
+        return [QuoteBatch(group=entry.group, pairs=list(entry.pairs), key=entry.key) for entry in cached]
 
     asset_groups = _resolve_asset_groups(df_pos, psvc)
     grouped: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -270,9 +244,7 @@ def refresh_quotes_pipeline(
     """Fetch quotes using batching and stale-while-revalidate strategy."""
 
     filters_snapshot = _current_filters_snapshot()
-    batches = build_quote_batches(
-        df_pos, psvc, batch_size=batch_size, filters=filters_snapshot
-    )
+    batches = build_quote_batches(df_pos, psvc, batch_size=batch_size, filters=filters_snapshot)
     context = get_last_batch_context()
     dataset_hash = context.get("dataset_hash")
     set_active_dataset_hash(dataset_hash)
@@ -288,7 +260,9 @@ def refresh_quotes_pipeline(
     max_workers_value = max_workers_override or max_quote_workers
     worker_count = max(1, min(int(max_workers_value or 1), len(batches)))
 
-    def _process(batch: QuoteBatch) -> tuple[dict[tuple[str, str], dict], dict[str, object]]:
+    def _process(
+        batch: QuoteBatch,
+    ) -> tuple[dict[tuple[str, str], dict], dict[str, object]]:
         symbols = [sym for _, sym in batch.pairs]
 
         def _loader() -> dict[tuple[str, str], dict]:
@@ -408,11 +382,7 @@ def _filters_active() -> bool:
         cleaned_types = [str(t).strip() for t in selected_types if str(t).strip()]
         if not cleaned_types and last_types:
             return True
-        if (
-            isinstance(last_types, list)
-            and last_types
-            and 0 < len(cleaned_types) < len(last_types)
-        ):
+        if isinstance(last_types, list) and last_types and 0 < len(cleaned_types) < len(last_types):
             return True
 
     return False
@@ -460,7 +430,10 @@ def load_portfolio_data(cli, psvc):
             try:
                 st.session_state["last_refresh"] = time.time()
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo actualizar last_refresh tras refresh silencioso", exc_info=True)
+                logger.debug(
+                    "No se pudo actualizar last_refresh tras refresh silencioso",
+                    exc_info=True,
+                )
             st.session_state["show_refresh_toast"] = True
     else:
         assert metadata is not None  # for type checkers
@@ -493,12 +466,10 @@ def load_portfolio_data(cli, psvc):
         st.error("No se pudo autenticar con IOL")
         st.stop()
     elif isinstance(payload, dict) and payload.get("_cached"):
-        st.warning(
-            "No se pudo contactar a IOL; mostrando datos del portafolio en caché."
-        )
+        st.warning("No se pudo contactar a IOL; mostrando datos del portafolio en caché.")
 
     if isinstance(payload, dict) and "message" in payload:
-        st.info(f"ℹ️ Mensaje de IOL: \"{payload['message']}\"")
+        st.info(f'ℹ️ Mensaje de IOL: "{payload["message"]}"')
         st.stop()
 
     df_pos = dataset.positions.copy()
@@ -510,9 +481,7 @@ def load_portfolio_data(cli, psvc):
         if _filters_active():
             st.info("No se encontraron activos que cumplan los filtros.")
         else:
-            st.warning(
-                "No se encontraron posiciones o no pudimos mapear la respuesta."
-            )
+            st.warning("No se encontraron posiciones o no pudimos mapear la respuesta.")
         if isinstance(payload, dict) and "activos" in payload:
             st.dataframe(pd.DataFrame(payload["activos"]).head(20))
             st.caption("Ejemplo de datos recibidos del portafolio")
@@ -526,4 +495,3 @@ def load_portfolio_data(cli, psvc):
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudieron almacenar los metadatos de filtros", exc_info=True)
     return df_pos, all_symbols, available_types
-

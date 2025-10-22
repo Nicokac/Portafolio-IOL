@@ -10,8 +10,6 @@ import pandas as pd
 from fastapi import APIRouter
 from pydantic import Field
 
-from application.adaptive_predictive_service import simulate_adaptive_forecast
-from application.predictive_service import predict_sector_performance
 from api.routers.base_models import _BaseModel
 from api.schemas.adaptive_utils import validate_adaptive_limits
 from api.schemas.predictive import (
@@ -20,6 +18,8 @@ from api.schemas.predictive import (
     PredictResponse,
     SectorPrediction,
 )
+from application.adaptive_predictive_service import simulate_adaptive_forecast
+from application.predictive_service import predict_sector_performance
 
 router = APIRouter(prefix="/predictive", tags=["predictive"])
 
@@ -62,20 +62,13 @@ def _frame_to_records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         return []
     records = frame.reset_index(drop=False).to_dict(orient="records")
-    return [
-        {str(key): _to_primitive(value) for key, value in record.items()}
-        for record in records
-    ]
+    return [{str(key): _to_primitive(value) for key, value in record.items()} for record in records]
 
 
 def _series_to_mapping(series: pd.Series | None) -> dict[str, Any]:
     if not isinstance(series, pd.Series) or series.empty:
         return {}
-    return {
-        str(index): _to_primitive(value)
-        for index, value in series.items()
-        if pd.notna(value)
-    }
+    return {str(index): _to_primitive(value) for index, value in series.items() if pd.notna(value)}
 
 
 @router.get("/", summary="Predictive service placeholder")
@@ -107,7 +100,9 @@ async def predict_sector(payload: PredictRequest) -> PredictResponse:
     response_model=AdaptiveForecastResponse,
     summary="Simulate adaptive forecast",
 )
-async def forecast_adaptive(payload: AdaptiveForecastRequest) -> AdaptiveForecastResponse:
+async def forecast_adaptive(
+    payload: AdaptiveForecastRequest,
+) -> AdaptiveForecastResponse:
     """Execute the adaptive forecasting workflow and normalise the output."""
 
     validate_adaptive_limits(payload.history)

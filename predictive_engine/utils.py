@@ -120,11 +120,7 @@ def compute_sector_dispersion(frame: pd.DataFrame) -> float:
 
     if "predicted_return" not in frame.columns or frame.empty:
         return 0.0
-    sector_means = (
-        frame.groupby("sector")["predicted_return"]
-        .mean()
-        .replace([np.inf, -np.inf], np.nan)
-    )
+    sector_means = frame.groupby("sector")["predicted_return"].mean().replace([np.inf, -np.inf], np.nan)
     if not isinstance(sector_means, pd.Series):
         return 0.0
     sector_means = sector_means.dropna()
@@ -158,11 +154,7 @@ def series_to_dict(series: pd.Series | None) -> dict[str, Any]:
 
     if not isinstance(series, pd.Series) or series.empty:
         return {}
-    return {
-        str(index): to_native(value)
-        for index, value in series.items()
-        if pd.notna(value)
-    }
+    return {str(index): to_native(value) for index, value in series.items() if pd.notna(value)}
 
 
 def to_records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
@@ -171,10 +163,7 @@ def to_records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
         return []
     records = frame.reset_index(drop=False).to_dict(orient="records")
-    return [
-        {str(key): to_native(value) for key, value in record.items()}
-        for record in records
-    ]
+    return [{str(key): to_native(value) for key, value in record.items()} for record in records]
 
 
 __all__ = [

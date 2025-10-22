@@ -1,8 +1,7 @@
 """Tests for shared health utility helpers."""
 
-from collections import deque
-
 import math
+from collections import deque
 
 import pytest
 
@@ -10,6 +9,8 @@ from services.health import _serialize_event_history as init_serialize
 from services.health import _summarize_metric_block as init_summarize
 from services.health.utils import (
     _serialize_event_history as utils_serialize,
+)
+from services.health.utils import (
     _summarize_metric_block as utils_summarize,
 )
 
@@ -29,10 +30,12 @@ def test_health_utils_reexports_are_identical():
             {"ts": 1, "status": "ok"},
             {"ts": 2, "status": "warn", "detail": "slow"},
         ],
-        deque([
-            {"ts": 3, "status": "error", "detail": "timeout"},
-            {"ts": 4, "status": "ok"},
-        ]),
+        deque(
+            [
+                {"ts": 3, "status": "error", "detail": "timeout"},
+                {"ts": 4, "status": "ok"},
+            ]
+        ),
     ],
 )
 def test_serialize_event_history_consistency(history):

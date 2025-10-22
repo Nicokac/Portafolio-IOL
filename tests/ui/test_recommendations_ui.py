@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -12,7 +12,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
-def test_compute_adaptive_payload_passes_profile_context(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compute_adaptive_payload_passes_profile_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     import ui.tabs.recommendations.correlation_tab as correlation_tab
     from controllers import recommendations_controller
 
@@ -88,9 +90,7 @@ def test_compute_adaptive_payload_returns_none_when_history_missing(
         fake_build,
     )
 
-    recommendations = pd.DataFrame(
-        [{"symbol": "AAA", "sector": "Tech", "predicted_return_pct": 0.1}]
-    )
+    recommendations = pd.DataFrame([{"symbol": "AAA", "sector": "Tech", "predicted_return_pct": 0.1}])
     opportunities = pd.DataFrame([{"symbol": "AAA", "sector": "Tech"}])
 
     payload = correlation_tab._compute_adaptive_payload(

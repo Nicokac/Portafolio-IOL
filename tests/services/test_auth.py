@@ -9,7 +9,9 @@ from services import auth as auth_module
 from services.auth import AuthTokenError, generate_token, verify_token
 
 
-def test_generate_and_verify_token_returns_claims(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_and_verify_token_returns_claims(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
     monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)
@@ -21,7 +23,9 @@ def test_generate_and_verify_token_returns_claims(monkeypatch: pytest.MonkeyPatc
     assert claims["exp"] > claims["iat"]
 
 
-def test_generate_token_requires_positive_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_generate_token_requires_positive_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     key = Fernet.generate_key().decode()
     monkeypatch.setenv("FASTAPI_TOKENS_KEY", key)
     monkeypatch.delenv("IOL_TOKENS_KEY", raising=False)

@@ -6,16 +6,15 @@ from typing import Any
 import pandas as pd
 import pytest
 
+from controllers.portfolio import portfolio as portfolio_mod
+from domain.models import Controls
+from services.notifications import NotificationFlags
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import UIFakeStreamlit
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-
-from controllers.portfolio import portfolio as portfolio_mod
-from domain.models import Controls
-from services.notifications import NotificationFlags
 
 
 class _FavoritesStub:
@@ -103,7 +102,11 @@ def _patch_render_helpers(monkeypatch: pytest.MonkeyPatch, calls: dict[str, int]
 def _prepare_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(portfolio_mod, "get_portfolio_service", lambda: object())
     monkeypatch.setattr(portfolio_mod, "get_ta_service", lambda: object())
-    monkeypatch.setattr(portfolio_mod, "get_notifications_service", lambda factory=None: _NotificationsStub())
+    monkeypatch.setattr(
+        portfolio_mod,
+        "get_notifications_service",
+        lambda factory=None: _NotificationsStub(),
+    )
     monkeypatch.setattr(portfolio_mod, "_get_cached_favorites", lambda: _FavoritesStub())
     monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda *_: Controls())
     monkeypatch.setattr(
@@ -146,7 +149,14 @@ def test_incremental_overhead_metrics(
     monkeypatch.setattr(
         portfolio_mod,
         "log_telemetry",
-        lambda files, phase, elapsed_s=None, dataset_hash=None, extra=None, memo_hit_ratio=None, subbatch_avg_s=None, ui_total_load_ms=None: metrics_log.append((phase, dict(extra or {}))),
+        lambda files,
+        phase,
+        elapsed_s=None,
+        dataset_hash=None,
+        extra=None,
+        memo_hit_ratio=None,
+        subbatch_avg_s=None,
+        ui_total_load_ms=None: metrics_log.append((phase, dict(extra or {}))),
     )
 
     tab_metrics: list[tuple[str, float]] = []

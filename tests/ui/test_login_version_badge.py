@@ -92,10 +92,10 @@ def test_login_page_shows_version_badge(monkeypatch: pytest.MonkeyPatch) -> None
         f"Versión actualizada · v{login.__version__}",
         "complete",
     ) in fake_st.statuses
-    assert any(
-        label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons
-    ), "El enlace al changelog debe estar siempre presente"
-    assert any(
-        msg.startswith("Última verificación:") for msg in fake_st.captions
-    ), "Debe mostrar la última verificación"
+    assert any(label == "📄 Ver cambios en GitHub" for label, _ in fake_st.link_buttons), (
+        "El enlace al changelog debe estar siempre presente"
+    )
+    assert any(msg.startswith("Última verificación:") for msg in fake_st.captions), (
+        "Debe mostrar la última verificación"
+    )
     assert "Forzar actualización" in fake_st.buttons
