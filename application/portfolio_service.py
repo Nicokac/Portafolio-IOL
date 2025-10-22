@@ -317,36 +317,68 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
     elif isinstance(payload, list):
         source = payload
 
+    def _pick(*values: Any) -> Any:
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
     for it in source:
         t = it.get("titulo") if isinstance(it, dict) else None
 
-        simbolo = (
-            (it.get("simbolo") if isinstance(it, dict) else None)
-            or (t.get("simbolo") if isinstance(t, dict) else None)
-            or (it.get("ticker") if isinstance(it, dict) else None)
-            or (it.get("codigo") if isinstance(it, dict) else None)
-            or ""
+        simbolo = _pick(
+            it.get("simbolo") if isinstance(it, dict) else None,
+            t.get("simbolo") if isinstance(t, dict) else None,
+            it.get("ticker") if isinstance(it, dict) else None,
+            it.get("codigo") if isinstance(it, dict) else None,
+            "",
         )
-        mercado = (
-            (it.get("mercado") if isinstance(it, dict) else None)
-            or (t.get("mercado") if isinstance(t, dict) else None)
-            or (it.get("market") if isinstance(it, dict) else None)
-            or "bcba"
+        mercado = _pick(
+            it.get("mercado") if isinstance(it, dict) else None,
+            t.get("mercado") if isinstance(t, dict) else None,
+            it.get("market") if isinstance(it, dict) else None,
+            "bcba",
         )
-        cantidad = (
-            (it.get("cantidad") if isinstance(it, dict) else None)
-            or (it.get("cant") if isinstance(it, dict) else None)
-            or (it.get("cantidadDisponible") if isinstance(it, dict) else None)
-            or (it.get("cantidadNominal") if isinstance(it, dict) else None)
-            or (it.get("tenencia") if isinstance(it, dict) else None)
-            or 0
+        cantidad = _pick(
+            it.get("cantidad") if isinstance(it, dict) else None,
+            it.get("cant") if isinstance(it, dict) else None,
+            it.get("cantidadDisponible") if isinstance(it, dict) else None,
+            it.get("cantidadNominal") if isinstance(it, dict) else None,
+            it.get("tenencia") if isinstance(it, dict) else None,
+            0,
         )
 
-        costo_unit = (
-            (it.get("costoUnitario") if isinstance(it, dict) else None)
-            or (it.get("ppc") if isinstance(it, dict) else None)
-            or (t.get("costoUnitario") if isinstance(t, dict) else None)
-            or (t.get("ppc") if isinstance(t, dict) else None)
+        costo_unit = _pick(
+            it.get("costoUnitario") if isinstance(it, dict) else None,
+            it.get("ppc") if isinstance(it, dict) else None,
+            t.get("costoUnitario") if isinstance(t, dict) else None,
+            t.get("ppc") if isinstance(t, dict) else None,
+        )
+
+        moneda = _pick(
+            it.get("moneda") if isinstance(it, dict) else None,
+            t.get("moneda") if isinstance(t, dict) else None,
+        )
+        plazo = _pick(
+            it.get("plazo") if isinstance(it, dict) else None,
+            t.get("plazo") if isinstance(t, dict) else None,
+        )
+        ultimo_precio = _pick(
+            it.get("ultimoPrecio") if isinstance(it, dict) else None,
+            it.get("ultimo") if isinstance(it, dict) else None,
+            t.get("ultimoPrecio") if isinstance(t, dict) else None,
+        )
+        variacion_diaria = _pick(
+            it.get("variacionDiaria") if isinstance(it, dict) else None,
+            t.get("variacionDiaria") if isinstance(t, dict) else None,
+        )
+        tiene_panel_raw = _pick(
+            it.get("tienePanel") if isinstance(it, dict) else None,
+            t.get("tienePanel") if isinstance(t, dict) else None,
+        )
+        riesgo = _pick(
+            it.get("riesgo") if isinstance(it, dict) else None,
+            t.get("riesgo") if isinstance(t, dict) else None,
         )
 
         if costo_unit is None:
@@ -364,6 +396,38 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
         cantidad_f = _to_float(cantidad) or 0.0
         costo_unit_f = _to_float(costo_unit) or 0.0
 
+        moneda_str = str(moneda).strip() if moneda is not None else ""
+        if not moneda_str:
+            moneda_str = "s/d"
+        plazo_str = str(plazo).strip() if plazo is not None else ""
+        if not plazo_str:
+            plazo_str = "s/d"
+        riesgo_str = str(riesgo).strip() if riesgo is not None else ""
+        if not riesgo_str:
+            riesgo_str = "s/d"
+
+        ultimo_precio_f = _to_float(ultimo_precio)
+        variacion_diaria_f = _to_float(variacion_diaria)
+
+        tiene_panel: bool | None
+        if isinstance(tiene_panel_raw, bool):
+            tiene_panel = tiene_panel_raw
+        elif isinstance(tiene_panel_raw, str):
+            normalized = tiene_panel_raw.strip().lower()
+            if normalized in {"true", "1", "si", "sí", "on"}:
+                tiene_panel = True
+            elif normalized in {"false", "0", "no", "off"}:
+                tiene_panel = False
+            else:
+                tiene_panel = None
+        elif isinstance(tiene_panel_raw, (int, float)):
+            if isinstance(tiene_panel_raw, float) and np.isnan(tiene_panel_raw):
+                tiene_panel = None
+            else:
+                tiene_panel = bool(tiene_panel_raw)
+        else:
+            tiene_panel = None
+
         if simbolo and cantidad_f:
             items.append(
                 {
@@ -371,10 +435,30 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                     "mercado": str(mercado).strip().lower(),
                     "cantidad": float(cantidad_f),
                     "costo_unitario": float(costo_unit_f),
+                    "moneda": moneda_str,
+                    "plazo": plazo_str,
+                    "ultimoPrecio": ultimo_precio_f,
+                    "variacionDiaria": variacion_diaria_f,
+                    "tienePanel": tiene_panel,
+                    "riesgo": riesgo_str,
                 }
             )
 
-    df = pd.DataFrame(items, columns=["simbolo", "mercado", "cantidad", "costo_unitario"])
+    df = pd.DataFrame(
+        items,
+        columns=[
+            "simbolo",
+            "mercado",
+            "cantidad",
+            "costo_unitario",
+            "moneda",
+            "plazo",
+            "ultimoPrecio",
+            "variacionDiaria",
+            "tienePanel",
+            "riesgo",
+        ],
+    )
     balances = _extract_cash_balances(payload)
     if balances:
         df.attrs.setdefault("cash_balances", {}).update(balances)
@@ -475,6 +559,9 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     # ----- Valoraciones -------------------------------------------------
     df["ultimo"] = df["last"]
+    if "ultimoPrecio" in df.columns:
+        fallback_price = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
+        df["ultimo"] = df["ultimo"].fillna(fallback_price)
     df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
     df["valor_actual"] = df["cantidad"] * df["ultimo"] * df["scale"]
     df["pl"] = df["valor_actual"] - df["costo"]
@@ -492,6 +579,9 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         np.nan,
     )
     df["pld_%"] = pct * 100.0
+    if "variacionDiaria" in df.columns:
+        fallback_variacion = pd.to_numeric(df["variacionDiaria"], errors="coerce")
+        df["pld_%"] = df["pld_%"].where(df["pld_%"].notna(), fallback_variacion)
 
     # return pd.DataFrame(rows)
     # Orden final --------------------------------------------------------
