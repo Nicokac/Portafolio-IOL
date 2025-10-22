@@ -1,13 +1,15 @@
 # infrastructure/iol/client.py
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
 import time
 import warnings
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import requests
 import streamlit as st
@@ -102,6 +104,8 @@ class IOLClient(IIOLProvider):
         self._legacy_last_http_label: Optional[str] = None
         self._active_batch_stats: Optional[dict[str, Any]] = None
         self._last_bulk_stats: Optional[dict[str, Any]] = None
+        self._notification_cache: Optional[dict[str, Any]] = None
+        self._notification_cache_marker: Optional[str] = None
 
     # ------------------------------------------------------------------
     # HTTP helpers
@@ -222,6 +226,159 @@ class IOLClient(IIOLProvider):
                 raise last_exc
             logger.warning("Request %s %s falló: %s", method, url, last_exc)
         return None
+
+    @staticmethod
+    def _notification_token_marker(tokens: Mapping[str, Any] | None) -> Optional[str]:
+        if not isinstance(tokens, Mapping):
+            return None
+        raw = tokens.get("access_token") or tokens.get("refresh_token")
+        if raw is None:
+            raw = tokens.get("timestamp")
+        if raw is None:
+            return None
+        try:
+            value = str(raw).encode("utf-8")
+        except Exception:
+            return None
+        return hashlib.sha256(value).hexdigest()
+
+    @staticmethod
+    def _parse_notification_datetime(value: Any) -> Optional[datetime]:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        elif isinstance(value, (int, float)):
+            snapshot = TimeProvider.from_timestamp(value)
+            return snapshot.moment if snapshot else None
+        elif isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            candidates = (text, text.replace("Z", "+00:00"))
+            for candidate in candidates:
+                try:
+                    dt = datetime.fromisoformat(candidate)
+                except ValueError:
+                    continue
+                else:
+                    break
+            else:
+                snapshot = TimeProvider.from_timestamp(text)
+                return snapshot.moment if snapshot else None
+        else:
+            return None
+
+        tz = TimeProvider.timezone()
+        if dt.tzinfo is None:
+            try:
+                dt = dt.replace(tzinfo=tz)
+            except Exception:
+                return dt
+        else:
+            try:
+                dt = dt.astimezone(tz)
+            except Exception:
+                return dt
+        return dt
+
+    def get_notification(self) -> Optional[dict[str, Any]]:
+        marker = self._notification_token_marker(getattr(self.auth, "tokens", None))
+        if marker == self._notification_cache_marker and self._notification_cache is not None:
+            return dict(self._notification_cache)
+
+        url = f"{self.api_base}/Notificacion"
+        try:
+            response = self._request("GET", url)
+        except InvalidCredentialsError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive guard
+            logger.warning("get_notification request error: %s", exc, exc_info=True)
+            self._notification_cache = None
+            self._notification_cache_marker = marker
+            return None
+
+        if response is None:
+            self._notification_cache = None
+            self._notification_cache_marker = marker
+            return None
+
+        status_code = response.status_code
+        if status_code == 204 or not response.content:
+            logger.info(
+                "IOL notification fetch vacío",
+                extra={"notification_status": status_code},
+            )
+            self._notification_cache = None
+            self._notification_cache_marker = marker
+            return None
+
+        try:
+            payload = response.json() or {}
+        except ValueError as exc:
+            logger.warning("get_notification JSON inválido: %s", exc)
+            self._notification_cache = None
+            self._notification_cache_marker = marker
+            return None
+
+        if not isinstance(payload, Mapping):
+            logger.info(
+                "IOL notification payload inesperado",
+                extra={"payload_type": type(payload).__name__},
+            )
+            self._notification_cache = None
+            self._notification_cache_marker = marker
+            return None
+
+        raw_message = payload.get("mensaje") or payload.get("message")
+        message = raw_message.strip() if isinstance(raw_message, str) else None
+
+        activo_raw = payload.get("activo")
+        if isinstance(activo_raw, bool):
+            activo = activo_raw
+        elif isinstance(activo_raw, str):
+            activo = activo_raw.strip().lower() in {"1", "true", "t", "yes", "si", "sí"}
+        elif activo_raw is None:
+            activo = True
+        else:
+            activo = bool(activo_raw)
+
+        vigencia = self._parse_notification_datetime(payload.get("vigencia"))
+        vigencia_hasta = self._parse_notification_datetime(
+            payload.get("vigenciaHasta")
+            or payload.get("vigenciaFin")
+            or payload.get("vigenciaHastaUtc")
+            or payload.get("vigenciaHastaUTC")
+        )
+
+        log_extra = {
+            "notification_status": status_code,
+            "notification_active": bool(activo),
+            "notification_has_message": bool(message),
+            "notification_vigencia": vigencia.isoformat() if isinstance(vigencia, datetime) else None,
+            "notification_vigencia_hasta": (
+                vigencia_hasta.isoformat() if isinstance(vigencia_hasta, datetime) else None
+            ),
+        }
+        logger.info("IOL notification fetch", extra=log_extra)
+
+        now = TimeProvider.now_datetime()
+        expiry = vigencia_hasta or vigencia
+        if not activo or not message:
+            normalized = None
+        elif expiry and expiry < now:
+            normalized = None
+        else:
+            normalized = {
+                "mensaje": message,
+                "activo": bool(activo),
+                "vigencia": vigencia,
+                "vigencia_hasta": vigencia_hasta,
+            }
+
+        self._notification_cache = normalized
+        self._notification_cache_marker = marker
+        return dict(normalized) if normalized is not None else None
 
     # ------------------------------------------------------------------
     # Portfolio
