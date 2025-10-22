@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import MutableMapping
 
 import numpy as np
@@ -307,20 +306,14 @@ def render_table(
         df_export.drop(columns=["es_favorito"], inplace=True, errors="ignore")
     download_csv(df_export, "portafolio.csv")
 
-    page_size = st.number_input("Filas por página", min_value=5, max_value=100, value=20, step=5)
-    total_pages = max(1, math.ceil(len(df_tbl) / page_size))
-    page = st.number_input("Página", min_value=1, max_value=total_pages, value=1, step=1)
-    start = (page - 1) * page_size
-    end = start + page_size
-
-    df_page = df_tbl.iloc[start:end]
+    df_page = df_tbl
 
     st.dataframe(
         df_page.style.apply(
             _color_pl,
             subset=["pl_num", "pl_d_num", "pl_pct_num", "chg_pct_num"],
         ),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         height=420,
         column_config=column_config,
