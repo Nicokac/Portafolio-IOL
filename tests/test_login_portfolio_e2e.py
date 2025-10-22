@@ -119,7 +119,7 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
         assert {"CEDEAR", "Bono / ON"}.issubset(set(available_types))
 
         controls = Controls(
-            hide_cash=True,
+            hide_cash=False,
             selected_syms=["AAPL"],
             selected_types=["CEDEAR"],
             symbol_query="AAP",

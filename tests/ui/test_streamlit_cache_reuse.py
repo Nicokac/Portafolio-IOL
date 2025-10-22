@@ -71,7 +71,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
 
         controls = types.SimpleNamespace(
             refresh_secs=30,
-            hide_cash=True,
+            hide_cash=False,
             show_usd=False,
             order_by="valor_actual",
             desc=True,

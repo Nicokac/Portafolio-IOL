@@ -501,7 +501,6 @@ def _dataset_filters_key(controls: Any) -> str:
     """Return a hash describing the filters that affect the dataset view."""
 
     payload = {
-        "hide_cash": getattr(controls, "hide_cash", None),
         "selected_syms": sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()),
         "selected_types": sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()),
         "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
@@ -598,7 +597,6 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
     """Return a hashable representation of summary-relevant filters."""
 
     payload = {
-        "hide_cash": getattr(controls, "hide_cash", None),
         "selected_syms": sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()),
         "selected_types": sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()),
         "symbol_query": (getattr(controls, "symbol_query", "") or "").strip(),
@@ -2672,10 +2670,9 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
         selected_syms = tuple(sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()))
         selected_types = tuple(sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()))
         symbol_query = (getattr(controls, "symbol_query", "") or "").strip()
-        hide_cash = getattr(controls, "hide_cash", None)
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo calcular la firma de la pestaña %s", tab_slug, exc_info=True)
-        order_by = desc = show_usd = top_n = symbol_query = hide_cash = None
+        order_by = desc = show_usd = top_n = symbol_query = None
         selected_syms = ()
         selected_types = ()
     return (
@@ -2689,7 +2686,6 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
         selected_syms,
         selected_types,
         symbol_query,
-        hide_cash,
         tuple(sorted(str(item) for item in getattr(viewmodel, "pending_metrics", ()) or ())),
     )
 

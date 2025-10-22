@@ -152,11 +152,8 @@ def apply_filters(
         selected_syms = getattr(controls, "selected_syms", []) or []
         with _profile_stage(
             "filter_positions",
-            hide_cash=controls.hide_cash,
             selected=len(selected_syms),
         ) as stage_filter:
-            if controls.hide_cash:
-                df_pos = df_pos[~df_pos["simbolo"].isin(["IOLPORA", "PARKING"])].copy()
             if selected_syms:
                 df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
         _record_stage("filter_positions", stage_filter)

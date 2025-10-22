@@ -196,7 +196,7 @@ def test_apply_filters(monkeypatch):
         ]
     )
     controls = Controls(
-        hide_cash=True,
+        hide_cash=False,
         selected_syms=["AL30", "GOOG"],
         selected_types=["Bono / ON"],
         symbol_query="AL",

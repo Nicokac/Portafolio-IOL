@@ -20,7 +20,7 @@ class Controls:
     """
 
     refresh_secs: int = 30
-    hide_cash: bool = True
+    hide_cash: bool = False
     show_usd: bool = False
     order_by: str = "valor_actual"
     desc: bool = True
