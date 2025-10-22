@@ -13,6 +13,7 @@ from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
 from shared.version import __version__
 from ui.actions import render_action_menu
+from ui.helpers.navigation import safe_page_link
 from ui.sidebar_controls import get_controls_reference_data, render_controls_panel
 from ui.ui_settings import render_ui_controls
 
@@ -1875,6 +1876,16 @@ def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, 
 
     symbols, types = get_controls_reference_data()
     render_controls_panel(symbols, types, container=control_hub)
+
+    shortcuts_container = container.container(border=True)
+    with shortcuts_container:
+        st.markdown("### 🔗 Recursos de monitoreo")
+        st.caption("Accedé a paneles complementarios desde esta vista.")
+        safe_page_link("ui.panels.about", label="ℹ️ Acerca de")
+        safe_page_link("ui.panels.diagnostics", label="🩺 Diagnóstico")
+        safe_page_link("ui.panels.system_diagnostics", label="🔎 Diagnóstico del sistema")
+        safe_page_link("ui.panels.system_status", label="🔍 Estado del Sistema")
+        safe_page_link("ui.tabs.performance_dashboard", label="⏱️ Performance")
 
     if hasattr(container, "divider"):
         container.divider()
