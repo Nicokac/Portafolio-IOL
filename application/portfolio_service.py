@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 
 from infrastructure.asset_catalog import get_asset_catalog
+from shared.asset_type_aliases import normalize_asset_type
 from shared.config import get_config
 from shared.utils import _to_float
 
@@ -173,6 +174,10 @@ def scale_for(sym: str, tipo: str) -> float:
 def _match_declared_type(text: str) -> str | None:
     """Return portfolio type based on labels declared by IOL."""
 
+    normalized = normalize_asset_type(text)
+    if normalized:
+        return normalized
+
     label = (text or "").strip().lower()
     if not label:
         return None
@@ -196,7 +201,8 @@ def _match_declared_type(text: str) -> str | None:
 def classify_asset(it: dict) -> str:
     """
     Clasifica activo según 'titulo.tipo/descripcion' si existe, o heurística por símbolo.
-    Devuelve una de: 'CEDEAR','ETF','Bono','Letra','FCI','Acción','Otro'
+    Devuelve categorías estándar de Portafolio-IOL (p.ej. 'Acción', 'Bono',
+    'Bono / ON', 'FCI / Money Market', 'CEDEAR', 'ETF', 'Caución', etc.).
     """
 
     t = it.get("titulo") or {}

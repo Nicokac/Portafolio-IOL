@@ -7,7 +7,7 @@ def test_classify_asset_uses_description_for_bond_aliases() -> None:
         "titulo": {"tipo": "Otros", "descripcion": "Obligacion Negociable Clase A"},
     }
 
-    assert classify_asset(item) == "Bono"
+    assert classify_asset(item) == "Bono / ON"
 
 
 def test_classify_asset_detects_fci_from_description() -> None:
@@ -16,4 +16,4 @@ def test_classify_asset_detects_fci_from_description() -> None:
         "titulo": {"tipo": "Otros", "descripcion": "Fondo Money Market T+1"},
     }
 
-    assert classify_asset(item) == "FCI"
+    assert classify_asset(item) == "FCI / Money Market"
