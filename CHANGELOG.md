@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nuevos totales del portafolio (`total_cash_ars`, `total_cash_usd`, `total_cash_combined`) y UI actualizada para mostrar el desglose y el total combinado.
 - Exportaciones y snapshots enriquecidos con el detalle de efectivo, preservando los históricos y compatibilidad con Money Market.
 
+### Enriquecimiento de portafolio con metadatos de IOL
+- La normalización del portafolio conserva `moneda`, `plazo`, `ultimoPrecio`, `variacionDiaria`, `tienePanel` y `riesgo`, con fallback seguros cuando la API no provee los campos.
+- Las valuaciones reutilizan `ultimoPrecio` y `variacionDiaria` originales como respaldo cuando no hay cotizaciones externas disponibles.
+
 ## [0.8.0] - UI Minimalista y Reorganización
 ### Overview
 Primera entrega de la nueva interfaz minimalista y reorganización visual de Portafolio-IOL.
