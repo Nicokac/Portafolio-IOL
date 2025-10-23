@@ -21,7 +21,7 @@ from ui.fx_panels import render_spreads
 def test_render_basic_section_captions(monkeypatch):
     df = pd.DataFrame({"simbolo": ["A"], "valor_actual": [1]})
     controls = Controls()
-    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(
         charts_mod,

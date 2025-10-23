@@ -8,10 +8,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from application.portfolio_service import (
-    PortfolioTotals,
-    calculate_totals,
-)
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from shared.utils import (
     _as_float_or_none,
@@ -32,91 +28,6 @@ from .palette import get_active_palette
 _SEARCH_WIDGET_KEY = "portfolio_table_search_input"
 _SEARCH_DATASET_STATE_KEY = "__portfolio_table_search_dataset__"
 _DATASET_HASH_STATE_KEY = "dataset_hash"
-
-
-def render_totals(
-    df_view: pd.DataFrame,
-    ccl_rate: float | None = None,
-    totals: PortfolioTotals | None = None,
-):
-    totals = totals or calculate_totals(df_view)
-    total_val = totals.total_value
-    total_cost = totals.total_cost
-    total_pl = totals.total_pl
-    total_pl_pct = totals.total_pl_pct
-    money_market_cash = totals.total_cash
-    cash_ars = totals.total_cash_ars
-    cash_usd = totals.total_cash_usd
-    combined_cash = totals.total_cash_combined
-    usd_rate = totals.usd_rate
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Valorizado", format_money(total_val))
-    c2.metric("Costo", format_money(total_cost))
-    c3.metric(
-        "P/L",
-        format_money(total_pl),
-        delta=None if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
-    )
-    c4.metric(
-        "P/L %",
-        "—" if not np.isfinite(total_pl_pct) else f"{total_pl_pct:.2f}%",
-    )
-
-    def _infer_usd_rate_type(rate_value: float | None) -> str:
-        if rate_value is None or not np.isfinite(rate_value) or rate_value <= 0:
-            return "desconocido"
-        try:
-            state = getattr(st, "session_state", None)
-        except Exception:
-            state = None
-        fx_rates: Mapping[str, Any] | None = None
-        if isinstance(state, MutableMapping):
-            fx_rates = state.get("fx_rates")
-        candidates: list[tuple[str, float]] = []
-        if isinstance(fx_rates, Mapping):
-            oficial = _as_float_or_none(fx_rates.get("oficial"))
-            mep = _as_float_or_none(fx_rates.get("mep"))
-            if oficial is not None:
-                candidates.append(("oficial", float(oficial)))
-            if mep is not None:
-                candidates.append(("MEP", float(mep)))
-        best_label = "desconocido"
-        best_diff: float | None = None
-        for label, reference in candidates:
-            diff = abs(reference - rate_value)
-            tolerance = max(5.0, reference * 0.05)
-            if diff <= tolerance and (best_diff is None or diff < best_diff):
-                best_label = label
-                best_diff = diff
-        return best_label
-
-    rate_value = "—"
-    rate_help = "Tipo de cambio: desconocido"
-    raw_rate = _as_float_or_none(usd_rate)
-    if raw_rate is not None:
-        rate_float = float(raw_rate)
-        rate_value = format_money(rate_float)
-        rate_label = _infer_usd_rate_type(rate_float)
-        rate_help = f"Tipo de cambio: {rate_label}"
-
-    cash_cols = st.columns(5)
-    cash_cols[0].metric("Cash ARS", format_money(cash_ars))
-    cash_cols[1].metric("Cash USD", format_money(cash_usd, currency="USD"))
-    cash_cols[2].metric("Tipo de cambio", rate_value, help=rate_help)
-    cash_cols[3].metric("Money Market", format_money(money_market_cash))
-    cash_cols[4].metric("Cash total", format_money(combined_cash))
-
-    if _as_float_or_none(ccl_rate):
-        rate = float(ccl_rate)
-        usd_val = total_val / rate
-        usd_cost = total_cost / rate
-        usd_pl = total_pl / rate
-        c1b, c2b, c3b, c4b = st.columns(4)
-        c1b.metric("Valorizado (USD CCL)", format_money(usd_val, currency="USD"))
-        c2b.metric("Costo (USD CCL)", format_money(usd_cost, currency="USD"))
-        c3b.metric("P/L (USD CCL)", format_money(usd_pl, currency="USD"))
-        c4b.metric("CCL usado", format_money(rate))
 
 
 def render_table(

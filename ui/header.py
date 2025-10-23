@@ -18,6 +18,9 @@ _NOTIFICATION_VARIANT_KEY = "_header_notification_variant"
 
 _SKIP_NOTIFICATION_FETCH = object()
 
+_PORTFOLIO_FX_LABEL_KEY = "portfolio_summary_fx_label"
+_PORTFOLIO_FX_VALUE_KEY = "portfolio_summary_fx_value"
+
 
 def _current_notification_marker() -> Any:
     refreshed = st.session_state.get("auth_token_refreshed_at")
@@ -184,42 +187,53 @@ def render_fx_summary_in_header(rates: dict, palette=None):
 
     pal = palette or get_active_palette()
 
-    # Extraer las cotizaciones necesarias
-    valores = {
-        "💵 Oficial": _as_float_or_none(rates.get("oficial")),
-        "📈 MEP": _as_float_or_none(rates.get("mep")),
-        "🏦 CCL": _as_float_or_none(rates.get("ccl")),
-        "🪙 Cripto": _as_float_or_none(rates.get("cripto")),
-        "💳 Tarjeta": _as_float_or_none(rates.get("tarjeta")),
-        "🧧 Blue": _as_float_or_none(rates.get("blue")),
-    }
+    desired = [
+        ("💵 Oficial", "oficial"),
+        ("📈 MEP", "mep"),
+    ]
+    items = [(label, _as_float_or_none(rates.get(key))) for label, key in desired]
 
-    cols = st.columns(len(valores))
+    cols = st.columns(len(items))
+    active_label = str(st.session_state.get(_PORTFOLIO_FX_LABEL_KEY, "") or "").lower()
+    active_value = _as_float_or_none(st.session_state.get(_PORTFOLIO_FX_VALUE_KEY))
 
-    for col, (label, value) in zip(cols, valores.items()):
-        with col:
-            style = (
-                "display:flex; flex-direction:column; gap:0.2rem; "
-                f"background-color:{pal.highlight_bg}; "
-                f"color:{pal.highlight_text}; "
-                "padding:0.8rem 1rem; border-radius:0.75rem; text-align:center;"
-            )
-            value_str = (
-                f"$ {value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
-                if value
-                else "–"
-            )
-            st.markdown(
-                f"""
-                <div style="{style}">
-                    <span style="
-                        font-size:0.85rem;
-                        letter-spacing:0.02em;
-                        text-transform:uppercase;
-                        opacity:0.85;
-                    ">{label}</span>
-                    <span style="font-size:1.5rem; font-weight:700; line-height:1;">{value_str}</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    neutral_bg = "rgba(0,0,0,0.04)" if pal.bg == "#FFFFFF" else "rgba(255,255,255,0.08)"
+    neutral_border = "1px solid rgba(0,0,0,0.05)" if pal.bg == "#FFFFFF" else "1px solid rgba(255,255,255,0.15)"
+
+    for col, (label, value) in zip(cols, items):
+        label_text = label.split(" ", 1)[1] if " " in label else label
+        highlight = label_text.lower() == active_label
+        if (
+            not highlight
+            and active_value is not None
+            and value is not None
+        ):
+            diff = abs(float(value) - float(active_value))
+            tolerance = max(2.5, float(active_value) * 0.01)
+            highlight = diff <= tolerance
+
+        bg_color = pal.highlight_bg if highlight else neutral_bg
+        text_color = pal.highlight_text if highlight else pal.text
+        border = f"2px solid {pal.accent}" if highlight else neutral_border
+        sublabel = "Usado en totales" if highlight else "Referencia"
+        shadow = f"box-shadow:0 6px 18px {pal.accent}33;" if highlight else ""
+        value_str = (
+            f"$ {value:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+            if isinstance(value, (int, float)) and value is not None
+            else "–"
+        )
+        card_style = (
+            "display:flex; flex-direction:column; gap:0.3rem; "
+            "padding:0.9rem 1.1rem; border-radius:0.9rem; text-align:center; "
+            f"background-color:{bg_color}; color:{text_color}; border:{border}; {shadow}"
+        )
+        col.markdown(
+            f"""
+            <div style="{card_style}">
+                <span style="font-size:0.82rem; letter-spacing:0.03em; text-transform:uppercase; opacity:0.85;">{label}</span>
+                <span style="font-size:1.45rem; font-weight:700; line-height:1;">{value_str}</span>
+                <span style="font-size:0.75rem; opacity:0.75;">{sublabel}</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )

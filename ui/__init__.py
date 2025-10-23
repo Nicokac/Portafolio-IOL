@@ -18,7 +18,8 @@ from .fx_panels import render_fx_history, render_spreads
 from .header import render_header
 from .palette import get_active_palette, get_palette
 from .sidebar_controls import render_sidebar
-from .tables import render_table, render_totals
+from .summary_metrics import render_summary_metrics
+from .tables import render_table
 from .ui_settings import UISettings, init_ui, render_ui_controls
 
 __version__ = _APP_VERSION
@@ -92,7 +93,7 @@ del _ui_settings_module
 
 __all__ += [
     "render_header",
-    "render_totals",
+    "render_summary_metrics",
     "render_table",
     "render_spreads",
     "render_fx_history",
