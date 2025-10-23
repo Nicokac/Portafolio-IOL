@@ -52,13 +52,21 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
                 "mercado": "nyse",
                 "cantidad": 10,
                 "costoUnitario": 150,
+                "titulo": {"tipo": "CEDEAR"},
             },
-            {"simbolo": "AL30", "mercado": "bcba", "cantidad": 20, "costoUnitario": 95},
+            {
+                "simbolo": "AL30",
+                "mercado": "bcba",
+                "cantidad": 20,
+                "costoUnitario": 95,
+                "titulo": {"tipo": "Bono"},
+            },
             {
                 "simbolo": "IOLPORA",
                 "mercado": "bcba",
                 "cantidad": 1000,
                 "costoUnitario": 1.0,
+                "titulo": {"tipo": "Efectivo"},
             },
         ]
     }
@@ -116,7 +124,7 @@ def test_login_portfolio_e2e(monkeypatch, fake_streamlit):
 
         assert fake_client.portfolio_calls == 1
         assert set(all_symbols) == {"AAPL", "AL30", "IOLPORA"}
-        assert {"CEDEAR", "Bono / ON"}.issubset(set(available_types))
+        assert {"CEDEAR", "Bono"}.issubset(set(available_types))
 
         controls = Controls(
             hide_cash=False,

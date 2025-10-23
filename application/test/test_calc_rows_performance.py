@@ -7,12 +7,7 @@ import pandas as pd
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from application.portfolio_service import (
-    calc_rows,
-    classify_symbol,
-    clean_symbol,
-    scale_for,
-)
+from application.portfolio_service import calc_rows, clean_symbol, scale_for
 from shared.utils import _to_float
 
 # Copia de la implementación original basada en bucles para comparar rendimientos
@@ -65,7 +60,7 @@ def calc_rows_loop(get_quote_fn, df_pos: pd.DataFrame, exclude_syms):
         else:
             last = _to_float(q)
 
-        tipo = classify_symbol(simbolo)
+        tipo = str(p.get("tipo", "N/D"))
         scale = scale_for(simbolo, tipo)
 
         costo = cantidad * ppc * scale
@@ -116,6 +111,7 @@ def make_df(n=1000):
             "mercado": ["BCBA"] * n,
             "cantidad": np.arange(1, n + 1, dtype=float),
             "costo_unitario": np.linspace(10, 20, n),
+            "tipo": ["N/D"] * n,
         }
     )
 

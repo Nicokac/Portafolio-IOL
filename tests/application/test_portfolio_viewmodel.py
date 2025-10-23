@@ -95,23 +95,3 @@ def test_calc_rows_generates_viewmodel_with_expected_metrics(
     assert aapl["tipo"] == "CEDEAR"
     assert aapl["pl"] == pytest.approx(5 * (160.0 - 150.0))
     assert aapl["pl_%"] == pytest.approx((160.0 - 150.0) / 150.0 * 100)
-
-
-def test_classify_asset_cached_uses_lru_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`PortfolioService.classify_asset_cached` should hit the expensive classifier once."""
-
-    calls: list[str] = []
-
-    def fake_classify(row: dict) -> str:
-        calls.append(row["simbolo"])
-        return "ETF"
-
-    monkeypatch.setattr(portfolio_mod, "classify_asset", fake_classify)
-
-    svc = PortfolioService()
-    first = svc.classify_asset_cached("GGAL")
-    second = svc.classify_asset_cached("GGAL")
-
-    assert first == "ETF"
-    assert second == "ETF"
-    assert calls == ["GGAL"], "Expected classify_asset to be invoked once thanks to caching"

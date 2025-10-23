@@ -1,7 +1,5 @@
 import logging
-import re
 import time
-import unicodedata
 from collections import OrderedDict
 from io import BytesIO, StringIO
 from typing import Sequence
@@ -12,7 +10,6 @@ import plotly.express as px
 import streamlit as st
 
 from application.benchmark_service import benchmark_analysis
-from application.portfolio_service import classify_symbol
 from application.risk_service import (
     annualized_volatility,
     asset_risk_breakdown,
@@ -39,85 +36,6 @@ from ui.notifications import render_risk_badge
 
 logger = logging.getLogger(__name__)
 
-_LOCAL_SYMBOL_BLACKLIST = {"LOMA", "YPFD", "TECO2"}
-
-_TYPE_ALIASES = {
-    "ACCION": "ACCION_LOCAL",
-    "ACCIONES": "ACCION_LOCAL",
-    "ACCION LOCAL": "ACCION_LOCAL",
-    "ACCION ARG": "ACCION_LOCAL",
-    "ACCION ARGENTINA": "ACCION_LOCAL",
-    "ACCION ARGENTINAS": "ACCION_LOCAL",
-    "ACCION_LOCAL": "ACCION_LOCAL",
-    "ACCIONES LOCALES": "ACCION_LOCAL",
-    "ACCIONES NACIONALES": "ACCION_LOCAL",
-    "ACCIONES ARGENTINAS": "ACCION_LOCAL",
-    "BONO": "BONO",
-    "BONOS": "BONO",
-    "BONO DOLAR": "BONO",
-    "BONOS DOLAR": "BONO",
-    "BONO DOLAR LINK": "BONO",
-    "BONO USD": "BONO",
-    "BONO PESO": "BONO",
-    "BONOS PESO": "BONO",
-    "BONO CER": "BONO",
-    "BONO UVA": "BONO",
-    "BONOS SOBERANOS": "BONO",
-    "BONOS CORPORATIVOS": "BONO",
-    "BONOS DEL TESORO": "BONO",
-    "BONOS TESORO": "BONO",
-    "LETRA": "LETRA",
-    "LETRAS": "LETRA",
-    "LETRAS DEL TESORO": "LETRA",
-    "LETRA DEL TESORO": "LETRA",
-    "LETRA DOLAR LINK": "LETRA",
-    "LETRA CER": "LETRA",
-    "CEDEAR": "CEDEAR",
-    "CEDEARS": "CEDEAR",
-    "ETF": "ETF",
-    "ETFS": "ETF",
-    "FONDO": "FCI",
-    "FONDOS": "FCI",
-    "FONDOS COMUNES": "FCI",
-    "FONDO COMUN": "FCI",
-    "FONDOS COMUNES DE INVERSION": "FCI",
-    "FONDO COMUN DE INVERSION": "FCI",
-    "FONDO COMUN DE INVERSION T+0": "FCI",
-    "FONDO COMUN DE INVERSION T+1": "FCI",
-    "FONDO COMUN DE INVERSION T+2": "FCI",
-    "FONDO DE INVERSION": "FCI",
-    "FONDO DE INVERSION ABIERTA": "FCI",
-    "FONDO MONEY MARKET": "FCI",
-    "FONDOS MONEY MARKET": "FCI",
-    "MONEY MARKET": "FCI",
-    "FCI": "FCI",
-    "OTRO": "OTRO",
-    "OTROS": "OTRO",
-    "OTROS ACTIVOS": "OTRO",
-}
-
-_DEFAULT_TYPE_ORDER = [
-    "CEDEAR",
-    "ACCION_LOCAL",
-    "BONO",
-    "LETRA",
-    "FCI",
-    "ETF",
-    "OTRO",
-]
-
-_TYPE_DISPLAY_OVERRIDES = {
-    "ACCION_LOCAL": "Acciones locales",
-    "CEDEAR": "CEDEARs",
-    "BONO": "Bonos",
-    "LETRA": "Letras",
-    "ETF": "ETFs",
-    "FCI": "Fondos comunes (FCI)",
-    "OTRO": "Otros",
-}
-
-_SYMBOL_TYPE_OVERRIDES = {sym: "ACCION_LOCAL" for sym in _LOCAL_SYMBOL_BLACKLIST}
-
 _MONTE_CARLO_THRESHOLD = 5000
 
 
@@ -136,9 +54,9 @@ def _extend_unique_types(target: list[str], values) -> None:
             iterator = [values]
 
     for value in iterator:
-        canonical = _normalize_type_label(value)
-        if canonical and canonical not in target:
-            target.append(canonical)
+        label = _raw_type_label(value)
+        if label and label not in target:
+            target.append(label)
 
 
 def _order_types(types: Sequence[str]) -> list[str]:
@@ -147,21 +65,11 @@ def _order_types(types: Sequence[str]) -> list[str]:
     ordered: list[str] = []
     seen: set[str] = set()
 
-    normalized = []
     for value in types:
-        canonical = _normalize_type_label(value)
-        if canonical:
-            normalized.append(canonical)
-
-    for preferred in _DEFAULT_TYPE_ORDER:
-        if preferred in normalized and preferred not in seen:
-            ordered.append(preferred)
-            seen.add(preferred)
-
-    for canonical in normalized:
-        if canonical not in seen:
-            ordered.append(canonical)
-            seen.add(canonical)
+        label = _raw_type_label(value)
+        if label and label not in seen:
+            ordered.append(label)
+            seen.add(label)
 
     return ordered
 
@@ -183,22 +91,17 @@ def _string_or_empty(value) -> str:
     return "" if not text or text.lower() in {"nan", "none"} else text
 
 
-def _normalize_type_token(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value)
-    normalized = normalized.encode("ascii", "ignore").decode("ascii")
-    normalized = normalized.replace("-", " ")
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized.upper()
-
-
-def _normalize_type_label(value) -> str:
-    text = _string_or_empty(value)
-    if not text:
+def _raw_type_label(value) -> str:
+    if value is None:
         return ""
-    token = _normalize_type_token(text)
-    if not token:
-        return ""
-    return _TYPE_ALIASES.get(token, token)
+    if isinstance(value, str):
+        return value
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value)
 
 
 def _fetch_history_resilient(
@@ -302,22 +205,9 @@ def _normalize_symbol(symbol) -> str:
     return text.upper()
 
 
-def _canonical_type(symbol: str, raw_type) -> str:
-    sym_key = _normalize_symbol(symbol)
-    override = _SYMBOL_TYPE_OVERRIDES.get(sym_key)
-    if override:
-        return override
-
-    normalized = _normalize_type_label(raw_type)
-    if normalized:
-        return normalized
-
-    if sym_key:
-        fallback = classify_symbol(sym_key)
-        normalized = _normalize_type_label(fallback)
-        if normalized:
-            return _SYMBOL_TYPE_OVERRIDES.get(sym_key, normalized)
-    return ""
+def _canonical_type(_symbol: str, raw_type) -> str:
+    label = _raw_type_label(raw_type)
+    return label or "N/D"
 
 
 def _build_type_metadata(
@@ -337,20 +227,11 @@ def _build_type_metadata(
     for idx, symbol in enumerate(df["simbolo"].tolist()):
         raw_value = raw_types.iloc[idx] if idx < len(raw_types) else None
         canonical = _canonical_type(symbol, raw_value)
-        normalized_values.append(canonical if canonical else pd.NA)
-        if canonical:
-            sym_key = _normalize_symbol(symbol)
+        normalized_values.append(canonical)
+        sym_key = _normalize_symbol(symbol)
+        if sym_key:
             symbol_type_map[sym_key] = canonical
-            if sym_key not in _SYMBOL_TYPE_OVERRIDES:
-                raw_label = _string_or_empty(raw_value)
-                if raw_label and canonical not in display_labels:
-                    display_labels[canonical] = raw_label
-
-    for canonical, label in _TYPE_DISPLAY_OVERRIDES.items():
-        display_labels[canonical] = label
-
-    for canonical in symbol_type_map.values():
-        display_labels.setdefault(canonical, canonical.replace("_", " ").title())
+        display_labels.setdefault(canonical, canonical)
 
     series = pd.Series(normalized_values, index=df.index, dtype="object")
     return series, display_labels, symbol_type_map
@@ -438,7 +319,7 @@ def render_risk_analysis(
     filtered_df = df_view.copy() if isinstance(df_view, pd.DataFrame) else df_view
     selected_type_filters = st.session_state.get("selected_asset_types") or []
     normalized_filters = [
-        _normalize_type_label(t) for t in selected_type_filters if isinstance(t, str) and _normalize_type_label(t)
+        _raw_type_label(t) for t in selected_type_filters if isinstance(t, str) and _raw_type_label(t)
     ]
 
     normalized_series, type_display_map, symbol_type_map = _build_type_metadata(
@@ -450,13 +331,7 @@ def render_risk_analysis(
         if normalized_filters:
             filtered_df = filtered_df[filtered_df["_normalized_type"].isin(normalized_filters)].copy()
 
-        if not filtered_df.empty:
-            normalized_symbols = filtered_df["simbolo"].astype(str).str.strip().str.upper()
-            blacklist_mask = filtered_df["_normalized_type"].eq("CEDEAR") & normalized_symbols.isin(
-                _LOCAL_SYMBOL_BLACKLIST
-            )
-            if blacklist_mask.any():
-                filtered_df = filtered_df.loc[~blacklist_mask].copy()
+        # No se realizan sobrescrituras adicionales: se mantienen los tipos originales de IOL.
     else:
         type_display_map = {}
         symbol_type_map = {}
@@ -483,12 +358,8 @@ def render_risk_analysis(
             if not sym_str:
                 continue
             sym_key = sym_str.upper()
-            canon_str = symbol_type_map.get(sym_key)
-            if not canon_str:
-                canon_str = _normalize_type_label(canon) if isinstance(canon, str) else _canonical_type(sym_key, None)
+            canon_str = symbol_type_map.get(sym_key) or _canonical_type(sym_key, canon)
             if normalized_filters and canon_str not in normalized_filters:
-                continue
-            if canon_str == "CEDEAR" and sym_str.upper() in _LOCAL_SYMBOL_BLACKLIST:
                 continue
             portfolio_symbols.append(sym_str)
     else:
@@ -558,14 +429,12 @@ def render_risk_analysis(
                 if not matches.empty:
                     candidate = matches.iloc[0]
                     canonical = (
-                        _normalize_type_label(candidate)
+                        _raw_type_label(candidate)
                         if isinstance(candidate, str)
                         else _canonical_type(sym_key, None)
                     )
             if not canonical:
                 canonical = _canonical_type(sym_key, None)
-            if canonical == "CEDEAR" and sym_key in _LOCAL_SYMBOL_BLACKLIST:
-                canonical = "ACCION_LOCAL"
             if not canonical:
                 continue
             if normalized_filters and canonical not in normalized_filters:
@@ -584,9 +453,8 @@ def render_risk_analysis(
         if normalized_filters:
             ordered_types: list[str] = []
             for raw in normalized_filters:
-                canonical = _normalize_type_label(raw)
-                if canonical and canonical not in ordered_types:
-                    ordered_types.append(canonical)
+                if raw not in ordered_types:
+                    ordered_types.append(raw)
         else:
             base_types = available_types_in_view if available_types_in_view else list(symbol_groups.keys())
             ordered_types = _order_types(base_types)
@@ -616,7 +484,7 @@ def render_risk_analysis(
                 [
                     type_display_map.get(
                         type_name,
-                        type_name.replace("_", " ").title(),
+                        type_name,
                     )
                     for type_name, _, _ in type_groups
                 ]
@@ -628,7 +496,7 @@ def render_risk_analysis(
             with display_host:
                 display_label = type_display_map.get(
                     type_name,
-                    type_name.replace("_", " ").title(),
+                    type_name,
                 )
                 if len(set(subset_symbols)) < 2:
                     st.warning(f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones.")

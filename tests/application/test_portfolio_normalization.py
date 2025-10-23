@@ -40,6 +40,9 @@ def test_normalize_positions_preserves_metadata():
         "riesgo",
         "titulo_tipo_original",
         "titulo_descripcion_original",
+        "tipo",
+        "tipo_iol",
+        "tipo_estandar",
         "valorizado",
     }
 
@@ -53,6 +56,9 @@ def test_normalize_positions_preserves_metadata():
     assert row["riesgo"] == "Baja"
     assert row["titulo_tipo_original"] == "Accion"
     assert row["titulo_descripcion_original"] == "Accion Local"
+    assert row["tipo"] == "Accion"
+    assert row["tipo_iol"] == "Accion"
+    assert row["tipo_estandar"] == "Accion"
     assert math.isclose(row["valorizado"], 1234.5)
 
 
@@ -73,5 +79,5 @@ def test_calc_rows_uses_payload_price_and_variation_when_quotes_absent():
 
     assert "tipo_iol" in df_result.columns
     assert df_result.loc[0, "tipo_iol"] == "Accion"
-    assert df_result.loc[0, "tipo_estandar"]
+    assert df_result.loc[0, "tipo_estandar"] == "Accion"
 

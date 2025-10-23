@@ -6,15 +6,12 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping
 
 import numpy as np
 import pandas as pd
 import requests
 
-from infrastructure.asset_catalog import get_asset_catalog
-from shared.asset_type_aliases import normalize_asset_type
 from shared.config import get_config
 from shared.utils import _to_float
 
@@ -156,71 +153,6 @@ def map_to_us_ticker(simbolo: str) -> str:
     raise ValueError(f"Símbolo no válido: {simbolo}")
 
 
-# ---------- Clasificación y escala ----------
-
-
-
-
-def _canonical_type(label: str | None, *, default: str = "Otro") -> str:
-    normalized = normalize_asset_type(label)
-    if normalized:
-        return normalized
-    if label:
-        return str(label)
-    return default
-
-def classify_symbol(sym: str) -> str:
-    """
-    Clasifica por símbolo usando listas del config (cedears/etfs) y patrones
-    configurables. Devuelve una de las categorías estandarizadas como 'Acción',
-    'CEDEAR', 'ETF', 'Bono / ON', 'FCI / Money Market', 'Plazo Fijo', 'Caución'
-    u 'Otro'.
-    """
-    s = clean_symbol(sym)
-    cfg = get_config()
-    catalog = get_asset_catalog()
-    cedears_map = cfg.get("cedear_to_us", {}) or {}
-    etf_set = set(map(clean_symbol, cfg.get("etfs", []) or []))
-    acciones_ar = set(map(clean_symbol, cfg.get("acciones_ar", []) or []))
-    fci_set = set(map(clean_symbol, cfg.get("fci_symbols", []) or []))
-    pattern_map = cfg.get("classification_patterns", {}) or {}
-
-    entry = catalog.get(s)
-    if entry:
-        if isinstance(entry, Mapping):
-            tipo_estandar = entry.get("tipo_estandar")
-            if tipo_estandar:
-                return tipo_estandar
-            return _canonical_type(entry.get("tipo") or entry.get("descripcion"))
-        return _canonical_type(str(entry))
-
-    if s in etf_set:
-        return _canonical_type("ETF")
-    if s in cedears_map:
-        return _canonical_type("CEDEAR")
-    if s in fci_set:
-        return _canonical_type("FCI")
-
-    if s.startswith(("AL", "GD", "AE")):
-        return _canonical_type("Bono")
-    if s.startswith("S") and any(ch.isdigit() for ch in s):
-        return _canonical_type("Letra")
-
-    for tipo, patterns in pattern_map.items():
-        for pat in patterns or []:
-            try:
-                if re.match(pat, s):
-                    return _canonical_type(tipo)
-            except re.error:
-                continue
-
-    if s in acciones_ar:
-        return _canonical_type("Acción")
-    if s.isalpha() and 3 <= len(s) <= 5:
-        return _canonical_type("CEDEAR")
-    return "Otro"
-
-
 def scale_for(sym: str, tipo: str) -> float:
     """
     Factor de escala para convertir el precio/costo reportado a valuación.
@@ -245,81 +177,25 @@ def scale_for(sym: str, tipo: str) -> float:
     return 1.0
 
 
-def _match_declared_type(text: str) -> str | None:
-    """Return portfolio type based on labels declared by IOL."""
-
-    normalized = normalize_asset_type(text)
-    if normalized:
-        return normalized
-
-    label = (text or "").strip().lower()
-    if not label:
-        return None
-
-    if "bono" in label or "oblig" in label or "negociable" in label:
-        return _canonical_type("Bono")
-    if "letra" in label:
-        return _canonical_type("Letra")
-    if "fci" in label or "fondo" in label or "money market" in label:
-        return _canonical_type("FCI")
-    if "cedear" in label:
-        return _canonical_type("CEDEAR")
-    if "etf" in label:
-        return _canonical_type("ETF")
-    if "acción" in label or "accion" in label or "equity" in label:
-        return _canonical_type("Acción")
-
-    return None
-
-
-
-
-
 def classify_asset(it: dict) -> dict[str, str]:
-    """Return both the original and normalized asset type for a payload item."""
+    """Expose the asset type exactly as reported by IOL."""
 
-    t = it.get("titulo") or {}
-    sym = clean_symbol(it.get("simbolo", ""))
+    raw_title = it.get("titulo")
+    tipo_value: object | None = None
+    if isinstance(raw_title, Mapping):
+        tipo_value = raw_title.get("tipo")
 
-    candidates: list[str] = []
-    tipo_value = t.get("tipo")
-    descripcion_value = t.get("descripcion")
-
-    if isinstance(tipo_value, str) and tipo_value.strip():
-        candidates.append(tipo_value.strip())
-    elif tipo_value not in (None, ""):
-        candidates.append(str(tipo_value))
-
-    if isinstance(descripcion_value, str) and descripcion_value.strip():
-        candidate_desc = descripcion_value.strip()
-        if candidate_desc not in candidates:
-            candidates.append(candidate_desc)
-    elif descripcion_value not in (None, ""):
-        candidate_desc = str(descripcion_value)
-        if candidate_desc not in candidates:
-            candidates.append(candidate_desc)
-
-    matched_label = ""
-    normalized_type = ""
-    for candidate in candidates:
-        matched = _match_declared_type(candidate)
-        if matched:
-            normalized_type = matched
-            matched_label = candidate
-            break
-
-    if not normalized_type:
-        normalized_type = classify_symbol(sym)
-
-    if not matched_label:
-        matched_label = next((candidate for candidate in candidates if candidate), "")
-
-    final_type = normalized_type or ""
+    if tipo_value in (None, ""):
+        tipo = "N/D"
+    elif isinstance(tipo_value, str):
+        tipo = tipo_value
+    else:
+        tipo = str(tipo_value)
 
     return {
-        "tipo": final_type,
-        "tipo_estandar": final_type,
-        "tipo_iol": matched_label,
+        "tipo": tipo,
+        "tipo_estandar": tipo,
+        "tipo_iol": tipo,
     }
 
 
@@ -427,13 +303,17 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 
         tipo_original = ""
         descripcion_original = ""
+        tipo_valor = "N/D"
         if isinstance(t, dict):
             raw_tipo = t.get("tipo")
             raw_desc = t.get("descripcion")
             if raw_tipo not in (None, ""):
                 tipo_original = str(raw_tipo).strip()
+                tipo_valor = raw_tipo if isinstance(raw_tipo, str) else str(raw_tipo)
             if raw_desc not in (None, ""):
                 descripcion_original = str(raw_desc).strip()
+        if not tipo_original:
+            tipo_original = tipo_valor if isinstance(tipo_valor, str) else str(tipo_valor)
 
         if costo_unit is None:
             total_costo = (
@@ -503,6 +383,9 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
                     "riesgo": riesgo_str,
                     "titulo_tipo_original": tipo_original,
                     "titulo_descripcion_original": descripcion_original,
+                    "tipo": tipo_valor,
+                    "tipo_iol": tipo_valor,
+                    "tipo_estandar": tipo_valor,
                     "valorizado": float(valorizado_f) if valorizado_f is not None else np.nan,
                 }
             )
@@ -535,15 +418,7 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 
 
 def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
-    """Calcula métricas de valuación y P/L para cada posición.
-
-    La lógica original iteraba fila por fila; aquí se vectoriza el cálculo:
-      * Se construye un DataFrame con cotizaciones (``last`` y ``chg_pct``) y
-        se une a ``df_pos`` por ``simbolo``/``mercado``.
-      * ``classify_symbol`` y ``scale_for`` se aplican sobre columnas completas.
-      * Las métricas ``valor_actual``, ``costo`` y P/L se derivan mediante
-        operaciones vectorizadas de ``pandas``.
-    """
+    """Calcula métricas de valuación y P/L para cada posición."""
     attrs: dict[str, Any] = dict(getattr(df_pos, "attrs", {}) or {})
     cols = [
         "simbolo",
@@ -620,47 +495,20 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     df = df.merge(quotes_df, on=["mercado", "simbolo"], how="left")
 
     # ----- Clasificación y escala --------------------------------------
-    def _classify(row: pd.Series) -> pd.Series:
-        titulo_payload: dict[str, Any] = {}
-        tipo_orig = row.get("titulo_tipo_original")
-        desc_orig = row.get("titulo_descripcion_original")
-        if isinstance(tipo_orig, str) and tipo_orig.strip():
-            titulo_payload["tipo"] = tipo_orig.strip()
-        elif tipo_orig not in (None, ""):
-            titulo_payload["tipo"] = str(tipo_orig)
-        if isinstance(desc_orig, str) and desc_orig.strip():
-            titulo_payload.setdefault("descripcion", desc_orig.strip())
-        elif desc_orig not in (None, ""):
-            titulo_payload.setdefault("descripcion", str(desc_orig))
+    if "tipo" not in df.columns:
+        df["tipo"] = "N/D"
+    else:
+        df["tipo"] = df["tipo"].where(df["tipo"].notna(), "N/D")
 
-        result = classify_asset({
-            "simbolo": row.get("simbolo"),
-            "titulo": titulo_payload,
-        })
+    if "tipo_iol" in df.columns:
+        df["tipo_iol"] = df["tipo_iol"].where(df["tipo_iol"].notna(), df["tipo"])
+    else:
+        df["tipo_iol"] = df["tipo"]
 
-        if isinstance(result, Mapping):
-            tipo_estandar = str(result.get("tipo_estandar") or result.get("tipo") or "")
-            tipo_iol = str(result.get("tipo_iol") or "")
-        else:
-            tipo_estandar = str(result or "")
-            tipo_iol = str(titulo_payload.get("tipo") or titulo_payload.get("descripcion") or "")
-
-        if not tipo_estandar:
-            try:
-                tipo_estandar = classify_symbol(str(row.get("simbolo", "")))
-            except Exception:  # pragma: no cover - defensive
-                tipo_estandar = ""
-
-        return pd.Series(
-            {
-                "tipo": tipo_estandar,
-                "tipo_estandar": tipo_estandar,
-                "tipo_iol": tipo_iol,
-            }
-        )
-
-    classification = df.apply(_classify, axis=1)
-    df = pd.concat([df, classification], axis=1)
+    if "tipo_estandar" in df.columns:
+        df["tipo_estandar"] = df["tipo_estandar"].where(df["tipo_estandar"].notna(), df["tipo"])
+    else:
+        df["tipo_estandar"] = df["tipo"]
 
     uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo_estandar"]]
     scale_map = {s: scale_for(s, t) for s, t in uniq.itertuples(index=False)}
@@ -704,19 +552,6 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     return result
 
 
-@lru_cache(maxsize=1024)
-def _classify_sym_cache(sym: str) -> str:
-    """Cachea la clasificación por símbolo usando la función existente classify_asset."""
-    try:
-        result = classify_asset({"simbolo": str(sym).upper(), "titulo": {}})
-        if isinstance(result, Mapping):
-            return str(result.get("tipo_estandar") or result.get("tipo") or "")
-        return str(result or "")
-    except (ValueError, TypeError) as e:
-        logger.exception("No se pudo clasificar símbolo %s: %s", sym, e)
-        return ""
-
-
 class PortfolioService:
     """Fachada del portafolio que envuelve tus funciones ya existentes."""
 
@@ -727,10 +562,6 @@ class PortfolioService:
     def calc_rows(self, price_fn, df_pos, exclude_syms=None):
         """Calculate valuation and P/L metrics for each position."""
         return calc_rows(price_fn, df_pos, exclude_syms or [])
-
-    def classify_asset_cached(self, sym: str) -> str:
-        """Classify an asset symbol using a cached helper."""
-        return _classify_sym_cache(sym)
 
     def classify_asset(self, row):
         """Classify asset row without caching."""

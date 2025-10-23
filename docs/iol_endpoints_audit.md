@@ -25,12 +25,9 @@ Esta nota resume todas las llamadas HTTP efectivas que realiza Portafolio-IOL co
 
 ## Clasificación de activos
 
-1. **Información declarada por IOL.** `classify_asset()` prioriza los campos `titulo.tipo` y `titulo.descripcion` entregados por `/api/v2/portafolio`, normalizándolos con `normalize_asset_type()` y reglas específicas (`_match_declared_type`).【F:application/portfolio_service.py†L224-L279】【F:shared/asset_type_aliases.py†L1-L36】
-2. **Catálogo local.** Si IOL no provee un tipo utilizable, `classify_symbol()` consulta primero el catálogo consolidado (`infrastructure/asset_catalog.get_asset_catalog()`), que ya viene con `tipo_estandar` cuando existe.【F:application/portfolio_service.py†L148-L198】【F:infrastructure/asset_catalog.py†L1-L81】
-3. **Alias y heurísticas de configuración.** Persisten reglas basadas en listas de configuración (`cedear_to_us`, `etfs`, `fci_symbols`, `acciones_ar`) y patrones regex (`classification_patterns`). Si todo falla, aplica heurísticas simples (prefijos de bonos/letras o longitud del ticker) y devuelve `"Otro"`.【F:application/portfolio_service.py†L148-L198】
-4. **Escalas y totales.** La información de `/estadocuenta` se inyecta como `_cash_balances` para que los totales combinen efectivo en ARS y USD, mientras que `scale_for()` ajusta bonos/letras (VN 100 → factor 0.01).【F:infrastructure/iol/client.py†L273-L283】【F:application/portfolio_service.py†L200-L221】【F:application/portfolio_service.py†L285-L381】
-
-En resumen, la jerarquía es: **etiquetas de IOL → alias normalizados → catálogo local → listas de configuración/patrones → heurísticas finales**.
+- **Etiquetas originales.** `classify_asset()` devuelve exactamente el valor `titulo.tipo` informado por `/api/v2/portafolio/{pais}` o `"N/D"` cuando el campo no está presente. Las columnas `tipo`, `tipo_iol` y `tipo_estandar` replican ese texto en todo el pipeline sin aplicar alias ni cambios de capitalización.【F:application/portfolio_service.py†L214-L276】
+- **Catálogo y alias desactivados.** El catálogo local (`data/assets_catalog.json`), los alias (`shared/asset_type_aliases.py`) y las heurísticas basadas en listas de configuración dejaron de intervenir: los tipos ya no se estandarizan localmente. Esto garantiza una correspondencia 1:1 con la UI de IOL y evita degradaciones a `"Otro"` por reglas internas.【F:application/portfolio_service.py†L214-L276】【F:controllers/portfolio/load_data.py†L168-L209】
+- **Escalas y totales.** `/api/v2/estadocuenta` continúa aportando `_cash_balances` para los totales consolidados y `scale_for()` sigue ajustando bonos/letras cuando el texto informado por IOL contiene “bono” o “letra”.【F:infrastructure/iol/client.py†L229-L284】【F:application/portfolio_service.py†L140-L203】
 
 ## Observaciones y oportunidades de mejora
 

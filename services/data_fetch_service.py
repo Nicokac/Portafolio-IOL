@@ -86,17 +86,34 @@ def _compute_dataset_hash(df: pd.DataFrame | None) -> str:
         return hashlib.sha1(payload).hexdigest()
 
 
-def _available_types(psvc: Any, symbols: tuple[str, ...]) -> tuple[str, ...]:
-    mapping: set[str] = set()
-    for symbol in symbols:
-        try:
-            asset_type = psvc.classify_asset_cached(symbol)
-        except Exception:  # pragma: no cover - defensive guard
-            asset_type = ""
-        normalized = str(asset_type or "").strip()
-        if normalized:
-            mapping.add(normalized)
-    return tuple(sorted(mapping))
+def _available_types(df: pd.DataFrame) -> tuple[str, ...]:
+    if not isinstance(df, pd.DataFrame) or df.empty or "tipo" not in df.columns:
+        return ()
+
+    collected: list[str] = []
+    seen: set[str] = set()
+
+    for value in df["tipo"].tolist():
+        if value in (None, ""):
+            continue
+        if isinstance(value, float):
+            try:
+                if pd.isna(value):
+                    continue
+            except Exception:
+                pass
+            candidate = str(value)
+        elif isinstance(value, str):
+            candidate = value
+        else:
+            candidate = str(value)
+        if not candidate:
+            continue
+        if candidate not in seen:
+            collected.append(candidate)
+            seen.add(candidate)
+
+    return tuple(sorted(collected))
 
 
 def _quote_pairs(df: pd.DataFrame) -> list[tuple[str, str]]:
@@ -317,7 +334,7 @@ class PortfolioDataFetchService:
             symbols = unique_symbols(df_pos["simbolo"])
         else:
             symbols = ()
-        types = _available_types(psvc, symbols)
+        types = _available_types(df_pos)
         pairs = _quote_pairs(df_pos)
         quotes = fetch_quotes_bulk(cli, pairs) if pairs else {}
         return PortfolioDataset(

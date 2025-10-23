@@ -238,10 +238,6 @@ def apply_filters(
                     pass
             return df_view
 
-        with _profile_stage("classify_assets", rows=len(df_view)) as stage_classify:
-            df_view["tipo"] = df_view["simbolo"].astype(str).map(psvc.classify_asset_cached)
-        _record_stage("classify_assets", stage_classify)
-
         if controls.selected_types:
             with _profile_stage("apply_type_filter", filters=len(controls.selected_types)) as stage_type:
                 df_view = df_view[df_view["tipo"].isin(controls.selected_types)].copy()
