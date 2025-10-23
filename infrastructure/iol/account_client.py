@@ -112,13 +112,21 @@ class IOLAccountClient:
         response.raise_for_status()
         return response
 
-    def fetch_balances(self) -> AccountCashSummary:
+    def fetch_account_status(self) -> Mapping[str, Any]:
         url = f"{self._api_base}/estadocuenta"
         response = self._request("GET", url)
         try:
             payload = response.json() or {}
         except ValueError as exc:  # pragma: no cover - unexpected payload
             logger.warning("Respuesta inválida de /estadocuenta: %s", exc)
+            return {}
+        if not isinstance(payload, Mapping):
+            return {}
+        return payload
+
+    def fetch_balances(self) -> AccountCashSummary:
+        payload = self.fetch_account_status()
+        if not isinstance(payload, Mapping):
             return AccountCashSummary()
         return self._parse_payload(payload)
 
