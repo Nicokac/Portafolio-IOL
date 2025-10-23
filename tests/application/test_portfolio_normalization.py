@@ -5,6 +5,9 @@ import math
 from application.portfolio_service import calc_rows, normalize_positions
 
 
+IOL_ASSET_TYPES: list[str] = ["Cedear", "Acciones", "Bono", "Letra", "FCI"]
+
+
 def _get_payload(**overrides):
     base = {
         "simbolo": "GGAL",
@@ -18,7 +21,7 @@ def _get_payload(**overrides):
         "tienePanel": True,
         "riesgo": "Baja",
         "valorizado": 1234.5,
-        "titulo": {"tipo": "Accion", "descripcion": "Accion Local"},
+        "titulo": {"tipo": "Acciones", "descripcion": "Acciones Locales"},
     }
     base.update(overrides)
     return {"activos": [base]}
@@ -54,11 +57,11 @@ def test_normalize_positions_preserves_metadata():
     assert math.isclose(row["variacionDiaria"], 1.23)
     assert bool(row["tienePanel"]) is True
     assert row["riesgo"] == "Baja"
-    assert row["titulo_tipo_original"] == "Accion"
-    assert row["titulo_descripcion_original"] == "Accion Local"
-    assert row["tipo"] == "Accion"
-    assert row["tipo_iol"] == "Accion"
-    assert row["tipo_estandar"] == "Accion"
+    assert row["titulo_tipo_original"] == "Acciones"
+    assert row["titulo_descripcion_original"] == "Acciones Locales"
+    assert row["tipo"] == "Acciones"
+    assert row["tipo_iol"] == "Acciones"
+    assert row["tipo_estandar"] == "Acciones"
     assert math.isclose(row["valorizado"], 1234.5)
 
 
@@ -78,6 +81,52 @@ def test_calc_rows_uses_payload_price_and_variation_when_quotes_absent():
     assert math.isclose(df_result.loc[0, "valor_actual"], expected_valor_actual)
 
     assert "tipo_iol" in df_result.columns
-    assert df_result.loc[0, "tipo_iol"] == "Accion"
-    assert df_result.loc[0, "tipo_estandar"] == "Accion"
+    assert df_result.loc[0, "tipo_iol"] == "Acciones"
+    assert df_result.loc[0, "tipo_estandar"] == "Acciones"
 
+
+def test_normalize_positions_preserves_all_iol_types():
+    payload = {"activos": []}
+    for idx, tipo in enumerate(IOL_ASSET_TYPES):
+        override = _get_payload(
+            simbolo=f"SYM{idx}",
+            titulo={"tipo": tipo, "descripcion": f"{tipo} directo"},
+            cantidad=idx + 1,
+            costoUnitario=100 + idx,
+            ultimoPrecio=120 + idx,
+            variacionDiaria=0.5,
+            valorizado=float((idx + 1) * (120 + idx)),
+        )
+        payload["activos"].extend(override["activos"])
+
+    df = normalize_positions(payload)
+
+    assert set(df["tipo"]) == set(IOL_ASSET_TYPES)
+    assert set(df["tipo_iol"]) == set(IOL_ASSET_TYPES)
+    assert set(df["tipo_estandar"]) == set(IOL_ASSET_TYPES)
+
+
+def test_calc_rows_preserves_iol_types_for_all_positions():
+    payload = {"activos": []}
+    for idx, tipo in enumerate(IOL_ASSET_TYPES):
+        override = _get_payload(
+            simbolo=f"AS{idx}",
+            titulo={"tipo": tipo, "descripcion": f"{tipo} directo"},
+            cantidad=idx + 2,
+            costoUnitario=90 + idx,
+            ultimoPrecio=130 + idx,
+            variacionDiaria=1.5,
+            valorizado=float((idx + 2) * (130 + idx)),
+        )
+        payload["activos"].extend(override["activos"])
+
+    df_pos = normalize_positions(payload)
+
+    def _quote_fn(_market: str, _symbol: str):
+        return {}
+
+    df_result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
+
+    assert set(df_result["tipo"]) == set(IOL_ASSET_TYPES)
+    assert set(df_result["tipo_iol"]) == set(IOL_ASSET_TYPES)
+    assert set(df_result["tipo_estandar"]) == set(IOL_ASSET_TYPES)

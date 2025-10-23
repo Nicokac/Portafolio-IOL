@@ -405,6 +405,9 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
             "riesgo",
             "titulo_tipo_original",
             "titulo_descripcion_original",
+            "tipo",
+            "tipo_iol",
+            "tipo_estandar",
             "valorizado",
         ],
     )
