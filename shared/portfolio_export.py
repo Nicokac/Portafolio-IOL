@@ -17,6 +17,7 @@ import plotly.graph_objects as go
 
 from shared.export import fig_to_png_bytes
 from shared.portfolio_utils import unique_symbols
+from ui.utils.formatters import format_asset_type
 
 _unique_symbols = unique_symbols
 
@@ -211,6 +212,15 @@ def _ensure_dataframe(data) -> pd.DataFrame:
         return pd.DataFrame(data)
     except ValueError:
         return pd.DataFrame()
+
+
+def _format_tipo_column(df: pd.DataFrame, column: str = "tipo") -> pd.DataFrame:
+    if not isinstance(df, pd.DataFrame):
+        return pd.DataFrame()
+    formatted = df.copy()
+    if column in formatted.columns:
+        formatted[column] = formatted[column].map(format_asset_type)
+    return formatted
 
 
 def _safe_float(value) -> float | None:
@@ -423,7 +433,7 @@ def _chart_pl_top(snapshot: PortfolioSnapshotExport, limit: int) -> go.Figure | 
     df = snapshot.positions
     if df is None or df.empty or "pl" not in df.columns:
         return None
-    data = df.copy()
+    data = _format_tipo_column(df)
     data["pl"] = pd.to_numeric(data["pl"], errors="coerce")
     data = data.dropna(subset=["pl"]).sort_values("pl", ascending=False).head(limit)
     if data.empty:
@@ -447,7 +457,7 @@ def _chart_composition(snapshot: PortfolioSnapshotExport, limit: int) -> go.Figu
         return None
     if "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    data = df.copy()
+    data = _format_tipo_column(df)
     data["valor_actual"] = pd.to_numeric(data["valor_actual"], errors="coerce")
     data = data.dropna(subset=["valor_actual"]).groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
     data = data.sort_values("valor_actual", ascending=False)
@@ -471,7 +481,7 @@ def _chart_distribution(snapshot: PortfolioSnapshotExport, limit: int) -> go.Fig
         return None
     if "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    data = df.copy()
+    data = _format_tipo_column(df)
     data["valor_actual"] = pd.to_numeric(data["valor_actual"], errors="coerce")
     data = data.dropna(subset=["valor_actual"]).groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
     data = data.sort_values("valor_actual", ascending=False)
@@ -529,7 +539,7 @@ def _chart_heatmap(snapshot: PortfolioSnapshotExport, limit: int) -> go.Figure |
         value_col = "pl_pct"
     if value_col is None:
         return None
-    data = df.copy()
+    data = _format_tipo_column(df)
     data[value_col] = pd.to_numeric(data[value_col], errors="coerce")
     pivot = data.pivot_table(index="tipo", columns="simbolo", values=value_col, aggfunc="sum")
     pivot = pivot.sort_index().fillna(0.0)
@@ -638,10 +648,11 @@ def build_rankings(
         share = None
         if np.isfinite(total_ref) and not np.isclose(total_ref, 0.0):
             share = (data[column] / total_ref) * 100.0
+        tipo_series = data.get("tipo", pd.Series(dtype=str)).astype(str).map(format_asset_type)
         data = data.assign(
             Rank=range(1, len(data) + 1),
             Símbolo=data.get("simbolo", pd.Series(dtype=str)).astype(str),
-            Tipo=data.get("tipo", pd.Series(dtype=str)).astype(str),
+            Tipo=tipo_series,
             Valor=data[column],
         )
         if share is not None:
@@ -713,17 +724,17 @@ def assemble_tables(
             kpis.insert(1, "generated_at", snapshot.generated_at.isoformat())
     tables["kpis"] = kpis
 
-    positions = snapshot.positions.copy()
+    positions = _format_tipo_column(snapshot.positions)
     if not positions.empty:
         positions.insert(0, "snapshot", snapshot.name)
     tables["positions"] = positions
 
-    by_symbol = snapshot.contributions_by_symbol.copy()
+    by_symbol = _format_tipo_column(snapshot.contributions_by_symbol)
     if not by_symbol.empty:
         by_symbol.insert(0, "snapshot", snapshot.name)
     tables["contribution_by_symbol"] = by_symbol
 
-    by_type = snapshot.contributions_by_type.copy()
+    by_type = _format_tipo_column(snapshot.contributions_by_type)
     if not by_type.empty:
         by_type.insert(0, "snapshot", snapshot.name)
     tables["contribution_by_type"] = by_type

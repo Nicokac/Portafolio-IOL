@@ -31,7 +31,7 @@ def portfolio_service(monkeypatch):
         df["pl"] = df["valor_actual"] - df["costo"]
         df["pl_d"] = df["pl"]
         df["pl_pct"] = 9.5
-        df["tipo"] = "Bono / ON"
+        df["tipo"] = "Bono"
         return df
 
     monkeypatch.setattr(portfolio_view, "_apply_filters", _fake_apply_filters)
