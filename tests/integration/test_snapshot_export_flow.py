@@ -59,7 +59,7 @@ def _portfolio_frame(value_scale: float) -> pd.DataFrame:
         {
             "simbolo": ["AL30", "GGAL"],
             "mercado": ["BCBA", "BCBA"],
-            "tipo": ["Bono / ON", "Acción"],
+            "tipo": ["Bono", "Acción"],
             "valor_actual": [120.0, 200.0],
             "costo": [90.0, 150.0],
             "pl": [30.0, 50.0],

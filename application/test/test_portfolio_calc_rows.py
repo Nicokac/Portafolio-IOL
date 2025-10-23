@@ -11,6 +11,7 @@ def test_calc_rows_integration():
                 "mercado": "BCBA",
                 "cantidad": 100,
                 "costoUnitario": 90,
+                "titulo": {"tipo": "Bono"},
             }
         ],
         "_cash_balances": {"cash_ars": 200.0},
@@ -29,7 +30,7 @@ def test_calc_rows_integration():
     assert len(df) == 1
     assert df.attrs.get("cash_balances", {}).get("cash_ars") == 200.0
     row = df.iloc[0]
-    assert row["tipo"] == "Bono / ON"
+    assert row["tipo"] == "Bono"
     assert row["costo"] == pytest.approx(90.0)
     assert row["valor_actual"] == pytest.approx(110.0)
     assert row["pl"] == pytest.approx(20.0)
@@ -90,7 +91,7 @@ def test_calc_rows_handles_positional_quote_client():
         (
             "AL30",
             {"ultimoPrecio": 110.0, "cierreAnterior": 100.0},
-            "Bono / ON",
+            "Bono",
             100,
             90.0,
         ),
@@ -106,6 +107,7 @@ def test_calc_rows_derives_chg_pct(simbolo, quote_data, tipo, cantidad, costo_un
                 "mercado": "BCBA",
                 "cantidad": cantidad,
                 "costoUnitario": costo_unitario,
+                "titulo": {"tipo": tipo},
             }
         ]
     }

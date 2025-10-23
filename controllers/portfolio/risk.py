@@ -33,6 +33,7 @@ from ui.charts import _apply_layout, plot_correlation_heatmap, plot_factor_betas
 from ui.export import PLOTLY_CONFIG
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.notifications import render_risk_badge
+from ui.utils.formatters import format_asset_type
 
 logger = logging.getLogger(__name__)
 
@@ -231,7 +232,7 @@ def _build_type_metadata(
         sym_key = _normalize_symbol(symbol)
         if sym_key:
             symbol_type_map[sym_key] = canonical
-        display_labels.setdefault(canonical, canonical)
+        display_labels.setdefault(canonical, format_asset_type(canonical))
 
     series = pd.Series(normalized_values, index=df.index, dtype="object")
     return series, display_labels, symbol_type_map
@@ -484,7 +485,7 @@ def render_risk_analysis(
                 [
                     type_display_map.get(
                         type_name,
-                        type_name,
+                        format_asset_type(type_name),
                     )
                     for type_name, _, _ in type_groups
                 ]
@@ -496,7 +497,7 @@ def render_risk_analysis(
             with display_host:
                 display_label = type_display_map.get(
                     type_name,
-                    type_name,
+                    format_asset_type(type_name),
                 )
                 if len(set(subset_symbols)) < 2:
                     st.warning(f"⚠️ No hay suficientes activos del tipo {display_label} para calcular correlaciones.")

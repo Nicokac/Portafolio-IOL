@@ -23,7 +23,7 @@ def _frame(total_value: float) -> pd.DataFrame:
         {
             "simbolo": ["AL30", "GGAL"],
             "mercado": ["BCBA", "BCBA"],
-            "tipo": ["Bono / ON", "Acción"],
+            "tipo": ["Bono", "Acción"],
             "valor_actual": [80.0, 120.0],
             "costo": [70.0, 100.0],
             "pl": [10.0, 20.0],
