@@ -9,6 +9,7 @@ import pytest
 
 import controllers.portfolio.charts as charts_mod
 import ui.export as export_mod
+import ui.summary_metrics as summary_mod
 import ui.tables as tables_mod
 from application.portfolio_service import PortfolioTotals
 from controllers.portfolio.charts import render_basic_section
@@ -52,6 +53,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         portfolio_mod._INCREMENTAL_CACHE.clear()
         monkeypatch.setattr(portfolio_mod, "render_favorite_badges", lambda *a, **k: None)
         monkeypatch.setattr(portfolio_mod, "render_favorite_toggle", lambda *a, **k: None)
+        monkeypatch.setattr(summary_mod, "st", fake_st)
 
         class _FavoritesStub:
             def sort_options(self, options):
@@ -1094,3 +1096,82 @@ def test_render_basic_section_handles_missing_analytics(
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
+
+
+def test_currency_toggle_refreshes_summary_only(
+    _portfolio_setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[0, 0])
+
+    totals = PortfolioTotals(
+        total_value=10_000.0,
+        total_cost=8_000.0,
+        total_pl=2_000.0,
+        total_pl_pct=25.0,
+        total_cash=500.0,
+        total_cash_ars=500.0,
+        total_cash_usd=0.0,
+        total_cash_combined=500.0,
+        usd_rate=900.0,
+    )
+
+    (
+        portfolio_mod,
+        basic,
+        advanced,
+        risk,
+        fundamental,
+        technical_badge,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(fake_st, totals=totals)
+
+    original_summary = portfolio_mod.render_summary_section
+    summary_calls: list[PortfolioTotals] = []
+
+    table_calls = MagicMock()
+    charts_calls = MagicMock()
+
+    monkeypatch.setattr(portfolio_mod, "render_table_section", lambda *a, **k: table_calls())
+    monkeypatch.setattr(portfolio_mod, "render_charts_section", lambda *a, **k: charts_calls())
+
+    def _recording_summary(*args, **kwargs):
+        summary_calls.append(kwargs.get("totals"))
+        return original_summary(*args, **kwargs)
+
+    monkeypatch.setattr(portfolio_mod, "render_summary_section", _recording_summary)
+
+    render_portfolio_section(
+        DummyCtx(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
+
+    summary_refs = fake_st.session_state["render_refs"]["summary"]
+    first_hash = summary_refs["summary_hash"]
+    assert first_hash.endswith("currency:ARS")
+    assert len(summary_calls) == 1
+    initial_table_calls = table_calls.call_count
+    initial_chart_calls = charts_calls.call_count
+
+    fake_st.session_state["portfolio_summary_currency"] = "USD"
+
+    render_portfolio_section(
+        DummyCtx(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
+
+    summary_refs = fake_st.session_state["render_refs"]["summary"]
+    second_hash = summary_refs["summary_hash"]
+    assert second_hash.endswith("currency:USD")
+    assert second_hash != first_hash
+    assert len(summary_calls) == 2
+
+    # Tables and charts should reuse previous render when dataset is untouched
+    assert table_calls.call_count == initial_table_calls
+    assert charts_calls.call_count == initial_chart_calls

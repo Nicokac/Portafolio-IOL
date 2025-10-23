@@ -14,6 +14,8 @@ _CURRENCY_STATE_KEY = "portfolio_summary_currency"
 _ACTIVE_FX_LABEL_KEY = "portfolio_summary_fx_label"
 _ACTIVE_FX_VALUE_KEY = "portfolio_summary_fx_value"
 
+CURRENCY_STATE_KEY = _CURRENCY_STATE_KEY
+
 
 @dataclass(frozen=True)
 class _MetricValue:
@@ -32,6 +34,12 @@ def _ensure_currency_state() -> str:
         state[_CURRENCY_STATE_KEY] = "ARS"
     raw = state.get(_CURRENCY_STATE_KEY)
     return raw if isinstance(raw, str) and raw in {"ARS", "USD"} else "ARS"
+
+
+def get_active_summary_currency() -> str:
+    """Return the active currency selected for the summary block."""
+
+    return _ensure_currency_state()
 
 
 def _read_cash_metadata(df_view: Any) -> Mapping[str, Any]:
@@ -98,7 +106,12 @@ def _convert(value: float, *, source: str, target: str, rate: float | None) -> f
     return None
 
 
-def _format_metric(metric: _MetricValue, *, target_currency: str, rate: float | None) -> tuple[str, str, dict[str, Any]]:
+def _format_metric(
+    metric: _MetricValue,
+    *,
+    target_currency: str,
+    rate: float | None,
+) -> tuple[str, str, dict[str, Any]]:
     converted = metric.value
     if metric.value is not None:
         converted = _convert(metric.value, source=metric.base_currency, target=target_currency, rate=rate)
@@ -154,7 +167,10 @@ def render_summary_metrics(
 
     cash_meta = _read_cash_metadata(df_view)
     rate_ts = _extract_timestamp(cash_meta)
-    rate_help_bits = ["Fuente: /estadocuenta"]
+    rate_help_bits = [
+        "Tipo de cambio aplicado según cotización vigente (Oficial o MEP).",
+        "Fuente: /estadocuenta",
+    ]
     if rate_label != "Desconocido":
         rate_help_bits.append(f"Referencia: {rate_label}")
     if rate_ts:
@@ -189,7 +205,12 @@ def render_summary_metrics(
             "USD",
             "Saldo líquido informado en dólares.",
         ),
-        _MetricValue("Money Market", totals.total_cash, "ARS", "Posiciones a la vista o parking contabilizadas como liquidez."),
+        _MetricValue(
+            "Money Market",
+            totals.total_cash,
+            "ARS",
+            "Incluye saldos de Money Market y valores de /estadocuenta.",
+        ),
     ]
 
     cash_total_value: float | None = totals.total_cash_combined
@@ -203,7 +224,7 @@ def render_summary_metrics(
                 break
             converted_cash += converted
         cash_total_value = converted_cash
-    cash_total_help = "Incluye saldos líquidos y posiciones de Money Market provenientes de /estadocuenta."
+    cash_total_help = "Incluye saldos de Money Market y valores de /estadocuenta."
     cash_metrics.append(_MetricValue("Cash total", cash_total_value, currency, cash_total_help))
 
     liquidity_block = st.container(border=True)
@@ -223,5 +244,8 @@ def render_summary_metrics(
         )
         row_total.metric(cash_total_label, cash_total_display, **total_extra)
 
-    st.caption("Los saldos en efectivo incluyen posiciones Money Market y valores actualizados desde /estadocuenta.")
+    st.caption(
+        "Los saldos en efectivo incluyen posiciones Money Market y valores de /estadocuenta. "
+        f"Moneda base seleccionada: {currency}."
+    )
     return True

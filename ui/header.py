@@ -227,12 +227,25 @@ def render_fx_summary_in_header(rates: dict, palette=None):
             "padding:0.9rem 1.1rem; border-radius:0.9rem; text-align:center; "
             f"background-color:{bg_color}; color:{text_color}; border:{border}; {shadow}"
         )
+        label_html = (
+            "<span style=\"font-size:0.82rem; letter-spacing:0.03em; "
+            "text-transform:uppercase; opacity:0.85;\">"
+            f"{label}</span>"
+        )
+        value_html = (
+            "<span style=\"font-size:1.45rem; font-weight:700; line-height:1;\">"
+            f"{value_str}</span>"
+        )
+        note_html = (
+            "<span style=\"font-size:0.75rem; opacity:0.75;\">"
+            f"{sublabel}</span>"
+        )
         col.markdown(
             f"""
             <div style="{card_style}">
-                <span style="font-size:0.82rem; letter-spacing:0.03em; text-transform:uppercase; opacity:0.85;">{label}</span>
-                <span style="font-size:1.45rem; font-weight:700; line-height:1;">{value_str}</span>
-                <span style="font-size:0.75rem; opacity:0.75;">{sublabel}</span>
+                {label_html}
+                {value_html}
+                {note_html}
             </div>
             """,
             unsafe_allow_html=True,

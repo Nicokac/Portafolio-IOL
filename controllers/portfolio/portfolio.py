@@ -61,6 +61,7 @@ from ui.lazy import (
 from ui.lazy.runtime import current_dataset_token
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from ui.sidebar_controls import render_sidebar
+from ui.summary_metrics import get_active_summary_currency
 
 from .charts import (
     render_advanced_analysis,
@@ -1339,7 +1340,8 @@ def render_basic_tab(
     charts_lazy["placeholder"] = charts_entry.get("trigger_placeholder", charts_entry.get("placeholder"))
 
     summary_signature = (portfolio_id, summary_filters)
-    summary_hash = _summary_totals_hash(totals)
+    summary_currency = get_active_summary_currency()
+    summary_hash = f"{_summary_totals_hash(totals)}|currency:{summary_currency}"
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
     summary_entry_hash = summary_entry.get("dataset_hash")
     summary_entry.setdefault("dataset_hash", summary_entry_hash or dataset_token)
