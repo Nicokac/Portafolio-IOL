@@ -3,7 +3,7 @@
 import csv
 from pathlib import Path
 
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
@@ -39,7 +39,7 @@ def test_lazy_tab_render_records_metrics(monkeypatch, _portfolio_setup) -> None:
     monkeypatch.setattr(portfolio_mod, "profile_block", _fake_profile_block)
 
     portfolio_mod.render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={"ccl": 0.0},
         view_model_service_factory=view_model_factory,

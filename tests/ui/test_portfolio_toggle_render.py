@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import ui.lazy.runtime as lazy_runtime
-from tests.ui.test_portfolio_ui import FakeStreamlit, _ContextManager, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit, _ContextManager
 
 
 @pytest.fixture
@@ -64,7 +64,7 @@ def test_portfolio_panel_renders_without_lazy_toggle(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(portfolio_mod, "render_charts_section", lambda *a, **k: charts_calls())
 
     portfolio_mod.render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,

@@ -7,7 +7,7 @@ from controllers.portfolio.portfolio import (
     _VISUAL_CACHE_STATE_KEY,
     render_portfolio_section,
 )
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def test_visual_cache_resets_when_user_changes(
@@ -39,7 +39,7 @@ def test_visual_cache_resets_when_user_changes(
     ) = _portfolio_setup(fake_st)
 
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,
@@ -54,7 +54,7 @@ def test_visual_cache_resets_when_user_changes(
     current_user["value"] = "user-2"
 
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,

@@ -20,6 +20,7 @@ from services.portfolio_view import (
 from shared.favorite_symbols import FavoriteSymbols
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import UIFakeStreamlit as FakeStreamlit
+from tests.fixtures.streamlit import _ContextManager
 from ui.notifications import tab_badge_label, tab_badge_suffix
 
 

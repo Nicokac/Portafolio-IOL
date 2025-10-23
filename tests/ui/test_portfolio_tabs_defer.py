@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from controllers.portfolio.portfolio import render_portfolio_section
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def _run_portfolio(
@@ -12,7 +12,7 @@ def _run_portfolio(
     notifications_factory,
 ) -> None:
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={"ccl": 0.0},
         view_model_service_factory=view_model_factory,

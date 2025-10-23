@@ -49,9 +49,12 @@ class _ViewServiceStub:
         controls: Controls,
         cli: Any,
         psvc: Any,
+        *,
         lazy_metrics: bool = False,
+        dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
     ) -> SimpleNamespace:
-        metrics = SimpleNamespace(ccl_rate=None, all_symbols=["GGAL"])
+        metrics = SimpleNamespace(ccl_rate=None, all_symbols=["GGAL"], dataset_hash=dataset_hash)
         return SimpleNamespace(
             positions=df_pos,
             controls=controls,

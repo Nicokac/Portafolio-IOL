@@ -8,7 +8,7 @@ import pytest
 
 import tests.ui.test_streamlit_lazy_fix as _lazy_stubs  # noqa: F401 - ensure stubs are registered
 from controllers.portfolio import portfolio as portfolio_mod
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def test_lazy_trigger_state_survives_reruns(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,7 +164,7 @@ def test_visual_cache_telemetry_never_flips_false(monkeypatch: pytest.MonkeyPatc
     ) = _portfolio_setup(fake_st)
 
     portfolio_mod.render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=SimpleNamespace(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,
@@ -172,7 +172,7 @@ def test_visual_cache_telemetry_never_flips_false(monkeypatch: pytest.MonkeyPatc
     )
 
     portfolio_mod.render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=SimpleNamespace(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,

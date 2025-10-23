@@ -12,7 +12,7 @@ from services.portfolio_view import (
     PortfolioContributionMetrics,
     PortfolioViewSnapshot,
 )
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 # Stub heavy optional dependencies used by portfolio controllers during import time.
 statsmodels_mod = types.ModuleType("statsmodels")
@@ -137,7 +137,7 @@ def test_visual_sections_are_cached(monkeypatch: pytest.MonkeyPatch, _portfolio_
     ) = _portfolio_setup(fake_st)
 
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,
@@ -149,7 +149,7 @@ def test_visual_sections_are_cached(monkeypatch: pytest.MonkeyPatch, _portfolio_
     assert charts.call_count == 1
 
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=lambda: view_model_service,

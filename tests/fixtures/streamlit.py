@@ -97,14 +97,6 @@ class LoggingMixin:
         super().error(message)
 
 
-class _DummyContainer:
-    def __enter__(self) -> "_DummyContainer":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - standard context signature
-        return None
-
-
 class _ContextManager:
     def __init__(self, owner: "UIFlowMixin") -> None:
         self._owner = owner
@@ -516,7 +508,6 @@ __all__ = [
     "FakeStreamlit",
     "UIFakeStreamlit",
     "UIFlowMixin",
-    "_DummyContainer",
     "_ContextManager",
     "_Placeholder",
 ]

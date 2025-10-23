@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - La aplicación muestra los tipos de activo exactamente como los publica IOL en `titulo.tipo`, propagando el texto original sin alias ni heurísticas a todas las vistas.
 
+### Testing cleanup after asset-type simplification
+- Actualizamos la suite de UI para reutilizar los contenedores reales de `FakeStreamlit`, eliminando stubs obsoletos y restaurando la cobertura de pruebas tras la simplificación de tipos de activos.
+
 ## [0.8.3] — Reconciliación de efectivo y tasa de cambio
 ### Changed
 - `calculate_totals` evita el doble conteo del efectivo al detectar saldos duplicados entre filas IOLPORA/PARKING y `_cash_balances`, preservando la visibilidad en la tabla pero sin inflar los totales combinados.
