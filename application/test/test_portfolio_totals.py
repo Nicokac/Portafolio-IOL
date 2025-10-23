@@ -80,6 +80,54 @@ def test_calculate_totals_keeps_cash_rows_when_balances_differ():
     assert totals.usd_rate is None
 
 
+def test_calculate_totals_handles_usd_cash_equivalent_normalized():
+    df = pd.DataFrame(
+        {
+            "valor_actual": [0.0],
+            "costo": [0.0],
+            "simbolo": ["DUMMY"],
+        }
+    )
+    df.attrs["cash_balances"] = {
+        "cash_ars": 0.0,
+        "cash_usd": 401_765.812222,
+        "cash_usd_ars_equivalent": 3_615_892.31,
+        "usd_rate": 9.0,
+    }
+
+    totals = calculate_totals(df)
+
+    assert totals.total_cash == pytest.approx(0.0)
+    assert totals.total_cash_ars == pytest.approx(0.0)
+    assert totals.total_cash_usd == pytest.approx(401_765.812222)
+    assert totals.total_cash_combined == pytest.approx(3_615_892.31)
+    assert totals.usd_rate == pytest.approx(9.0)
+
+
+def test_calculate_totals_avoids_double_count_with_money_market_and_usd():
+    df = pd.DataFrame(
+        {
+            "valor_actual": [3_615_892.31],
+            "costo": [0.0],
+            "simbolo": ["IOLPORA"],
+        }
+    )
+    df.attrs["cash_balances"] = {
+        "cash_ars": 0.0,
+        "cash_usd": 401_765.812222,
+        "cash_usd_ars_equivalent": 3_615_892.31,
+        "usd_rate": 9.0,
+    }
+
+    totals = calculate_totals(df)
+
+    assert totals.total_cash == pytest.approx(3_615_892.31)
+    assert totals.total_cash_ars == pytest.approx(0.0)
+    assert totals.total_cash_usd == pytest.approx(401_765.812222)
+    assert totals.total_cash_combined == pytest.approx(3_615_892.31)
+    assert totals.usd_rate == pytest.approx(9.0)
+
+
 def test_detect_currency_uses_overrides():
     assert detect_currency("PRPEDOB", None) == "USD"
     assert detect_currency("alua", "bono") == "ARS"

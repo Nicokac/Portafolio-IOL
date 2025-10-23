@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any, Mapping
 
@@ -131,8 +132,7 @@ class IOLAccountClient:
             cash_ars += top_ars
 
         top_usd = _as_float(payload.get("disponibleEnDolares"))
-        if top_usd is not None:
-            cash_usd += top_usd
+        usd_accounts_total = 0.0
 
         accounts = []
         if isinstance(payload.get("cuentas"), list):
@@ -154,11 +154,45 @@ class IOLAccountClient:
             if amount is None:
                 continue
             if currency == "USD":
-                cash_usd += amount
+                usd_accounts_total += amount
                 if usd_rate is None:
                     usd_rate = _as_float(entry.get("cotizacion")) or _as_float(entry.get("cotizacionCartera"))
             elif currency == "ARS":
                 cash_ars += amount
+
+        cash_usd_top = 0.0
+        matches_accounts = False
+        if top_usd is not None:
+            normalized_top_usd = top_usd
+            if usd_rate and usd_rate > 0:
+                should_normalize = False
+                if usd_accounts_total:
+                    expected_ars = usd_accounts_total * usd_rate
+                    tolerance = max(10.0, abs(expected_ars) * 0.01)
+                    should_normalize = math.isclose(normalized_top_usd, expected_ars, rel_tol=0.05, abs_tol=tolerance)
+                elif top_ars and top_ars > 0:
+                    should_normalize = normalized_top_usd * usd_rate > (top_ars * 1.5)
+
+                if should_normalize:
+                    # El endpoint puede devolver ``disponibleEnDolares`` ya convertido a ARS
+                    # (caso cuentas locales) o realmente en USD (cuentas billete). Cuando
+                    # detectamos que coincide con el total USD detallado en ``cuentas`` o
+                    # desborda contra el saldo en pesos, lo reescalamos para conservar USD.
+                    normalized_top_usd = normalized_top_usd / usd_rate
+
+            cash_usd_top = float(normalized_top_usd)
+            if usd_accounts_total:
+                matches_accounts = math.isclose(
+                    cash_usd_top,
+                    usd_accounts_total,
+                    rel_tol=0.01,
+                    abs_tol=max(0.01, abs(usd_accounts_total) * 0.01),
+                )
+
+        if matches_accounts:
+            cash_usd = usd_accounts_total
+        else:
+            cash_usd = cash_usd_top + usd_accounts_total
 
         return AccountCashSummary(cash_ars=cash_ars, cash_usd=cash_usd, usd_rate=usd_rate)
 
