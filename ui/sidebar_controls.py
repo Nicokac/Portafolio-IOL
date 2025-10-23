@@ -11,6 +11,7 @@ import streamlit as st
 
 from domain.models import Controls
 from ui.actions import render_action_menu
+from ui.utils.formatters import format_asset_type
 
 _FLASH_FLAG_KEY = "_sidebar_controls_flash_flag"
 _SYMBOLS_STATE_KEY = "_sidebar_all_symbols"
@@ -262,6 +263,7 @@ def render_controls_panel(
                 available_types,
                 default=[t for t in (defaults["selected_types"] or available_types) if t in available_types],
                 help="Muestra únicamente las clases de activo seleccionadas.",
+                format_func=format_asset_type,
             )
             overview_container = filter_section.container()
 

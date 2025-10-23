@@ -65,7 +65,7 @@ def _fake_apply_factory(counter):
         base = pd.DataFrame(
             {
                 "simbolo": ["AL30", "GGAL"],
-                "tipo": ["Bono / ON", "Acción"],
+                "tipo": ["Bono", "Acción"],
                 "valor_actual": [120.0 + counter["count"], 80.0 + counter["count"]],
                 "costo": [100.0, 70.0],
                 "pl": [20.0 + counter["count"], 10.0 + counter["count"]],

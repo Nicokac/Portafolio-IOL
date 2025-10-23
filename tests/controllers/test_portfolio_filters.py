@@ -62,7 +62,7 @@ def test_apply_filters_filters_positions(patched_filters, monkeypatch):
     controls = SimpleNamespace(
         hide_cash=False,
         selected_syms=["AL30", "GOOG"],
-        selected_types=["Bono / ON"],
+        selected_types=["Bono"],
         symbol_query="AL",
     )
 
@@ -76,7 +76,7 @@ def test_apply_filters_filters_positions(patched_filters, monkeypatch):
         def calc_rows(self, quote_fn, df, exclude_syms=None):  # noqa: ANN001 - mimic signature
             df = df.copy()
             df["valor_actual"] = 100
-            df["tipo"] = df["simbolo"].map({"AL30": "Bono / ON", "GOOG": "Acción"}).fillna("Otro")
+            df["tipo"] = df["simbolo"].map({"AL30": "Bono", "GOOG": "Acción"}).fillna("Otro")
             return df
 
     df_view = filters_mod.apply_filters(df_pos, controls, cli=None, psvc=DummyPSvc())

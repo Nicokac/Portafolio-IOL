@@ -20,6 +20,7 @@ from services.portfolio_view import (
     PortfolioViewSnapshot,
 )
 from shared.favorite_symbols import FavoriteSymbols
+from shared.portfolio_export import assemble_tables
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import UIFakeStreamlit as FakeStreamlit
 from tests.fixtures.streamlit import _ContextManager
@@ -27,6 +28,9 @@ from tests.fixtures.streamlit import _ContextManager
 
 IOL_ASSET_TYPES: list[str] = ["Cedear", "Acciones", "Bono", "Letra", "FCI"]
 from ui.notifications import tab_badge_label, tab_badge_suffix
+from ui.utils.formatters import format_asset_type
+
+FRIENDLY_ASSET_TYPES: list[str] = [format_asset_type(tp) for tp in IOL_ASSET_TYPES]
 
 
 @pytest.fixture
@@ -443,6 +447,7 @@ def test_portfolio_ui_respects_raw_iol_asset_types(
             "Filtrar por tipo",
             available_types_arg,
             default=list(available_types_arg),
+            format_func=format_asset_type,
         )
         controls_obj = Controls(
             refresh_secs=30,
@@ -498,7 +503,7 @@ def test_portfolio_ui_respects_raw_iol_asset_types(
 
     type_filter = next(call for call in fake_st.multiselect_calls if call["label"] == "Filtrar por tipo")
     assert type_filter["options"] == IOL_ASSET_TYPES
-    assert type_filter["rendered"] == IOL_ASSET_TYPES
+    assert type_filter["rendered"] == FRIENDLY_ASSET_TYPES
 
     table_df: pd.DataFrame | None = None
     for data, _ in fake_st.dataframes:
@@ -508,16 +513,21 @@ def test_portfolio_ui_respects_raw_iol_asset_types(
             break
 
     assert table_df is not None, "La tabla principal debe registrar datos para validar tipos"
-    assert sorted(table_df["Tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+    assert sorted(table_df["Tipo"].unique()) == sorted(FRIENDLY_ASSET_TYPES)
 
     assert "csv" in captured
     csv_snapshot = captured["csv"]
-    assert sorted(csv_snapshot.positions["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
-    assert sorted(csv_snapshot.contributions_by_symbol["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
-    assert sorted(csv_snapshot.contributions_by_type["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+    tables = assemble_tables(csv_snapshot, metric_keys=None, include_rankings=True, include_history=True, limit=10)
+    positions_table = tables["positions"]
+    symbol_table = tables["contribution_by_symbol"]
+    type_table = tables["contribution_by_type"]
 
-    for tipo in csv_snapshot.positions["tipo"].unique():
-        assert tipo in IOL_ASSET_TYPES
+    assert sorted(positions_table["tipo"].unique()) == sorted(FRIENDLY_ASSET_TYPES)
+    assert sorted(symbol_table["tipo"].unique()) == sorted(FRIENDLY_ASSET_TYPES)
+    assert sorted(type_table["tipo"].unique()) == sorted(FRIENDLY_ASSET_TYPES)
+
+    for tipo in positions_table["tipo"].unique():
+        assert tipo in FRIENDLY_ASSET_TYPES
 
     basic.assert_called()
     advanced.assert_not_called()
@@ -904,7 +914,7 @@ def test_risk_analysis_ui_handles_missing_series(
 
     assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
     assert tab_labels, "Se esperaban pestañas de tipo en el panel de riesgo"
-    assert all(label in IOL_ASSET_TYPES for label in tab_labels[0])
+    assert all(label in FRIENDLY_ASSET_TYPES for label in tab_labels[0])
 
 
 def test_risk_analysis_warns_when_selected_type_missing(

@@ -44,12 +44,12 @@ def test_load_portfolio_data(monkeypatch):
             return pd.DataFrame(payload["activos"])
 
         def classify_asset_cached(self, sym):
-            return {"AL30": "Bono / ON", "GOOG": "Acción"}.get(sym)
+            return {"AL30": "Bono", "GOOG": "Acción"}.get(sym)
 
     df_pos, syms, types = pm.load_portfolio_data(None, DummyPSvc())
     assert list(df_pos["simbolo"]) == ["AL30", "GOOG", "AL30"]
     assert syms == ["AL30", "GOOG"]
-    assert types == ["Acción", "Bono / ON"]
+    assert types == ["Acción", "Bono"]
 
 
 def test_load_portfolio_data_reruns_on_expired_session(monkeypatch):
@@ -198,7 +198,7 @@ def test_apply_filters(monkeypatch):
     controls = Controls(
         hide_cash=False,
         selected_syms=["AL30", "GOOG"],
-        selected_types=["Bono / ON"],
+        selected_types=["Bono"],
         symbol_query="AL",
     )
 
@@ -217,7 +217,7 @@ def test_apply_filters(monkeypatch):
             return df
 
         def classify_asset_cached(self, sym):
-            return {"AL30": "Bono / ON", "GOOG": "Acción"}.get(sym)
+            return {"AL30": "Bono", "GOOG": "Acción"}.get(sym)
 
     df_view = pm.apply_filters(df_pos, controls, None, DummyPSvc())
     assert list(df_view["simbolo"]) == ["AL30"]
@@ -232,7 +232,7 @@ def test_generate_basic_charts(monkeypatch):
             "pl": [10],
             "pl_%": [0.1],
             "pl_d": [5],
-            "tipo": ["Bono / ON"],
+            "tipo": ["Bono"],
         }
     )
     monkeypatch.setattr(charts_mod, "plot_pl_topn", lambda df, n: "topn")
@@ -311,7 +311,7 @@ def test_render_basic_section_with_data(monkeypatch):
             "pl": [10],
             "pl_%": [0.1],
             "pl_d": [5],
-            "tipo": ["Bono / ON"],
+            "tipo": ["Bono"],
         }
     )
     mock_totals = MagicMock()
@@ -407,7 +407,7 @@ def test_render_advanced_analysis_palette_and_log(monkeypatch):
     df = pd.DataFrame(
         {
             "simbolo": ["AL30", "GOOG"],
-            "tipo": ["Bono / ON", "Acción"],
+            "tipo": ["Bono", "Acción"],
             "valor_actual": [100, 200],
             "costo": [90, 150],
             "pl": [10, 50],
