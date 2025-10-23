@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def test_table_and_charts_defer_until_user_action(monkeypatch: pytest.MonkeyPatch, _portfolio_setup) -> None:
@@ -30,7 +30,7 @@ def test_table_and_charts_defer_until_user_action(monkeypatch: pytest.MonkeyPatc
     render_portfolio = portfolio_mod.render_portfolio_section
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -50,7 +50,7 @@ def test_table_and_charts_defer_until_user_action(monkeypatch: pytest.MonkeyPatc
         fake_st._checkbox_values[state_key] = [True]
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,

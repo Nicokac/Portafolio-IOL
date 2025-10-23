@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def _get_checkbox_key(fake_st: FakeStreamlit, label_prefix: str) -> str:
@@ -75,7 +75,7 @@ def test_lazy_table_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_set
     render_portfolio = portfolio_module.render_portfolio_section
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -90,7 +90,7 @@ def test_lazy_table_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_set
     fake_st._checkbox_values[table_key] = [True]
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -102,7 +102,7 @@ def test_lazy_table_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_set
     assert fake_st.session_state.get("load_table") is True
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -150,7 +150,7 @@ def test_lazy_charts_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_se
     render_portfolio = portfolio_module.render_portfolio_section
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -164,7 +164,7 @@ def test_lazy_charts_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_se
     fake_st._checkbox_values[chart_key] = [True]
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -176,7 +176,7 @@ def test_lazy_charts_renders_once(monkeypatch: pytest.MonkeyPatch, _portfolio_se
     assert table_calls.call_count == 0
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,

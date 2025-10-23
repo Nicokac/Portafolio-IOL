@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 
 def _patch_renderers(monkeypatch: pytest.MonkeyPatch, portfolio_module):
@@ -59,7 +59,7 @@ def test_lazy_components_do_not_rerun_app(monkeypatch: pytest.MonkeyPatch, _port
     render_portfolio = portfolio_module.render_portfolio_section
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -70,7 +70,7 @@ def test_lazy_components_do_not_rerun_app(monkeypatch: pytest.MonkeyPatch, _port
     assert charts_calls.call_count == 0
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,
@@ -87,7 +87,7 @@ def test_lazy_components_do_not_rerun_app(monkeypatch: pytest.MonkeyPatch, _port
     charts_trigger = charts_state["triggered_at"]
 
     render_portfolio(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={},
         view_model_service_factory=view_model_factory,

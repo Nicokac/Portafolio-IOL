@@ -12,7 +12,7 @@ from services.portfolio_view import (
     PortfolioViewModelService,
     PortfolioViewSnapshot,
 )
-from tests.ui.test_portfolio_ui import FakeStreamlit, _DummyContainer
+from tests.ui.test_portfolio_ui import FakeStreamlit
 
 # Stub heavy optional dependencies used by portfolio controllers during import time.
 statsmodels_mod = types.ModuleType("statsmodels")
@@ -65,8 +65,18 @@ class _LazySnapshotService:
     def _hash_dataset(self, df):  # noqa: D401 - mimic service helper
         return PortfolioViewModelService._hash_dataset(df)
 
-    def get_portfolio_view(self, df_pos, controls, cli, psvc, *, lazy_metrics: bool = False):  # noqa: ANN001
-        dataset_key = self._hash_dataset(df_pos)
+    def get_portfolio_view(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        lazy_metrics: bool = False,
+        dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
+    ):  # noqa: ANN001,D417 - compatibility shim
+        dataset_key = dataset_hash or self._hash_dataset(df_pos)
         self._dataset_key = dataset_key
         pending_metrics = ("extended_metrics",) if lazy_metrics and self.pending else ()
         history = (
@@ -92,9 +102,26 @@ class _LazySnapshotService:
             pending_metrics=pending_metrics,
         )
 
-    def compute_extended_metrics(self, df_pos, controls, cli, psvc):  # noqa: ANN001
+    def compute_extended_metrics(
+        self,
+        df_pos,
+        controls,
+        cli,
+        psvc,
+        *,
+        dataset_hash: str | None = None,
+        skip_invalidation: bool = False,
+    ):  # noqa: ANN001,D417 - compatibility shim
         self.pending = False
-        return self.get_portfolio_view(df_pos, controls, cli, psvc, lazy_metrics=False)
+        return self.get_portfolio_view(
+            df_pos,
+            controls,
+            cli,
+            psvc,
+            lazy_metrics=False,
+            dataset_hash=dataset_hash,
+            skip_invalidation=skip_invalidation,
+        )
 
 
 def _render_portfolio(
@@ -107,7 +134,7 @@ def _render_portfolio(
     (_portfolio_mod, *_rest, _vm_factory, notifications_factory) = setup_factory(fake_st)
 
     render_portfolio_section(
-        _DummyContainer(),
+        fake_st.container(),
         cli=object(),
         fx_rates={"ccl": 0.0},
         view_model_service_factory=lambda: service,
