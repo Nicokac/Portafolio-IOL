@@ -1003,7 +1003,7 @@ def test_render_basic_section_renders_heatmap_without_timeline(
     favorites_stub = DummyFavorites()
 
     monkeypatch.setattr(charts_mod, "st", fake_st)
-    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
@@ -1089,7 +1089,7 @@ def test_render_basic_section_handles_missing_analytics(
     favorites_stub = DummyFavorites()
 
     monkeypatch.setattr(charts_mod, "st", fake_st)
-    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "get_persistent_favorites", lambda: favorites_stub)

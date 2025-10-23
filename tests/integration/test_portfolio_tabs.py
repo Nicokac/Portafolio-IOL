@@ -391,7 +391,7 @@ def _run_for_tab(
     monkeypatch.setattr(tables_mod, "st", fake_st)
     monkeypatch.setattr(favorites_mod, "st", fake_st)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
-    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
     monkeypatch.setattr(portfolio_mod, "PortfolioService", lambda: object())
     monkeypatch.setattr(portfolio_mod, "TAService", lambda: ta_stub)

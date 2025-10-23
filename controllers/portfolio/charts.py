@@ -16,8 +16,8 @@ from ui.charts import (
 )
 from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from ui.favorites import render_favorite_badges, render_favorite_toggle
+from ui.summary_metrics import render_summary_metrics
 from ui.tables import render_table as render_positions_table
-from ui.tables import render_totals
 
 _HEAVY_DATA_THRESHOLD = 250
 
@@ -84,7 +84,7 @@ def render_summary(
         st.info("No hay datos del portafolio para mostrar.")
         return False
 
-    render_totals(df_view, ccl_rate=ccl_rate, totals=totals)
+    render_summary_metrics(df_view, totals=totals, ccl_rate=ccl_rate)
     render_portfolio_exports(
         snapshot=snapshot,
         df_view=df_view,

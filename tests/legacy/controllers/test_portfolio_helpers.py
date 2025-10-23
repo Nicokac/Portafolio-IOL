@@ -315,7 +315,7 @@ def test_render_basic_section_with_data(monkeypatch):
         }
     )
     mock_totals = MagicMock()
-    monkeypatch.setattr(charts_mod, "render_totals", mock_totals)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", mock_totals)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)

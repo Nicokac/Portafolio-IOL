@@ -14,8 +14,10 @@ def _install_ui_stubs() -> None:
     dummy_modules: dict[str, dict[str, object]] = {
         "header": {"render_header": lambda *args, **kwargs: None},
         "tables": {
-            "render_totals": lambda *args, **kwargs: None,
             "render_table": lambda *args, **kwargs: None,
+        },
+        "summary_metrics": {
+            "render_summary_metrics": lambda *args, **kwargs: None,
         },
         "fx_panels": {
             "render_spreads": lambda *args, **kwargs: None,

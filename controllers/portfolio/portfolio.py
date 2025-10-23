@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -16,7 +17,7 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 import pandas as pd
 import streamlit as st
 
-from application.portfolio_service import PortfolioService, map_to_us_ticker
+from application.portfolio_service import PortfolioService, PortfolioTotals, map_to_us_ticker
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from application.ta_service import TAService
 from domain.models import Controls
@@ -606,6 +607,34 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
         "pending": ";".join(sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())),
     }
     return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _summary_totals_hash(totals: Any) -> str:
+    """Return a compact hash based on the visible portfolio totals."""
+
+    if not isinstance(totals, PortfolioTotals):
+        return "none"
+
+    values = (
+        getattr(totals, "total_value", float("nan")),
+        getattr(totals, "total_cost", float("nan")),
+        getattr(totals, "total_pl", float("nan")),
+        getattr(totals, "total_pl_pct", float("nan")),
+        getattr(totals, "total_cash", float("nan")),
+        getattr(totals, "total_cash_ars", float("nan")),
+        getattr(totals, "total_cash_usd", float("nan")),
+        getattr(totals, "total_cash_combined", float("nan")),
+        getattr(totals, "usd_rate", float("nan")),
+    )
+    encoded: list[str] = []
+    for value in values:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            encoded.append("nan")
+            continue
+        encoded.append(f"{numeric:.4f}" if math.isfinite(numeric) else "nan")
+    return "|".join(encoded)
 
 
 def _table_filters_key(controls: Any, favorites: Any) -> str:
@@ -1310,6 +1339,7 @@ def render_basic_tab(
     charts_lazy["placeholder"] = charts_entry.get("trigger_placeholder", charts_entry.get("placeholder"))
 
     summary_signature = (portfolio_id, summary_filters)
+    summary_hash = _summary_totals_hash(totals)
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
     summary_entry_hash = summary_entry.get("dataset_hash")
     summary_entry.setdefault("dataset_hash", summary_entry_hash or dataset_token)
@@ -1322,7 +1352,12 @@ def render_basic_tab(
     partial_update_start = time.perf_counter()
     should_render_summary = False
     with _record_stage("render_summary", timings):
-        should_render_summary = summary_entry.get("dataset_hash") != dataset_token or not summary_entry.get("rendered")
+        current_hash = summary_entry.get("summary_hash")
+        should_render_summary = (
+            not summary_entry.get("rendered")
+            or summary_entry.get("placeholder") is None
+            or current_hash != summary_hash
+        )
         if should_render_summary:
             placeholder = summary_entry["placeholder"]
             references = summary_refs.get("references")
@@ -1348,7 +1383,9 @@ def render_basic_tab(
             summary_entry["has_positions"] = has_positions
             summary_entry["updated_at"] = summary_timestamp
             summary_entry["dataset_hash"] = dataset_token
+            summary_entry["summary_hash"] = summary_hash
             summary_refs["dataset_hash"] = dataset_token
+            summary_refs["summary_hash"] = summary_hash
             with _VISUAL_STATE_LOCK:
                 visual_cache_entry["summary_placeholder"] = placeholder
                 visual_cache_entry["summary_rendered"] = True
@@ -1363,7 +1400,9 @@ def render_basic_tab(
         else:
             has_positions = bool(summary_entry.get("has_positions", has_positions))
             summary_refs.setdefault("dataset_hash", dataset_token)
+            summary_refs.setdefault("summary_hash", summary_hash)
             summary_entry.setdefault("signature", summary_signature)
+            summary_entry.setdefault("summary_hash", summary_hash)
             if summary_timestamp is None and summary_meta is not None:
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
@@ -1377,6 +1416,7 @@ def render_basic_tab(
         bool(summary_entry.get("rendered"))
         and summary_entry.get("dataset_hash") == dataset_token
         and summary_entry.get("signature") == summary_signature
+        and summary_entry.get("summary_hash") == summary_hash
     )
     visual_cache_registry.record(
         "summary",

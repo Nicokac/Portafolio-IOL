@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Sequence
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ import pytest
 from application.portfolio_service import calculate_totals
 from controllers.portfolio import charts as charts_mod
 from domain.models import Controls
+from ui import summary_metrics as summary_mod
 from ui import tables as tables_mod
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,6 +32,17 @@ class _Column:
 
     def metric(self, *args, **kwargs):  # noqa: ANN002 - proxy helper
         return self._owner.metric(*args, **kwargs)
+
+
+class _Container:
+    def __init__(self, owner: "_FakeStreamlit") -> None:
+        self._owner = owner
+
+    def __enter__(self) -> "_Container":  # noqa: D401 - plain context manager
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:  # noqa: D401 - plain context manager
+        return None
 
 
 class _FakeStreamlit:
@@ -83,6 +96,25 @@ class _FakeStreamlit:
             return [_Column(self) for _ in range(spec)]
         return [_Column(self) for _ in spec]
 
+    def container(self, **_: object) -> _Container:
+        return _Container(self)
+
+    def radio(
+        self,
+        label: str,
+        options: Sequence[str],
+        *,
+        index: int = 0,
+        key: str | None = None,
+        **__: object,
+    ) -> str:
+        selection = options[index] if options else ""
+        if key and key in self.session_state and self.session_state[key] in options:
+            selection = self.session_state[key]
+        if key:
+            self.session_state[key] = selection
+        return selection
+
     def text_input(self, label: str, value: str = "", **_: object) -> str:
         self.text_inputs.append({"label": label, "value": value})
         return value
@@ -109,6 +141,7 @@ class _DummyFavorites:
 def fake_streamlit(monkeypatch: pytest.MonkeyPatch) -> _FakeStreamlit:
     fake = _FakeStreamlit()
     monkeypatch.setattr(charts_mod, "st", fake)
+    monkeypatch.setattr(summary_mod, "st", fake)
     monkeypatch.setattr(tables_mod, "st", fake)
     return fake
 
@@ -118,7 +151,7 @@ def _patch_favorite_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(charts_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_favorite_toggle", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_table", lambda *a, **k: None)
-    monkeypatch.setattr(charts_mod, "render_totals", lambda *a, **k: None)
+    monkeypatch.setattr(charts_mod, "render_summary_metrics", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod, "render_portfolio_exports", lambda *a, **k: None)
 
 
@@ -182,10 +215,10 @@ def test_render_basic_section_handles_empty_frame(
     assert "No hay datos del portafolio para mostrar." in fake_streamlit.infos
 
 
-def test_render_totals_includes_usd_rate_tooltip(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_render_summary_metrics_includes_usd_rate_tooltip(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = _FakeStreamlit()
     fake.session_state["fx_rates"] = {"mep": 1_200.0}
-    monkeypatch.setattr(tables_mod, "st", fake)
+    monkeypatch.setattr(summary_mod, "st", fake)
 
     df = pd.DataFrame({"valor_actual": [1_200.0], "costo": [0.0], "simbolo": ["PARKING"]})
     df.attrs["cash_balances"] = {
@@ -196,9 +229,15 @@ def test_render_totals_includes_usd_rate_tooltip(monkeypatch: pytest.MonkeyPatch
     }
 
     totals = calculate_totals(df)
-    tables_mod.render_totals(df, ccl_rate=None, totals=totals)
+    summary_mod.render_summary_metrics(df, totals=totals, ccl_rate=None)
 
     tooltip_map = {label: kwargs.get("help") for label, _, _, kwargs in fake.metrics}
-    assert tooltip_map.get("Tipo de cambio") == "Tipo de cambio: MEP"
+    tipo_help = tooltip_map.get("Tipo de cambio")
+    assert tipo_help is not None and "Referencia: MEP" in tipo_help
+    assert "Fuente: /estadocuenta" in tipo_help
+    cash_total_help = tooltip_map.get("Cash total · ARS")
+    assert cash_total_help is not None and "Money Market" in cash_total_help
+
     rate_value = next((value for label, value, _, _ in fake.metrics if label == "Tipo de cambio"), None)
     assert rate_value is not None and rate_value != "—"
+    assert any("Los saldos en efectivo incluyen" in caption for caption in fake.captions)

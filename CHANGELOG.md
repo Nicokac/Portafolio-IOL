@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - UI: Human-readable asset type labels via shared formatter helper.
 
+### Dashboard visual simplification & cash semantics
+- Reorganised the portfolio summary into stacked cards separating totales and liquidez, con tooltips para tipo de cambio y efectivo consolidado.
+- Añadido selector ARS/USD que reutiliza una única estructura de `PortfolioTotals`, recalculando métricas y caption aclaratorio sobre /estadocuenta.
+- Encabezado simplificado con solo Oficial y MEP, resaltando la cotización activa usada en los totales y evitando renders innecesarios mediante `summary_hash`.
+
 ### Testing cleanup after asset-type simplification
 - Actualizamos la suite de UI para reutilizar los contenedores reales de `FakeStreamlit`, eliminando stubs obsoletos y restaurando la cobertura de pruebas tras la simplificación de tipos de activos.
 
