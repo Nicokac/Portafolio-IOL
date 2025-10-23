@@ -464,6 +464,8 @@ def _recover_persisted_quote(cache_key: str, now: float) -> dict[str, Any] | Non
     fallback_data = dict(_normalize_quote(cached_data))
     fallback_data["stale"] = True
     fallback_data.setdefault("provider", cached_data.get("provider") or "stale")
+    if fallback_data.get("proveedor_original") is None:
+        fallback_data["proveedor_original"] = fallback_data.get("provider")
     record_quote_provider_usage(
         fallback_data.get("provider") or "stale",
         elapsed_ms=None,
@@ -484,8 +486,32 @@ def _persist_quote(cache_key: str, payload: dict[str, Any], ts: float) -> None:
     if isinstance(payload, dict):
         provider = payload.get("provider")
         asof_value = payload.get("asof")
+        if normalized.get("moneda_origen") is None:
+            currency_candidate = payload.get("moneda_origen")
+            if currency_candidate is None:
+                currency_candidate = payload.get("currency")
+            if currency_candidate is None:
+                currency_candidate = payload.get("moneda")
+            if isinstance(currency_candidate, str):
+                normalized["moneda_origen"] = currency_candidate.strip() or None
+            elif currency_candidate is not None:
+                normalized["moneda_origen"] = str(currency_candidate)
+        if normalized.get("fx_aplicado") is None:
+            fx_candidate = payload.get("fx_aplicado")
+            if fx_candidate is None:
+                fx_candidate = payload.get("fx_applied")
+            if isinstance(fx_candidate, (int, float)):
+                normalized["fx_aplicado"] = float(fx_candidate)
+            elif isinstance(fx_candidate, str):
+                normalized["fx_aplicado"] = fx_candidate.strip() or None
+        if normalized.get("proveedor_original") is None:
+            provider_original = payload.get("proveedor_original")
+            if isinstance(provider_original, str):
+                normalized["proveedor_original"] = provider_original.strip() or None
     if normalized.get("provider") is None and isinstance(provider, str):
         normalized["provider"] = provider or None
+    if normalized.get("proveedor_original") is None and normalized.get("provider") is not None:
+        normalized["proveedor_original"] = normalized.get("provider")
     if normalized.get("asof") is None and isinstance(asof_value, str):
         text = asof_value.strip()
         normalized["asof"] = text or None
@@ -534,7 +560,15 @@ def _purge_expired_quotes(now: float, fallback_ttl: float) -> None:
 def _normalize_quote(raw: dict | None) -> dict:
     """Extract and compute basic quote information."""
 
-    base = {"last": None, "chg_pct": None, "asof": None, "provider": None}
+    base = {
+        "last": None,
+        "chg_pct": None,
+        "asof": None,
+        "provider": None,
+        "moneda_origen": None,
+        "proveedor_original": None,
+        "fx_aplicado": None,
+    }
     if not isinstance(raw, dict) or not raw:
         return dict(base)
 
@@ -550,6 +584,45 @@ def _normalize_quote(raw: dict | None) -> dict:
     else:
         provider = str(provider_raw)
     data["provider"] = provider
+
+    provider_original_raw = raw.get("proveedor_original")
+    if isinstance(provider_original_raw, str):
+        provider_original = provider_original_raw.strip() or None
+    elif provider_original_raw is None and isinstance(provider, str):
+        provider_original = provider
+    elif provider_original_raw is None:
+        provider_original = None
+    else:
+        provider_original = str(provider_original_raw)
+    data["proveedor_original"] = provider_original
+
+    currency_raw = (
+        raw.get("moneda_origen")
+        if raw.get("moneda_origen") is not None
+        else raw.get("currency")
+        if raw.get("currency") is not None
+        else raw.get("currency_base")
+        if raw.get("currency_base") is not None
+        else raw.get("moneda")
+    )
+    if isinstance(currency_raw, str):
+        currency_value = currency_raw.strip() or None
+    elif currency_raw is None:
+        currency_value = None
+    else:
+        currency_value = str(currency_raw)
+    data["moneda_origen"] = currency_value
+
+    fx_raw = raw.get("fx_aplicado")
+    if fx_raw is None:
+        fx_raw = raw.get("fx_applied")
+    if isinstance(fx_raw, (int, float)):
+        fx_value: Any = float(fx_raw)
+    elif isinstance(fx_raw, str):
+        fx_value = fx_raw.strip() or None
+    else:
+        fx_value = None
+    data["fx_aplicado"] = fx_value
 
     asof_value = raw.get("asof")
     if asof_value is None:
@@ -697,12 +770,7 @@ def _get_quote_cached(
                     pass
             _trigger_logout()
             q = {"provider": "error"}
-            data = {
-                "last": None,
-                "chg_pct": None,
-                "asof": None,
-                "provider": "error",
-            }
+            data = _normalize_quote(q)
             break
         except requests.HTTPError as http_exc:
             last_error = http_exc
@@ -726,23 +794,13 @@ def _get_quote_cached(
                 status_code or http_exc,
             )
             q = {"provider": "error"}
-            data = {
-                "last": None,
-                "chg_pct": None,
-                "asof": None,
-                "provider": "error",
-            }
+            data = _normalize_quote(q)
             break
         except Exception as e:
             last_error = e
             logger.warning("get_quote falló para %s:%s -> %s", norm_market, norm_symbol, e)
             q = {"provider": "error"}
-            data = {
-                "last": None,
-                "chg_pct": None,
-                "asof": None,
-                "provider": "error",
-            }
+            data = _normalize_quote(q)
             break
 
     if data is None:
@@ -753,7 +811,7 @@ def _get_quote_cached(
             last_error,
         )
         q = {"provider": "error"}
-        data = {"last": None, "chg_pct": None, "asof": None, "provider": "error"}
+        data = _normalize_quote(q)
     store_time = time.time()
     elapsed_ms = (store_time - fetch_start) * 1000.0
 
@@ -761,6 +819,8 @@ def _get_quote_cached(
 
     if data.get("provider") is None and not stale:
         data["provider"] = "iol"
+    if data.get("proveedor_original") is None and data.get("provider") is not None:
+        data["proveedor_original"] = data.get("provider")
 
     if ttl_seconds <= 0:
         provider_name = data.get("provider") or "unknown"
@@ -899,6 +959,8 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                                 inferred_provider = _default_provider_for_client(_cli)
                                 if inferred_provider is not None:
                                     quote["provider"] = inferred_provider
+                                    if quote.get("proveedor_original") is None:
+                                        quote["proveedor_original"] = inferred_provider
 
                             key_components = _normalize_bulk_key_components(k)
                             if key_components is None and len(normalized) == 1:
@@ -1026,12 +1088,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     quote = _get_quote_cached(_cli, market, symbol, panel, ttl, batch_stats)
                 except Exception as exc:  # pragma: no cover - network dependent
                     errors.append((market, symbol, exc))
-                    quote = {
-                        "last": None,
-                        "chg_pct": None,
-                        "asof": None,
-                        "provider": "error",
-                    }
+                    quote = _normalize_quote({"provider": "error"})
                     batch_stats.record_payload(quote)
                 else:
                     if isinstance(quote, dict):
@@ -1058,12 +1115,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                         exc,
                     )
                     for market, symbol, _panel in sublot:
-                        quote = {
-                            "last": None,
-                            "chg_pct": None,
-                            "asof": None,
-                            "provider": "error",
-                        }
+                        quote = _normalize_quote({"provider": "error"})
                         out[(market, symbol)] = quote
                         batch_stats.record_payload(quote)
                     continue

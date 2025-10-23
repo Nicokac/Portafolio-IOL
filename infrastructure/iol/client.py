@@ -636,9 +636,17 @@ class IOLClient(IIOLProvider):
         return (last - prev_close) / prev_close * 100
 
     @classmethod
-    def _normalize_quote_payload(cls, data: Any) -> Dict[str, Optional[float]]:
+    def _normalize_quote_payload(cls, data: Any) -> Dict[str, Any]:
         if not isinstance(data, dict):
-            return {"last": None, "chg_pct": None, "asof": None, "provider": None}
+            return {
+                "last": None,
+                "chg_pct": None,
+                "asof": None,
+                "provider": None,
+                "moneda_origen": None,
+                "proveedor_original": None,
+                "fx_aplicado": None,
+            }
 
         last = cls._parse_price_fields(data)
         chg_pct = cls._parse_chg_pct_fields(data, last)
@@ -673,8 +681,42 @@ class IOLClient(IIOLProvider):
             provider = "iol"
         else:
             provider = str(provider_raw)
+        currency_raw = data.get("moneda")
+        if currency_raw is None:
+            currency_raw = data.get("currency")
+        if currency_raw is None:
+            currency_raw = data.get("currency_base")
+        if isinstance(currency_raw, str):
+            currency_value: Optional[str] = currency_raw.strip() or None
+        elif currency_raw is None:
+            currency_value = None
+        else:
+            currency_value = str(currency_raw)
 
-        return {"last": last, "chg_pct": chg_pct, "asof": asof, "provider": provider}
+        fx_raw = data.get("fx_aplicado")
+        if fx_raw is None:
+            fx_raw = data.get("fxAplicado")
+        if fx_raw is None:
+            fx_raw = data.get("fx_applied")
+        if isinstance(fx_raw, (int, float)):
+            fx_value: Optional[float | str] = float(fx_raw)
+        elif isinstance(fx_raw, str):
+            fx_value = fx_raw.strip() or None
+        else:
+            fx_value = None
+
+        payload: Dict[str, Any] = {
+            "last": last,
+            "chg_pct": chg_pct,
+            "asof": asof,
+            "provider": provider,
+            "moneda_origen": currency_value,
+            "proveedor_original": provider,
+            "fx_aplicado": fx_value,
+        }
+        if currency_value is not None:
+            payload["currency"] = currency_value
+        return payload
 
     # ------------------------------------------------------------------
     # Quotes helpers
@@ -856,7 +898,7 @@ class IOLClient(IIOLProvider):
         *,
         mercado: str | None = None,
         simbolo: str | None = None,
-    ) -> Optional[Dict[str, Optional[float]]]:
+    ) -> Optional[Dict[str, Any]]:
         resolved_market = (mercado if mercado is not None else market or "bcba").lower()
         resolved_symbol = (simbolo if simbolo is not None else symbol or "").upper()
         base_url = getattr(self, "_base", self.api_base).rstrip("/")
@@ -894,11 +936,8 @@ class IOLClient(IIOLProvider):
             else:
                 payload = self._normalize_quote_payload(data)
                 payload["provider"] = "iol"
-                currency_value = data.get("moneda") if isinstance(data, dict) else None
-                if isinstance(currency_value, str):
-                    payload["currency"] = currency_value.strip() or None
-                elif currency_value is not None:
-                    payload["currency"] = str(currency_value)
+                if payload.get("proveedor_original") is None:
+                    payload["proveedor_original"] = "iol"
                 elapsed_ms = (time.time() - start) * 1000.0
                 provider_name = payload.get("provider") or "iol"
                 last_value = payload.get("last")
@@ -1028,11 +1067,14 @@ class IOLClient(IIOLProvider):
             return fallback
 
         transitions.append("stale")
-        stale_payload: Dict[str, Optional[float]] = {
+        stale_payload: Dict[str, Any] = {
             "last": None,
             "chg_pct": None,
             "asof": None,
             "provider": "stale",
+            "proveedor_original": "stale",
+            "moneda_origen": None,
+            "fx_aplicado": None,
         }
         if legacy_auth_unavailable:
             stale_payload["legacy_auth_unavailable"] = True
@@ -1123,13 +1165,14 @@ class IOLClient(IIOLProvider):
         if normalized.get("legacy_auth_unavailable"):
             flags["legacy_auth_unavailable"] = True
         normalized.setdefault("provider", "legacy")
+        normalized.setdefault("proveedor_original", normalized.get("provider"))
         return normalized, flags
 
     def get_quotes_bulk(
         self,
         items: Iterable[Tuple[str, str] | Tuple[str, str, str | None]],
         max_workers: int = 8,
-    ) -> Dict[Tuple[str, str], Dict[str, Optional[float]]]:
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         requests: list[tuple[str, str, str | None]] = []
         for raw in items:
             market: str | None = None
@@ -1189,7 +1232,7 @@ class IOLClient(IIOLProvider):
                             fallback=True,
                             error=True,
                         )
-                        payload = {"last": None, "chg_pct": None}
+                        payload = self._normalize_quote_payload({"provider": "error"})
                     else:
                         if payload is None and int(stats.get("count", 0) or 0) == pre_count:
                             self._record_batch_result(
@@ -1202,7 +1245,7 @@ class IOLClient(IIOLProvider):
                                 error=True,
                             )
                     if payload is None:
-                        payload = {"last": None, "chg_pct": None}
+                        payload = self._normalize_quote_payload({"provider": "error"})
                     result[(market, symbol)] = payload
         finally:
             stats["duration_ms"] = (time.time() - batch_start) * 1000.0
