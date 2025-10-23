@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Testing and UI consistency after direct IOL type adoption
 - Se reforzó la suite de UI y aplicación para comprobar que los tipos entregados por IOL (`Cedear`, `Acciones`, `Bono`, `Letra`, `FCI`) se propaguen sin alias en filtros, tablas, panel de riesgo y exportaciones, verificando la consistencia entre DataFrame, totales y vistas.
 
+### Fixed
+- fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
+
 ## [0.8.3] — Reconciliación de efectivo y tasa de cambio
 ### Changed
 - `calculate_totals` evita el doble conteo del efectivo al detectar saldos duplicados entre filas IOLPORA/PARKING y `_cash_balances`, preservando la visibilidad en la tabla pero sin inflar los totales combinados.
