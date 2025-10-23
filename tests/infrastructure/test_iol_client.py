@@ -62,6 +62,7 @@ def stub_record_usage(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
         elapsed_ms: float | None,
         stale: bool,
         source: str | None = None,
+        ok: bool | None = None,
     ) -> None:
         calls.append(
             {
@@ -136,13 +137,14 @@ def test_get_quote_returns_last_and_chg_pct(monkeypatch: pytest.MonkeyPatch, awa
 
     result = client.get_quote("bcba", "AAPL")
 
-    assert result == {
-        "last": 123.45,
-        "chg_pct": 1.5,
-        "asof": None,
-        "provider": "iol",
-        "currency": "ARS",
-    }
+    assert result["last"] == 123.45
+    assert result["chg_pct"] == 1.5
+    assert result["asof"] is None
+    assert result["provider"] == "iol"
+    assert result["proveedor_original"] == "iol"
+    assert result["moneda_origen"] == "ARS"
+    assert result.get("currency") == "ARS"
+    assert result["fx_aplicado"] is None
 
 
 def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -172,13 +174,13 @@ def test_get_quote_returns_valid_payload(monkeypatch: pytest.MonkeyPatch) -> Non
     payload = client.get_quote("bcba", "AAPL")
 
     assert calls["url"].endswith("/bcba/Titulos/AAPL/Cotizacion")
-    assert payload == {
-        "last": 100.0,
-        "chg_pct": 1.23,
-        "asof": None,
-        "provider": "iol",
-        "currency": "USD",
-    }
+    assert payload["last"] == 100.0
+    assert payload["chg_pct"] == 1.23
+    assert payload["asof"] is None
+    assert payload["provider"] == "iol"
+    assert payload["proveedor_original"] == "iol"
+    assert payload["moneda_origen"] == "USD"
+    assert payload.get("currency") == "USD"
 
 
 def test_get_quote_passes_panel_query_param(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -204,6 +206,8 @@ def test_get_quote_passes_panel_query_param(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert calls["params"] == {"panel": "PanelGeneral"}
     assert payload["provider"] == "iol"
+    assert payload["proveedor_original"] == "iol"
+    assert payload["moneda_origen"] == "ARS"
     assert payload["currency"] == "ARS"
 
 
@@ -265,7 +269,13 @@ def test_get_quote_marks_stale_when_no_fallback(
     client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
     payload = client.get_quote("bcba", "GGAL")
 
-    assert payload == {"last": None, "chg_pct": None, "asof": None, "provider": "stale"}
+    assert payload["last"] is None
+    assert payload["chg_pct"] is None
+    assert payload["asof"] is None
+    assert payload["provider"] == "stale"
+    assert payload["proveedor_original"] == "stale"
+    assert payload["moneda_origen"] is None
+    assert payload["fx_aplicado"] is None
 
 
 def test_get_quote_response_none_uses_legacy(monkeypatch: pytest.MonkeyPatch, stub_record_usage: list[dict]) -> None:
@@ -280,7 +290,17 @@ def test_get_quote_response_none_uses_legacy(monkeypatch: pytest.MonkeyPatch, st
         symbol: str,
         panel: str | None,
     ) -> tuple[dict, dict[str, bool]]:
-        return ({"last": 250.5, "chg_pct": 2.1, "provider": "legacy"}, {})
+        return (
+            {
+                "last": 250.5,
+                "chg_pct": 2.1,
+                "provider": "legacy",
+                "proveedor_original": "legacy",
+                "moneda_origen": "ARS",
+                "fx_aplicado": None,
+            },
+            {},
+        )
 
     monkeypatch.setattr(
         iol_client_module.IOLClient,
@@ -300,7 +320,11 @@ def test_get_quote_response_none_uses_legacy(monkeypatch: pytest.MonkeyPatch, st
     client = iol_client_module.IOLClient("user", "", auth=FakeAuth())
     payload = client.get_quote("bcba", "GGAL")
 
-    assert payload == {"last": 250.5, "chg_pct": 2.1, "provider": "legacy"}
+    assert payload["last"] == 250.5
+    assert payload["chg_pct"] == 2.1
+    assert payload["provider"] == "legacy"
+    assert payload["proveedor_original"] == "legacy"
+    assert payload["moneda_origen"] == "ARS"
     assert stub_record_usage == [
         {
             "provider": "iol",

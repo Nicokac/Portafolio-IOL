@@ -295,18 +295,69 @@ class IOLClient:
             data, auth_failed = self._fetch_market_payload(resolved_market, resolved_symbol, panel)
         except Exception as e:
             logger.warning("get_quote error %s:%s -> %s", resolved_market, resolved_symbol, e)
-            empty = {"last": None, "chg_pct": None}
+            empty = {
+                "last": None,
+                "chg_pct": None,
+                "provider": "legacy",
+                "proveedor_original": "legacy",
+                "moneda_origen": None,
+                "fx_aplicado": None,
+            }
             return self._inject_flags(empty, False)
 
         if data is None:
-            empty = {"last": None, "chg_pct": None}
+            empty = {
+                "last": None,
+                "chg_pct": None,
+                "provider": "legacy",
+                "proveedor_original": "legacy",
+                "moneda_origen": None,
+                "fx_aplicado": None,
+            }
             return self._inject_flags(empty, auth_failed)
 
         last = self._parse_price_fields(data)
         chg_pct = self._parse_chg_pct_fields(data, last)
         if chg_pct is None:
             logger.warning("chg_pct indeterminado para %s:%s", resolved_market, resolved_symbol)
-        payload = {"last": last, "chg_pct": chg_pct}
+        currency_raw = None
+        if isinstance(data, dict):
+            for key in ("moneda", "currency", "currency_base"):
+                value = data.get(key)
+                if value is not None:
+                    currency_raw = value
+                    break
+        if isinstance(currency_raw, str):
+            currency_value = currency_raw.strip() or None
+        elif currency_raw is None:
+            currency_value = None
+        else:
+            currency_value = str(currency_raw)
+
+        fx_raw = None
+        if isinstance(data, dict):
+            for key in ("fx_aplicado", "fxAplicado", "fx_applied"):
+                candidate = data.get(key)
+                if candidate is not None:
+                    fx_raw = candidate
+                    break
+        if isinstance(fx_raw, (int, float)):
+            fx_value: float | None = float(fx_raw)
+        elif isinstance(fx_raw, str):
+            fx_value = fx_raw.strip() or None
+        else:
+            fx_value = None
+
+        payload: Dict[str, Any] = {
+            "last": last,
+            "chg_pct": chg_pct,
+            "provider": "legacy",
+            "proveedor_original": "legacy",
+            "moneda_origen": currency_value,
+            "fx_aplicado": fx_value,
+        }
+        if currency_value is not None:
+            payload["currency"] = currency_value
         return self._inject_flags(payload, auth_failed)
 
     # -------- Opcional: cotizaciones en batch --------
@@ -314,7 +365,7 @@ class IOLClient:
         self,
         items: Iterable[Tuple[str, str] | Tuple[str, str, str | None]],
         max_workers: int = 8,
-    ) -> Dict[Tuple[str, str], Dict[str, Optional[float]]]:
+    ) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """
         Descarga cotizaciones para múltiples (mercado, símbolo) en paralelo.
         Retorna: { (mercado, símbolo): {"last": float|None, "chg_pct": float|None} }
@@ -345,7 +396,7 @@ class IOLClient:
 
         if not requests:
             return {}
-        out: Dict[Tuple[str, str], Dict[str, Optional[float]]] = {}
+        out: Dict[Tuple[str, str], Dict[str, Any]] = {}
         with ThreadPoolExecutor(max_workers=min(max_workers, max(1, len(requests)))) as ex:
             fut_map = {ex.submit(self.get_quote, m, s, panel): (m, s) for (m, s, panel) in requests}
             for fut in as_completed(fut_map):
@@ -354,7 +405,14 @@ class IOLClient:
                     out[key] = fut.result()
                 except Exception as e:
                     logger.warning("get_quotes_bulk %s:%s error -> %s", key[0], key[1], e)
-                    out[key] = {"last": None, "chg_pct": None}
+                    out[key] = {
+                        "last": None,
+                        "chg_pct": None,
+                        "provider": "legacy",
+                        "proveedor_original": "legacy",
+                        "moneda_origen": None,
+                        "fx_aplicado": None,
+                    }
         return out
 
 
