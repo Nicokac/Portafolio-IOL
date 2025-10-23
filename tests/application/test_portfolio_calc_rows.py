@@ -30,7 +30,7 @@ def test_calc_rows_uses_valorizado_when_quotes_absent() -> None:
     assert math.isclose(df_result.loc[0, "pl_%"], 30.0)
     assert math.isclose(df_result.loc[0, "pld_%"], 1.5)
     assert df_result.loc[0, "tipo_iol"] == "Accion"
-    assert df_result.loc[0, "tipo_estandar"] == "Acción"
+    assert df_result.loc[0, "tipo_estandar"] == "Accion"
 
 
 def test_calc_rows_preserves_description_when_used_for_classification() -> None:
@@ -55,5 +55,5 @@ def test_calc_rows_preserves_description_when_used_for_classification() -> None:
 
     df_result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
 
-    assert df_result.loc[0, "tipo_iol"] == "Fondo Money Market"
-    assert df_result.loc[0, "tipo_estandar"] == "FCI / Money Market"
+    assert df_result.loc[0, "tipo_iol"] == "Otros"
+    assert df_result.loc[0, "tipo_estandar"] == "Otros"

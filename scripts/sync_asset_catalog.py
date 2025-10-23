@@ -10,8 +10,6 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
-from shared.asset_type_aliases import normalize_asset_type  # noqa: E402
-
 CATALOG_PATH = Path("data/assets_catalog.json")
 
 
@@ -38,18 +36,10 @@ def _normalize_entry(item: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     raw_tipo = normalized.get("tipo")
     if raw_tipo is not None:
         normalized["tipo"] = str(raw_tipo)
-    raw_desc = normalized.get("descripcion")
     prev_standard = normalized.get("tipo_estandar")
-
-    standard = normalize_asset_type(str(raw_tipo) if raw_tipo else raw_desc)
-    changed = standard != prev_standard
-
-    if standard:
-        normalized["tipo_estandar"] = standard
-    else:
-        normalized.pop("tipo_estandar", None)
-
-    return normalized, changed
+    if prev_standard is not None:
+        normalized["tipo_estandar"] = str(prev_standard)
+    return normalized, False
 
 
 def sync_catalog(path: Path = CATALOG_PATH) -> tuple[list[dict[str, Any]], int]:
@@ -85,9 +75,7 @@ def sync_catalog(path: Path = CATALOG_PATH) -> tuple[list[dict[str, Any]], int]:
 def main() -> None:
     catalog, changes = sync_catalog()
     total = len(catalog)
-    print(
-        f"Catálogo sincronizado ({total} activos, {changes} con tipo estandarizado actualizado)."
-    )
+    print(f"Catálogo sincronizado ({total} activos, {changes} cambios registrados).")
 
 
 if __name__ == "__main__":

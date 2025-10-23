@@ -17,14 +17,6 @@ from services.cache.core import CacheService
 from services.cache.market_data_cache import StaleWhileRevalidateCache
 
 
-class DummyPortfolioService:
-    def __init__(self, mapping: Dict[str, str]) -> None:
-        self._mapping = mapping
-
-    def classify_asset_cached(self, sym: str) -> str:
-        return self._mapping.get(sym, "otros")
-
-
 class DummyFetcher:
     def __init__(self) -> None:
         self._versions: Dict[Tuple[str, str], int] = {}
@@ -50,9 +42,8 @@ def _sample_df() -> pd.DataFrame:
 
 def test_build_quote_batches_groups_by_type() -> None:
     df = _sample_df()
-    svc = DummyPortfolioService({})
 
-    batches = build_quote_batches(df, svc, batch_size=2)
+    batches = build_quote_batches(df, batch_size=2)
 
     assert len(batches) == 2
     assert batches[0].group == "Finanzas"
@@ -62,7 +53,6 @@ def test_build_quote_batches_groups_by_type() -> None:
 
 def test_refresh_quotes_pipeline_uses_swr() -> None:
     df = _sample_df()
-    svc = DummyPortfolioService({})
     fetcher = DummyFetcher()
     cache = CacheService()
     swr_cache = StaleWhileRevalidateCache(cache, default_ttl=0.1, grace_ttl=0.4, max_workers=2)
@@ -71,7 +61,6 @@ def test_refresh_quotes_pipeline_uses_swr() -> None:
         data1, diag1 = refresh_quotes_pipeline(
             object(),
             df,
-            svc,
             fetcher=fetcher,
             swr_cache=swr_cache,
             ttl=0.1,
@@ -88,7 +77,6 @@ def test_refresh_quotes_pipeline_uses_swr() -> None:
         data2, diag2 = refresh_quotes_pipeline(
             object(),
             df,
-            svc,
             fetcher=fetcher,
             swr_cache=swr_cache,
             ttl=0.1,
@@ -106,7 +94,6 @@ def test_refresh_quotes_pipeline_uses_swr() -> None:
         data3, diag3 = refresh_quotes_pipeline(
             object(),
             df,
-            svc,
             fetcher=fetcher,
             swr_cache=swr_cache,
             ttl=0.1,

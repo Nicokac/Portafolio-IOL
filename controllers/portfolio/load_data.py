@@ -147,21 +147,33 @@ def _normalize_pairs(df_pos: pd.DataFrame) -> list[tuple[str, str]]:
     return list(data.itertuples(index=False, name=None))
 
 
-def _resolve_asset_groups(df_pos: pd.DataFrame, psvc) -> dict[str, str]:
+def _resolve_asset_groups(df_pos: pd.DataFrame) -> dict[str, str]:
     mapping: dict[str, str] = {}
+    if "simbolo" not in df_pos.columns:
+        return mapping
+
+    subset_cols = ["simbolo"]
     if "tipo" in df_pos.columns:
-        subset = df_pos[["simbolo", "tipo"]].dropna(subset=["simbolo"]).astype({"simbolo": str})
-        subset["simbolo"] = subset["simbolo"].str.upper()
-        subset["tipo"] = subset["tipo"].astype(str)
-        mapping.update({row.simbolo: row.tipo for row in subset.itertuples(index=False)})
-    symbols = {str(sym or "").strip().upper() for sym in df_pos.get("simbolo", []) if str(sym or "").strip()}
-    for symbol in symbols:
-        if symbol not in mapping:
+        subset_cols.append("tipo")
+    subset = df_pos[subset_cols].dropna(subset=["simbolo"]).astype({"simbolo": str})
+    subset["simbolo"] = subset["simbolo"].str.upper()
+
+    for row in subset.itertuples(index=False):
+        symbol = row[0]
+        raw_type = row[1] if len(row) > 1 else None
+        if raw_type in (None, ""):
+            group = "N/D"
+        elif isinstance(raw_type, str):
+            group = raw_type
+        else:
             try:
-                asset_type = psvc.classify_asset_cached(symbol)
+                if pd.isna(raw_type):
+                    group = "N/D"
+                else:
+                    group = str(raw_type)
             except Exception:
-                asset_type = ""
-            mapping[symbol] = asset_type or "otros"
+                group = str(raw_type)
+        mapping[symbol] = group
     return mapping
 
 
@@ -179,7 +191,6 @@ def _chunk_pairs(pairs: Sequence[tuple[str, str]], size: int) -> Iterable[list[t
 
 def build_quote_batches(
     df_pos: pd.DataFrame,
-    psvc,
     *,
     batch_size: int | None = None,
     filters: Mapping[str, Any] | None = None,
@@ -204,10 +215,10 @@ def build_quote_batches(
         _update_last_batch_context(dataset_hash, filters_key)
         return [QuoteBatch(group=entry.group, pairs=list(entry.pairs), key=entry.key) for entry in cached]
 
-    asset_groups = _resolve_asset_groups(df_pos, psvc)
+    asset_groups = _resolve_asset_groups(df_pos)
     grouped: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for market, symbol in pairs:
-        group = asset_groups.get(symbol, "otros") or "otros"
+        group = asset_groups.get(symbol, "N/D") or "N/D"
         grouped[group].append((market, symbol))
     batches: list[QuoteBatch] = []
     for group in sorted(grouped):
@@ -229,7 +240,6 @@ def build_quote_batches(
 def refresh_quotes_pipeline(
     cli,
     df_pos: pd.DataFrame,
-    psvc,
     *,
     fetcher=fetch_quotes_bulk,
     swr_cache: StaleWhileRevalidateCache | None = None,
@@ -241,7 +251,7 @@ def refresh_quotes_pipeline(
     """Fetch quotes using batching and stale-while-revalidate strategy."""
 
     filters_snapshot = _current_filters_snapshot()
-    batches = build_quote_batches(df_pos, psvc, batch_size=batch_size, filters=filters_snapshot)
+    batches = build_quote_batches(df_pos, batch_size=batch_size, filters=filters_snapshot)
     context = get_last_batch_context()
     dataset_hash = context.get("dataset_hash")
     set_active_dataset_hash(dataset_hash)

@@ -6,7 +6,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
 
-from shared.asset_type_aliases import normalize_asset_type
 from shared.config import settings
 
 logger = logging.getLogger(__name__)
@@ -32,10 +31,6 @@ def _coerce_entry(symbol: str, payload: dict[str, Any]) -> dict[str, str]:
     raw_standard = payload.get("tipo_estandar")
     if raw_standard:
         entry["tipo_estandar"] = str(raw_standard)
-    else:
-        standard = normalize_asset_type(entry.get("tipo") or entry.get("descripcion"))
-        if standard:
-            entry["tipo_estandar"] = standard
     return entry
 
 

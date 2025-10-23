@@ -23,7 +23,7 @@
 
 **Acciones sugeridas**
 1. **Prehidratar la caché en memoria desde el archivo persistido antes del primer refresh** para cada símbolo, devolviendo datos inmediatos mientras se lanza el refresh en background (`StaleWhileRevalidateCache`). Aprovecha `_recover_persisted_quote` antes de llamar a la API para los lotes iniciales, reduciendo el primer paint ~1.5 s.【F:services/cache/quotes.py†L588-L737】
-2. **Memoizar `build_quote_batches` por hash del dataset** (`PortfolioViewModelService._hash_dataset`) y reusar la última asignación de grupos cuando `df_pos` no cambia, evitando recomputar `psvc.classify_asset_cached` en cada tick (~300 ms).【F:controllers/portfolio/load_data.py†L119-L142】【F:services/portfolio_view.py†L739-L776】
+2. **Memoizar `build_quote_batches` por hash del dataset** (`PortfolioViewModelService._hash_dataset`) y reusar la última asignación de grupos cuando `df_pos` no cambia, evitando recalcular la agrupación por tipo en cada tick (~300 ms).【F:controllers/portfolio/load_data.py†L168-L209】【F:services/portfolio_view.py†L739-L776】
 3. **Limitar temporalmente el tamaño de sublote a 4 símbolos cuando la media supere 650 ms** utilizando `AdaptiveBatchController.observe`, estabilizando los picos de 1.3 s y acercando el total a la proyección de 5.78 s.【F:services/cache/quotes.py†L741-L820】【F:performance_metrics_10.csv†L2-L4】
 4. **Registrar `quotes_refresh_total_s` en `performance_metrics_15.csv`** cada vez que se ejecute la canalización para visibilidad pre/post Kaleido.
 
