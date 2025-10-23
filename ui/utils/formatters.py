@@ -18,7 +18,49 @@ __all__ = [
     "format_float_delta",
     "normalise_hit_ratio",
     "resolve_badge_state",
+    "format_asset_type",
 ]
+
+
+_ASSET_TYPE_ALIASES: Mapping[str, str] = {
+    "ACCIONES": "Acción",
+    "ACCION": "Acción",
+    "CEDEAR": "Cedear",
+    "CEDEARS": "Cedear",
+    "LETRA": "Letra",
+    "LETRAS": "Letra",
+    "BONO": "Bono",
+    "TITULOSPUBLICOS": "Bono",
+    "FONDOCOMUNDEINVERSION": "FCI",
+    "FCI": "FCI",
+}
+
+
+def format_asset_type(raw: str | None) -> str:
+    """Return a human-friendly label for asset types displayed in the UI."""
+
+    if raw is None:
+        return "N/D"
+
+    if isinstance(raw, str):
+        token = raw.strip()
+    else:
+        try:
+            if np.isnan(raw):  # type: ignore[arg-type]
+                return "N/D"
+        except TypeError:
+            pass
+        token = str(raw).strip()
+
+    if not token:
+        return "N/D"
+
+    lowered = token.lower()
+    if lowered in {"nan", "none", "<na>"}:
+        return "N/D"
+
+    normalized = token.upper()
+    return _ASSET_TYPE_ALIASES.get(normalized, token)
 
 
 def format_currency(value: float) -> str:

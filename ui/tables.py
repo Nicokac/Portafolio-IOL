@@ -24,6 +24,7 @@ from ui.lazy.runtime import (
     mark_fragment_ready,
     register_fragment_ready,
 )
+from ui.utils.formatters import format_asset_type
 
 from .export import download_csv
 from .palette import get_active_palette
@@ -210,12 +211,11 @@ def render_table(
 
     for _, r in df_sorted.iterrows():
         sym = str(r["simbolo"])
-        tipo = str(r.get("tipo") or "")
         is_favorite = favorites.is_favorite(sym)
 
         row = {
             "Símbolo": sym,
-            "Tipo": tipo,
+            "Tipo": format_asset_type(r.get("tipo")),
             "Favorito": "⭐" if is_favorite else "",
             "es_favorito": is_favorite,
             "cantidad_num": _as_float_or_none(r["cantidad"]),

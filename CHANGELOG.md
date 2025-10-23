@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Changed
-- La aplicación muestra los tipos de activo exactamente como los publica IOL en `titulo.tipo`, propagando el texto original sin alias ni heurísticas a todas las vistas.
+- UI: Human-readable asset type labels via shared formatter helper.
 
 ### Testing cleanup after asset-type simplification
 - Actualizamos la suite de UI para reutilizar los contenedores reales de `FakeStreamlit`, eliminando stubs obsoletos y restaurando la cobertura de pruebas tras la simplificación de tipos de activos.
