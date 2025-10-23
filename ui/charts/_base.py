@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from ..palette import get_active_palette
+from ..utils.formatters import format_asset_type
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,12 @@ def _symbol_color_map(symbols: list[str]) -> dict[str, str]:
 
 
 def _color_discrete_map(df: pd.DataFrame, tipo_col: str = "tipo"):
+    if tipo_col not in df.columns:
+        return {}
     pal = get_active_palette()
-    tipos = [t for t in df[tipo_col].dropna().unique().tolist()]
+    series = df[tipo_col].dropna()
+    formatted = series.apply(format_asset_type) if not series.empty else series
+    tipos = [t for t in formatted.unique().tolist() if t]
     return {t: pal.categories.get(t, pal.accent) for t in tipos}
 
 
@@ -102,7 +107,9 @@ def plot_pl_topn(df: pd.DataFrame, n: int = 20):
 def plot_donut_tipo(df: pd.DataFrame):
     if df is None or df.empty or "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    d = df.dropna(subset=["valor_actual"]).groupby("tipo", dropna=True)["valor_actual"].sum().reset_index()
+    d = df.dropna(subset=["valor_actual"]).copy()
+    d["tipo"] = d["tipo"].apply(format_asset_type)
+    d = d.groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
     if d.empty:
         return None
     fig = px.pie(
@@ -132,7 +139,9 @@ def plot_donut_tipo(df: pd.DataFrame):
 def plot_dist_por_tipo(df: pd.DataFrame):
     if df is None or df.empty or "valor_actual" not in df.columns or "tipo" not in df.columns:
         return None
-    d = df.dropna(subset=["valor_actual"]).groupby("tipo", dropna=True)["valor_actual"].sum().reset_index()
+    d = df.dropna(subset=["valor_actual"]).copy()
+    d["tipo"] = d["tipo"].apply(format_asset_type)
+    d = d.groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
     if d.empty:
         return None
     order = d.sort_values("valor_actual", ascending=False)["tipo"].tolist()
@@ -257,7 +266,8 @@ def plot_contribution_heatmap(by_symbol: pd.DataFrame | None, *, value_col: str 
         return None
 
     df = by_symbol.copy()
-    df["tipo"] = df["tipo"].astype(str).replace({"": "Sin tipo"})
+    if "tipo" in df.columns:
+        df["tipo"] = df["tipo"].apply(format_asset_type)
     df["simbolo"] = df["simbolo"].astype(str).replace({"": "Sin símbolo"})
     df[value_col] = pd.to_numeric(df[value_col], errors="coerce").fillna(0.0)
 
@@ -359,6 +369,7 @@ def plot_bubble_pl_vs_costo(
             "color_discrete_sequence": color_seq,
         }
     elif "tipo" in d.columns:
+        d["tipo"] = d["tipo"].apply(format_asset_type)
         color_kwargs = {
             "color": "tipo",
             "color_discrete_map": None if color_seq else _color_discrete_map(d),
@@ -477,6 +488,9 @@ def plot_pl_daily_topn(df: pd.DataFrame, n: int = 20):
         d["chg_%"] = d["pld_%"]
     elif "pld_%" in d.columns:
         d["chg_%"] = d["chg_%"].fillna(d["pld_%"])
+
+    if "tipo" in d.columns:
+        d["tipo"] = d["tipo"].apply(format_asset_type)
 
     d = d.dropna(subset=["pl_d"]).sort_values("pl_d", ascending=False).head(n)
     if d.empty:
