@@ -235,9 +235,12 @@ def test_render_summary_metrics_includes_usd_rate_tooltip(monkeypatch: pytest.Mo
     tipo_help = tooltip_map.get("Tipo de cambio")
     assert tipo_help is not None and "Referencia: MEP" in tipo_help
     assert "Fuente: /estadocuenta" in tipo_help
+    assert "Tipo de cambio aplicado según cotización vigente (Oficial o MEP)." in tipo_help
     cash_total_help = tooltip_map.get("Cash total · ARS")
-    assert cash_total_help is not None and "Money Market" in cash_total_help
+    assert cash_total_help is not None and "Incluye saldos de Money Market" in cash_total_help
+    money_market_help = tooltip_map.get("Money Market · ARS")
+    assert money_market_help is not None and "Incluye saldos de Money Market" in money_market_help
 
     rate_value = next((value for label, value, _, _ in fake.metrics if label == "Tipo de cambio"), None)
     assert rate_value is not None and rate_value != "—"
-    assert any("Los saldos en efectivo incluyen" in caption for caption in fake.captions)
+    assert any("Moneda base seleccionada" in caption for caption in fake.captions)

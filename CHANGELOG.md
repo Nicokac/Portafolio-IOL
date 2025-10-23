@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - UI: Human-readable asset type labels via shared formatter helper.
+- UI summary validation and FX consistency.
 
 ### Dashboard visual simplification & cash semantics
 - Reorganised the portfolio summary into stacked cards separating totales and liquidez, con tooltips para tipo de cambio y efectivo consolidado.
