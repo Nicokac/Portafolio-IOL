@@ -1,13 +1,15 @@
 """Contract tests for the portfolio Streamlit UI."""
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Iterable
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
 import controllers.portfolio.charts as charts_mod
+import ui.export as export_mod
+import ui.tables as tables_mod
 from application.portfolio_service import PortfolioTotals
 from controllers.portfolio.charts import render_basic_section
 from controllers.portfolio.portfolio import render_portfolio_section
@@ -21,6 +23,9 @@ from shared.favorite_symbols import FavoriteSymbols
 from tests.fixtures.common import DummyCtx
 from tests.fixtures.streamlit import UIFakeStreamlit as FakeStreamlit
 from tests.fixtures.streamlit import _ContextManager
+
+
+IOL_ASSET_TYPES: list[str] = ["Cedear", "Acciones", "Bono", "Letra", "FCI"]
 from ui.notifications import tab_badge_label, tab_badge_suffix
 
 
@@ -34,6 +39,9 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         df_view: pd.DataFrame | None = None,
         all_symbols: list[str] | None = None,
         notifications: NotificationFlags | None = None,
+        available_types: Iterable[str] | None = None,
+        totals: PortfolioTotals | None = None,
+        contribution_metrics: PortfolioContributionMetrics | None = None,
     ):
         portfolio_mod.st = fake_st
         portfolio_mod.reset_portfolio_services()
@@ -64,7 +72,7 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
             }
         )
         all_symbols = all_symbols or ["GGAL"]
-        available_types = ["ACCION"]
+        available_types = list(available_types or IOL_ASSET_TYPES)
 
         monkeypatch.setattr(
             portfolio_mod,
@@ -89,17 +97,25 @@ def _portfolio_setup(monkeypatch: pytest.MonkeyPatch):
         )
         monkeypatch.setattr(portfolio_mod, "render_sidebar", lambda *a, **k: controls)
 
-        df_view = df_view or pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [1200.0]})
+        if df_view is None:
+            df_view = pd.DataFrame(
+                {"simbolo": ["GGAL"], "valor_actual": [1200.0], "tipo": [IOL_ASSET_TYPES[1]]}
+            )
+
+        if contribution_metrics is None:
+            contribution_metrics = PortfolioContributionMetrics.empty()
+        if totals is None:
+            totals = PortfolioTotals(0.0, 0.0, 0.0, float("nan"), 0.0)
 
         def _fake_snapshot(*_args, **_kwargs):
             return PortfolioViewSnapshot(
                 df_view=df_view,
-                totals=PortfolioTotals(0.0, 0.0, 0.0, float("nan"), 0.0),
+                totals=totals,
                 apply_elapsed=0.0,
                 totals_elapsed=0.0,
                 generated_at=0.0,
                 historical_total=pd.DataFrame(),
-                contribution_metrics=PortfolioContributionMetrics.empty(),
+                contribution_metrics=contribution_metrics,
             )
 
         def _view_model_factory():
@@ -337,6 +353,179 @@ def test_render_portfolio_section_applies_tab_badges_when_flags_active(
     technical_badge.assert_not_called()
 
 
+def test_portfolio_ui_respects_raw_iol_asset_types(
+    _portfolio_setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[0])
+    captured: dict[str, Any] = {}
+
+    def _capture_csv(snapshot, **_kwargs):
+        captured["csv"] = snapshot
+        return b"csv"
+
+    def _capture_excel(snapshot, **_kwargs):
+        captured["excel"] = snapshot
+        return b"xlsx"
+
+    monkeypatch.setattr("ui.export.create_csv_bundle", _capture_csv)
+    monkeypatch.setattr("ui.export.create_excel_workbook", _capture_excel)
+
+    symbols = ["CED1", "ACC1", "BON1", "LET1", "FCI1"]
+    df_view = pd.DataFrame(
+        {
+            "simbolo": symbols,
+            "mercado": ["bcba", "bcba", "bcba", "bcba", "bcba"],
+            "cantidad": [5, 10, 3, 7, 2],
+            "valor_actual": [1500.0, 2000.0, 900.0, 600.0, 400.0],
+            "costo": [1200.0, 1500.0, 800.0, 550.0, 350.0],
+            "pl": [300.0, 500.0, 100.0, 50.0, 50.0],
+            "pl_%": [20.0, 33.33, 12.5, 9.09, 14.29],
+            "pl_d": [15.0, 20.0, 5.0, 3.0, 2.0],
+            "tipo": IOL_ASSET_TYPES,
+        }
+    )
+
+    contributions = PortfolioContributionMetrics(
+        by_symbol=pd.DataFrame(
+            {
+                "simbolo": symbols,
+                "tipo": IOL_ASSET_TYPES,
+                "valor_actual": df_view["valor_actual"],
+                "costo": df_view["costo"],
+                "pl": df_view["pl"],
+                "pl_d": df_view["pl_d"],
+                "valor_actual_pct": [40.0, 35.0, 10.0, 8.0, 7.0],
+                "pl_pct": [45.0, 30.0, 10.0, 8.0, 7.0],
+            }
+        ),
+        by_type=pd.DataFrame(
+            {
+                "tipo": IOL_ASSET_TYPES,
+                "valor_actual": df_view["valor_actual"],
+                "costo": df_view["costo"],
+                "pl": df_view["pl"],
+                "pl_d": df_view["pl_d"],
+                "valor_actual_pct": [40.0, 35.0, 10.0, 8.0, 7.0],
+                "pl_pct": [45.0, 30.0, 10.0, 8.0, 7.0],
+            }
+        ),
+    )
+
+    totals = PortfolioTotals(4400.0, 3400.0, 1000.0, 29.41, 0.0)
+
+    (
+        portfolio_mod,
+        basic,
+        advanced,
+        risk,
+        fundamental,
+        technical_badge,
+        view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(
+        fake_st,
+        df_view=df_view,
+        all_symbols=symbols,
+        available_types=IOL_ASSET_TYPES,
+        totals=totals,
+        contribution_metrics=contributions,
+    )
+
+    sidebar_controls: list[Controls] = []
+
+    def _sidebar_stub(all_symbols_arg, available_types_arg):
+        fake_st.multiselect(
+            "Filtrar por símbolo",
+            all_symbols_arg,
+            default=list(all_symbols_arg),
+        )
+        fake_st.multiselect(
+            "Filtrar por tipo",
+            available_types_arg,
+            default=list(available_types_arg),
+        )
+        controls_obj = Controls(
+            refresh_secs=30,
+            hide_cash=False,
+            show_usd=False,
+            order_by="valor_actual",
+            desc=True,
+            top_n=10,
+            selected_syms=list(all_symbols_arg),
+            selected_types=list(available_types_arg),
+            symbol_query="",
+        )
+        sidebar_controls.append(controls_obj)
+        return controls_obj
+
+    monkeypatch.setattr(portfolio_mod, "render_sidebar", _sidebar_stub)
+
+    render_portfolio_section(
+        DummyCtx(),
+        cli=object(),
+        fx_rates={"ccl": 1000.0},
+        view_model_service_factory=view_model_factory,
+        notifications_service_factory=notifications_factory,
+    )
+
+    controls_used = sidebar_controls[-1]
+
+    charts_mod.st = fake_st
+    tables_mod.st = fake_st
+    fake_st.text_input = lambda *a, **k: ""
+    fake_st.column_config = type(
+        "_ColumnConfig",
+        (),
+        {
+            "Column": lambda *a, **k: None,
+            "NumberColumn": lambda *a, **k: None,
+            "LineChartColumn": lambda *a, **k: None,
+        },
+    )
+    charts_mod.render_table(
+        df_view,
+        controls_used,
+        ccl_rate=1000.0,
+    )
+    export_mod.st = fake_st
+    export_mod.render_portfolio_exports(
+        snapshot=None,
+        df_view=df_view,
+        totals=totals,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=contributions,
+    )
+
+    type_filter = next(call for call in fake_st.multiselect_calls if call["label"] == "Filtrar por tipo")
+    assert type_filter["options"] == IOL_ASSET_TYPES
+    assert type_filter["rendered"] == IOL_ASSET_TYPES
+
+    table_df: pd.DataFrame | None = None
+    for data, _ in fake_st.dataframes:
+        table_data = getattr(data, "data", None)
+        if isinstance(table_data, pd.DataFrame) and "Tipo" in table_data.columns:
+            table_df = table_data
+            break
+
+    assert table_df is not None, "La tabla principal debe registrar datos para validar tipos"
+    assert sorted(table_df["Tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+
+    assert "csv" in captured
+    csv_snapshot = captured["csv"]
+    assert sorted(csv_snapshot.positions["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+    assert sorted(csv_snapshot.contributions_by_symbol["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+    assert sorted(csv_snapshot.contributions_by_type["tipo"].unique()) == sorted(IOL_ASSET_TYPES)
+
+    for tipo in csv_snapshot.positions["tipo"].unique():
+        assert tipo in IOL_ASSET_TYPES
+
+    basic.assert_called()
+    advanced.assert_not_called()
+    risk.assert_not_called()
+    fundamental.assert_not_called()
+    technical_badge.assert_not_called()
+
+
 def test_render_portfolio_section_renders_symbol_selector_for_favorites(
     _portfolio_setup, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -440,11 +629,19 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
             "Benchmark para beta y drawdown": "S&P 500 (^GSPC)",
             "Ventana para correlaciones móviles": "3 meses (63)",
             "Nivel de confianza para VaR/CVaR": "95%",
-            "Tipo de activo a incluir": "ACCION",
+            "Tipo de activo a incluir": "Acciones",
         },
     )
     risk_mod.st = fake_st
-    fake_st.session_state["selected_asset_types"] = ["ACCION"]
+    fake_st.session_state["selected_asset_types"] = ["Acciones"]
+
+    tab_labels: list[list[str]] = []
+
+    def _capture_tabs(labels: list[str]):
+        tab_labels.append(list(labels))
+        return [_ContextManager(fake_st) for _ in labels]
+
+    fake_st.tabs = _capture_tabs  # type: ignore[assignment]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
@@ -461,7 +658,7 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
         {
             "simbolo": ["A1", "A2", "B"],
             "valor_actual": [100.0, 150.0, 200.0],
-            "tipo": ["ACCION", "ACCION", "BONO"],
+            "tipo": ["Acciones", "Acciones", "Bono"],
         }
     )
 
@@ -587,7 +784,12 @@ def test_risk_analysis_ui_renders_new_charts(monkeypatch: pytest.MonkeyPatch) ->
     )
 
     pm = risk_mod
-    pm.render_risk_analysis(df_view, tasvc, favorites=FavoriteSymbols({}))
+    pm.render_risk_analysis(
+        df_view,
+        tasvc,
+        favorites=FavoriteSymbols({}),
+        available_types=IOL_ASSET_TYPES,
+    )
 
     tags = [call["fig"].tag for call in fake_st.plot_calls if hasattr(call["fig"], "tag")]
     expected_tags = {
@@ -620,16 +822,31 @@ def test_risk_analysis_ui_handles_missing_series(
         },
     )
     risk_mod.st = fake_st
-    fake_st.session_state["selected_asset_types"] = ["ACCION", "BONO"]
+    fake_st.session_state["selected_asset_types"] = ["Acciones", "Bono"]
+
+    tab_labels: list[list[str]] = []
+
+    def _capture_tabs(labels: list[str]):
+        tab_labels.append(list(labels))
+        return [_ContextManager(fake_st) for _ in labels]
+
+    fake_st.tabs = _capture_tabs  # type: ignore[assignment]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]})
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["A", "B"],
+            "valor_actual": [100.0, 80.0],
+            "tipo": ["Acciones", "Bono"],
+        }
+    )
 
     def single_history(simbolos=None, period="1y"):
         if simbolos and simbolos[0] == "^GSPC":
             return pd.DataFrame({"^GSPC": [100.0, 101.0, 102.0]})
+        # Solo la serie de "A" está disponible, "B" faltará para forzar la alerta.
         return pd.DataFrame({"A": [10.0, 10.0, 10.0]})
 
     tasvc = SimpleNamespace(portfolio_history=single_history)
@@ -682,10 +899,12 @@ def test_risk_analysis_ui_handles_missing_series(
         df_view,
         tasvc,
         favorites=FavoriteSymbols({}),
-        available_types=["ACCION", "BONO"],
+        available_types=IOL_ASSET_TYPES,
     )
 
     assert any("volatilidad" in msg.lower() for msg in fake_st.warnings)
+    assert tab_labels, "Se esperaban pestañas de tipo en el panel de riesgo"
+    assert all(label in IOL_ASSET_TYPES for label in tab_labels[0])
 
 
 def test_risk_analysis_warns_when_selected_type_missing(
@@ -695,15 +914,15 @@ def test_risk_analysis_warns_when_selected_type_missing(
 
     fake_st = FakeStreamlit(
         radio_sequence=[],
-        selectbox_defaults={"Tipo de activo a incluir": "BONO"},
+        selectbox_defaults={"Tipo de activo a incluir": "Bono"},
     )
     risk_mod.st = fake_st
-    fake_st.session_state["selected_asset_types"] = ["BONO"]
+    fake_st.session_state["selected_asset_types"] = ["Bono"]
 
     monkeypatch.setattr(risk_mod, "render_favorite_badges", lambda *a, **k: None)
     monkeypatch.setattr(risk_mod, "render_favorite_toggle", lambda *a, **k: None)
 
-    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["ACCION"]})
+    df_view = pd.DataFrame({"simbolo": ["A"], "valor_actual": [100.0], "tipo": ["Acciones"]})
 
     def _should_not_run(*_, **__):
         raise AssertionError("No debería consultarse histórico cuando no hay datos para el tipo")
@@ -714,7 +933,7 @@ def test_risk_analysis_warns_when_selected_type_missing(
         df_view,
         tasvc,
         favorites=FavoriteSymbols({}),
-        available_types=["ACCION", "BONO"],
+        available_types=IOL_ASSET_TYPES,
     )
 
     assert any("No hay datos para los tipos seleccionados" in msg for msg in fake_st.warnings)
@@ -737,7 +956,7 @@ def test_render_advanced_analysis_controls_display(
     df = pd.DataFrame(
         {
             "simbolo": ["GGAL"],
-            "tipo": ["Acción"],
+            "tipo": ["Acciones"],
             "valor_actual": [1000.0],
             "costo": [800.0],
             "pl": [200.0],
@@ -784,7 +1003,7 @@ def test_render_basic_section_renders_heatmap_without_timeline(
     df_view = pd.DataFrame(
         {
             "simbolo": ["GGAL", "AL30"],
-            "tipo": ["ACCION", "BONO"],
+            "tipo": ["Acciones", "Bono"],
             "valor_actual": [1200.0, 800.0],
             "pl": [200.0, 50.0],
             "pl_d": [10.0, 5.0],
@@ -801,7 +1020,7 @@ def test_render_basic_section_renders_heatmap_without_timeline(
     contributions = PortfolioContributionMetrics(
         by_symbol=pd.DataFrame(
             {
-                "tipo": ["ACCION", "BONO"],
+                "tipo": ["Acciones", "Bono"],
                 "simbolo": ["GGAL", "AL30"],
                 "valor_actual": [1200.0, 800.0],
                 "costo": [1000.0, 750.0],
@@ -813,7 +1032,7 @@ def test_render_basic_section_renders_heatmap_without_timeline(
         ),
         by_type=pd.DataFrame(
             {
-                "tipo": ["ACCION", "BONO"],
+                "tipo": ["Acciones", "Bono"],
                 "valor_actual": [1200.0, 800.0],
                 "costo": [1000.0, 750.0],
                 "pl": [200.0, 50.0],
