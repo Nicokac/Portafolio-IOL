@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Añadido registro "override_bopreal_ars" en auditoría de escalas
 - Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.5
 
+## [0.8.6] — Post-merge Sanity Patch BOPREAL ARS
+### Changed
+- Añadido parche post-merge en `PortfolioViewModelService` para recalcular `valor_actual` de BOPREAL ARS tras fusionar datasets, conservando la valuación forzada (~19.9 M ARS).
+- Se evita que el `valorizado` del payload sobrescriba la corrección en snapshots cacheados, etiquetando `pricing_source` como `override_bopreal_postmerge` y registrando la decisión en `audit.scale_decisions`.
+- Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.8 y versionado del paquete a 0.8.6.0.
+
 ## [0.8.5] — Revaluación forzada BOPREAL ARS
 ### Changed
 - `calc_rows` ignora `valorizado` de payload para series BOPREAL en ARS, priorizando `ultimoPrecio` y recalculando totales con la escala 1.0.

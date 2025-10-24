@@ -7,8 +7,8 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.8.5.0"
-RELEASE_NAME = "Portafolio IOL v0.8.5.0"
+VERSION = "0.8.6.0"
+RELEASE_NAME = "Portafolio IOL v0.8.6.0"
 RELEASE_DATE = "2026-04-15"
 CHANGELOG_REF = ("Versionamiento unificado con telemetría y diagnósticos enriquecidos",)
 
