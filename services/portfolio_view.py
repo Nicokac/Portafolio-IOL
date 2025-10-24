@@ -372,6 +372,41 @@ def _extract_dataset_base(dataset_key: str | None) -> str | None:
     return base or None
 
 
+def _extract_quotes_hash(dataset_key: str | None) -> str | None:
+    """Return the quotes hash embedded in the dataset identifier if present."""
+
+    base = _extract_dataset_base(dataset_key)
+    if not base:
+        return None
+    marker = "|quotes:"
+    if marker not in base:
+        if base.startswith("quotes:"):
+            _, _, remainder = base.partition("quotes:")
+            quotes, _, _ = remainder.partition("|")
+            return quotes or None
+        return None
+    _, _, remainder = base.partition(marker)
+    quotes, _, _ = remainder.partition("|")
+    quotes = quotes.strip()
+    return quotes or None
+
+
+def _extract_positions_fingerprint(dataset_key: str | None) -> str | None:
+    """Return the positions fingerprint without quotes metadata."""
+
+    base = _extract_dataset_base(dataset_key)
+    if not base:
+        return None
+    marker = "|quotes:"
+    if marker in base:
+        positions, _, _ = base.partition(marker)
+        positions = positions.strip()
+        return positions or None
+    if base.startswith("quotes:"):
+        return None
+    return base
+
+
 @dataclass(frozen=True)
 class PortfolioCacheMetricsSnapshot:
     """Resumen inmutable del estado del memoizador del portafolio."""
@@ -1610,9 +1645,13 @@ class PortfolioViewModelService:
             )
 
         skip_invalidation = bool(skip_invalidation)
-        effective_skip_invalidation = skip_invalidation and not totals_version_changed
+        current_quotes_hash = _extract_quotes_hash(dataset_key)
+        previous_quotes_hash = _extract_quotes_hash(self._dataset_key)
+        quotes_changed = bool(current_quotes_hash != previous_quotes_hash)
+
+        effective_skip_invalidation = skip_invalidation and not totals_version_changed and not quotes_changed
         self._soft_refresh_guard_active = False
-        raw_dataset_changed = dataset_key != self._dataset_key
+        raw_dataset_changed = dataset_key != self._dataset_key or quotes_changed
         dataset_changed = (raw_dataset_changed and not effective_skip_invalidation) or totals_version_changed
         filters_changed = filters_key != self._filters_key
 
@@ -1621,6 +1660,15 @@ class PortfolioViewModelService:
             should_invalidate_cache = True
         elif not should_invalidate_cache:
             dataset_changed = False
+
+        if quotes_changed:
+            logger.info(
+                "[PortfolioView] Quotes hash changed; forcing dataset refresh",
+                extra={
+                    "previous_quotes_hash": previous_quotes_hash or "none",
+                    "current_quotes_hash": current_quotes_hash or "none",
+                },
+            )
 
         if effective_skip_invalidation and dataset_key:
             logger.info(
@@ -1775,6 +1823,10 @@ class PortfolioViewModelService:
                     cached_fingerprints["dataset"] = dataset_key
                     cached_blocks["fingerprints"] = dict(cached_fingerprints)
 
+        if quotes_changed:
+            cached_blocks = {}
+            cached_fingerprints = {}
+
         incremental_changed = any(
             fingerprints.get(key) != cached_fingerprints.get(key)
             for key in ("filters.time", "filters.fx", "filters.misc")
@@ -1834,12 +1886,13 @@ class PortfolioViewModelService:
         def _load_positions() -> tuple[pd.DataFrame, float]:
             if "df" not in positions_state:
                 start = time.perf_counter()
+                positions_hash = _extract_positions_fingerprint(dataset_key) or dataset_key
                 df = _apply_filters(
                     df_pos,
                     controls,
                     cli,
                     psvc,
-                    dataset_hash=dataset_key,
+                    dataset_hash=positions_hash,
                     skip_invalidation=skip_invalidation,
                 )
                 positions_state["df"] = df
@@ -1896,6 +1949,8 @@ class PortfolioViewModelService:
                 "dataset_key": dataset_key,
             }
         )
+        if current_quotes_hash:
+            snapshot_metadata["quotes_hash"] = current_quotes_hash
 
         snapshot = PortfolioViewSnapshot(
             df_view=incremental.df_view,

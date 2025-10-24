@@ -45,6 +45,7 @@ class PortfolioDataset:
     available_types: tuple[str, ...]
     dataset_hash: str
     raw_payload: Any | None = None
+    quotes_hash: str = ""
 
 
 @dataclass
@@ -84,6 +85,27 @@ def _compute_dataset_hash(df: pd.DataFrame | None) -> str:
     except TypeError:
         payload = json.dumps(df.to_dict(orient="list"), sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha1(payload).hexdigest()
+
+
+def _compute_quotes_hash(quotes: Mapping[tuple[str, str], Mapping[str, Any]] | None) -> str:
+    if not quotes:
+        return "empty"
+
+    normalized: list[dict[str, Any]] = []
+    for key, payload in sorted(quotes.items(), key=lambda item: tuple(str(part) for part in item[0])):
+        market, symbol = key
+        normalized.append(
+            {
+                "pair": [str(market), str(symbol)],
+                "payload": dict(sorted(payload.items())) if isinstance(payload, Mapping) else str(payload),
+            }
+        )
+
+    try:
+        serialized = json.dumps(normalized, sort_keys=True, default=str)
+    except TypeError:
+        serialized = json.dumps([{k: str(v) for k, v in entry.items()} for entry in normalized], sort_keys=True)
+    return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
 
 
 def _available_types(df: pd.DataFrame) -> tuple[str, ...]:
@@ -201,7 +223,8 @@ class PortfolioDataFetchService:
             if state is None or state.dataset.dataset_hash != dataset_hash:
                 return
             cloned = {tuple(pair): dict(payload) for pair, payload in quotes.items()}
-            state.dataset = replace(state.dataset, quotes=cloned)
+            quotes_hash = _compute_quotes_hash(cloned)
+            state.dataset = replace(state.dataset, quotes=cloned, quotes_hash=quotes_hash)
             state.updated_at = self._time()
             self._store_state(state)
 
@@ -290,7 +313,9 @@ class PortfolioDataFetchService:
         source = "cache"
         if isinstance(dataset.raw_payload, Mapping):
             cached = bool(dataset.raw_payload.get("_cached"))
-            source = "cache" if cached else "api"
+            source = "cache" if cached else "live_endpoint"
+        if not getattr(dataset, "quotes_hash", None):
+            dataset = replace(dataset, quotes_hash=_compute_quotes_hash(dataset.quotes))
         state = DatasetState(
             dataset=dataset,
             updated_at=self._time(),
@@ -303,11 +328,13 @@ class PortfolioDataFetchService:
             if previous is not None:
                 state.refresh_count = previous.refresh_count + 1
                 previous_hash = getattr(previous.dataset, "dataset_hash", None)
-                if previous_hash == dataset.dataset_hash:
+                previous_quotes_hash = getattr(previous.dataset, "quotes_hash", None)
+                if previous_hash == dataset.dataset_hash and previous_quotes_hash == dataset.quotes_hash:
                     state.skip_invalidation = True
                     logger.info(
-                        'portfolio_data_fetch event="skip_invalidation" dataset_hash=%s',
+                        'portfolio_data_fetch event="skip_invalidation" dataset_hash=%s quotes_hash=%s',
                         dataset.dataset_hash,
+                        dataset.quotes_hash,
                     )
                 else:
                     state.skip_invalidation = False
@@ -337,13 +364,16 @@ class PortfolioDataFetchService:
         types = _available_types(df_pos)
         pairs = _quote_pairs(df_pos)
         quotes = fetch_quotes_bulk(cli, pairs) if pairs else {}
+        quotes_copy = {tuple(k): dict(v) for k, v in quotes.items()}
+        quotes_hash = _compute_quotes_hash(quotes_copy)
         return PortfolioDataset(
             positions=df_pos,
-            quotes={tuple(k): dict(v) for k, v in quotes.items()},
+            quotes=quotes_copy,
             all_symbols=symbols,
             available_types=types,
             dataset_hash=dataset_hash,
             raw_payload=payload,
+            quotes_hash=quotes_hash,
         )
 
 

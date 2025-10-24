@@ -1,4 +1,4 @@
-"""Controller for authentication orchestration."""
+"""Authentication controller helpers."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import logging
 import streamlit as st
 
 from infrastructure.iol.client import IOLClient, IIOLProvider
+
+from .login_flow import force_portfolio_refresh_after_login
 from services.auth_client import build_client, get_auth_provider
 from services.profile_service import fetch_profile
 from shared.qa_profiler import track_auth_latency
@@ -49,6 +51,7 @@ def build_iol_client() -> IIOLProvider | None:
                 profile_payload = None
             st.session_state["iol_user_profile"] = profile_payload
             st.session_state["_profile_refresh_pending"] = False
+        force_portfolio_refresh_after_login(client)
     else:
         st.session_state.pop("iol_user_profile", None)
 
@@ -56,3 +59,4 @@ def build_iol_client() -> IIOLProvider | None:
 
 
 __all__ = ["build_iol_client", "LOGIN_AUTH_TIMESTAMP_KEY"]
+

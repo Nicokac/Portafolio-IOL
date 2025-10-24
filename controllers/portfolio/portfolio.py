@@ -29,6 +29,7 @@ from domain.models import Controls
 from infrastructure.iol.auth import get_current_user_id
 from services import snapshots as snapshot_service
 from services.cache import CacheService
+from services.data_fetch_service import get_portfolio_data_fetch_service
 from services.health import record_tab_latency
 from services.notifications import NotificationFlags, NotificationsService
 from services.performance_metrics import measure_execution
@@ -2159,6 +2160,27 @@ def render_portfolio_section(
                     exc_info=True,
                 )
                 precomputed_dataset_hash = None
+        dataset_fingerprint = precomputed_dataset_hash or ""
+        quotes_hash = ""
+        try:
+            fetch_service = get_portfolio_data_fetch_service()
+        except Exception:  # pragma: no cover - defensive safeguard
+            fetch_service = None
+        if fetch_service is not None:
+            dataset_snapshot, _ = fetch_service.peek_dataset()
+            if dataset_snapshot is not None:
+                cached_hash = getattr(dataset_snapshot, "dataset_hash", "")
+                if not dataset_fingerprint and cached_hash:
+                    dataset_fingerprint = str(cached_hash)
+                raw_quotes_hash = getattr(dataset_snapshot, "quotes_hash", "")
+                if raw_quotes_hash:
+                    quotes_hash = str(raw_quotes_hash)
+
+        if quotes_hash:
+            base = dataset_fingerprint or "empty"
+            dataset_fingerprint = f"{base}|quotes:{quotes_hash}"
+        combined_dataset_hash: str | None = dataset_fingerprint or None
+
         skip_invalidation_flag = bool(st.session_state.pop("_dataset_skip_invalidation", False))
 
         if skip_invalidation_flag:
@@ -2176,7 +2198,7 @@ def render_portfolio_section(
                 cli=cli,
                 psvc=psvc,
                 lazy_metrics=lazy_metrics,
-                dataset_hash=precomputed_dataset_hash,
+                dataset_hash=combined_dataset_hash,
                 skip_invalidation=skip_invalidation_flag,
             )
 
