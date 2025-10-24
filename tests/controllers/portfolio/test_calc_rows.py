@@ -98,3 +98,94 @@ def test_calc_rows_ignores_external_last_without_fx() -> None:
 
     assert np.isnan(result.loc[0, "valor_actual"])
     assert np.isnan(result.loc[0, "ultimo"])
+
+
+def test_calc_rows_detects_bond_scale_from_portfolio_payload() -> None:
+    bond_rows = [
+        {
+            "simbolo": "AL30",
+            "mercado": "bcba",
+            "cantidad": 1200.0,
+            "costo_unitario": 6_500.0,
+            "tipo": "Bonos Soberanos",
+            "tipo_iol": "Bonos Soberanos",
+            "tipo_estandar": "Bonos Soberanos",
+            "moneda": "ARS",
+            "valorizado": 8_100_000.0,
+            "ultimoPrecio": 6_750.0,
+            "expected_scale": 1.0,
+        },
+        {
+            "simbolo": "GD30",
+            "mercado": "bcba",
+            "cantidad": 600.0,
+            "costo_unitario": 8_800.0,
+            "tipo": "Bonos Globales",
+            "tipo_iol": "Bonos Globales",
+            "tipo_estandar": "Bonos Globales",
+            "moneda": "ARS",
+            "valorizado": 5_700_000.0,
+            "ultimoPrecio": 9_500.0,
+            "expected_scale": 1.0,
+        },
+        {
+            "simbolo": "BPOC7",
+            "mercado": "bcba",
+            "cantidad": 146.0,
+            "costo_unitario": 142_193.15,
+            "tipo": "Bonos Provinciales",
+            "tipo_iol": "Bonos Provinciales",
+            "tipo_estandar": "Bonos Provinciales",
+            "moneda": "ARS",
+            "valorizado": 200_020.0,
+            "ultimoPrecio": 137_000.0,
+            "expected_scale": 0.01,
+        },
+        {
+            "simbolo": "S10N5",
+            "mercado": "bcba",
+            "cantidad": 300.0,
+            "costo_unitario": 11_500.0,
+            "tipo": "Bonos del Tesoro",
+            "tipo_iol": "Bonos del Tesoro",
+            "tipo_estandar": "Bonos del Tesoro",
+            "moneda": "ARS",
+            "valorizado": 3_750_000.0,
+            "ultimoPrecio": 12_500.0,
+            "expected_scale": 1.0,
+        },
+    ]
+
+    df_pos = pd.DataFrame(bond_rows)
+
+    def _quote_fn(_mercado: str, _simbolo: str) -> dict[str, object]:
+        return {}
+
+    result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
+
+    rows_by_symbol = {row["simbolo"]: row for row in bond_rows}
+    expected_last = {
+        symbol: data["valorizado"] / (data["cantidad"] * data["expected_scale"])
+        for symbol, data in rows_by_symbol.items()
+    }
+
+    for symbol, price in expected_last.items():
+        match = result.loc[result["simbolo"] == symbol]
+        assert not match.empty
+        expected_value = rows_by_symbol[symbol]["valorizado"]
+        assert math.isclose(match.iloc[0]["valor_actual"], expected_value, rel_tol=1e-6)
+        assert math.isclose(match.iloc[0]["ultimo"], price, rel_tol=1e-6)
+
+    audit_section = result.attrs.get("audit", {})
+    decisions = {}
+    if isinstance(audit_section, dict):
+        for item in audit_section.get("scale_decisions", []) or []:
+            symbol = item.get("simbolo")
+            detected = item.get("scale_detected")
+            if symbol is not None and detected is not None:
+                decisions[str(symbol)] = float(detected)
+
+    for row in bond_rows:
+        symbol = row["simbolo"]
+        assert symbol in decisions
+        assert math.isclose(decisions[symbol], row["expected_scale"], rel_tol=1e-6)

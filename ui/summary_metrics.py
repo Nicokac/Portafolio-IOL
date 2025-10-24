@@ -132,16 +132,23 @@ def _format_metric(
     rate: float | None,
 ) -> tuple[str, str, dict[str, Any]]:
     converted = metric.value
+    display_currency = target_currency
     if metric.value is not None:
-        converted = _convert(metric.value, source=metric.base_currency, target=target_currency, rate=rate)
-        if converted is None and metric.base_currency == target_currency:
+        if metric.base_currency == target_currency:
             converted = metric.value
-    currency_kw = {"currency": target_currency} if converted is not None and target_currency == "USD" else {}
+        elif metric.base_currency == "USD":
+            converted = metric.value
+            display_currency = metric.base_currency
+        else:
+            converted = _convert(metric.value, source=metric.base_currency, target=target_currency, rate=rate)
+            if converted is None and metric.base_currency == target_currency:
+                converted = metric.value
+    currency_kw = {"currency": "USD"} if converted is not None and display_currency == "USD" else {}
     if converted is None:
         display_value = "—"
     else:
         display_value = format_money(converted, **currency_kw)
-    label_suffix = f" · {target_currency}"
+    label_suffix = f" · {display_currency}"
     return metric.label + label_suffix, display_value, {"help": metric.help_text} if metric.help_text else {}
 
 
@@ -220,13 +227,25 @@ def render_summary_metrics(
         row2[0].metric(label, value, delta=delta)
         row2[1].metric("P/L %", "—" if not np.isfinite(totals.total_pl_pct) else f"{totals.total_pl_pct:.2f}%")
 
+    usd_help_bits = ["Saldo líquido informado en dólares."]
+    if (
+        totals.total_cash_usd is not None
+        and np.isfinite(totals.total_cash_usd)
+        and rate is not None
+        and np.isfinite(rate)
+        and totals.total_cash_usd != 0
+    ):
+        ars_equivalent = totals.total_cash_usd * rate
+        if np.isfinite(ars_equivalent):
+            usd_help_bits.append(f"≈ {format_money(float(ars_equivalent))} en ARS")
+
     cash_metrics: list[_MetricValue] = [
         _MetricValue("Cash ARS", totals.total_cash_ars, "ARS", "Saldo líquido informado en pesos."),
         _MetricValue(
             "Cash USD",
             totals.total_cash_usd,
             "USD",
-            "Saldo líquido informado en dólares.",
+            " ".join(usd_help_bits),
         ),
         _MetricValue(
             "Money Market",

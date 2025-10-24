@@ -91,10 +91,10 @@ def _make_totals() -> PortfolioTotals:
     )
 
 
-def _value_by_label(fake: _FakeStreamlit, label: str) -> Any:
-    for recorded_label, value, *_rest in fake.metrics:
+def _metric_by_label(fake: _FakeStreamlit, label: str) -> tuple[Any, dict[str, Any]]:
+    for recorded_label, value, _delta, kwargs in fake.metrics:
         if recorded_label == label:
-            return value
+            return value, kwargs
     raise AssertionError(f"Metric {label} no registrada: {fake.metrics}")
 
 
@@ -104,7 +104,12 @@ def test_render_summary_metrics_switches_currency(fake_streamlit: _FakeStreamlit
 
     summary_mod.render_summary_metrics(df, totals=totals, ccl_rate=None)
 
-    assert _value_by_label(fake_streamlit, "Valorizado") == "$ 120.000,00"
+    value, _ = _metric_by_label(fake_streamlit, "Valorizado")
+    assert value == "$ 120.000,00"
+
+    usd_value, usd_kwargs = _metric_by_label(fake_streamlit, "Cash USD · USD")
+    assert usd_value == "US$ 10,00"
+    assert "≈ $ 10.000,00 en ARS" in usd_kwargs.get("help", "")
     assert "Moneda base seleccionada: ARS" in fake_streamlit.captions[-1]
 
     fake_streamlit.metrics.clear()
@@ -113,8 +118,14 @@ def test_render_summary_metrics_switches_currency(fake_streamlit: _FakeStreamlit
 
     summary_mod.render_summary_metrics(df, totals=totals, ccl_rate=None)
 
-    assert _value_by_label(fake_streamlit, "Valorizado") == "US$ 120,00"
-    assert _value_by_label(fake_streamlit, "Cash total · USD") == "US$ 17,00"
+    value, _ = _metric_by_label(fake_streamlit, "Valorizado")
+    assert value == "US$ 120,00"
+    cash_total_value, _ = _metric_by_label(fake_streamlit, "Cash total · USD")
+    assert cash_total_value == "US$ 17,00"
+    usd_value, usd_kwargs = _metric_by_label(fake_streamlit, "Cash USD · USD")
+    assert usd_value == "US$ 10,00"
+    # En moneda base USD el tooltip conserva la referencia ARS
+    assert "≈ $ 10.000,00 en ARS" in usd_kwargs.get("help", "")
     assert "Moneda base seleccionada: USD" in fake_streamlit.captions[-1]
 
 

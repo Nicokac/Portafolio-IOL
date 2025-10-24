@@ -263,10 +263,12 @@ def map_to_us_ticker(simbolo: str) -> str:
 
 def scale_for(sym: str, tipo: str) -> float:
     """
-    Factor de escala para convertir el precio/costo reportado a valuación.
-    - Overrides por símbolo (desde config['scale_overrides'])
-    - Bonos/Letra típicamente VN 100 -> factor 0.01
-    - Resto -> 1.0
+    Factor de escala sugerido para convertir el precio/costo reportado a valuación.
+
+    La heurística clásica asume que bonos y letras se informan en valor nominal 100,
+    por lo que se propone ``0.01``. Los overrides explícitos continúan teniendo
+    prioridad, pero la decisión final queda a cargo de ``calc_rows`` que evalúa el
+    payload recibido para confirmar si corresponde aplicar la conversión.
     """
     s = clean_symbol(sym)
     cfg = get_config()
@@ -662,7 +664,61 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo_estandar"]]
     scale_map = {s: scale_for(s, t) for s, t in uniq.itertuples(index=False)}
-    df["scale"] = df["simbolo"].map(scale_map)
+    df["scale"] = df["simbolo"].map(scale_map).astype(float).fillna(1.0)
+
+    # Ajuste condicional de escala para bonos/letras ---------------------
+    valorizado_series = pd.to_numeric(df.get("valorizado"), errors="coerce")
+    ultimo_precio_series = pd.to_numeric(df.get("ultimoPrecio"), errors="coerce")
+    qty_series = pd.to_numeric(df.get("cantidad"), errors="coerce")
+
+    scale_audit: list[dict[str, Any]] = []
+    final_scale = df["scale"].copy()
+
+    for idx in df.index:
+        configured = float(final_scale.at[idx]) if idx in final_scale.index else 1.0
+        if not np.isfinite(configured) or configured <= 0:
+            configured = 1.0
+
+        detected = configured
+        valorizado_total = float(valorizado_series.at[idx]) if idx in valorizado_series.index else float("nan")
+        ultimo_precio = float(ultimo_precio_series.at[idx]) if idx in ultimo_precio_series.index else float("nan")
+        cantidad = float(qty_series.at[idx]) if idx in qty_series.index else float("nan")
+        valorizado_unit = float("nan")
+        relative_diff = float("nan")
+        reason = "configured"
+
+        if configured < 1.0 and np.isfinite(valorizado_total) and np.isfinite(cantidad) and cantidad != 0.0:
+            valorizado_unit = valorizado_total / cantidad
+            if np.isfinite(valorizado_unit) and valorizado_unit != 0.0 and np.isfinite(ultimo_precio):
+                relative_diff = abs(valorizado_unit - ultimo_precio) / abs(valorizado_unit)
+                if relative_diff < 0.01:
+                    detected = 1.0
+                    reason = "payload_aligned"
+                else:
+                    reason = "scale_required"
+            else:
+                reason = "insufficient_data"
+        elif configured < 1.0:
+            reason = "insufficient_data"
+        else:
+            reason = "passthrough"
+
+        final_scale.at[idx] = detected
+        scale_audit.append(
+            {
+                "simbolo": df.at[idx, "simbolo"],
+                "tipo": df.at[idx, "tipo_estandar"],
+                "scale_configured": configured,
+                "scale_detected": detected,
+                "valorizado_unit": None if not np.isfinite(valorizado_unit) else valorizado_unit,
+                "ultimo_precio": None if not np.isfinite(ultimo_precio) else ultimo_precio,
+                "cantidad": None if not np.isfinite(cantidad) else cantidad,
+                "relative_diff": None if not np.isfinite(relative_diff) else relative_diff,
+                "reason": reason,
+            }
+        )
+
+    df["scale"] = final_scale
 
     # ----- Valoraciones -------------------------------------------------
     provider_series = (
@@ -821,6 +877,15 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         )
 
     result = df[cols]
+    if scale_audit:
+        attrs.setdefault("audit", {})
+        audit_section = attrs["audit"]
+        if isinstance(audit_section, Mapping):
+            audit_data = dict(audit_section)
+            audit_data["scale_decisions"] = scale_audit
+        else:
+            audit_data = {"scale_decisions": scale_audit}
+        attrs["audit"] = audit_data
     source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
     if source_counts:
         logger.info("calc_rows proveedor_utilizado=%s", source_counts)
