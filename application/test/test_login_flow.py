@@ -53,7 +53,11 @@ def test_service_build_iol_client_returns_error(monkeypatch):
     def boom(cache_key, user, tokens_file):
         raise RuntimeError("bad creds")
 
-    monkeypatch.setattr(svc_cache, "get_client_cached", boom)
+    monkeypatch.setattr("services.cache.ui_adapter.get_client_cached", boom)
+    def fail_refresh(self):
+        raise RuntimeError("bad creds")
+
+    monkeypatch.setattr("services.cache.ui_adapter.IOLAuth.refresh", fail_refresh)
 
     cli, error = svc_cache.build_iol_client()
 
@@ -104,7 +108,10 @@ def test_render_login_page_shows_error(monkeypatch):
     monkeypatch.setattr(st, "session_state", {})
     st.session_state["login_error"] = "fail"
 
-    monkeypatch.setattr("ui.login.render_header", lambda: None)
+    monkeypatch.setattr(
+        "ui.login._lazy_attr",
+        lambda *a, **k: (lambda *args, **kwargs: None),
+    )
     monkeypatch.setattr(st, "form", lambda *a, **k: DummyCtx())
     monkeypatch.setattr(st, "text_input", lambda *a, **k: None)
     monkeypatch.setattr(st, "form_submit_button", lambda *a, **k: False)
@@ -124,10 +131,20 @@ def test_render_login_page_shows_error(monkeypatch):
     assert captured.get("msg") == "fail"
 
 
-def _prepare_login_form(monkeypatch, submitted=True):
-    monkeypatch.setattr("ui.login.render_header", lambda: None)
+def _prepare_login_form(monkeypatch, submitted=True, username="u", password="p"):
+    def _fake_lazy_attr(module, attr):
+        return lambda *a, **k: None
+
+    monkeypatch.setattr("ui.login._lazy_attr", _fake_lazy_attr)
     monkeypatch.setattr(st, "form", lambda *a, **k: DummyCtx())
-    monkeypatch.setattr(st, "text_input", lambda *a, **k: None)
+    monkeypatch.setattr("services.cache.ui_adapter.IOLAuth.refresh", lambda self: None)
+
+    def _text_input(label, *args, **kwargs):
+        if "Usuario" in label:
+            return username
+        return password
+
+    monkeypatch.setattr(st, "text_input", _text_input)
     monkeypatch.setattr(st, "form_submit_button", lambda *a, **k: submitted)
     monkeypatch.setattr(st, "caption", lambda *a, **k: None)
     monkeypatch.setattr(st, "rerun", lambda *a, **k: None)
@@ -184,6 +201,28 @@ def test_render_login_page_handles_tokens_key_missing(monkeypatch):
     login.render_login_page()
 
     assert st.session_state.get("login_error") == "no key"
+    assert not any("password" in k.lower() for k in st.session_state)
+
+
+def test_login_requires_credentials(monkeypatch):
+    from ui import login
+
+    monkeypatch.setattr(st, "session_state", {})
+    _prepare_login_form(monkeypatch, username="", password="")
+    monkeypatch.setattr(login.settings, "tokens_key", "k")
+
+    calls: list[tuple[str, str]] = []
+
+    class DummyProvider:
+        def login(self, u, p):
+            calls.append((u, p))
+
+    monkeypatch.setattr(login, "get_auth_provider", lambda: DummyProvider())
+
+    login.render_login_page()
+
+    assert not calls
+    assert st.session_state.get("login_error") == "Ingresá usuario y contraseña para continuar"
     assert not any("password" in k.lower() for k in st.session_state)
 
 
@@ -274,7 +313,10 @@ def test_rerun_reuses_token_without_password(monkeypatch, tmp_path):
         calls.append(tokens_file)
         return dummy_cli
 
-    monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
+    monkeypatch.setattr(
+        "services.cache.ui_adapter.get_client_cached",
+        fake_get_client_cached,
+    )
 
     login_calls = []
 
@@ -329,7 +371,10 @@ def test_full_login_logout_relogin_clears_password(monkeypatch, tmp_path):
         calls.append(tokens_file)
         return dummy_cli
 
-    monkeypatch.setattr(svc_cache, "get_client_cached", fake_get_client_cached)
+    monkeypatch.setattr(
+        "services.cache.ui_adapter.get_client_cached",
+        fake_get_client_cached,
+    )
 
     class DummyAuth:
         def login(self, u, p):

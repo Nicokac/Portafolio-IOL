@@ -58,15 +58,35 @@ def render_login_page() -> None:
     if err:
         st.error(err)
 
-    with st.form("login_form"):
-        user = st.text_input("Usuario")
-        password = st.text_input("Contraseña", type="password")
+    with st.form("login_form", clear_on_submit=False):
+        raw_user = st.text_input("Usuario", key="login_username")
+        raw_password = st.text_input(
+            "Contraseña",
+            type="password",
+            key="login_password",
+        )
         submitted = st.form_submit_button("Iniciar sesión")
+
+    user = (raw_user or "").strip()
+    password = raw_password or ""
 
     render_footer()
 
     if submitted:
         provider = get_auth_provider()
+
+        if not user or not password:
+            logger.debug(
+                "Login submit ignored due to missing credentials (user_present=%s)",
+                bool(user),
+            )
+            st.session_state["login_error"] = "Ingresá usuario y contraseña para continuar"
+            clear_password_keys(st.session_state)
+            st.rerun()
+            return
+
+        st.session_state["IOL_USERNAME"] = user
+        st.session_state.pop("cli", None)
 
         try:
             provider.login(user, password)

@@ -544,6 +544,13 @@ def render_main_ui() -> None:
         st.warning("No se pudieron precargar las librerías científicas. Continuamos con una carga diferida.")
 
     cli = build_iol_client()
+    try:
+        if cli is None:
+            st.session_state.pop("cli", None)
+        else:
+            st.session_state["cli"] = cli
+    except Exception:  # pragma: no cover - defensive guard for session state quirks
+        logger.debug("No se pudo actualizar el cliente activo en session_state", exc_info=True)
 
     portfolio_module = lazy_module("controllers.portfolio.portfolio")
     default_view_model_service_factory = getattr(portfolio_module, "default_view_model_service_factory")
