@@ -547,11 +547,13 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         "tipo_estandar",
         "cantidad",
         "ppc",
+        "scale",
         "moneda",
         "moneda_origen",
         "fx_aplicado",
         "pricing_source",
         "ultimo",
+        "ultimoPrecio",
         "valor_actual",
         "costo",
         "pl",
@@ -690,14 +692,20 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         ultimo_precio = float(ultimo_precio_series.at[idx]) if idx in ultimo_precio_series.index else float("nan")
         cantidad = float(qty_series.at[idx]) if idx in qty_series.index else float("nan")
         valorizado_unit = float("nan")
+        absolute_diff = float("nan")
         relative_diff = float("nan")
         reason = "configured"
 
         if configured < 1.0 and np.isfinite(valorizado_total) and np.isfinite(cantidad) and cantidad != 0.0:
             valorizado_unit = valorizado_total / cantidad
             if np.isfinite(valorizado_unit) and valorizado_unit != 0.0 and np.isfinite(ultimo_precio):
-                relative_diff = abs(valorizado_unit - ultimo_precio) / abs(valorizado_unit)
-                if relative_diff < 0.01:
+                absolute_diff = abs(valorizado_unit - ultimo_precio)
+                baseline = max(abs(valorizado_unit), abs(ultimo_precio), 1.0)
+                relative_diff = absolute_diff / baseline if baseline != 0 else float("nan")
+                if absolute_diff <= 1e-3:
+                    detected = 1.0
+                    reason = "payload_aligned_abs"
+                elif relative_diff < 0.01:
                     detected = 1.0
                     reason = "payload_aligned"
                 else:
@@ -719,6 +727,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 "valorizado_unit": None if not np.isfinite(valorizado_unit) else valorizado_unit,
                 "ultimo_precio": None if not np.isfinite(ultimo_precio) else ultimo_precio,
                 "cantidad": None if not np.isfinite(cantidad) else cantidad,
+                "absolute_diff": None if not np.isfinite(absolute_diff) else absolute_diff,
                 "relative_diff": None if not np.isfinite(relative_diff) else relative_diff,
                 "reason": reason,
             }
@@ -778,16 +787,19 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     if "ultimoPrecio" in df.columns:
         ultimo_precio = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
-        moneda_pos = df.get("moneda", pd.Series(index=df.index, dtype="object")).astype("string").str.upper().fillna("")
-        mask_ultimo = (
-            df["valor_actual"].isna()
-            & ultimo_precio.notna()
-            & moneda_pos.eq("ARS")
-        )
-        if mask_ultimo.any():
-            df.loc[mask_ultimo, "ultimo"] = ultimo_precio.loc[mask_ultimo]
-            df.loc[mask_ultimo, "valor_actual"] = ultimo_precio.loc[mask_ultimo] * qty_scale.loc[mask_ultimo]
-            proveedor_utilizado.loc[mask_ultimo] = "ultimoPrecio"
+    else:
+        ultimo_precio = pd.Series(index=df.index, dtype=float)
+    moneda_pos = df.get("moneda", pd.Series(index=df.index, dtype="object")).astype("string").str.upper().fillna("")
+    mask_ultimo = (
+        df["valor_actual"].isna()
+        & ultimo_precio.notna()
+        & moneda_pos.eq("ARS")
+    )
+    if mask_ultimo.any():
+        df.loc[mask_ultimo, "ultimo"] = ultimo_precio.loc[mask_ultimo]
+        df.loc[mask_ultimo, "valor_actual"] = ultimo_precio.loc[mask_ultimo] * qty_scale.loc[mask_ultimo]
+        proveedor_utilizado.loc[mask_ultimo] = "ultimoPrecio"
+    df["ultimoPrecio"] = ultimo_precio
 
     mask_cotizacion = (
         df["valor_actual"].isna()
@@ -907,6 +919,124 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     if attrs:
         result.attrs.update(attrs)
     return result
+
+
+def detect_bond_scale_anomalies(df_view: pd.DataFrame | None) -> tuple[pd.DataFrame, float]:
+    """Detecta posibles errores de escala en bonos y letras."""
+
+    report_columns = [
+        "simbolo",
+        "tipo",
+        "ultimoPrecio",
+        "valorizado_div_cantidad",
+        "scale",
+        "proveedor_utilizado",
+        "diagnostico",
+        "motivo_scale",
+        "impacto_estimado",
+    ]
+
+    empty_report = pd.DataFrame(columns=report_columns)
+    if df_view is None or df_view.empty:
+        return empty_report, 0.0
+
+    df = df_view.copy()
+    tipo_series = df.get("tipo_estandar")
+    if tipo_series is None:
+        tipo_series = df.get("tipo")
+    tipo_series = tipo_series.astype("string") if tipo_series is not None else pd.Series(dtype="string")
+    mask = tipo_series.str.lower().str.contains("bono|letra", regex=True, na=False)
+    df_subset = df.loc[mask].copy()
+    if df_subset.empty:
+        return empty_report, 0.0
+
+    def _ensure_series(values: Any) -> pd.Series:
+        if isinstance(values, pd.Series):
+            return values
+        return pd.Series(values, index=df_subset.index)
+
+    qty = pd.to_numeric(_ensure_series(df_subset.get("cantidad")), errors="coerce")
+    valor_actual = pd.to_numeric(_ensure_series(df_subset.get("valor_actual")), errors="coerce")
+    valorizado_total = pd.to_numeric(_ensure_series(df_subset.get("valorizado")), errors="coerce")
+    ultimo_precio = pd.to_numeric(_ensure_series(df_subset.get("ultimoPrecio")), errors="coerce")
+    scale = pd.to_numeric(_ensure_series(df_subset.get("scale")), errors="coerce").fillna(1.0)
+    provider = (
+        _ensure_series(df_subset.get("pricing_source", pd.Series(index=df_subset.index, dtype="object")))
+        .astype("string")
+        .fillna("")
+    )
+    ppc_series = pd.to_numeric(_ensure_series(df_subset.get("ppc")), errors="coerce")
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        valor_unitario_payload = valorizado_total.divide(qty)
+        valor_unitario_payload = valor_unitario_payload.replace([np.inf, -np.inf], np.nan)
+        valor_unitario_actual = valor_actual.divide(qty)
+        valor_unitario_actual = valor_unitario_actual.replace([np.inf, -np.inf], np.nan)
+
+    valor_unitario_ref = valor_unitario_payload.combine_first(valor_unitario_actual)
+
+    def _pct_diff(series_a: pd.Series, series_b: pd.Series) -> pd.Series:
+        diff = (series_a - series_b).abs()
+        base = pd.concat([series_a.abs(), series_b.abs()], axis=1).max(axis=1)
+        base = base.replace({0: np.nan})
+        return diff.divide(base)
+
+    price_diff_pct = _pct_diff(ultimo_precio, valor_unitario_actual)
+    ppc_diff_pct = _pct_diff(ultimo_precio, ppc_series)
+
+    double_scale_mask = (
+        (scale < 1.0)
+        & ultimo_precio.notna()
+        & valor_unitario_actual.notna()
+        & (price_diff_pct > 0.10)
+        & (ppc_diff_pct <= 0.10)
+    )
+
+    diagnostico = np.where(double_scale_mask, "escala duplicada", "correcto")
+
+    impacto_estimado = np.where(
+        double_scale_mask,
+        (ultimo_precio * qty) - valor_actual,
+        0.0,
+    )
+    impacto_estimado = pd.Series(impacto_estimado, index=df_subset.index, dtype=float)
+
+    attrs = getattr(df_view, "attrs", {}) if df_view is not None else {}
+    audit_entries = attrs.get("audit") if isinstance(attrs, Mapping) else None
+    scale_decisions = {}
+    if isinstance(audit_entries, Mapping):
+        raw_decisions = audit_entries.get("scale_decisions", [])
+        if isinstance(raw_decisions, list):
+            for entry in raw_decisions:
+                if not isinstance(entry, Mapping):
+                    continue
+                sym = clean_symbol(entry.get("simbolo"))
+                if sym and sym not in scale_decisions:
+                    scale_decisions[sym] = entry
+
+    motivo_series = []
+    for idx in df_subset.index:
+        sym = clean_symbol(df_subset.at[idx, "simbolo"])
+        decision = scale_decisions.get(sym, {})
+        motivo_series.append(decision.get("reason"))
+    motivo_series = pd.Series(motivo_series, index=df_subset.index, dtype="object")
+
+    report = pd.DataFrame(
+        {
+            "simbolo": df_subset["simbolo"],
+            "tipo": tipo_series.loc[df_subset.index] if not tipo_series.empty else df_subset.get("tipo"),
+            "ultimoPrecio": ultimo_precio,
+            "valorizado_div_cantidad": valor_unitario_ref,
+            "scale": scale,
+            "proveedor_utilizado": provider,
+            "diagnostico": diagnostico,
+            "motivo_scale": motivo_series,
+            "impacto_estimado": impacto_estimado,
+        }
+    )
+
+    total_impact = float(np.nansum(impacto_estimado.to_numpy()))
+    return report, total_impact
 
 
 class PortfolioService:
