@@ -344,6 +344,32 @@ def _log_dataset_cache_event(event: str, dataset_hash: str | None, **extra: Any)
     logger.info("portfolio_dataset_cache %s", message)
 
 
+def _extract_totals_version(dataset_key: str | None) -> str | None:
+    """Return the totals version embedded in ``dataset_key`` if present."""
+
+    if not dataset_key:
+        return None
+    marker = "|totals_v"
+    if marker not in dataset_key:
+        return None
+    _, _, version = dataset_key.partition(marker)
+    version = version.strip()
+    return version or None
+
+
+def _extract_dataset_base(dataset_key: str | None) -> str | None:
+    """Return the dataset component without the totals version suffix."""
+
+    if not dataset_key:
+        return None
+    marker = "|totals_v"
+    if marker not in dataset_key:
+        return dataset_key
+    base, _, _ = dataset_key.partition(marker)
+    base = base.strip()
+    return base or None
+
+
 @dataclass(frozen=True)
 class PortfolioCacheMetricsSnapshot:
     """Resumen inmutable del estado del memoizador del portafolio."""
@@ -657,6 +683,8 @@ def compute_incremental_view(
     update_history_fn: Callable[[PortfolioTotals], pd.DataFrame],
     build_returns_fn: Callable[[pd.DataFrame], pd.DataFrame] = _compute_returns_block,
     include_extended: bool = True,
+    force_totals_recompute: bool = False,
+    allow_dataset_reuse: bool = False,
 ) -> IncrementalComputationResult:
     start = time.perf_counter()
     prev_blocks: MutableMapping[str, Any] = dict(previous_blocks or {})
@@ -667,8 +695,9 @@ def compute_incremental_view(
 
     positions_df: pd.DataFrame | None = None
     apply_elapsed = 0.0
+    reuse_guard_changed = dataset_changed and not allow_dataset_reuse
     if _should_reuse_block(
-        dataset_changed=dataset_changed,
+        dataset_changed=reuse_guard_changed,
         previous_snapshot=previous_snapshot,
         previous_fingerprints=prev_fingerprints,
         current_fingerprints=fingerprints,
@@ -691,8 +720,9 @@ def compute_incremental_view(
     totals: PortfolioTotals | None = None
     totals_elapsed = 0.0
     if (
-        _should_reuse_block(
-            dataset_changed=dataset_changed,
+        not force_totals_recompute
+        and _should_reuse_block(
+            dataset_changed=reuse_guard_changed,
             previous_snapshot=previous_snapshot,
             previous_fingerprints=prev_fingerprints,
             current_fingerprints=fingerprints,
@@ -724,7 +754,7 @@ def compute_incremental_view(
         if (
             not previous_pending
             and _should_reuse_block(
-                dataset_changed=dataset_changed,
+                dataset_changed=reuse_guard_changed,
                 previous_snapshot=previous_snapshot,
                 previous_fingerprints=prev_fingerprints,
                 current_fingerprints=fingerprints,
@@ -746,7 +776,7 @@ def compute_incremental_view(
         if (
             not previous_pending
             and _should_reuse_block(
-                dataset_changed=dataset_changed,
+                dataset_changed=reuse_guard_changed,
                 previous_snapshot=previous_snapshot,
                 previous_fingerprints=prev_fingerprints,
                 current_fingerprints=fingerprints,
@@ -766,7 +796,7 @@ def compute_incremental_view(
     else:
         if (
             previous_snapshot is not None
-            and not dataset_changed
+            and not reuse_guard_changed
             and not getattr(previous_snapshot, "pending_metrics", ())
         ):
             contribution_metrics = previous_snapshot.contribution_metrics
@@ -1033,6 +1063,7 @@ class PortfolioViewSnapshot:
     pending_metrics: tuple[str, ...] = field(default_factory=tuple)
     dataset_hash: str = ""
     soft_refresh_guard: bool = False
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -1313,6 +1344,7 @@ class PortfolioViewModelService:
             "dataset_key": dataset_key,
             "filters_key": filters_key,
             "controls": _safe_asdict(controls),
+            "totals_version": f"v{PORTFOLIO_TOTALS_VERSION}",
         }
         return payload, metadata
 
@@ -1416,6 +1448,7 @@ class PortfolioViewModelService:
                             storage_id=storage_id or snapshot.storage_id,
                             pending_metrics=snapshot.pending_metrics,
                             dataset_hash=snapshot.dataset_hash,
+                            metadata=snapshot.metadata,
                         )
 
         snapshot_defer.queue_snapshot_persistence(
@@ -1548,17 +1581,37 @@ class PortfolioViewModelService:
 
         timestamp_bucket = _extract_quotes_timestamp(cli, psvc)
 
+        previous_dataset_key = self._dataset_key
+        previous_version = _extract_totals_version(previous_dataset_key)
+        current_version = _extract_totals_version(dataset_key)
+        totals_version_changed = bool(
+            previous_version and current_version and previous_version != current_version
+        )
+        version_only_change = False
+        if totals_version_changed:
+            previous_base = _extract_dataset_base(previous_dataset_key)
+            version_only_change = bool(previous_base and previous_base == dataset_base)
+            logger.info(
+                "[PortfolioViewModelService] Forcing totals recomputation due to version mismatch "
+                "(previous=v%s, current=v%s)",
+                previous_version,
+                current_version,
+            )
+
         skip_invalidation = bool(skip_invalidation)
+        effective_skip_invalidation = skip_invalidation and not totals_version_changed
         self._soft_refresh_guard_active = False
         raw_dataset_changed = dataset_key != self._dataset_key
-        dataset_changed = raw_dataset_changed and not skip_invalidation
+        dataset_changed = (raw_dataset_changed and not effective_skip_invalidation) or totals_version_changed
         filters_changed = filters_key != self._filters_key
 
-        should_invalidate_cache = self._should_invalidate_cache(dataset_key, skip_invalidation)
-        if not should_invalidate_cache:
+        should_invalidate_cache = self._should_invalidate_cache(dataset_key, effective_skip_invalidation)
+        if totals_version_changed:
+            should_invalidate_cache = True
+        elif not should_invalidate_cache:
             dataset_changed = False
 
-        if skip_invalidation and dataset_key:
+        if effective_skip_invalidation and dataset_key:
             logger.info(
                 'portfolio_view.skip_invalidation_applied event="skip_invalidation" dataset=%s filters=%s',
                 dataset_key,
@@ -1681,7 +1734,8 @@ class PortfolioViewModelService:
             )
 
         if dataset_changed and should_invalidate_cache:
-            self.invalidate_positions(dataset_key)
+            if not version_only_change:
+                self.invalidate_positions(dataset_key)
         elif filters_changed and should_invalidate_cache:
             self.invalidate_filters(filters_key)
         with self._snapshot_lock:
@@ -1689,7 +1743,7 @@ class PortfolioViewModelService:
 
         cached_blocks: Mapping[str, Any] = {}
         cached_fingerprints: Mapping[str, str] = {}
-        if dataset_changed:
+        if dataset_changed and not version_only_change:
             if warm_entry is not None:
                 cached_blocks = dict(warm_entry.incremental_cache)
                 cached_fingerprints = dict(warm_entry.fingerprints)
@@ -1706,6 +1760,9 @@ class PortfolioViewModelService:
             cached_fp = cached_blocks.get("fingerprints")
             if isinstance(cached_fp, Mapping):
                 cached_fingerprints = dict(cached_fp)
+                if version_only_change:
+                    cached_fingerprints["dataset"] = dataset_key
+                    cached_blocks["fingerprints"] = dict(cached_fingerprints)
 
         incremental_changed = any(
             fingerprints.get(key) != cached_fingerprints.get(key)
@@ -1791,6 +1848,8 @@ class PortfolioViewModelService:
             compute_contributions_fn=_compute_contribution_metrics,
             update_history_fn=self._update_history,
             include_extended=include_extended,
+            force_totals_recompute=totals_version_changed,
+            allow_dataset_reuse=version_only_change,
         )
 
         generated_ts = time.time()
@@ -1801,6 +1860,19 @@ class PortfolioViewModelService:
         storage_id = None
         if previous_snapshot is not None and not dataset_changed and not effective_filters_changed:
             storage_id = previous_snapshot.storage_id
+
+        snapshot_metadata: dict[str, Any]
+        prev_metadata = getattr(previous_snapshot, "metadata", None)
+        if isinstance(prev_metadata, Mapping):
+            snapshot_metadata = dict(prev_metadata)
+        else:
+            snapshot_metadata = {}
+        snapshot_metadata.update(
+            {
+                "totals_version": f"v{PORTFOLIO_TOTALS_VERSION}",
+                "dataset_key": dataset_key,
+            }
+        )
 
         snapshot = PortfolioViewSnapshot(
             df_view=incremental.df_view,
@@ -1814,6 +1886,7 @@ class PortfolioViewModelService:
             pending_metrics=pending_metrics,
             dataset_hash=dataset_key,
             soft_refresh_guard=self._soft_refresh_guard_active,
+            metadata=snapshot_metadata,
         )
 
         total_blocks = len(incremental.reused_blocks) + len(incremental.recomputed_blocks)
