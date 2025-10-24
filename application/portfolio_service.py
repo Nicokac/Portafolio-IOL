@@ -19,7 +19,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 5.5
+PORTFOLIO_TOTALS_VERSION = 5.6
 
 
 @dataclass(frozen=True)

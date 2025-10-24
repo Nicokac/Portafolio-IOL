@@ -36,6 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Añadido registro "override_bopreal_ars" en auditoría de escalas
 - Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.5
 
+## [0.8.4] — Validación post-fix BOPREAL y sincronización de snapshots
+### Added
+- Script `python -m scripts.check_bond_scale --offline` para validar la eliminación de escalas anómalas reutilizando datasets cacheados.
+- Comparativa automática entre snapshots v0.8.3 y v0.8.4 con delta de `valor_actual`, `costo` y `pl` por símbolo.
+- Documentación del flujo de auditoría en `docs/valuation_normalization_plan.md`.
+
+### Changed
+- `PortfolioViewModelService` invalida el cache incremental cuando cambia `PORTFOLIO_TOTALS_VERSION`, forzando el recálculo de totales.
+- Se publicó el plan de verificación para normalización de valuaciones y checklist de QA.
+
+### Fixed
+- Residuo de cache heredado que conservaba `scale=0.01` para BPOC7.
+- Valuación y P/L de series BOPREAL sincronizados con los montos oficiales de IOL.
+
 ## [0.8.3] — Reconciliación de efectivo y tasa de cambio
 ### Changed
 - `calculate_totals` evita el doble conteo del efectivo al detectar saldos duplicados entre filas IOLPORA/PARKING y `_cash_balances`, preservando la visibilidad en la tabla pero sin inflar los totales combinados.
