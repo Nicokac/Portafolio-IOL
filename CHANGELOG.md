@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## [0.8.7.0] — Refresco proactivo desde endpoints IOL
+### Changed
+- Forzamos `PortfolioDataFetchService.get_dataset(force_refresh=True)` inmediatamente después de autenticar al usuario de IOL, registrando la traza `auth_refresh_forced` para auditoría y etiquetando los snapshots como `source=live_endpoint` cuando los datos provienen del endpoint.
+- El fingerprint del dataset ahora incorpora `quotes_hash`, invalidando los caches incrementales del viewmodel cuando cambian las cotizaciones y evitando que `_incremental_cache` reutilice bloques obsoletos.
+- `PortfolioViewModelService` propaga `quotes_hash` en el metadata del snapshot y ajusta el pipeline para recalcular `calc_rows` aun cuando el payload de posiciones no cambia.
+
+### Added
+- Nuevas pruebas unitarias (`test_force_refresh_after_login`, `test_quotes_hash_invalidation`) que aseguran el refresco forzado tras login y la invalidación de dataset cuando solo se actualizan las cotizaciones.
+
 ## v0.6.5 — Fase 5.5
 - Fix: corrección de escala para bonos BOPREAL (BPOA7–BPOC7)
 - Ajuste en `scale_for()` para discriminar moneda ARS vs USD
