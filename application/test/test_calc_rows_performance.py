@@ -61,7 +61,19 @@ def calc_rows_loop(get_quote_fn, df_pos: pd.DataFrame, exclude_syms):
             last = _to_float(q)
 
         tipo = str(p.get("tipo", "N/D"))
-        scale = scale_for(simbolo, tipo)
+        scale_row = pd.Series(
+            {
+                "simbolo": simbolo,
+                "tipo_estandar": tipo,
+                "tipo": tipo,
+                "moneda": p.get("moneda"),
+                "moneda_origen": p.get("moneda_origen"),
+                "proveedor_original": p.get("proveedor_original"),
+                "pricing_source": p.get("pricing_source"),
+                "provider": p.get("provider"),
+            }
+        )
+        scale = scale_for(scale_row)
 
         costo = cantidad * ppc * scale
         valor = (cantidad * last * scale) if last is not None else np.nan
