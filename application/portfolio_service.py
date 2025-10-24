@@ -468,6 +468,9 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     # ----- cotización (acepta float o dict) -----
     def _fetch(row: pd.Series) -> pd.Series:
         last, chg_pct, prev_close = None, None, None
+        provider = None
+        currency = None
+        fx_value: float | None = None
         q = None
         try:
             q = get_quote_fn(row["mercado"], row["simbolo"])
@@ -487,10 +490,37 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                         break
             chg_pct = _to_float(q.get("chg_pct"))
             prev_close = _to_float(q.get("cierreAnterior"))
+            provider_raw = q.get("provider")
+            if isinstance(provider_raw, str):
+                provider = provider_raw.strip() or None
+            elif provider_raw is not None:
+                provider = str(provider_raw)
+            currency_raw = q.get("moneda_origen")
+            if currency_raw is None:
+                currency_raw = q.get("currency")
+            if isinstance(currency_raw, str):
+                currency = currency_raw.strip() or None
+            elif currency_raw is not None:
+                currency = str(currency_raw)
+            fx_raw = q.get("fx_aplicado")
+            if fx_raw is None:
+                fx_raw = q.get("fxAplicado")
+            if fx_raw is None:
+                fx_raw = q.get("fx_applied")
+            fx_value = _to_float(fx_raw)
         else:
             last = _to_float(q)
 
-        return pd.Series({"last": last, "chg_pct": chg_pct, "prev_close": prev_close})
+        return pd.Series(
+            {
+                "last": last,
+                "chg_pct": chg_pct,
+                "prev_close": prev_close,
+                "provider": provider,
+                "moneda_origen": currency,
+                "fx_aplicado": fx_value,
+            }
+        )
 
     quotes_df = uniq.apply(_fetch, axis=1)
     quotes_df = pd.concat([uniq, quotes_df], axis=1)
@@ -518,15 +548,90 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     df["scale"] = df["simbolo"].map(scale_map)
 
     # ----- Valoraciones -------------------------------------------------
-    df["ultimo"] = df["last"]
-    if "ultimoPrecio" in df.columns:
-        fallback_price = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
-        df["ultimo"] = df["ultimo"].fillna(fallback_price)
-    df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
-    df["valor_actual"] = df["cantidad"] * df["ultimo"] * df["scale"]
+    provider_series = (
+        df.get("provider", pd.Series(index=df.index, dtype="object")).astype("string").str.lower().fillna("")
+    )
+    currency_series = (
+        df.get("moneda_origen", pd.Series(index=df.index, dtype="object")).astype("string").str.upper().fillna("")
+    )
+    fx_series = pd.to_numeric(df.get("fx_aplicado"), errors="coerce")
+    last_series = pd.to_numeric(df.get("last"), errors="coerce")
+
+    invalid_quote_mask = (
+        last_series.notna()
+        & currency_series.ne("ARS")
+        & currency_series.ne("")
+        & fx_series.isna()
+    )
+    if invalid_quote_mask.any():
+        last_series = last_series.mask(invalid_quote_mask)
+        df.loc[invalid_quote_mask, "chg_pct"] = np.nan
+        df.loc[invalid_quote_mask, "prev_close"] = np.nan
+        df.loc[invalid_quote_mask, "last"] = np.nan
+
+    df["ultimo"] = np.nan
+    df["valor_actual"] = np.nan
+    proveedor_utilizado: pd.Series = pd.Series(index=df.index, dtype="string")
+
+    qty_scale = df["cantidad"] * df["scale"]
+
     if "valorizado" in df.columns:
-        fallback_valorizado = pd.to_numeric(df["valorizado"], errors="coerce")
-        df["valor_actual"] = df["valor_actual"].where(df["valor_actual"].notna(), fallback_valorizado)
+        valorizado_series = pd.to_numeric(df["valorizado"], errors="coerce")
+        mask_valorizado = valorizado_series.notna()
+        if mask_valorizado.any():
+            denom = qty_scale.replace({0: np.nan})
+            price = pd.Series(np.nan, index=df.index, dtype=float)
+            valid_price_mask = mask_valorizado & denom.notna()
+            price.loc[valid_price_mask] = (
+                valorizado_series.loc[valid_price_mask] / denom.loc[valid_price_mask]
+            )
+            df.loc[mask_valorizado & price.notna(), "ultimo"] = price.loc[mask_valorizado & price.notna()]
+            df.loc[mask_valorizado, "valor_actual"] = valorizado_series.loc[mask_valorizado]
+            proveedor_utilizado.loc[mask_valorizado] = "valorizado"
+
+    if "ultimoPrecio" in df.columns:
+        ultimo_precio = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
+        moneda_pos = df.get("moneda", pd.Series(index=df.index, dtype="object")).astype("string").str.upper().fillna("")
+        mask_ultimo = (
+            df["valor_actual"].isna()
+            & ultimo_precio.notna()
+            & moneda_pos.eq("ARS")
+        )
+        if mask_ultimo.any():
+            df.loc[mask_ultimo, "ultimo"] = ultimo_precio.loc[mask_ultimo]
+            df.loc[mask_ultimo, "valor_actual"] = ultimo_precio.loc[mask_ultimo] * qty_scale.loc[mask_ultimo]
+            proveedor_utilizado.loc[mask_ultimo] = "ultimoPrecio"
+
+    mask_cotizacion = (
+        df["valor_actual"].isna()
+        & last_series.notna()
+        & provider_series.isin({"iol", "cache", "stale"})
+    )
+    if mask_cotizacion.any():
+        df.loc[mask_cotizacion, "ultimo"] = last_series.loc[mask_cotizacion]
+        df.loc[mask_cotizacion, "valor_actual"] = last_series.loc[mask_cotizacion] * qty_scale.loc[mask_cotizacion]
+        proveedor_utilizado.loc[mask_cotizacion] = provider_series.loc[mask_cotizacion]
+
+    mask_externo = (
+        df["valor_actual"].isna()
+        & last_series.notna()
+        & ~provider_series.isin({"iol", "cache", "stale", ""})
+        & fx_series.notna()
+    )
+    if mask_externo.any():
+        df.loc[mask_externo, "ultimo"] = last_series.loc[mask_externo]
+        df.loc[mask_externo, "valor_actual"] = last_series.loc[mask_externo] * qty_scale.loc[mask_externo]
+        proveedor_utilizado.loc[mask_externo] = provider_series.loc[mask_externo]
+
+    df["ultimo"] = df["ultimo"].fillna(last_series)
+    fallback_mask = df["valor_actual"].isna() & df["ultimo"].notna()
+    if fallback_mask.any():
+        df.loc[fallback_mask, "valor_actual"] = df.loc[fallback_mask, "ultimo"] * qty_scale.loc[fallback_mask]
+        proveedor_utilizado.loc[fallback_mask] = proveedor_utilizado.loc[fallback_mask].where(
+            proveedor_utilizado.loc[fallback_mask].notna(),
+            provider_series.loc[fallback_mask].where(provider_series.loc[fallback_mask] != "", "last"),
+        )
+    df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
     df["pl"] = df["valor_actual"] - df["costo"]
     df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
 
@@ -550,6 +655,9 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     # Orden final --------------------------------------------------------
     df["mercado"] = df["mercado"].str.upper()
     result = df[cols]
+    source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
+    if source_counts:
+        logger.info("calc_rows proveedor_utilizado=%s", source_counts)
     if attrs:
         result.attrs.update(attrs)
     return result
