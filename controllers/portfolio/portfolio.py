@@ -17,7 +17,12 @@ from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 import pandas as pd
 import streamlit as st
 
-from application.portfolio_service import PortfolioService, PortfolioTotals, map_to_us_ticker
+from application.portfolio_service import (
+    PORTFOLIO_TOTALS_VERSION,
+    PortfolioService,
+    PortfolioTotals,
+    map_to_us_ticker,
+)
 from application.portfolio_viewmodel import build_portfolio_viewmodel
 from application.ta_service import TAService
 from domain.models import Controls
@@ -1341,7 +1346,9 @@ def render_basic_tab(
 
     summary_signature = (portfolio_id, summary_filters)
     summary_currency = get_active_summary_currency()
-    summary_hash = f"{_summary_totals_hash(totals)}|currency:{summary_currency}"
+    summary_hash = (
+        f"{_summary_totals_hash(totals)}|currency:{summary_currency}|v{PORTFOLIO_TOTALS_VERSION}"
+    )
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
     summary_entry_hash = summary_entry.get("dataset_hash")
     summary_entry.setdefault("dataset_hash", summary_entry_hash or dataset_token)

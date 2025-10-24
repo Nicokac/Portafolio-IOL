@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Servicios `services.iol_exchange_rates.get_exchange_rates` y `services.iol_ratios_service.get_ceear_ratio` para cachear cotizaciones de `/estadocuenta` y ratios CEDEAR desde `/Titulos`, con TTL de 30 minutos y pruebas dedicadas sobre payloads reales.
 - Modo seguro de valorización (`SAFE_VALUATION_MODE`) con telemetría estructurada (proveedor, `fx_aplicado`, `ratioCEDEAR`) y tooltip de advertencia en la UI cuando se utilizan cotizaciones estimadas de proveedores externos.
+- feat: Introduced PORTFOLIO_TOTALS_VERSION to invalidate outdated portfolio summaries and enforce recalculation after valuation logic updates.
 
 ### Changed
 - UI: Human-readable asset type labels via shared formatter helper.

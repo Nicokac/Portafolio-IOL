@@ -16,7 +16,11 @@ from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
 import numpy as np
 import pandas as pd
 
-from application.portfolio_service import PortfolioTotals, calculate_totals
+from application.portfolio_service import (
+    PORTFOLIO_TOTALS_VERSION,
+    PortfolioTotals,
+    calculate_totals,
+)
 from application.risk_service import (
     annualized_volatility,
     beta,
@@ -1536,7 +1540,10 @@ class PortfolioViewModelService:
         dataset_hash: str | None = None,
         skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
-        dataset_key = str(dataset_hash) if dataset_hash else self._hash_dataset(df_pos)
+        dataset_base = str(dataset_hash) if dataset_hash else self._hash_dataset(df_pos)
+        if not dataset_base:
+            dataset_base = "empty"
+        dataset_key = f"{dataset_base}|totals_v{PORTFOLIO_TOTALS_VERSION}"
         filters_key = self._filters_key_from(controls)
 
         timestamp_bucket = _extract_quotes_timestamp(cli, psvc)
