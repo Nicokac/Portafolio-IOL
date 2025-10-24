@@ -16,6 +16,12 @@ from shared.config import get_config, settings
 from shared.utils import _to_float
 
 
+# Increment this value whenever the valuation or totals aggregation logic changes.
+# It is used to invalidate cached portfolio snapshots and UI summaries so that
+# new deployments propagate updated totals without requiring manual cache clears.
+PORTFOLIO_TOTALS_VERSION = 2
+
+
 @dataclass(frozen=True)
 class ValuationBreakdown:
     """Summary of valuation quality grouped by conversion confidence."""
