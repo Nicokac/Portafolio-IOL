@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## v0.6.5 — Fase 5.5
+- Fix: corrección de escala para bonos BOPREAL (BPOA7–BPOC7)
+- Ajuste en `scale_for()` para discriminar moneda ARS vs USD
+- Añadido registro "override_bopreal_ars" en auditoría de escalas
+- Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.5
+
 ## [0.8.3] — Reconciliación de efectivo y tasa de cambio
 ### Changed
 - `calculate_totals` evita el doble conteo del efectivo al detectar saldos duplicados entre filas IOLPORA/PARKING y `_cash_balances`, preservando la visibilidad en la tabla pero sin inflar los totales combinados.

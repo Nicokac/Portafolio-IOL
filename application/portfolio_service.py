@@ -19,7 +19,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 2
+PORTFOLIO_TOTALS_VERSION = 5.5
 
 
 @dataclass(frozen=True)
@@ -241,6 +241,108 @@ logger = logging.getLogger(__name__)
 
 
 # ---------- Helpers y configuración ----------
+BOPREAL_SYMBOLS = {"BPOA7", "BPOB7", "BPOC7", "BPOD7"}
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    try:
+        if pd.isna(value):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _normalize_upper(value: Any) -> str:
+    if _is_blank(value):
+        return ""
+    if isinstance(value, str):
+        return value.strip().upper()
+    return str(value).upper()
+
+
+def _first_present(row: Mapping[str, Any] | pd.Series, keys: Iterable[str]) -> Any:
+    for key in keys:
+        value = row.get(key) if hasattr(row, "get") else None
+        if not _is_blank(value):
+            return value
+    return None
+
+
+def _bopreal_symbol(symbol: Any) -> str | None:
+    cleaned = clean_symbol(symbol)
+    if not cleaned or cleaned.endswith("D"):
+        return None
+    if cleaned not in BOPREAL_SYMBOLS:
+        return None
+    return cleaned
+
+
+def _extract_scale_context(row: Mapping[str, Any] | pd.Series) -> dict[str, Any]:
+    if isinstance(row, pd.Series):
+        data = row
+    elif isinstance(row, Mapping):
+        data = pd.Series(row)
+    else:
+        raise TypeError(f"scale context expects Mapping or Series, got {type(row)!r}")
+
+    raw_symbol = data.get("simbolo")
+    symbol_clean = clean_symbol(raw_symbol)
+
+    tipo_value = data.get("tipo_estandar")
+    if _is_blank(tipo_value):
+        tipo_value = data.get("tipo_activo")
+    if _is_blank(tipo_value):
+        tipo_value = data.get("tipo")
+    tipo_norm = str(tipo_value or "").lower()
+
+    currency_value = _first_present(data, ("moneda_origen", "moneda"))
+    currency = _normalize_upper(currency_value)
+
+    provider_value = _first_present(data, ("proveedor_original", "pricing_source", "provider"))
+    provider = _normalize_upper(provider_value)
+
+    bopreal_symbol = _bopreal_symbol(raw_symbol)
+    bopreal_override = bool(bopreal_symbol and currency == "ARS" and provider == "IOL")
+
+    return {
+        "symbol_raw": raw_symbol,
+        "symbol_clean": symbol_clean,
+        "tipo_norm": tipo_norm,
+        "currency": currency,
+        "provider": provider,
+        "bopreal_symbol": bopreal_symbol,
+        "bopreal_override": bopreal_override,
+    }
+
+
+def _scale_from_context(context: Mapping[str, Any]) -> float:
+    if context.get("bopreal_override"):
+        return 1.0
+
+    symbol_clean = context.get("symbol_clean", "")
+    cfg = get_config()
+    scale_overrides = cfg.get("scale_overrides", {}) or {}
+    if symbol_clean in scale_overrides:
+        try:
+            override_value = float(scale_overrides[symbol_clean])
+            if override_value > 0:
+                return override_value
+        except (TypeError, ValueError) as exc:
+            logger.exception("scale_overrides inválido para %s: %s", symbol_clean, exc)
+
+    tipo_norm = context.get("tipo_norm", "")
+    currency = context.get("currency", "")
+    if ("bono" in tipo_norm or "letra" in tipo_norm) and currency == "USD":
+        return 0.01
+
+    return 1.0
+
+
 def clean_symbol(s: str) -> str:
     """Normaliza el símbolo: mayúsculas, sin espacios raros, sólo chars permitidos."""
     s = str(s or "").upper().strip()
@@ -267,30 +369,11 @@ def map_to_us_ticker(simbolo: str) -> str:
     raise ValueError(f"Símbolo no válido: {simbolo}")
 
 
-def scale_for(sym: str, tipo: str) -> float:
-    """
-    Factor de escala sugerido para convertir el precio/costo reportado a valuación.
+def scale_for(row: Mapping[str, Any] | pd.Series) -> float:
+    """Determina el factor de escala según tipo de activo y moneda."""
 
-    La heurística clásica asume que bonos y letras se informan en valor nominal 100,
-    por lo que se propone ``0.01``. Los overrides explícitos continúan teniendo
-    prioridad, pero la decisión final queda a cargo de ``calc_rows`` que evalúa el
-    payload recibido para confirmar si corresponde aplicar la conversión.
-    """
-    s = clean_symbol(sym)
-    cfg = get_config()
-    scale_overrides = cfg.get("scale_overrides", {}) or {}
-    if s in scale_overrides:
-        try:
-            f = float(scale_overrides[s])
-            if f > 0:
-                return f
-        except (TypeError, ValueError) as e:
-            logger.exception("scale_overrides inválido para %s: %s", s, e)
-
-    tipo_norm = (tipo or "").lower()
-    if any(x in tipo_norm for x in ("bono", "letra")):
-        return 0.01
-    return 1.0
+    context = _extract_scale_context(row)
+    return _scale_from_context(context)
 
 
 def classify_asset(it: dict) -> dict[str, str]:
@@ -670,9 +753,33 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     else:
         df["tipo_estandar"] = df["tipo"]
 
-    uniq = df.drop_duplicates("simbolo")[["simbolo", "tipo_estandar"]]
-    scale_map = {s: scale_for(s, t) for s, t in uniq.itertuples(index=False)}
-    df["scale"] = df["simbolo"].map(scale_map).astype(float).fillna(1.0)
+    scale_columns = [
+        "simbolo",
+        "tipo_estandar",
+        "tipo_activo",
+        "tipo",
+        "moneda_origen",
+        "moneda",
+        "proveedor_original",
+        "pricing_source",
+        "provider",
+    ]
+    available_scale_columns = [col for col in scale_columns if col in df.columns]
+    uniq = df.drop_duplicates("simbolo")[available_scale_columns]
+
+    scale_map: dict[str, float] = {}
+    bopreal_override_symbols: set[str] = set()
+    for _, row in uniq.iterrows():
+        context = _extract_scale_context(row)
+        symbol_raw = context.get("symbol_raw")
+        if _is_blank(symbol_raw):
+            continue
+        scale_value = _scale_from_context(context)
+        scale_map[symbol_raw] = scale_value
+        if context.get("bopreal_override") and context.get("bopreal_symbol"):
+            bopreal_override_symbols.add(context["bopreal_symbol"])
+
+    df["scale"] = pd.to_numeric(df["simbolo"].map(scale_map), errors="coerce").fillna(1.0)
 
     # Ajuste condicional de escala para bonos/letras ---------------------
     valorizado_series = pd.to_numeric(df.get("valorizado"), errors="coerce")
@@ -688,13 +795,16 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             configured = 1.0
 
         detected = configured
+        sym_value = df.at[idx, "simbolo"] if idx in df.index else ""
+        sym_clean = clean_symbol(sym_value)
         valorizado_total = float(valorizado_series.at[idx]) if idx in valorizado_series.index else float("nan")
         ultimo_precio = float(ultimo_precio_series.at[idx]) if idx in ultimo_precio_series.index else float("nan")
         cantidad = float(qty_series.at[idx]) if idx in qty_series.index else float("nan")
         valorizado_unit = float("nan")
         absolute_diff = float("nan")
         relative_diff = float("nan")
-        reason = "configured"
+        base_reason = "override_bopreal_ars" if sym_clean in bopreal_override_symbols else None
+        reason = base_reason or "configured"
 
         if configured < 1.0 and np.isfinite(valorizado_total) and np.isfinite(cantidad) and cantidad != 0.0:
             valorizado_unit = valorizado_total / cantidad
@@ -715,7 +825,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         elif configured < 1.0:
             reason = "insufficient_data"
         else:
-            reason = "passthrough"
+            reason = base_reason or "passthrough"
 
         final_scale.at[idx] = detected
         scale_audit.append(
