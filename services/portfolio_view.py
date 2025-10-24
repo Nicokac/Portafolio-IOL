@@ -2169,6 +2169,25 @@ def _serialize_snapshot_payload(
         },
     }
 
+    breakdown = getattr(totals, "valuation_breakdown", None)
+    breakdown_payload: dict[str, Any] = {}
+    if breakdown is not None:
+        try:
+            breakdown_payload = asdict(breakdown)
+        except TypeError:
+            if isinstance(breakdown, Mapping):
+                breakdown_payload = dict(breakdown)
+    if breakdown_payload:
+        impact = getattr(breakdown, "estimated_impact_pct", float("nan"))
+        try:
+            impact_value = float(impact)
+        except (TypeError, ValueError):
+            impact_value = float("nan")
+        if not np.isfinite(impact_value):
+            impact_value = float("nan")
+        breakdown_payload.setdefault("estimated_impact_pct", impact_value)
+        payload["totals"]["valuation_breakdown"] = breakdown_payload
+
     payload["df_view"] = _df_to_records(df_view)
     payload["history"] = _df_to_records(history)
 

@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from application.portfolio_service import calculate_totals, detect_currency
+from application.portfolio_service import (
+    PortfolioService,
+    calc_rows,
+    calculate_totals,
+    detect_currency,
+)
 
 
 def test_calculate_totals_basic_dataframe():
@@ -126,6 +131,70 @@ def test_calculate_totals_avoids_double_count_with_money_market_and_usd():
     assert totals.total_cash_usd == pytest.approx(401_765.812222)
     assert totals.total_cash_combined == pytest.approx(3_615_892.31)
     assert totals.usd_rate == pytest.approx(9.0)
+
+
+def test_calculate_totals_reports_currency_breakdown():
+    df = pd.DataFrame(
+        {
+            "valor_actual": [1000.0, 2000.0, 500.0],
+            "costo": [800.0, 1500.0, 400.0],
+            "moneda": ["ARS", "USD", "USD"],
+            "moneda_origen": ["ARS", "USD", "USD"],
+            "fx_aplicado": [np.nan, np.nan, 900.0],
+            "pricing_source": ["valorizado", "polygon", "polygon"],
+        }
+    )
+
+    totals = calculate_totals(df)
+    breakdown = totals.valuation_breakdown
+
+    assert totals.total_value == pytest.approx(1000.0)
+    assert totals.total_cost == pytest.approx(800.0)
+    assert breakdown.confirmed_rows == 1
+    assert breakdown.confirmed_value == pytest.approx(1000.0)
+    assert breakdown.estimated_rows == 1
+    assert breakdown.estimated_value == pytest.approx(500.0)
+    assert breakdown.unconverted_rows == 1
+    assert breakdown.unconverted_value == pytest.approx(2000.0)
+    assert math.isclose(breakdown.estimated_impact_pct, 50.0)
+
+
+def test_calculate_totals_matches_official_total_for_mixed_cedears():
+    payload = {
+        "totalValorizado": 3_500.0,
+        "activos": [
+            {
+                "simbolo": "GGAL",
+                "mercado": "bcba",
+                "cantidad": 10,
+                "costoUnitario": 100.0,
+                "valorizado": 1_500.0,
+                "moneda": "ARS",
+                "titulo": {"tipo": "ACCION"},
+            },
+            {
+                "simbolo": "AAPL",
+                "mercado": "nyse",
+                "cantidad": 5,
+                "costoUnitario": 120.0,
+                "valorizado": 2_000.0,
+                "moneda": "USD",
+                "titulo": {"tipo": "CEDEAR"},
+            },
+        ],
+    }
+
+    psvc = PortfolioService()
+    df_pos = psvc.normalize_positions(payload)
+    df_view = calc_rows(lambda *_: {}, df_pos, exclude_syms=[])
+
+    totals = calculate_totals(df_view)
+    official_total = payload["totalValorizado"]
+
+    assert totals.total_value == pytest.approx(official_total, rel=0.005)
+    breakdown = totals.valuation_breakdown
+    assert breakdown.estimated_rows == 0
+    assert breakdown.unconverted_rows == 0
 
 
 def test_detect_currency_uses_overrides():
