@@ -25,6 +25,9 @@ from ui.utils.formatters import format_asset_type
 from .export import download_csv
 from .palette import get_active_palette
 
+_TOTALS_LABEL = "Totales (suma de activos)"
+_TOTALS_MARKER = "__is_totals_row__"
+
 _SEARCH_WIDGET_KEY = "portfolio_table_search_input"
 _SEARCH_DATASET_STATE_KEY = "__portfolio_table_search_dataset__"
 _DATASET_HASH_STATE_KEY = "dataset_hash"
@@ -108,6 +111,79 @@ def render_table(
         ).str.lower().str.contains(search)
         df_sorted = df_sorted[mask]
 
+    def _weighted_average(values: pd.Series, weights: pd.Series) -> float:
+        if values.empty or weights.empty:
+            return float("nan")
+        values_array = pd.to_numeric(values, errors="coerce").to_numpy()
+        weights_array = pd.to_numeric(weights, errors="coerce").to_numpy()
+        if values_array.size == 0 or weights_array.size == 0:
+            return float("nan")
+        mask = np.isfinite(values_array) & np.isfinite(weights_array)
+        if not mask.any():
+            return float("nan")
+        masked_weights = weights_array[mask]
+        if not masked_weights.size or np.isclose(masked_weights.sum(), 0.0):
+            return float("nan")
+        return float(np.average(values_array[mask], weights=masked_weights))
+
+    def _build_totals_row(source_df: pd.DataFrame) -> dict[str, Any]:
+        def numeric(name: str) -> pd.Series:
+            if name in source_df.columns:
+                return pd.to_numeric(source_df[name], errors="coerce")
+            return pd.Series(index=source_df.index, dtype=float)
+
+        valor_actual_series = numeric("valor_actual")
+        costo_series = numeric("costo")
+        pl_series = numeric("pl")
+        pl_d_series = numeric("pl_d")
+
+        valor_total = float(np.nansum(valor_actual_series.to_numpy()))
+        costo_total = float(np.nansum(costo_series.to_numpy()))
+        if pl_series.notna().any():
+            pl_total = float(np.nansum(pl_series.to_numpy()))
+        else:
+            pl_total = valor_total - costo_total
+
+        if pl_d_series.notna().any():
+            pl_d_total = float(np.nansum(pl_d_series.to_numpy()))
+        else:
+            pl_d_total = float("nan")
+
+        if np.isfinite(costo_total) and not np.isclose(costo_total, 0.0):
+            pl_pct_total = (pl_total / costo_total) * 100.0
+        else:
+            pl_pct_total = float("nan")
+
+        variation_col = "variacion_diaria" if "variacion_diaria" in source_df.columns else "chg_%"
+        variation_series = numeric(variation_col)
+        weighted_variation = _weighted_average(variation_series, valor_actual_series)
+
+        totals_dict: dict[str, Any] = {
+            "simbolo": _TOTALS_LABEL,
+            "tipo": "",
+            "mercado": "",
+            "cantidad": np.nan,
+            "ultimo": np.nan,
+            "valor_actual": valor_total,
+            "costo": costo_total,
+            "pl": pl_total,
+            "pl_%": pl_pct_total,
+            "pl_d": pl_d_total,
+            "chg_%": weighted_variation,
+        }
+
+        if variation_col == "variacion_diaria":
+            totals_dict["variacion_diaria"] = weighted_variation
+
+        return totals_dict
+
+    totals_row = _build_totals_row(df_view)
+    if totals_row:
+        df_sorted = df_sorted.copy()
+        df_sorted[_TOTALS_MARKER] = False
+        totals_row[_TOTALS_MARKER] = True
+        df_sorted = pd.concat([df_sorted, pd.DataFrame([totals_row])], ignore_index=True)
+
     if df_sorted.empty:
         st.info("Sin datos para mostrar.")
         _register_visibility(False)
@@ -121,14 +197,16 @@ def render_table(
     all_spark_vals: list[float] = []
 
     for _, r in df_sorted.iterrows():
-        sym = str(r["simbolo"])
-        is_favorite = favorites.is_favorite(sym)
+        is_totals_row = bool(r.get(_TOTALS_MARKER))
+        sym = str(r["simbolo"]) if not is_totals_row else _TOTALS_LABEL
+        is_favorite = False if is_totals_row else favorites.is_favorite(sym)
 
         row = {
             "Símbolo": sym,
-            "Tipo": format_asset_type(r.get("tipo")),
-            "Favorito": "⭐" if is_favorite else "",
+            "Tipo": "" if is_totals_row else format_asset_type(r.get("tipo")),
+            "Favorito": "" if is_totals_row else ("⭐" if is_favorite else ""),
             "es_favorito": is_favorite,
+            "is_totals_row": is_totals_row,
             "cantidad_num": _as_float_or_none(r["cantidad"]),
             "ultimo_num": _as_float_or_none(r["ultimo"]),
             "valor_actual_num": _as_float_or_none(r["valor_actual"]),
@@ -144,16 +222,20 @@ def render_table(
         chg_pct = r.get("chg_%")
         row["pl_d_num"] = _as_float_or_none(pl_d_val)
         row["chg_pct_num"] = _as_float_or_none(chg_pct)
-        chg_list.append(_as_float_or_none(chg_pct))
+        if not is_totals_row:
+            chg_list.append(_as_float_or_none(chg_pct))
 
-        hist = quotes_hist.get(sym.upper(), [])
-        vals = [
-            _as_float_or_none(h.get("chg_pct"))
-            for h in hist[-SPARK_N:]
-            if _as_float_or_none(h.get("chg_pct")) is not None
-        ]
-        row["Intradía %"] = vals if len(vals) >= 2 else None
-        all_spark_vals.extend(vals)
+        if not is_totals_row:
+            hist = quotes_hist.get(sym.upper(), [])
+            vals = [
+                _as_float_or_none(h.get("chg_pct"))
+                for h in hist[-SPARK_N:]
+                if _as_float_or_none(h.get("chg_pct")) is not None
+            ]
+            row["Intradía %"] = vals if len(vals) >= 2 else None
+            all_spark_vals.extend(vals)
+        else:
+            row["Intradía %"] = None
 
         if show_usd and _as_float_or_none(ccl_rate):
             rate = float(ccl_rate)
@@ -259,19 +341,25 @@ def render_table(
         df_tbl.drop(columns=["Intradía %"], inplace=True, errors="ignore")
 
     st.subheader("Detalle por símbolo")
-    df_export = df_tbl.rename(columns=rename_map)
+    df_export = df_tbl.drop(columns=["is_totals_row"], errors="ignore").rename(columns=rename_map)
     if "es_favorito" in df_tbl.columns:
         df_export["Favorito"] = df_tbl["es_favorito"].astype(bool)
         df_export.drop(columns=["es_favorito"], inplace=True, errors="ignore")
     download_csv(df_export, "portafolio.csv")
 
-    df_page = df_tbl
+    totals_mask = df_tbl.get("is_totals_row", pd.Series(False, index=df_tbl.index)).astype(bool)
+    df_page = df_tbl.drop(columns=["is_totals_row"], errors="ignore")
+
+    def _highlight_totals(row: pd.Series) -> list[str]:
+        if totals_mask.iloc[row.name]:
+            return ["background-color: #f0f2f6; font-weight: 600;"] * len(row)
+        return [""] * len(row)
 
     st.dataframe(
         df_page.style.apply(
             _color_pl,
             subset=["pl_num", "pl_d_num", "pl_pct_num", "chg_pct_num"],
-        ),
+        ).apply(_highlight_totals, axis=1),
         use_container_width=True,
         hide_index=True,
         height=420,
@@ -284,7 +372,7 @@ def render_table(
         "Tabla con todas tus posiciones actuales. Te ayuda a ver cuánto tenés en cada activo y cómo viene rindiendo."
     )
 
-    drop_cols = list(rename_map.keys()) + ["es_favorito"]
+    drop_cols = list(rename_map.keys()) + ["es_favorito", "is_totals_row", _TOTALS_MARKER]
     df_tbl.drop(columns=drop_cols, inplace=True, errors="ignore")
 
     _register_visibility(True)
