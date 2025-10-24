@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from shared.config import get_config
+from shared.config import get_config, settings
 from shared.utils import _to_float
 
 
@@ -585,6 +585,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         provider = None
         currency = None
         fx_value: float | None = None
+        ratio_value: float | None = None
         q = None
         try:
             q = get_quote_fn(row["mercado"], row["simbolo"])
@@ -622,6 +623,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             if fx_raw is None:
                 fx_raw = q.get("fx_applied")
             fx_value = _to_float(fx_raw)
+            ratio_value = _to_float(q.get("ratioCEDEAR"), log=False)
         else:
             last = _to_float(q)
 
@@ -633,6 +635,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 "provider": provider,
                 "moneda_origen": currency,
                 "fx_aplicado": fx_value,
+                "ratioCEDEAR": ratio_value,
             }
         )
 
@@ -682,6 +685,14 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         df.loc[invalid_quote_mask, "chg_pct"] = np.nan
         df.loc[invalid_quote_mask, "prev_close"] = np.nan
         df.loc[invalid_quote_mask, "last"] = np.nan
+
+    safe_mode = _safe_valuation_mode_enabled()
+    if safe_mode:
+        external_provider_mask = ~provider_series.isin(_SAFE_PROVIDERS)
+        if external_provider_mask.any():
+            last_series = last_series.mask(external_provider_mask)
+            fx_series = fx_series.mask(external_provider_mask)
+            df.loc[external_provider_mask, ["last", "chg_pct", "prev_close"]] = np.nan
 
     df["ultimo"] = np.nan
     df["valor_actual"] = np.nan
@@ -772,10 +783,56 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     pricing_source = proveedor_utilizado.astype("string")
     df["pricing_source"] = pricing_source.fillna("")
     df["mercado"] = df["mercado"].str.upper()
+
+    def _safe_float_log(value: Any) -> float | None:
+        parsed = _to_float(value, log=False)
+        if parsed is None or not np.isfinite(parsed):
+            return None
+        return float(parsed)
+
+    ratio_column = None
+    for candidate in ("ratioCEDEAR", "ratioCEDEAR_x", "ratioCEDEAR_y"):
+        if candidate in df.columns:
+            ratio_column = candidate
+            break
+    ratio_series = (
+        pd.to_numeric(df[ratio_column], errors="coerce")
+        if ratio_column is not None
+        else pd.Series(index=df.index, dtype=float)
+    )
+
+    valuation_entries: list[dict[str, Any]] = []
+    for idx in df.index:
+        raw_provider = proveedor_utilizado.loc[idx] if idx in proveedor_utilizado.index else None
+        provider_text = None
+        if raw_provider is not None and pd.notna(raw_provider):
+            provider_candidate = str(raw_provider).strip()
+            provider_text = provider_candidate or None
+        fx_value_log = _safe_float_log(fx_series.loc[idx] if idx in fx_series.index else None)
+        ratio_value_log = _safe_float_log(ratio_series.loc[idx] if idx in ratio_series.index else None)
+        valuation_entries.append(
+            {
+                "simbolo": df.at[idx, "simbolo"],
+                "mercado": df.at[idx, "mercado"],
+                "proveedor_utilizado": provider_text,
+                "fx_aplicado": fx_value_log,
+                "ratioCEDEAR": ratio_value_log,
+            }
+        )
+
     result = df[cols]
     source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
     if source_counts:
         logger.info("calc_rows proveedor_utilizado=%s", source_counts)
+    if valuation_entries:
+        logger.info(
+            "portfolio_valuation_sources",
+            extra={
+                "event": "portfolio_valuation_sources",
+                "valuations": valuation_entries,
+                "safe_mode": safe_mode,
+            },
+        )
     if attrs:
         result.attrs.update(attrs)
     return result
@@ -916,3 +973,12 @@ class PortfolioService:
                 "additional_investment": new_capital,
             },
         }
+
+_SAFE_PROVIDERS = frozenset({"iol", "cache", "stale", ""})
+
+
+def _safe_valuation_mode_enabled() -> bool:
+    try:
+        return bool(getattr(settings, "SAFE_VALUATION_MODE", False))
+    except Exception:  # pragma: no cover - defensive guard when settings unavailable
+        return False

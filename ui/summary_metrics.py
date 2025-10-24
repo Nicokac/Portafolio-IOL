@@ -6,7 +6,7 @@ from typing import Any, Mapping, MutableMapping, Sequence
 import numpy as np
 import streamlit as st
 
-from application.portfolio_service import PortfolioTotals, calculate_totals
+from application.portfolio_service import PortfolioTotals, ValuationBreakdown, calculate_totals
 from shared.time_provider import TimeProvider
 from shared.utils import _as_float_or_none, format_money
 
@@ -90,6 +90,25 @@ def _infer_rate_label(rate_value: float | None) -> str:
             best_label = label
             best_diff = diff
     return best_label
+
+
+def _build_estimation_help(breakdown: ValuationBreakdown | None) -> str | None:
+    if not isinstance(breakdown, ValuationBreakdown):
+        return None
+    try:
+        estimated_rows = int(getattr(breakdown, "estimated_rows", 0) or 0)
+    except (TypeError, ValueError):
+        estimated_rows = 0
+    estimated_value = _as_float_or_none(getattr(breakdown, "estimated_value", None)) or 0.0
+    if estimated_rows <= 0 or not np.isfinite(estimated_value) or estimated_value <= 0:
+        return None
+    impact = getattr(breakdown, "estimated_impact_pct", float("nan"))
+    info_bits: list[str] = [f"{estimated_rows} activo{'s' if estimated_rows != 1 else ''} involucrado"]
+    formatted_value = format_money(float(estimated_value))
+    info_bits.append(f"≈ {formatted_value}")
+    if isinstance(impact, (int, float)) and np.isfinite(float(impact)):
+        info_bits.append(f"impacto estimado {float(impact):.2f}%")
+    return "⚠️ Cotizaciones estimadas de proveedores externos. " + " • ".join(info_bits)
 
 
 def _convert(value: float, *, source: str, target: str, rate: float | None) -> float | None:
@@ -188,8 +207,12 @@ def render_summary_metrics(
         st.markdown("#### 🟩 Totales del portafolio")
         row1 = st.columns(2)
         row2 = st.columns(2)
+        estimation_help = _build_estimation_help(getattr(totals, "valuation_breakdown", None))
         label, value = _format_total_metric("Valorizado", totals.total_value, currency=currency, rate=rate)
-        row1[0].metric(label, value)
+        metric_kwargs: dict[str, Any] = {}
+        if estimation_help:
+            metric_kwargs["help"] = estimation_help
+        row1[0].metric(label, value, **metric_kwargs)
         label, value = _format_total_metric("Costo", totals.total_cost, currency=currency, rate=rate)
         row1[1].metric(label, value)
         label, value = _format_total_metric("P/L", totals.total_pl, currency=currency, rate=rate)

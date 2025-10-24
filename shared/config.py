@@ -132,6 +132,14 @@ class Settings:
         )
         self.FMP_TIMEOUT: float = float(os.getenv("FMP_TIMEOUT", cfg.get("FMP_TIMEOUT", 5.0)))
 
+        # --- Modos de operación ---
+        raw_safe_mode = os.getenv("SAFE_VALUATION_MODE", cfg.get("SAFE_VALUATION_MODE"))
+        if isinstance(raw_safe_mode, bool):
+            self.SAFE_VALUATION_MODE = raw_safe_mode
+        else:
+            text_value = str(raw_safe_mode or "").strip().lower()
+            self.SAFE_VALUATION_MODE = text_value in {"1", "true", "yes", "on"}
+
         # --- Credenciales IOL ---
         self.IOL_USERNAME: str | None = self.secret_or_env("IOL_USERNAME", cfg.get("IOL_USERNAME"))
         self.IOL_PASSWORD: str | None = self.secret_or_env("IOL_PASSWORD", cfg.get("IOL_PASSWORD"))
