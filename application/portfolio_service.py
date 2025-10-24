@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping
 
 import numpy as np
@@ -14,6 +14,45 @@ import requests
 
 from shared.config import get_config
 from shared.utils import _to_float
+
+
+@dataclass(frozen=True)
+class ValuationBreakdown:
+    """Summary of valuation quality grouped by conversion confidence."""
+
+    confirmed_rows: int = 0
+    confirmed_value: float = 0.0
+    estimated_rows: int = 0
+    estimated_value: float = 0.0
+    unconverted_rows: int = 0
+    unconverted_value: float = 0.0
+
+    def __post_init__(self) -> None:
+        confirmed_rows = _to_float(self.confirmed_rows)
+        estimated_rows = _to_float(self.estimated_rows)
+        unconverted_rows = _to_float(self.unconverted_rows)
+        object.__setattr__(self, "confirmed_rows", int(confirmed_rows) if confirmed_rows is not None else 0)
+        object.__setattr__(self, "estimated_rows", int(estimated_rows) if estimated_rows is not None else 0)
+        object.__setattr__(self, "unconverted_rows", int(unconverted_rows) if unconverted_rows is not None else 0)
+
+        confirmed_value = _to_float(self.confirmed_value)
+        estimated_value = _to_float(self.estimated_value)
+        unconverted_value = _to_float(self.unconverted_value)
+        object.__setattr__(self, "confirmed_value", float(confirmed_value or 0.0))
+        object.__setattr__(self, "estimated_value", float(estimated_value or 0.0))
+        object.__setattr__(self, "unconverted_value", float(unconverted_value or 0.0))
+
+    @property
+    def estimated_impact_pct(self) -> float:
+        """Return the impact of estimated rows relative to confirmed valuations."""
+
+        base = float(self.confirmed_value)
+        if not np.isfinite(base) or base <= 0.0:
+            return float("nan")
+        impact = float(self.estimated_value)
+        if not np.isfinite(impact):
+            return float("nan")
+        return (impact / base) * 100.0
 
 
 @dataclass(frozen=True)
@@ -29,6 +68,7 @@ class PortfolioTotals:
     total_cash_usd: float = 0.0
     total_cash_combined: float | None = None
     usd_rate: float | None = None
+    valuation_breakdown: ValuationBreakdown = field(default_factory=ValuationBreakdown)
 
     def __post_init__(self) -> None:
         cash = _to_float(self.total_cash)
@@ -46,6 +86,17 @@ class PortfolioTotals:
         rate = _to_float(self.usd_rate)
         object.__setattr__(self, "usd_rate", None if rate is None else float(rate))
 
+        breakdown = getattr(self, "valuation_breakdown", None)
+        if breakdown is None:
+            breakdown_obj = ValuationBreakdown()
+        elif isinstance(breakdown, Mapping):
+            breakdown_obj = ValuationBreakdown(**breakdown)
+        elif isinstance(breakdown, ValuationBreakdown):
+            breakdown_obj = breakdown
+        else:  # pragma: no cover - defensive conversion
+            breakdown_obj = ValuationBreakdown()
+        object.__setattr__(self, "valuation_breakdown", breakdown_obj)
+
 
 def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     """Calcula totales agregados de valorizado, costo y P/L."""
@@ -53,19 +104,66 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     if df_view is None or df_view.empty:
         return PortfolioTotals(0.0, 0.0, 0.0, float("nan"), 0.0)
 
-    valor_actual = df_view.get("valor_actual", pd.Series(dtype=float))
-    costo = df_view.get("costo", pd.Series(dtype=float))
+    index = df_view.index
 
-    total_val = float(np.nansum(getattr(valor_actual, "values", [])))
-    total_cost = float(np.nansum(getattr(costo, "values", [])))
-    total_pl = total_val - total_cost
+    def _numeric_series(name: str) -> pd.Series:
+        if name in df_view.columns:
+            return pd.to_numeric(df_view[name], errors="coerce")
+        return pd.Series(index=index, dtype=float)
+
+    def _string_series(name: str) -> pd.Series:
+        if name in df_view.columns:
+            return df_view[name].astype("string")
+        return pd.Series(index=index, dtype="string")
+
+    valor_actual_series = _numeric_series("valor_actual").replace([np.inf, -np.inf], np.nan)
+    costo_series = _numeric_series("costo").replace([np.inf, -np.inf], np.nan)
+
+    currency_series = _string_series("moneda_origen").fillna("").str.upper()
+    moneda_series = _string_series("moneda").fillna("").str.upper()
+    provider_series = _string_series("pricing_source")
+    if provider_series.isna().all():
+        provider_series = _string_series("provider")
+    if provider_series.isna().all():
+        provider_series = _string_series("proveedor_original")
+    provider_series = provider_series.fillna("").str.lower()
+
+    simbolo_series = _string_series("simbolo").fillna("").str.upper()
+    fx_series = _numeric_series("fx_aplicado").replace([np.inf, -np.inf], np.nan)
+
+    has_value = valor_actual_series.notna()
+    ars_quote_mask = currency_series.str.contains("ARS", case=False, regex=False)
+    ars_position_mask = moneda_series.str.contains("ARS", case=False, regex=False)
+    official_providers = {"valorizado", "ultimoprecio", "iol", "cache", "stale", "last"}
+    cash_like_mask = simbolo_series.isin({"IOLPORA", "PARKING"})
+
+    confirmed_mask = has_value & (
+        ars_quote_mask
+        | ars_position_mask
+        | provider_series.isin(official_providers)
+        | cash_like_mask
+    )
+    if not confirmed_mask.any() and has_value.any():
+        confirmed_mask = has_value
+
+    fx_positive = (fx_series > 0).fillna(False)
+    estimated_mask = has_value & ~confirmed_mask & fx_positive
+    unconverted_mask = ~confirmed_mask & ~fx_positive
+
+    confirmed_value = float(np.nansum(valor_actual_series.where(confirmed_mask).to_numpy()))
+    estimated_value = float(np.nansum(valor_actual_series.where(estimated_mask).to_numpy()))
+    unconverted_value = float(np.nansum(valor_actual_series.where(unconverted_mask).to_numpy()))
+
+    total_value = confirmed_value
+    total_cost = float(np.nansum(costo_series.where(confirmed_mask).to_numpy()))
+    total_pl = total_value - total_cost
 
     cash_mask = df_view.get("simbolo")
     cash_series = pd.Series(dtype=float)
     if cash_mask is not None and "valor_actual" in df_view.columns:
         try:
             mask = cash_mask.astype(str).str.upper().isin({"IOLPORA", "PARKING"})
-            cash_series = pd.to_numeric(df_view.loc[mask, "valor_actual"], errors="coerce")
+            cash_series = valor_actual_series.loc[mask]
         except Exception:
             cash_series = pd.Series(dtype=float)
     total_cash = float(np.nansum(getattr(cash_series, "values", [])))
@@ -104,8 +202,17 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
     if include_cash_rows:
         combined += total_cash
 
+    breakdown = ValuationBreakdown(
+        confirmed_rows=int(confirmed_mask.sum()),
+        confirmed_value=confirmed_value,
+        estimated_rows=int(estimated_mask.sum()),
+        estimated_value=estimated_value,
+        unconverted_rows=int(unconverted_mask.sum()),
+        unconverted_value=unconverted_value,
+    )
+
     return PortfolioTotals(
-        total_val,
+        total_value,
         total_cost,
         total_pl,
         total_pl_pct,
@@ -114,6 +221,7 @@ def calculate_totals(df_view: pd.DataFrame | None) -> PortfolioTotals:
         total_cash_usd=cash_usd,
         total_cash_combined=combined,
         usd_rate=usd_rate,
+        valuation_breakdown=breakdown,
     )
 
 
@@ -431,6 +539,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         "tipo_estandar",
         "cantidad",
         "ppc",
+        "moneda",
+        "moneda_origen",
+        "fx_aplicado",
+        "pricing_source",
         "ultimo",
         "valor_actual",
         "costo",
@@ -448,6 +560,8 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     # Normalización básica y exclusiones ---------------------------------
     df = df_pos.copy()
+    if "moneda" not in df.columns:
+        df["moneda"] = ""
     df["simbolo"] = df["simbolo"].map(clean_symbol)
     df["mercado"] = df["mercado"].astype(str).str.lower()
     ex = {clean_symbol(s) for s in (exclude_syms or [])}
@@ -653,6 +767,10 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     # return pd.DataFrame(rows)
     # Orden final --------------------------------------------------------
+    df["moneda_origen"] = currency_series
+    df["fx_aplicado"] = fx_series
+    pricing_source = proveedor_utilizado.astype("string")
+    df["pricing_source"] = pricing_source.fillna("")
     df["mercado"] = df["mercado"].str.upper()
     result = df[cols]
     source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
