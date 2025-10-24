@@ -1,11 +1,14 @@
 """Contract tests for the portfolio Streamlit UI."""
 
+from collections import deque
 from types import SimpleNamespace
 from typing import Any, Iterable
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+
+import application.portfolio_service as app_portfolio_service
 
 import controllers.portfolio.charts as charts_mod
 import ui.export as export_mod
@@ -15,6 +18,7 @@ from application.portfolio_service import PortfolioTotals
 from controllers.portfolio.charts import render_basic_section
 from controllers.portfolio.portfolio import render_portfolio_section
 from domain.models import Controls
+from services import portfolio_view
 from services.notifications import NotificationFlags
 from services.portfolio_view import (
     PortfolioContributionMetrics,
@@ -357,6 +361,113 @@ def test_render_portfolio_section_applies_tab_badges_when_flags_active(
     risk.assert_called_once()
     assert risk.call_args.kwargs.get("notifications") == flags
     technical_badge.assert_not_called()
+
+
+def test_summary_metrics_refresh_after_totals_version_change(
+    _portfolio_setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_st = FakeStreamlit(radio_sequence=[0, 0])
+    (
+        portfolio_mod,
+        *_rest,
+        _view_model_factory,
+        notifications_factory,
+    ) = _portfolio_setup(fake_st)
+
+    initial_version = portfolio_view.PORTFOLIO_TOTALS_VERSION
+    totals_old = PortfolioTotals(12755410.97, 29850016.97, -17094606.0, -57.27, 0.0)
+    totals_new = PortfolioTotals(19694167.92, 16236822.79, 3457845.13, 27.11, 0.0)
+    base_df = pd.DataFrame({"simbolo": ["GGAL"], "valor_actual": [totals_old.total_value]})
+    contributions = PortfolioContributionMetrics.empty()
+
+    snapshot_old = PortfolioViewSnapshot(
+        df_view=base_df,
+        totals=totals_old,
+        apply_elapsed=0.0,
+        totals_elapsed=0.0,
+        generated_at=0.0,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=contributions,
+        pending_metrics=(),
+        dataset_hash=f"dataset|totals_v{initial_version}",
+        metadata={"totals_version": f"v{initial_version}"},
+    )
+
+    snapshot_new = PortfolioViewSnapshot(
+        df_view=base_df,
+        totals=totals_new,
+        apply_elapsed=0.0,
+        totals_elapsed=0.0,
+        generated_at=1.0,
+        historical_total=pd.DataFrame(),
+        contribution_metrics=contributions,
+        pending_metrics=(),
+        dataset_hash=f"dataset|totals_v{initial_version + 1}",
+        metadata={"totals_version": f"v{initial_version + 1}"},
+    )
+
+    class _StubService:
+        def __init__(self, snapshots: list[PortfolioViewSnapshot]) -> None:
+            self._snapshots = deque(snapshots)
+            self._current = snapshots[-1]
+            self._hash_dataset = lambda _df: "stub"
+            self._dataset_key: str | None = None
+
+        def get_portfolio_view(self, *args: Any, **kwargs: Any) -> PortfolioViewSnapshot:
+            if self._snapshots:
+                self._current = self._snapshots.popleft()
+            self._dataset_key = getattr(self._current, "dataset_hash", None)
+            return self._current
+
+        def compute_extended_metrics(self, **_: Any) -> PortfolioViewSnapshot:
+            return self._current
+
+    stub_service = _StubService([snapshot_old, snapshot_new])
+
+    def _service_factory() -> Any:
+        return stub_service
+
+    render_portfolio_section(
+        DummyCtx(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=_service_factory,
+        notifications_service_factory=notifications_factory,
+    )
+
+    def _metric_value(label: str) -> str:
+        for entry in fake_st.metrics:
+            if entry[0].startswith(label):
+                return entry[1]
+        raise AssertionError(f"metric {label!r} not recorded")
+
+    valorizado_before = _metric_value("Valorizado")
+    pl_pct_before = _metric_value("P/L %")
+
+    assert "12.755.410" in valorizado_before
+    assert "57.27%" in pl_pct_before
+
+    fake_st.metrics.clear()
+
+    new_version = initial_version + 1
+    monkeypatch.setattr(portfolio_view, "PORTFOLIO_TOTALS_VERSION", new_version, raising=False)
+    monkeypatch.setattr(portfolio_mod, "PORTFOLIO_TOTALS_VERSION", new_version, raising=False)
+    monkeypatch.setattr(app_portfolio_service, "PORTFOLIO_TOTALS_VERSION", new_version, raising=False)
+
+    render_portfolio_section(
+        DummyCtx(),
+        cli=object(),
+        fx_rates={},
+        view_model_service_factory=_service_factory,
+        notifications_service_factory=notifications_factory,
+    )
+
+    valorizado_after = _metric_value("Valorizado")
+    pl_pct_after = _metric_value("P/L %")
+
+    assert "19.694.167,92" in valorizado_after
+    assert "27.11%" in pl_pct_after
+    assert valorizado_after != valorizado_before
 
 
 def test_portfolio_ui_respects_raw_iol_asset_types(
