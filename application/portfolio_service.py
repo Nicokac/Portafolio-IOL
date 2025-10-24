@@ -19,7 +19,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 5.6
+PORTFOLIO_TOTALS_VERSION = 5.7
 
 
 @dataclass(frozen=True)
@@ -242,6 +242,8 @@ logger = logging.getLogger(__name__)
 
 # ---------- Helpers y configuración ----------
 BOPREAL_SYMBOLS = {"BPOA7", "BPOB7", "BPOC7", "BPOD7"}
+BOPREAL_HISTORICAL_SCALE = 0.01
+BOPREAL_FORCED_REVALUATION_TAG = "override_bopreal_ars_forced_revaluation"
 
 
 def _is_blank(value: Any) -> bool:
@@ -280,6 +282,25 @@ def _bopreal_symbol(symbol: Any) -> str | None:
     if cleaned not in BOPREAL_SYMBOLS:
         return None
     return cleaned
+
+
+def is_bopreal_ars(row: Mapping[str, Any] | pd.Series) -> bool:
+    """Return True when the row corresponds to a BOPREAL series in ARS."""
+
+    if isinstance(row, pd.Series):
+        data = row
+    elif isinstance(row, Mapping):
+        data = pd.Series(row)
+    else:  # pragma: no cover - defensive guard for unexpected inputs
+        raise TypeError(f"is_bopreal_ars expects Mapping or Series, got {type(row)!r}")
+
+    bopreal_symbol = _bopreal_symbol(data.get("simbolo"))
+    if not bopreal_symbol:
+        return False
+
+    currency_value = _first_present(data, ("moneda_origen", "moneda"))
+    currency = _normalize_upper(currency_value)
+    return currency == "ARS"
 
 
 def _extract_scale_context(row: Mapping[str, Any] | pd.Series) -> dict[str, Any]:
@@ -845,6 +866,12 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     df["scale"] = final_scale
 
+    bopreal_ars_mask = (
+        df.apply(is_bopreal_ars, axis=1).astype(bool)
+        if not df.empty
+        else pd.Series(False, index=df.index, dtype=bool)
+    )
+
     # ----- Valoraciones -------------------------------------------------
     provider_series = (
         df.get("provider", pd.Series(index=df.index, dtype="object")).astype("string").str.lower().fillna("")
@@ -881,19 +908,34 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
 
     qty_scale = df["cantidad"] * df["scale"]
 
+    valorizado_series = pd.Series(index=df.index, dtype=float)
+    forced_valorizado_mask = pd.Series(False, index=df.index, dtype=bool)
+    forced_revaluation_symbols: set[str] = set()
+
     if "valorizado" in df.columns:
         valorizado_series = pd.to_numeric(df["valorizado"], errors="coerce")
         mask_valorizado = valorizado_series.notna()
         if mask_valorizado.any():
-            denom = qty_scale.replace({0: np.nan})
-            price = pd.Series(np.nan, index=df.index, dtype=float)
-            valid_price_mask = mask_valorizado & denom.notna()
-            price.loc[valid_price_mask] = (
-                valorizado_series.loc[valid_price_mask] / denom.loc[valid_price_mask]
-            )
-            df.loc[mask_valorizado & price.notna(), "ultimo"] = price.loc[mask_valorizado & price.notna()]
-            df.loc[mask_valorizado, "valor_actual"] = valorizado_series.loc[mask_valorizado]
-            proveedor_utilizado.loc[mask_valorizado] = "valorizado"
+            forced_valorizado_mask = mask_valorizado & bopreal_ars_mask
+            if forced_valorizado_mask.any():
+                forced_symbols = df.loc[forced_valorizado_mask, "simbolo"].apply(clean_symbol)
+                forced_revaluation_symbols.update(sym for sym in forced_symbols if sym)
+
+            effective_valorizado_mask = mask_valorizado & ~bopreal_ars_mask
+            if effective_valorizado_mask.any():
+                denom = qty_scale.replace({0: np.nan})
+                price = pd.Series(np.nan, index=df.index, dtype=float)
+                valid_price_mask = effective_valorizado_mask & denom.notna()
+                price.loc[valid_price_mask] = (
+                    valorizado_series.loc[valid_price_mask] / denom.loc[valid_price_mask]
+                )
+                df.loc[
+                    effective_valorizado_mask & price.notna(), "ultimo"
+                ] = price.loc[effective_valorizado_mask & price.notna()]
+                df.loc[effective_valorizado_mask, "valor_actual"] = valorizado_series.loc[
+                    effective_valorizado_mask
+                ]
+                proveedor_utilizado.loc[effective_valorizado_mask] = "valorizado"
 
     if "ultimoPrecio" in df.columns:
         ultimo_precio = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
@@ -903,13 +945,26 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     mask_ultimo = (
         df["valor_actual"].isna()
         & ultimo_precio.notna()
-        & moneda_pos.eq("ARS")
+        & (moneda_pos.eq("ARS") | bopreal_ars_mask)
     )
     if mask_ultimo.any():
         df.loc[mask_ultimo, "ultimo"] = ultimo_precio.loc[mask_ultimo]
         df.loc[mask_ultimo, "valor_actual"] = ultimo_precio.loc[mask_ultimo] * qty_scale.loc[mask_ultimo]
         proveedor_utilizado.loc[mask_ultimo] = "ultimoPrecio"
     df["ultimoPrecio"] = ultimo_precio
+
+    forced_pending_mask = forced_valorizado_mask & df["valor_actual"].isna()
+    if forced_pending_mask.any():
+        rescale_factor = df.loc[forced_pending_mask, "scale"] / BOPREAL_HISTORICAL_SCALE
+        rescale_factor = rescale_factor.replace([np.inf, -np.inf], np.nan)
+        valor_rescaled = valorizado_series.loc[forced_pending_mask] * rescale_factor
+        df.loc[forced_pending_mask, "valor_actual"] = valor_rescaled
+        denom = qty_scale.replace({0: np.nan})
+        valid_forced_mask = forced_pending_mask & denom.notna()
+        if valid_forced_mask.any():
+            price_rescaled = valor_rescaled.loc[valid_forced_mask] / denom.loc[valid_forced_mask]
+            df.loc[valid_forced_mask, "ultimo"] = price_rescaled
+        proveedor_utilizado.loc[forced_pending_mask] = "valorizado_rescaled"
 
     mask_cotizacion = (
         df["valor_actual"].isna()
@@ -1005,6 +1060,19 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         )
 
     result = df[cols]
+    if forced_revaluation_symbols and scale_audit:
+        forced_clean = {clean_symbol(sym) for sym in forced_revaluation_symbols}
+        for entry in scale_audit:
+            sym = clean_symbol(entry.get("simbolo")) if isinstance(entry, Mapping) else ""
+            if sym in forced_clean:
+                entry["reason"] = BOPREAL_FORCED_REVALUATION_TAG
+                tags = entry.get("tags") if isinstance(entry, dict) else None
+                if isinstance(tags, list):
+                    if BOPREAL_FORCED_REVALUATION_TAG not in tags:
+                        tags.append(BOPREAL_FORCED_REVALUATION_TAG)
+                else:
+                    entry["tags"] = [BOPREAL_FORCED_REVALUATION_TAG]
+                entry["forced_revaluation"] = True
     if scale_audit:
         attrs.setdefault("audit", {})
         audit_section = attrs["audit"]
