@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Añadido registro "override_bopreal_ars" en auditoría de escalas
 - Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.5
 
+## [0.8.5] — Revaluación forzada BOPREAL ARS
+### Changed
+- `calc_rows` ignora `valorizado` de payload para series BOPREAL en ARS, priorizando `ultimoPrecio` y recalculando totales con la escala 1.0.
+- Auditoría de escalas ahora etiqueta las filas BOPREAL con `override_bopreal_ars_forced_revaluation` e incluye `valorizado_rescaled` como fuente.
+- Incremento de `PORTFOLIO_TOTALS_VERSION` → 5.7 para invalidar snapshots previos y propagar la nueva valuación.
+
+### Fixed
+- Las letras BOPREAL (BPOA7–BPOD7) reflejan ~19.9 M ARS en `valor_actual`, evitando el rezago de ~199 k heredado del payload.
+
 ## [0.8.4] — Validación post-fix BOPREAL y sincronización de snapshots
 ### Added
 - Script `python -m scripts.check_bond_scale --offline` para validar la eliminación de escalas anómalas reutilizando datasets cacheados.

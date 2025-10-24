@@ -1,6 +1,6 @@
 # Plan de validación de normalización de valuaciones
 
-La versión **v0.8.4** introduce la corrección definitiva de escalas para bonos y
+La versión **v0.8.5** introduce la corrección definitiva de escalas para bonos y
 letras BOPREAL (series BPOA7–BPOC7). Este documento resume el flujo de
 verificación recomendado para confirmar que los snapshots activos reflejan los
 valores ajustados y que los totales del dashboard se sincronizan con los montos
@@ -42,8 +42,8 @@ oficiales de InvertirOnline.
 
    ```bash
    python -m scripts.check_bond_scale --offline \
-       --baseline-view archive/portfolio_v0.8.3.csv \
-       --delta-output logs/bond_scale_delta_v0.8.4.csv
+       --baseline-view archive/portfolio_v0.8.4.csv \
+       --delta-output logs/bond_scale_delta_v0.8.5.csv
    ```
 
    - `--offline` reutiliza el dataset persistido por el `PortfolioDataFetchService`.
@@ -57,10 +57,10 @@ oficiales de InvertirOnline.
 
 3. **Sincronización de totales:**
 
-   - Confirmar que `PORTFOLIO_TOTALS_VERSION=5.6` esté exportada en el entorno.
+   - Confirmar que `PORTFOLIO_TOTALS_VERSION=5.7` esté exportada en el entorno.
    - Iniciar la UI o ejecutar el flujo `get_portfolio_view()` para generar un
      snapshot nuevo.
-   - Verificar que los metadatos del snapshot indiquen `totals_version = v5.6`
+   - Verificar que los metadatos del snapshot indiquen `totals_version = v5.7`
      y que los totales recalculados coincidan con los datos de IOL.
 
 4. **Checklist final:**
@@ -77,4 +77,4 @@ oficiales de InvertirOnline.
   disponibles, ejecutar primero el script sin `--offline` o refrescar la
   caché desde la UI.
 - Los deltas exportados pueden adjuntarse a reportes de QA para documentar el
-  impacto del recalculado v0.8.4 frente a v0.8.3.
+  impacto del recalculado v0.8.5 frente a v0.8.4.
