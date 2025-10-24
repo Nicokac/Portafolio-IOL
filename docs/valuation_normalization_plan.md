@@ -1,10 +1,11 @@
 # Plan de validación de normalización de valuaciones
 
-La versión **v0.8.5** introduce la corrección definitiva de escalas para bonos y
-letras BOPREAL (series BPOA7–BPOC7). Este documento resume el flujo de
-verificación recomendado para confirmar que los snapshots activos reflejan los
-valores ajustados y que los totales del dashboard se sincronizan con los montos
-oficiales de InvertirOnline.
+La versión **v0.8.6** consolida la corrección definitiva de escalas para bonos y
+letras BOPREAL (series BPOA7–BPOC7) y agrega un parche post-merge que evita que
+el `valorizado` original del payload sobrescriba la revaluación forzada en la
+vista final. Este documento resume el flujo de verificación recomendado para
+confirmar que los snapshots activos reflejan los valores ajustados y que los
+totales del dashboard se sincronizan con los montos oficiales de InvertirOnline.
 
 ## Objetivos
 
@@ -57,10 +58,10 @@ oficiales de InvertirOnline.
 
 3. **Sincronización de totales:**
 
-   - Confirmar que `PORTFOLIO_TOTALS_VERSION=5.7` esté exportada en el entorno.
+   - Confirmar que `PORTFOLIO_TOTALS_VERSION=5.8` esté exportada en el entorno.
    - Iniciar la UI o ejecutar el flujo `get_portfolio_view()` para generar un
      snapshot nuevo.
-   - Verificar que los metadatos del snapshot indiquen `totals_version = v5.7`
+   - Verificar que los metadatos del snapshot indiquen `totals_version = v5.8`
      y que los totales recalculados coincidan con los datos de IOL.
 
 4. **Checklist final:**

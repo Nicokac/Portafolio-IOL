@@ -36,6 +36,8 @@ from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
+_BOPREAL_ARS_SYMBOLS = frozenset({"BPOA7", "BPOB7", "BPOC7", "BPOD7"})
+
 try:  # pragma: no cover - optional dependency for Redis adapter
     import redis  # type: ignore[import-not-found]
 except Exception:  # pragma: no cover - redis is optional
@@ -1861,6 +1863,18 @@ class PortfolioViewModelService:
             allow_dataset_reuse=version_only_change,
         )
 
+        patch_applied = _apply_bopreal_postmerge_patch(incremental.df_view)
+        if patch_applied:
+            updated_totals = calculate_totals(incremental.df_view)
+            updated_contributions = incremental.contribution_metrics
+            if incremental.extended_computed:
+                updated_contributions = _compute_contribution_metrics(incremental.df_view)
+            incremental = replace(
+                incremental,
+                totals=updated_totals,
+                contribution_metrics=updated_contributions,
+            )
+
         generated_ts = time.time()
         pending_metrics: tuple[str, ...] = ()
         if not incremental.extended_computed:
@@ -2153,6 +2167,60 @@ def _apply_filters(
         dataset_hash=dataset_hash,
         skip_invalidation=skip_invalidation,
     )
+
+
+def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
+    """Ensure BOPREAL ARS rows keep the forced valuation after dataset merges."""
+
+    if not isinstance(df_view, pd.DataFrame) or df_view.empty:
+        return False
+
+    required = {"simbolo", "moneda_origen", "cantidad", "ultimoPrecio"}
+    if not required.issubset(df_view.columns):
+        return False
+
+    symbols = df_view["simbolo"].astype("string").fillna("").str.upper()
+    currency = df_view["moneda_origen"].astype("string").fillna("").str.upper()
+    bopreal_mask = symbols.isin(_BOPREAL_ARS_SYMBOLS) & ~symbols.str.endswith("D")
+    mask = bopreal_mask & currency.eq("ARS")
+    if not bool(mask.any()):
+        return False
+
+    ultimo_series = pd.to_numeric(df_view["ultimoPrecio"], errors="coerce")
+    quantity_series = pd.to_numeric(df_view["cantidad"], errors="coerce")
+    recalculated = ultimo_series.mul(quantity_series)
+
+    if "valor_actual" not in df_view.columns:
+        df_view["valor_actual"] = np.nan
+    current_values = pd.to_numeric(df_view["valor_actual"], errors="coerce")
+    effective_values = recalculated.where(recalculated.notna(), current_values)
+    df_view.loc[mask, "valor_actual"] = effective_values.loc[mask]
+
+    df_view.loc[mask, "pricing_source"] = "override_bopreal_postmerge"
+
+    if "audit" in df_view.columns:
+        decision_tag = "override_bopreal_postmerge"
+
+        def _append_decision(audit_value: Any) -> dict[str, Any]:
+            if isinstance(audit_value, Mapping):
+                audit_dict = dict(audit_value)
+            else:
+                audit_dict = {}
+            existing = audit_dict.get("scale_decisions")
+            if isinstance(existing, list):
+                updated = list(existing)
+            elif existing is None:
+                updated = []
+            else:
+                updated = [existing]
+            if decision_tag not in updated:
+                updated.append(decision_tag)
+            audit_dict["scale_decisions"] = updated
+            return audit_dict
+
+        df_view.loc[mask, "audit"] = df_view.loc[mask, "audit"].apply(_append_decision)
+
+    return True
 
 
 def _compute_contribution_metrics(
