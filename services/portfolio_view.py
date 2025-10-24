@@ -1597,6 +1597,15 @@ class PortfolioViewModelService:
                 previous_version,
                 current_version,
             )
+            with self._snapshot_lock:
+                self._incremental_cache = {}
+                self._last_incremental_stats = None
+            prev_label = f"v{previous_version}" if previous_version else "unknown"
+            curr_label = f"v{current_version}" if current_version else "unknown"
+            _PORTFOLIO_CACHE_TELEMETRY.record_invalidation(
+                "totals_version_changed",
+                detail=f"{prev_label}->{curr_label}",
+            )
 
         skip_invalidation = bool(skip_invalidation)
         effective_skip_invalidation = skip_invalidation and not totals_version_changed
