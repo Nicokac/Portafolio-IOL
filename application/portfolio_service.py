@@ -17,6 +17,7 @@ import pandas as pd
 import requests
 
 from shared.config import get_config, settings
+from shared.pandas_attrs import unwrap_callable_attr
 from shared.utils import _to_float
 
 
@@ -729,10 +730,15 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 
 def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
     """Calcula métricas de valuación y P/L para cada posición."""
+    market_price_fetcher_raw = None
     if isinstance(df_pos, pd.DataFrame):
+        attrs_ref = getattr(df_pos, "attrs", None)
+        if isinstance(attrs_ref, ABCMapping):
+            market_price_fetcher_raw = attrs_ref.get("market_price_fetcher")
         sanitize_attrs(df_pos)
     attrs: dict[str, Any] = dict(getattr(df_pos, "attrs", {}) or {})
-    market_price_fetcher = attrs.pop("market_price_fetcher", None)
+    market_price_fetcher = unwrap_callable_attr(market_price_fetcher_raw)
+    attrs.pop("market_price_fetcher", None)
     if not callable(market_price_fetcher):
         market_price_fetcher = getattr(get_quote_fn, "fetch_market_price", None)
         if not callable(market_price_fetcher):
