@@ -2249,15 +2249,48 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
     if not bool(mask.any()):
         return False
 
-    ultimo_series = pd.to_numeric(df_view["ultimoPrecio"], errors="coerce")
     quantity_series = pd.to_numeric(df_view["cantidad"], errors="coerce")
-    recalculated = ultimo_series.mul(quantity_series)
+    if "scale" in df_view.columns:
+        scale_series = pd.to_numeric(df_view["scale"], errors="coerce").fillna(1.0)
+    else:
+        scale_series = pd.Series(1.0, index=df_view.index, dtype=float)
+
+    effective_qty = quantity_series.mul(scale_series)
+
+    last_series = pd.Series(np.nan, index=df_view.index, dtype=float)
+    if "ultimo" in df_view.columns:
+        last_series = pd.to_numeric(df_view["ultimo"], errors="coerce")
+    if "ultimoPrecio" in df_view.columns:
+        ultimo_series = pd.to_numeric(df_view["ultimoPrecio"], errors="coerce")
+        last_series = last_series.where(last_series.notna(), ultimo_series)
+
+    recalculated = last_series.mul(effective_qty)
 
     if "valor_actual" not in df_view.columns:
         df_view["valor_actual"] = np.nan
     current_values = pd.to_numeric(df_view["valor_actual"], errors="coerce")
     effective_values = recalculated.where(recalculated.notna(), current_values)
     df_view.loc[mask, "valor_actual"] = effective_values.loc[mask]
+    if "valorizado" in df_view.columns:
+        df_view.loc[mask, "valorizado"] = effective_values.loc[mask]
+    if "ultimo" in df_view.columns:
+        df_view.loc[mask, "ultimo"] = last_series.loc[mask]
+
+    if "pl" not in df_view.columns:
+        df_view["pl"] = np.nan
+    if "pl_%" not in df_view.columns:
+        df_view["pl_%"] = np.nan
+
+    costo_series = pd.to_numeric(
+        df_view.get("costo", pd.Series(index=df_view.index, dtype=float)),
+        errors="coerce",
+    )
+    pl_values = effective_values.subtract(costo_series, fill_value=np.nan)
+    df_view.loc[mask, "pl"] = pl_values.loc[mask]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        pl_pct = (pl_values.divide(costo_series)).multiply(100.0)
+    pl_pct = pl_pct.replace([np.inf, -np.inf], np.nan)
+    df_view.loc[mask, "pl_%"] = pl_pct.loc[mask]
 
     df_view.loc[mask, "pricing_source"] = "override_bopreal_postmerge"
 
