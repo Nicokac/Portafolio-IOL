@@ -51,6 +51,18 @@ def test_bopreal_forced_revaluation_applies_factor_and_audit() -> None:
     assert math.isclose(entry.get("ultimo_precio_forzado"), expected_unit, rel_tol=1e-6)
 
 
+def test_bopreal_override_when_provider_reports_valorizado() -> None:
+    df_pos = _build_row(pricing_source="valorizado", provider="valorizado")
+
+    result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
+    row = result.iloc[0]
+
+    expected_total = 1_367.6 * 100.0 * 146.0
+
+    assert math.isclose(row["valor_actual"], expected_total, rel_tol=1e-6)
+    assert row["pricing_source"] == "override_bopreal_forced"
+
+
 def test_bopreal_skip_override_when_price_already_scaled() -> None:
     df_pos = _build_row(ultimoPrecio=137_200.0, valorizado=137_200.0 * 146.0)
 

@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## [0.8.8.1] — Hotfix BOPREAL valuation cache invalidation
+### Fixed
+- Se fuerza la revaluación de bonos BOPREAL en ARS incluso cuando el payload marca `pricing_source=valorizado`, ampliando los proveedores confiables y ajustando la auditoría para preservar el factor ×100 sin intervención manual.
+- Incremento de `PORTFOLIO_TOTALS_VERSION` (→ 6.0) para invalidar snapshots con escalas erróneas y refrescar totales en UI tras aplicar la corrección automática.
+
 ## [0.8.8.0] — Fase 6.0 — Forced Revaluation Patch BOPREAL ARS
 ### Changed
 - `calc_rows` aplica un factor `×100` sobre `ultimoPrecio` y `valor_actual` para series BOPREAL en ARS provenientes de IOL, etiquetando la fila con `pricing_source=override_bopreal_forced` y preservando el monto corregido aunque el payload traiga valores truncados.
