@@ -1,5 +1,6 @@
 import logging
 import time
+from collections.abc import MutableMapping
 
 import pandas as pd
 import streamlit as st
@@ -83,6 +84,25 @@ def _background_export_job(df_view: pd.DataFrame) -> None:
         logger.debug("No se pudo preparar el paquete de exportación", exc_info=True)
 
 
+def _clone_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a DataFrame copy preserving attrs with non-serialisable values."""
+
+    attrs = getattr(df, "attrs", None)
+    if isinstance(attrs, MutableMapping) and attrs:
+        snapshot = dict(attrs)
+        attrs.clear()
+        try:
+            clone = df.copy()
+        finally:
+            attrs.update(snapshot)
+        try:
+            clone.attrs.update(snapshot)
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+        return clone
+    return df.copy()
+
+
 def _schedule_background_jobs(df_view: pd.DataFrame, telemetry: dict[str, object]) -> None:
     if df_view.empty:
         return
@@ -155,7 +175,8 @@ def apply_filters(
             selected=len(selected_syms),
         ) as stage_filter:
             if selected_syms:
-                df_pos = df_pos[df_pos["simbolo"].isin(selected_syms)].copy()
+                mask = df_pos["simbolo"].isin(selected_syms)
+                df_pos = _clone_dataframe(df_pos.loc[mask])
         _record_stage("filter_positions", stage_filter)
         telemetry["post_filter_rows"] = int(len(df_pos))
 
@@ -261,14 +282,22 @@ def apply_filters(
 
         if controls.selected_types:
             with _profile_stage("apply_type_filter", filters=len(controls.selected_types)) as stage_type:
-                df_view = df_view[df_view["tipo"].isin(controls.selected_types)].copy()
+                mask = df_view["tipo"].isin(controls.selected_types)
+                df_view = _clone_dataframe(df_view.loc[mask])
             _record_stage("apply_type_filter", stage_type)
             telemetry["filtered_rows"] = int(len(df_view))
 
         symbol_q = (controls.symbol_query or "").strip()
         if symbol_q:
             with _profile_stage("apply_symbol_query", query=symbol_q) as stage_query:
-                df_view = df_view[df_view["simbolo"].astype(str).str.contains(symbol_q, case=False, na=False)].copy()
+                mask = (
+                    df_view["simbolo"].astype(str).str.contains(
+                        symbol_q,
+                        case=False,
+                        na=False,
+                    )
+                )
+                df_view = _clone_dataframe(df_view.loc[mask])
             _record_stage("apply_symbol_query", stage_query)
             telemetry["query_rows"] = int(len(df_view))
 
