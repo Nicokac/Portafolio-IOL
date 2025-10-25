@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## [0.8.9.0] — Market fallback for BOPREAL ARS
+### Added
+- `IOLClient.fetch_market_price()` consulta los endpoints de cotización de títulos (`/Cotizacion` y `/CotizacionDetalle`) con reintentos controlados y devuelve el último precio disponible o el promedio bid/ask cuando corresponde.
+- Nueva prueba `tests/test_bopreal_market_fallback.py` que cubre el flujo truncado (≈200 k ARS), la revaluación de mercado (~19.9 M ARS) y la propagación de `quotes_hash` en la auditoría.
+
+### Changed
+- `calc_rows` detecta precios truncados (`ultimoPrecio` < 10 000) para BOPREAL ARS, aplica la revaluación directa de mercado, etiqueta `pricing_source = "market_revaluation_fallback"` y registra `override_bopreal_market` junto con `market_price_source`, `timestamp_fallback` y `quotes_hash` en `attrs['audit']`.
+- `controllers.portfolio.load_data` y `apply_filters` propagan el `market_price_fetcher` autenticado hacia el pipeline de valoración.
+- Se incrementa `PORTFOLIO_TOTALS_VERSION` → 6.1 y se versiona el paquete a 0.8.9.0 para invalidar snapshots previos y difundir el nuevo cálculo en la UI.
 ## [0.8.8.1] — Hotfix BOPREAL valuation cache invalidation
 ### Fixed
 - Se fuerza la revaluación de bonos BOPREAL en ARS incluso cuando el payload marca `pricing_source=valorizado`, ampliando los proveedores confiables y ajustando la auditoría para preservar el factor ×100 sin intervención manual.

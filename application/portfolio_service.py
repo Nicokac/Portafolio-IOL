@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping
 
@@ -19,7 +20,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 6.0
+PORTFOLIO_TOTALS_VERSION = 6.1
 
 
 @dataclass(frozen=True)
@@ -660,6 +661,11 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
     """Calcula métricas de valuación y P/L para cada posición."""
     attrs: dict[str, Any] = dict(getattr(df_pos, "attrs", {}) or {})
+    market_price_fetcher = attrs.pop("market_price_fetcher", None)
+    if not callable(market_price_fetcher):
+        market_price_fetcher = getattr(get_quote_fn, "fetch_market_price", None)
+        if not callable(market_price_fetcher):
+            market_price_fetcher = None
     cols = [
         "simbolo",
         "mercado",
@@ -929,6 +935,8 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     forced_valorizado_mask = pd.Series(False, index=df.index, dtype=bool)
     forced_revaluation_symbols: set[str] = set()
     bopreal_force_audit_entries: list[dict[str, Any]] = []
+    bopreal_market_audit_entries: list[dict[str, Any]] = []
+    fallback_market_source: str | None = None
 
     if "valorizado" in df.columns:
         valorizado_series = pd.to_numeric(df["valorizado"], errors="coerce")
@@ -970,6 +978,85 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         df.loc[mask_ultimo, "valor_actual"] = ultimo_precio.loc[mask_ultimo] * qty_scale.loc[mask_ultimo]
         proveedor_utilizado.loc[mask_ultimo] = "ultimoPrecio"
     df["ultimoPrecio"] = ultimo_precio
+
+    if market_price_fetcher is not None and bopreal_ars_mask.any():
+        fallback_threshold = 10_000.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            unit_valorizado = valorizado_series.divide(qty_scale)
+            unit_valorizado = unit_valorizado.replace([np.inf, -np.inf], np.nan)
+        low_price_mask = ultimo_precio.notna() & (ultimo_precio < fallback_threshold)
+        low_valorizado_mask = unit_valorizado.notna() & (unit_valorizado < fallback_threshold)
+        fallback_candidates = bopreal_ars_mask & (low_price_mask | low_valorizado_mask)
+        if fallback_candidates.any():
+            for idx in df.index[fallback_candidates]:
+                symbol_value = df.at[idx, "simbolo"] if idx in df.index else ""
+                symbol_clean = clean_symbol(symbol_value)
+                if not symbol_clean:
+                    continue
+                payload_last = _to_float(ultimo_precio.loc[idx]) if idx in ultimo_precio.index else None
+                payload_val = _to_float(valorizado_series.loc[idx]) if idx in valorizado_series.index else None
+                try:
+                    fetched_price, source_url = market_price_fetcher(symbol_clean)
+                except Exception as exc:  # pragma: no cover - defensive safeguard
+                    logger.warning(
+                        "market_revaluation_fallback error for %s: %s",
+                        symbol_clean,
+                        exc,
+                    )
+                    continue
+                if fetched_price is None:
+                    continue
+                try:
+                    if not np.isfinite(fetched_price) or fetched_price <= 0.0:
+                        continue
+                except Exception:
+                    continue
+                price_value = float(fetched_price)
+                qty_effective = qty_scale.loc[idx] if idx in qty_scale.index else np.nan
+                if not np.isfinite(qty_effective):
+                    qty_effective = df.loc[idx, "cantidad"] if idx in df.index else np.nan
+                if not np.isfinite(qty_effective):
+                    qty_effective = 0.0
+                market_value = price_value * float(qty_effective)
+                ultimo_precio.loc[idx] = price_value
+                valorizado_series.loc[idx] = market_value
+                last_series.loc[idx] = price_value
+                df.at[idx, "ultimo"] = price_value
+                df.at[idx, "ultimoPrecio"] = price_value
+                df.at[idx, "valor_actual"] = market_value
+                if "valorizado" in df.columns:
+                    df.at[idx, "valorizado"] = market_value
+                df.at[idx, "last"] = price_value
+                proveedor_utilizado.loc[idx] = "market_revaluation_fallback"
+                fallback_market_source = source_url or fallback_market_source
+                factor = None
+                if payload_last not in (None, 0):
+                    try:
+                        factor = price_value / float(payload_last)
+                    except ZeroDivisionError:
+                        factor = None
+                bopreal_market_audit_entries.append(
+                    {
+                        "simbolo": symbol_value,
+                        "cantidad": _to_float(df.at[idx, "cantidad"]),
+                        "ultimoPrecio_payload": payload_last,
+                        "valorizado_payload": payload_val,
+                        "market_price": price_value,
+                        "market_value": market_value,
+                        "endpoint": source_url,
+                        "factor_estimado": factor,
+                    }
+                )
+                logger.info(
+                    "[Audit] override_bopreal_market applied",
+                    extra={
+                        "symbol": symbol_clean,
+                        "source": source_url,
+                        "payload_last": payload_last,
+                        "market_last": price_value,
+                        "factor": factor,
+                    },
+                )
 
     forced_pending_mask = forced_valorizado_mask & df["valor_actual"].isna()
     if forced_pending_mask.any():
@@ -1150,7 +1237,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 else:
                     entry["tags"] = [BOPREAL_FORCED_REVALUATION_TAG]
                 entry["forced_revaluation"] = True
-    if scale_audit or bopreal_force_audit_entries:
+    if scale_audit or bopreal_force_audit_entries or bopreal_market_audit_entries:
         audit_section = attrs.get("audit")
         if isinstance(audit_section, Mapping):
             audit_data: dict[str, Any] = dict(audit_section)
@@ -1168,6 +1255,24 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 audit_data["bopreal"] = [existing_bopreal, *bopreal_force_audit_entries]
             else:
                 audit_data["bopreal"] = bopreal_force_audit_entries
+        if bopreal_market_audit_entries:
+            existing_market = audit_data.get("bopreal_market")
+            if isinstance(existing_market, list):
+                audit_data["bopreal_market"] = [
+                    *existing_market,
+                    *bopreal_market_audit_entries,
+                ]
+            elif existing_market:
+                audit_data["bopreal_market"] = [existing_market, *bopreal_market_audit_entries]
+            else:
+                audit_data["bopreal_market"] = bopreal_market_audit_entries
+            audit_data["override_bopreal_market"] = True
+            if fallback_market_source:
+                audit_data["market_price_source"] = fallback_market_source
+            audit_data["timestamp_fallback"] = datetime.utcnow()
+            quotes_hash_value = attrs.get("quotes_hash")
+            if quotes_hash_value is not None:
+                audit_data["quotes_hash"] = quotes_hash_value
         attrs["audit"] = audit_data
     source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
     if source_counts:
