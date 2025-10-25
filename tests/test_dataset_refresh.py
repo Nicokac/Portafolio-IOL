@@ -43,6 +43,10 @@ class DummyFetchService:
         return dataset, metadata
 
 
+from types import SimpleNamespace
+import sys
+
+
 def test_force_refresh_after_login(monkeypatch: pytest.MonkeyPatch) -> None:
     fetch_service = DummyFetchService()
     monkeypatch.setattr(login_flow, "get_portfolio_data_fetch_service", lambda: fetch_service)
@@ -62,10 +66,18 @@ def test_force_refresh_after_login(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_quotes_hash_invalidation(monkeypatch: pytest.MonkeyPatch) -> None:
     from services import portfolio_view
 
-    df_positions = pd.DataFrame({
-        "simbolo": ["BPOC7"],
-        "valor_actual": [100.0],
-    })
+    forced_value = 19_966_960.0
+    df_positions = pd.DataFrame(
+        {
+            "simbolo": ["BPOC7"],
+            "moneda": ["ARS"],
+            "moneda_origen": ["ARS"],
+            "cantidad": [146.0],
+            "ultimoPrecio": [1_367.6],
+            "valor_actual": [forced_value],
+            "pricing_source": ["override_bopreal_forced"],
+        }
+    )
     controls = SimpleNamespace(
         selected_syms=[],
         selected_types=[],
@@ -103,9 +115,17 @@ def test_quotes_hash_invalidation(monkeypatch: pytest.MonkeyPatch) -> None:
     fingerprint_a = f"{base_hash}|quotes:hashA"
     fingerprint_b = f"{base_hash}|quotes:hashB"
 
-    service.get_portfolio_view(df_positions, controls, cli=None, psvc=None, dataset_hash=fingerprint_a)
-    service.get_portfolio_view(df_positions, controls, cli=None, psvc=None, dataset_hash=fingerprint_b)
+    service.get_portfolio_view(
+        df_positions, controls, cli=None, psvc=None, dataset_hash=fingerprint_a
+    )
+    snapshot_b = service.get_portfolio_view(
+        df_positions, controls, cli=None, psvc=None, dataset_hash=fingerprint_b
+    )
 
     assert apply_calls["count"] == 2
     assert service._dataset_key is not None
     assert "hashB" in service._dataset_key
+
+    row = snapshot_b.df_view.iloc[0]
+    assert row["valor_actual"] == pytest.approx(forced_value)
+    assert row["pricing_source"] == "override_bopreal_forced"

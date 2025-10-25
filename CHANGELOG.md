@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## [0.8.8.0] — Fase 6.0 — Forced Revaluation Patch BOPREAL ARS
+### Changed
+- `calc_rows` aplica un factor `×100` sobre `ultimoPrecio` y `valor_actual` para series BOPREAL en ARS provenientes de IOL, etiquetando la fila con `pricing_source=override_bopreal_forced` y preservando el monto corregido aunque el payload traiga valores truncados.
+- Auditoría enriquecida en `attrs['audit']['bopreal']` con el precio original, el factor aplicado y el valor ajustado para facilitar la trazabilidad del override.
+- `detect_bond_scale_anomalies` detecta precios truncados en BOPREAL aun cuando `scale==1`, estimando el impacto real con el nuevo factor forzado.
+- El parche post-merge de `PortfolioViewModelService` respeta overrides previos (`pricing_source=override_bopreal_forced`) y evita recalcular el valor real.
+
+### Added
+- Pruebas unitarias que cubren la revaluación forzada, casos donde no debe aplicarse el override y la preservación del ajuste tras invalidaciones por `quotes_hash`.
+
 ## [0.8.7.0] — Refresco proactivo desde endpoints IOL
 ### Changed
 - Forzamos `PortfolioDataFetchService.get_dataset(force_refresh=True)` inmediatamente después de autenticar al usuario de IOL, registrando la traza `auth_refresh_forced` para auditoría y etiquetando los snapshots como `source=live_endpoint` cuando los datos provienen del endpoint.

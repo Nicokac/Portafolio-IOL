@@ -19,7 +19,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 5.8
+PORTFOLIO_TOTALS_VERSION = 5.9
 
 
 @dataclass(frozen=True)
@@ -243,6 +243,7 @@ logger = logging.getLogger(__name__)
 # ---------- Helpers y configuración ----------
 BOPREAL_SYMBOLS = {"BPOA7", "BPOB7", "BPOC7", "BPOD7"}
 BOPREAL_HISTORICAL_SCALE = 0.01
+BOPREAL_FORCE_FACTOR = 1 / BOPREAL_HISTORICAL_SCALE
 BOPREAL_FORCED_REVALUATION_TAG = "override_bopreal_ars_forced_revaluation"
 
 
@@ -911,6 +912,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     valorizado_series = pd.Series(index=df.index, dtype=float)
     forced_valorizado_mask = pd.Series(False, index=df.index, dtype=bool)
     forced_revaluation_symbols: set[str] = set()
+    bopreal_force_audit_entries: list[dict[str, Any]] = []
 
     if "valorizado" in df.columns:
         valorizado_series = pd.to_numeric(df["valorizado"], errors="coerce")
@@ -965,6 +967,65 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             price_rescaled = valor_rescaled.loc[valid_forced_mask] / denom.loc[valid_forced_mask]
             df.loc[valid_forced_mask, "ultimo"] = price_rescaled
         proveedor_utilizado.loc[forced_pending_mask] = "valorizado_rescaled"
+
+    tipo_series = (
+        df.get("tipo_estandar", pd.Series(index=df.index, dtype="object"))
+        .astype("string")
+        .str.lower()
+        .fillna("")
+    )
+    provider_upper = provider_series.str.upper()
+    if "proveedor_original" in df.columns:
+        provider_upper = provider_upper.where(
+            provider_upper.ne(""),
+            df["proveedor_original"].astype("string").str.upper().fillna(""),
+        )
+    provider_upper = provider_upper.where(
+        provider_upper.ne(""),
+        df.get("pricing_source", pd.Series(index=df.index, dtype="object"))
+        .astype("string")
+        .str.upper()
+        .fillna(""),
+    )
+
+    bopreal_force_candidates = (
+        bopreal_ars_mask
+        & tipo_series.str.contains("bono", regex=False, na=False)
+        & provider_upper.isin({"IOL", "IOL-LIVE", ""})
+    )
+
+    if bopreal_force_candidates.any():
+        ppc_series = pd.to_numeric(df.get("ppc"), errors="coerce")
+        ratio_to_ppc = ultimo_precio.divide(ppc_series).replace([np.inf, -np.inf], np.nan)
+        low_ratio_mask = ratio_to_ppc <= (BOPREAL_HISTORICAL_SCALE * 3.0)
+        low_price_mask = ultimo_precio <= 5_000.0
+        effective_mask = bopreal_force_candidates & ultimo_precio.notna() & (
+            low_ratio_mask.fillna(False) | low_price_mask.fillna(False)
+        )
+        if effective_mask.any():
+            forced_last = ultimo_precio.loc[effective_mask] * BOPREAL_FORCE_FACTOR
+            forced_last = forced_last.replace([np.inf, -np.inf], np.nan)
+            forced_value = forced_last * qty_scale.loc[effective_mask]
+            forced_value = forced_value.replace([np.inf, -np.inf], np.nan)
+            df.loc[effective_mask, "ultimo"] = forced_last
+            df.loc[effective_mask, "valor_actual"] = forced_value
+            df.loc[effective_mask, "valorizado"] = forced_value
+            proveedor_utilizado.loc[effective_mask] = "override_bopreal_forced"
+            forced_revaluation_symbols.update(
+                clean_symbol(sym)
+                for sym in df.loc[effective_mask, "simbolo"].tolist()
+                if sym
+            )
+            for idx in df.index[effective_mask]:
+                bopreal_force_audit_entries.append(
+                    {
+                        "simbolo": df.at[idx, "simbolo"],
+                        "forced": True,
+                        "factor_aplicado": BOPREAL_FORCE_FACTOR,
+                        "ultimo_precio_original": _to_float(ultimo_precio.loc[idx]),
+                        "ultimo_precio_forzado": _to_float(df.loc[idx, "ultimo"]),
+                    }
+                )
 
     mask_cotizacion = (
         df["valor_actual"].isna()
@@ -1073,14 +1134,24 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 else:
                     entry["tags"] = [BOPREAL_FORCED_REVALUATION_TAG]
                 entry["forced_revaluation"] = True
-    if scale_audit:
-        attrs.setdefault("audit", {})
-        audit_section = attrs["audit"]
+    if scale_audit or bopreal_force_audit_entries:
+        audit_section = attrs.get("audit")
         if isinstance(audit_section, Mapping):
-            audit_data = dict(audit_section)
-            audit_data["scale_decisions"] = scale_audit
+            audit_data: dict[str, Any] = dict(audit_section)
+        elif audit_section:
+            audit_data = {"legacy": audit_section}
         else:
-            audit_data = {"scale_decisions": scale_audit}
+            audit_data = {}
+        if scale_audit:
+            audit_data["scale_decisions"] = scale_audit
+        if bopreal_force_audit_entries:
+            existing_bopreal = audit_data.get("bopreal")
+            if isinstance(existing_bopreal, list):
+                audit_data["bopreal"] = [*existing_bopreal, *bopreal_force_audit_entries]
+            elif existing_bopreal:
+                audit_data["bopreal"] = [existing_bopreal, *bopreal_force_audit_entries]
+            else:
+                audit_data["bopreal"] = bopreal_force_audit_entries
         attrs["audit"] = audit_data
     source_counts = proveedor_utilizado.dropna().value_counts().to_dict()
     if source_counts:
@@ -1144,6 +1215,21 @@ def detect_bond_scale_anomalies(df_view: pd.DataFrame | None) -> tuple[pd.DataFr
         .fillna("")
     )
     ppc_series = pd.to_numeric(_ensure_series(df_subset.get("ppc")), errors="coerce")
+    currency_subset = (
+        _ensure_series(df_subset.get("moneda_origen", pd.Series(index=df_subset.index, dtype="object")))
+        .astype("string")
+        .str.upper()
+        .fillna("")
+    )
+    provider_upper = provider.astype("string").str.upper().fillna("")
+    symbol_clean_series = df_subset.get("simbolo", pd.Series(index=df_subset.index, dtype="object")).apply(clean_symbol)
+    bopreal_candidates = (
+        symbol_clean_series.isin(BOPREAL_SYMBOLS)
+        & currency_subset.eq("ARS")
+        & provider_upper.isin({"IOL", "IOL-LIVE", ""})
+        & ppc_series.notna()
+        & (ppc_series > 0)
+    )
 
     with np.errstate(divide="ignore", invalid="ignore"):
         valor_unitario_payload = valorizado_total.divide(qty)
@@ -1170,14 +1256,20 @@ def detect_bond_scale_anomalies(df_view: pd.DataFrame | None) -> tuple[pd.DataFr
         & (ppc_diff_pct <= 0.10)
     )
 
-    diagnostico = np.where(double_scale_mask, "escala duplicada", "correcto")
-
-    impacto_estimado = np.where(
-        double_scale_mask,
-        (ultimo_precio * qty) - valor_actual,
-        0.0,
+    bopreal_low_price_mask = (
+        bopreal_candidates
+        & ultimo_precio.notna()
+        & (ultimo_precio <= (ppc_series / 50.0))
     )
-    impacto_estimado = pd.Series(impacto_estimado, index=df_subset.index, dtype=float)
+
+    diagnostico = np.where(double_scale_mask, "escala duplicada", "correcto")
+    diagnostico = np.where(bopreal_low_price_mask, "bopreal_precio_truncado", diagnostico)
+
+    impacto_double = (ultimo_precio * qty) - valor_actual
+    impacto_bopreal = (ultimo_precio * BOPREAL_FORCE_FACTOR * qty) - valor_actual
+    impacto_estimado_values = np.where(double_scale_mask, impacto_double, 0.0)
+    impacto_estimado_values = np.where(bopreal_low_price_mask, impacto_bopreal, impacto_estimado_values)
+    impacto_estimado = pd.Series(impacto_estimado_values, index=df_subset.index, dtype=float)
 
     attrs = getattr(df_view, "attrs", {}) if df_view is not None else {}
     audit_entries = attrs.get("audit") if isinstance(attrs, Mapping) else None
