@@ -2236,8 +2236,16 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
 
     symbols = df_view["simbolo"].astype("string").fillna("").str.upper()
     currency = df_view["moneda_origen"].astype("string").fillna("").str.upper()
+    pricing_series = (
+        df_view.get("pricing_source", pd.Series(index=df_view.index, dtype="object"))
+        .astype("string")
+        .str.lower()
+        .fillna("")
+    )
     bopreal_mask = symbols.isin(_BOPREAL_ARS_SYMBOLS) & ~symbols.str.endswith("D")
     mask = bopreal_mask & currency.eq("ARS")
+    guard_mask = pricing_series.eq("override_bopreal_forced")
+    mask = mask & ~guard_mask
     if not bool(mask.any()):
         return False
 
