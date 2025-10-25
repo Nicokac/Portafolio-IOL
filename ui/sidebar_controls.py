@@ -120,10 +120,6 @@ def get_controls_reference_data() -> tuple[list[str], list[str]]:
     """Return cached symbols/types used to build the controls panel."""
 
     return _get_reference_data()
-_SYMBOLS_STATE_KEY = "_sidebar_all_symbols"
-_TYPES_STATE_KEY = "_sidebar_available_types"
-
-
 def _show_apply_feedback() -> None:
     message = "Filtros aplicados"
     if hasattr(st, "toast"):

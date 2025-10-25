@@ -29,10 +29,7 @@ def append_history(
     if normalized_rows.empty:
         return history.copy(), None
     frames = [frame for frame in (history, normalized_rows) if not frame.empty]
-    if frames:
-        frame = pd.concat(frames, ignore_index=True)
-    else:
-        frame = pd.DataFrame(columns=normalized_rows.columns)
+    frame = pd.concat(frames, ignore_index=True) if frames else history.copy()
     frame = frame.sort_values("timestamp")
     if len(frame) > max_rows:
         frame = frame.iloc[-max_rows:]

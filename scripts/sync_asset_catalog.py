@@ -28,7 +28,7 @@ def _ensure_list(data: Any) -> list[dict[str, Any]]:
     raise TypeError("El catálogo debe ser una lista de objetos o un mapeo de símbolos")
 
 
-def _normalize_entry(item: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+def _normalize_entry(item: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(item)
     symbol = str(normalized.get("simbolo", ""))
     normalized["simbolo"] = symbol.strip().upper()
@@ -39,10 +39,10 @@ def _normalize_entry(item: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     prev_standard = normalized.get("tipo_estandar")
     if prev_standard is not None:
         normalized["tipo_estandar"] = str(prev_standard)
-    return normalized, False
+    return normalized
 
 
-def sync_catalog(path: Path = CATALOG_PATH) -> tuple[list[dict[str, Any]], int]:
+def sync_catalog(path: Path = CATALOG_PATH) -> list[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"No se encontró el catálogo en {path}")
 
@@ -51,13 +51,9 @@ def sync_catalog(path: Path = CATALOG_PATH) -> tuple[list[dict[str, Any]], int]:
 
     entries = _ensure_list(data)
     normalized_entries: list[dict[str, Any]] = []
-    changes = 0
 
     for entry in entries:
-        normalized_entry, changed = _normalize_entry(entry)
-        normalized_entries.append(normalized_entry)
-        if changed:
-            changes += 1
+        normalized_entries.append(_normalize_entry(entry))
 
     normalized_entries.sort(key=lambda item: item.get("simbolo", ""))
     backup_name = f"assets_catalog_backup_{_dt.date.today().isoformat()}.json"
@@ -69,13 +65,13 @@ def sync_catalog(path: Path = CATALOG_PATH) -> tuple[list[dict[str, Any]], int]:
         json.dump(normalized_entries, fh, ensure_ascii=False, indent=2, sort_keys=True)
         fh.write("\n")
 
-    return normalized_entries, changes
+    return normalized_entries
 
 
 def main() -> None:
-    catalog, changes = sync_catalog()
+    catalog = sync_catalog()
     total = len(catalog)
-    print(f"Catálogo sincronizado ({total} activos, {changes} cambios registrados).")
+    print(f"Catálogo sincronizado ({total} activos normalizados).")
 
 
 if __name__ == "__main__":
