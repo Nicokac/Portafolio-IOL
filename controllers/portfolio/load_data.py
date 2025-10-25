@@ -27,6 +27,7 @@ from services.performance_timer import (
     performance_timer,
 )
 from shared.errors import AppError
+from shared.pandas_attrs import wrap_callable_attr
 from shared.settings import (
     max_quote_workers,
     quotes_batch_size,
@@ -483,7 +484,7 @@ def load_portfolio_data(cli, psvc):
     market_fetcher = getattr(cli, "fetch_market_price", None)
     if callable(market_fetcher):
         try:
-            df_pos.attrs["market_price_fetcher"] = market_fetcher
+            df_pos.attrs["market_price_fetcher"] = wrap_callable_attr(market_fetcher)
         except Exception:  # pragma: no cover - defensive safeguard
             logger.debug(
                 "No se pudo adjuntar market_price_fetcher al dataset",

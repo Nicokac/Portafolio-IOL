@@ -20,6 +20,7 @@ from services.performance_timer import (
 )
 from shared.config import settings
 from shared.errors import AppError
+from shared.pandas_attrs import wrap_callable_attr
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +239,7 @@ def apply_filters(
         market_fetcher = getattr(cli, "fetch_market_price", None)
         if callable(market_fetcher):
             try:
-                df_pos.attrs.setdefault("market_price_fetcher", market_fetcher)
+                df_pos.attrs.setdefault("market_price_fetcher", wrap_callable_attr(market_fetcher))
             except Exception:  # pragma: no cover - defensive safeguard
                 logger.debug(
                     "No se pudo adjuntar market_price_fetcher en apply_filters",
