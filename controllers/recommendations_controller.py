@@ -39,11 +39,6 @@ class PredictiveCacheViewModel:
             return 0.0
         return float(self.hits) / float(total)
 
-    @property
-    def badge_state(self) -> str:
-        ratio = normalise_hit_ratio(self.hit_ratio)
-        return resolve_badge_state(ratio)
-
     def to_dict(self) -> dict[str, Any]:
         ratio = normalise_hit_ratio(self.hit_ratio)
         return {
@@ -80,13 +75,6 @@ class AdaptiveForecastViewModel:
     payload: dict[str, Any] = field(default_factory=dict)
     summary: dict[str, Any] = field(default_factory=dict)
     cache_metadata: dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "payload": dict(self.payload),
-            "summary": dict(self.summary),
-            "cache_metadata": dict(self.cache_metadata),
-        }
 
 
 def _snapshot_to_view(
