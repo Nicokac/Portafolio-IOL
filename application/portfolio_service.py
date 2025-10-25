@@ -19,7 +19,7 @@ from shared.utils import _to_float
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
-PORTFOLIO_TOTALS_VERSION = 5.9
+PORTFOLIO_TOTALS_VERSION = 6.0
 
 
 @dataclass(frozen=True)
@@ -245,6 +245,20 @@ BOPREAL_SYMBOLS = {"BPOA7", "BPOB7", "BPOC7", "BPOD7"}
 BOPREAL_HISTORICAL_SCALE = 0.01
 BOPREAL_FORCE_FACTOR = 1 / BOPREAL_HISTORICAL_SCALE
 BOPREAL_FORCED_REVALUATION_TAG = "override_bopreal_ars_forced_revaluation"
+BOPREAL_TRUSTED_PROVIDERS = frozenset(
+    {
+        "",
+        "IOL",
+        "IOL-LIVE",
+        "CACHE",
+        "STALE",
+        "VALORIZADO",
+        "VALORIZADO_RESCALED",
+        "OVERRIDE_BOPREAL_FORCED",
+        "OVERRIDE_BOPREAL_POSTMERGE",
+        BOPREAL_FORCED_REVALUATION_TAG.upper(),
+    }
+)
 
 
 def _is_blank(value: Any) -> bool:
@@ -329,7 +343,9 @@ def _extract_scale_context(row: Mapping[str, Any] | pd.Series) -> dict[str, Any]
     provider = _normalize_upper(provider_value)
 
     bopreal_symbol = _bopreal_symbol(raw_symbol)
-    bopreal_override = bool(bopreal_symbol and currency == "ARS" and provider == "IOL")
+    bopreal_override = bool(
+        bopreal_symbol and currency == "ARS" and provider in BOPREAL_TRUSTED_PROVIDERS
+    )
 
     return {
         "symbol_raw": raw_symbol,
@@ -1226,7 +1242,7 @@ def detect_bond_scale_anomalies(df_view: pd.DataFrame | None) -> tuple[pd.DataFr
     bopreal_candidates = (
         symbol_clean_series.isin(BOPREAL_SYMBOLS)
         & currency_subset.eq("ARS")
-        & provider_upper.isin({"IOL", "IOL-LIVE", ""})
+        & provider_upper.isin(BOPREAL_TRUSTED_PROVIDERS)
         & ppc_series.notna()
         & (ppc_series > 0)
     )
