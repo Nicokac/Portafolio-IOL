@@ -106,9 +106,8 @@ def record_post_lazy_checkpoint(total_ms: float) -> None:
     log_startup_event(f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}")
     try:
         st.session_state[_POST_LAZY_LOGGED_KEY] = True
-        st.session_state["startup_load_ms_after_lazy"] = float(total_ms)
     except Exception:
-        logger.debug("No se pudo persistir startup_load_ms_after_lazy", exc_info=True)
+        logger.debug("No se pudo marcar %s", _POST_LAZY_LOGGED_KEY, exc_info=True)
 
 
 def update_ui_total_load_metric_lazy(total_ms: float | int | None) -> None:
@@ -275,10 +274,6 @@ def schedule_post_login_initialization() -> None:
             logger.debug("No se pudo iniciar la inicialización post-login", exc_info=True)
             return
         _POST_LOGIN_INIT_STARTED = True
-        try:
-            st.session_state["_post_login_init_started"] = True
-        except Exception:
-            logger.debug("No se pudo marcar _post_login_init_started", exc_info=True)
 
 
 __all__ = [
