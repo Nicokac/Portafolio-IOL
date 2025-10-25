@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## [0.8.9.1] — Hotfix 6.1.1
+### Fixed
+- Sanitizamos los atributos (`DataFrame.attrs`) generados en `calc_rows` para eliminar objetos no serializables (locks, métodos, módulos) evitando el `TypeError: cannot pickle '_thread.RLock' object` al clonar la vista de posiciones.
+- Añadimos la prueba `tests/test_attrs_serialization.py` que garantiza que `copy.deepcopy` funciona correctamente sobre el DataFrame enriquecido y documenta la regresión cubierta para futuras auditorías.
+
 ## [0.8.9.0] — Market fallback for BOPREAL ARS
 ### Added
 - `IOLClient.fetch_market_price()` consulta los endpoints de cotización de títulos (`/Cotizacion` y `/CotizacionDetalle`) con reintentos controlados y devuelve el último precio disponible o el promedio bid/ask cuando corresponde.

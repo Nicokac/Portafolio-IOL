@@ -7,7 +7,10 @@ import logging
 import re
 from datetime import datetime
 from dataclasses import dataclass, field
+from threading import RLock
 from typing import Any, Dict, Iterable, List, Mapping
+from collections.abc import Mapping as ABCMapping, Sequence
+from types import BuiltinFunctionType, FunctionType, MethodType, ModuleType
 
 import numpy as np
 import pandas as pd
@@ -21,6 +24,72 @@ from shared.utils import _to_float
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.
 PORTFOLIO_TOTALS_VERSION = 6.1
+
+
+_BASIC_JSON_TYPES = (str, int, float, bool, type(None))
+
+try:  # pragma: no cover - defensive import guard
+    _RLOCK_TYPE = type(RLock())
+except TypeError:  # pragma: no cover - alternative runtime implementations
+    _RLOCK_TYPE = ()
+
+
+def _sanitize_attrs_value(value: Any, seen: set[int]) -> Any:
+    if isinstance(value, np.generic):
+        return _sanitize_attrs_value(value.item(), seen)
+    if isinstance(value, _BASIC_JSON_TYPES):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if isinstance(value, (MethodType, FunctionType, BuiltinFunctionType, ModuleType)):
+        return str(value)
+    if _RLOCK_TYPE and isinstance(value, _RLOCK_TYPE):
+        return str(value)
+    if isinstance(value, type):
+        return value.__name__
+    if isinstance(value, ABCMapping):
+        obj_id = id(value)
+        if obj_id in seen:
+            return str(value)
+        seen.add(obj_id)
+        try:
+            sanitized_dict: dict[str, Any] = {}
+            for key, inner_value in value.items():
+                sanitized_dict[str(key)] = _sanitize_attrs_value(inner_value, seen)
+            return sanitized_dict
+        finally:
+            seen.remove(obj_id)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        obj_id = id(value)
+        if obj_id in seen:
+            return str(value)
+        seen.add(obj_id)
+        try:
+            sanitized_list: list[Any] = []
+            for item in value:
+                sanitized_list.append(_sanitize_attrs_value(item, seen))
+            return sanitized_list
+        finally:
+            seen.remove(obj_id)
+    try:
+        return str(value)
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
+def sanitize_attrs(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure DataFrame attrs only contains JSON-serialisable structures."""
+
+    attrs = getattr(df, "attrs", None)
+    if not isinstance(attrs, ABCMapping):
+        return df
+    sanitized = _sanitize_attrs_value(dict(attrs), set())
+    if isinstance(sanitized, dict):
+        df.attrs.clear()
+        df.attrs.update(sanitized)
+    return df
 
 
 @dataclass(frozen=True)
@@ -660,6 +729,8 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
 
 def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -> pd.DataFrame:
     """Calcula métricas de valuación y P/L para cada posición."""
+    if isinstance(df_pos, pd.DataFrame):
+        sanitize_attrs(df_pos)
     attrs: dict[str, Any] = dict(getattr(df_pos, "attrs", {}) or {})
     market_price_fetcher = attrs.pop("market_price_fetcher", None)
     if not callable(market_price_fetcher):
@@ -693,7 +764,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         empty_df = pd.DataFrame(columns=cols)
         if attrs:
             empty_df.attrs.update(attrs)
-        return empty_df
+        return sanitize_attrs(empty_df)
 
     # Normalización básica y exclusiones ---------------------------------
     df = df_pos.copy()
@@ -708,7 +779,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         empty_df = pd.DataFrame(columns=cols)
         if attrs:
             empty_df.attrs.update(attrs)
-        return empty_df
+        return sanitize_attrs(empty_df)
 
     df["cantidad"] = df["cantidad"].map(_to_float).fillna(0.0)
     df["ppc"] = df.get("costo_unitario", np.nan).map(_to_float).fillna(0.0)
@@ -1288,7 +1359,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
         )
     if attrs:
         result.attrs.update(attrs)
-    return result
+    return sanitize_attrs(result)
 
 
 def detect_bond_scale_anomalies(df_view: pd.DataFrame | None) -> tuple[pd.DataFrame, float]:
