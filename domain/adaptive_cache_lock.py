@@ -50,7 +50,6 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         self._acquired_at: float | None = None
         self._last_wait_time: float = 0.0
         self._last_hold_time: float = 0.0
-        self._released_early = False
 
     # ------------------------------------------------------------------
     # Internal acquisition helpers
@@ -82,7 +81,6 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         self._acquired_at = acquired_at
         self._last_hold_time = 0.0
         self._last_wait_time = 0.0
-        self._released_early = False
 
         if self._warn_after > 0 and self._wait_started is not None:
             waited = acquired_at - self._wait_started
@@ -122,10 +120,6 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
     ) -> None:
         thread_id = threading.get_ident()
         if self._owner != thread_id:
-            if self._released_early:
-                # Lock was released by ``run_in_background``.
-                self._released_early = False
-                return None
             raise RuntimeError("El lock adaptativo fue liberado por un hilo no propietario")
 
         if self._depth > 1:
@@ -165,7 +159,6 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
             self._wait_started = None
             self._acquired_at = None
             self._lock.release()
-            self._released_early = False
 
         self._record_lock_wait_event(
             wait_time=wait_time,
@@ -198,74 +191,6 @@ class AdaptiveCacheLock(AbstractContextManager["AdaptiveCacheLock"]):
         """Expose whether the underlying lock is currently held."""
 
         return self._owner is not None
-
-    def run_in_background(
-        self,
-        target: Callable[..., object],
-        /,
-        *args,
-        name: str | None = None,
-        daemon: bool = True,
-        **kwargs,
-    ) -> threading.Thread:
-        """Release the lock early and schedule ``target`` to run asynchronously.
-
-        This helper is intended for expensive predictive operations that should
-        not keep the adaptive cache locked.  It can only be invoked by the
-        thread that currently owns the lock at the top-most acquisition level.
-        The lock is released before the worker thread starts so that other
-        operations can proceed immediately.
-        """
-
-        thread_id = threading.get_ident()
-        if self._owner != thread_id:
-            raise RuntimeError("Solo el propietario del lock puede delegar trabajo en segundo plano")
-        if self._depth != 1:
-            raise RuntimeError("No se puede delegar trabajo en segundo plano con adquisiciones reentrantes")
-
-        owner_label = _format_owner_label(self._owner, self._owner_name)
-        module_name = self._owner_module or _resolve_caller_module()
-        thread_name = self._owner_name
-        wait_time = self._last_wait_time
-        held_for = 0.0
-        if self._acquired_at is not None:
-            held_for = max(time.monotonic() - self._acquired_at, 0.0)
-            if self._warn_after > 0 and held_for > self._warn_after:
-                LOGGER.warning(
-                    (
-                        "El lock adaptativo permaneció retenido %.2fs antes de "
-                        "delegar (umbral %.2fs, módulo=%s, owner=%s)"
-                    ),
-                    held_for,
-                    self._warn_after,
-                    module_name,
-                    owner_label,
-                )
-        self._owner = None
-        self._owner_name = None
-        self._owner_module = None
-        self._depth = 0
-        self._wait_started = None
-        self._acquired_at = None
-        self._released_early = True
-        self._lock.release()
-
-        self._record_lock_wait_event(
-            wait_time=wait_time,
-            hold_time=held_for,
-            owner_label=owner_label,
-            thread_name=thread_name,
-            module_name=module_name,
-            reason="delegate",
-        )
-
-        return run_in_background(
-            target,
-            *args,
-            name=name,
-            daemon=daemon,
-            **kwargs,
-        )
 
     # ------------------------------------------------------------------
     # Internal helpers
