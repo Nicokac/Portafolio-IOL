@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -88,3 +89,50 @@ def test_version_bump_reuses_dataset_but_recomputes_totals(monkeypatch) -> None:
     assert "totals" in stats_two.get("recomputed_blocks", ())
 
     assert snapshot_two.dataset_hash != snapshot_one.dataset_hash
+
+
+def test_bopreal_postmerge_patch_rescales_with_scale_and_updates_pl() -> None:
+    qty = 146.0
+    scale = 0.01
+    cost = 20_760_200.046
+    forced_last = cost / (qty * scale)
+    truncated_last = forced_last / 100.0
+    initial_valor_actual = 201_042.0
+
+    df_view = pd.DataFrame(
+        {
+            "simbolo": ["BPOC7"],
+            "moneda_origen": ["ARS"],
+            "cantidad": [qty],
+            "scale": [scale],
+            "ultimo": [forced_last],
+            "ultimoPrecio": [truncated_last],
+            "valor_actual": [initial_valor_actual],
+            "valorizado": [initial_valor_actual],
+            "costo": [cost],
+            "pl": [initial_valor_actual - cost],
+            "pl_%": [((initial_valor_actual - cost) / cost) * 100.0],
+            "pricing_source": ["cache"],
+            "audit": [{}],
+        }
+    )
+
+    applied = portfolio_view._apply_bopreal_postmerge_patch(df_view)
+
+    assert applied is True
+
+    row = df_view.iloc[0]
+    expected_value = forced_last * qty * scale
+    assert row["valor_actual"] == pytest.approx(expected_value)
+    assert row["valorizado"] == pytest.approx(expected_value)
+    assert row["ultimo"] == pytest.approx(forced_last)
+
+    expected_pl = expected_value - cost
+    assert row["pl"] == pytest.approx(expected_pl)
+    assert row["pl_%"] == pytest.approx(0.0)
+
+    assert row["pricing_source"] == "override_bopreal_postmerge"
+
+    audit_entry = row["audit"]
+    assert isinstance(audit_entry, dict)
+    assert "override_bopreal_postmerge" in audit_entry.get("scale_decisions", [])
