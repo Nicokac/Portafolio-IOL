@@ -44,7 +44,6 @@ from services.performance_metrics import measure_execution
 from shared.version import __build_signature__, __version__
 
 logger = logging.getLogger(__name__)
-logger.info("Initialising engine router")
 
 
 def _model_dump(model: _BaseModel) -> dict[str, Any]:

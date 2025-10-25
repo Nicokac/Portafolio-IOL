@@ -33,13 +33,11 @@ from shared import skeletons
 from shared.favorite_symbols import FavoriteSymbols
 from shared.telemetry import log_default_telemetry
 from shared.time_provider import TimeProvider
-from ui.actions import render_action_menu
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.helpers.preload import ensure_scientific_preload_ready
 from ui.login import render_login_page
-from ui.ui_settings import render_ui_controls
 
 logger = logging.getLogger("ui.orchestrator")
 

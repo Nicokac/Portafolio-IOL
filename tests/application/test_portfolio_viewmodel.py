@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 import application.portfolio_service as portfolio_mod
-from application.portfolio_service import PortfolioService, calc_rows
+from application.portfolio_service import calc_rows
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:

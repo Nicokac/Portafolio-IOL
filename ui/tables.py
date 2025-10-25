@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, MutableMapping
+from collections.abc import MutableMapping
 from typing import Any
 
 import numpy as np
@@ -9,11 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
-from shared.utils import (
-    _as_float_or_none,
-    _is_none_nan_inf,
-    format_money,
-)
+from shared.utils import _as_float_or_none, _is_none_nan_inf
 from ui.lazy.runtime import (
     emit_fragment_ready,
     ensure_fragment_ready_script,
