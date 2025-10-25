@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import threading
 import time
 import warnings
@@ -868,12 +869,114 @@ class IOLClient(IIOLProvider):
                 phase="ohlc",
                 result="error",
                 detail=str(exc),
-            )
+        )
         return None
 
     # ------------------------------------------------------------------
     # Quotes
     # ------------------------------------------------------------------
+    def fetch_market_price(
+        self,
+        symbol: str,
+        *,
+        market: str = "BCBA",
+    ) -> tuple[float | None, str | None]:
+        """Fetch a real-time price for ``symbol`` directly from the market endpoints."""
+
+        resolved_symbol = str(symbol or "").strip().upper()
+        if not resolved_symbol:
+            return None, None
+
+        resolved_market = str(market or "BCBA").strip().upper() or "BCBA"
+        base_url = getattr(self, "_base", self.api_base).rstrip("/")
+        endpoints = (
+            (f"{base_url}/{resolved_market}/Titulos/{resolved_symbol}/Cotizacion", "cotizacion"),
+            (
+                f"{base_url}/{resolved_market}/Titulos/{resolved_symbol}/CotizacionDetalle",
+                "cotizacion_detalle",
+            ),
+        )
+
+        def _coerce(raw: Any) -> float | None:
+            value = _to_float(raw)
+            if value is None:
+                return None
+            try:
+                if not math.isfinite(value):
+                    return None
+            except (TypeError, ValueError):
+                return None
+            if value <= 0:
+                return None
+            return float(value)
+
+        for url, label in endpoints:
+            try:
+                response = self._request("GET", url)
+            except InvalidCredentialsError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive guard
+                logger.debug("fetch_market_price request failed", exc_info=True)
+                logger.warning("fetch_market_price %s error: %s", url, exc)
+                continue
+
+            if response is None:
+                continue
+
+            try:
+                payload = response.json() or {}
+            except ValueError as exc:  # pragma: no cover - unexpected payload
+                logger.warning("fetch_market_price JSON inválido desde %s: %s", url, exc)
+                continue
+
+            last_price = _coerce(payload.get("ultimoPrecio"))
+            if last_price is not None:
+                logger.info(
+                    "fetch_market_price resolved",
+                    extra={
+                        "symbol": resolved_symbol,
+                        "market": resolved_market,
+                        "source": label,
+                        "last": last_price,
+                    },
+                )
+                return last_price, url
+
+            bid_price: float | None = None
+            ask_price: float | None = None
+            for key in ("precioCompra", "precioCompraPuntas", "mejorPrecioCompra"):
+                bid_price = _coerce(payload.get(key))
+                if bid_price is not None:
+                    break
+            for key in ("precioVenta", "precioVentaPuntas", "mejorPrecioVenta"):
+                ask_price = _coerce(payload.get(key))
+                if ask_price is not None:
+                    break
+
+            candidates = [price for price in (bid_price, ask_price) if price is not None]
+            if not candidates:
+                continue
+
+            if len(candidates) == 2:
+                last_price = sum(candidates) / 2.0
+            else:
+                last_price = candidates[0]
+
+            logger.info(
+                "fetch_market_price resolved via book",
+                extra={
+                    "symbol": resolved_symbol,
+                    "market": resolved_market,
+                    "source": label,
+                    "bid": bid_price,
+                    "ask": ask_price,
+                    "last": last_price,
+                },
+            )
+            return float(last_price), url
+
+        return None, None
+
     def get_last_price(self, *, mercado: str, simbolo: str) -> Optional[float]:
         mercado = (mercado or "bcba").lower()
         simbolo = (simbolo or "").upper()

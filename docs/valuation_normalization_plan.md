@@ -18,6 +18,23 @@ totales del dashboard se sincronizan con los montos oficiales de InvertirOnline.
 4. Confirmar que los totales consolidados coincidan con los informados por la
    API oficial de IOL (margen ± 1 ARS para caja).
 
+## Actualización v0.8.9.0 – Market fallback BOPREAL
+
+- Se incorpora un *market fallback* dinámico que detecta precios truncados
+  (`ultimoPrecio` o `valorizado/cantidad` < 10 000) para BOPREAL ARS y consulta
+  los endpoints `/Titulos/{simbolo}/Cotizacion` y `/CotizacionDetalle` con el
+  cliente autenticado de IOL.
+- `calc_rows` recalcula `valor_actual`, actualiza `ultimoPrecio` y etiqueta la
+  fila con `pricing_source = "market_revaluation_fallback"`. El bloque de
+  auditoría agrega `override_bopreal_market`, `market_price_source`,
+  `timestamp_fallback` y `quotes_hash` junto con el detalle por símbolo en
+  `bopreal_market`.
+- `PORTFOLIO_TOTALS_VERSION` se incrementa a **6.1** para invalidar snapshots
+  previos y propagar el nuevo cálculo en la UI.
+- Nueva prueba `tests/test_bopreal_market_fallback.py` valida el flujo sin
+  fallback (~200 k ARS), con fallback (~19.9 M ARS) y la propagación de
+  `quotes_hash`.
+
 ## Requisitos previos
 
 - Variables de entorno `IOL_USERNAME` y `IOL_PASSWORD` configuradas o un dataset
@@ -58,10 +75,10 @@ totales del dashboard se sincronizan con los montos oficiales de InvertirOnline.
 
 3. **Sincronización de totales:**
 
-   - Confirmar que `PORTFOLIO_TOTALS_VERSION=5.8` esté exportada en el entorno.
+   - Confirmar que `PORTFOLIO_TOTALS_VERSION=6.1` esté exportada en el entorno.
    - Iniciar la UI o ejecutar el flujo `get_portfolio_view()` para generar un
      snapshot nuevo.
-   - Verificar que los metadatos del snapshot indiquen `totals_version = v5.8`
+   - Verificar que los metadatos del snapshot indiquen `totals_version = v6.1`
      y que los totales recalculados coincidan con los datos de IOL.
 
 4. **Checklist final:**

@@ -480,6 +480,24 @@ def load_portfolio_data(cli, psvc):
         st.stop()
 
     df_pos = dataset.positions.copy()
+    market_fetcher = getattr(cli, "fetch_market_price", None)
+    if callable(market_fetcher):
+        try:
+            df_pos.attrs["market_price_fetcher"] = market_fetcher
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo adjuntar market_price_fetcher al dataset",
+                exc_info=True,
+            )
+    quotes_hash = getattr(dataset, "quotes_hash", "")
+    if quotes_hash:
+        try:
+            df_pos.attrs["quotes_hash"] = quotes_hash
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo propagar quotes_hash a las posiciones",
+                exc_info=True,
+            )
     if df_pos.empty:
         logger.info(
             "Portafolio vacío pero API respondió correctamente",

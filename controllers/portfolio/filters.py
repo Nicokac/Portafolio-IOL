@@ -214,11 +214,32 @@ def apply_filters(
             chg_cnt,
         )
 
+        market_fetcher = getattr(cli, "fetch_market_price", None)
+        if callable(market_fetcher):
+            try:
+                df_pos.attrs.setdefault("market_price_fetcher", market_fetcher)
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo adjuntar market_price_fetcher en apply_filters",
+                    exc_info=True,
+                )
+
+        def _quote_lookup(mercado, simbolo=None):
+            key = (str(mercado).lower(), str((simbolo or mercado)).upper())
+            return quotes_map.get(key, {})
+
+        if callable(market_fetcher):
+            try:
+                setattr(_quote_lookup, "fetch_market_price", market_fetcher)
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo exponer fetch_market_price en quote_lookup",
+                    exc_info=True,
+                )
+
         with _profile_stage("calc_rows", rows=len(df_pos)) as stage_calc:
             df_view = psvc.calc_rows(
-                lambda mercado, simbolo=None: quotes_map.get(
-                    (str(mercado).lower(), str((simbolo or mercado)).upper()), {}
-                ),
+                _quote_lookup,
                 df_pos,
                 exclude_syms=[],
             )
