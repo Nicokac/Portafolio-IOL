@@ -219,22 +219,6 @@ def _adaptive_lock_scope(
             _warn_prolonged_lock(lock_profile, operation=operation)
 
 
-def _write_performance_metrics(runtime_s: float, success_pct: float) -> None:
-    metrics_path = Path("performance_metrics_8.csv")
-    lines = [
-        "metric,value,notes",
-        (
-            "recommendations.predictive_runtime_s,"
-            f'{max(runtime_s, 0.0):.4f},"Duración total del procesamiento adaptativo"'
-        ),
-        (
-            "recommendations.batch_success_rate_pct,"
-            f'{max(success_pct, 0.0):.2f},"Porcentaje de sub-batches procesados con éxito"'
-        ),
-    ]
-    metrics_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def update_model(
     predictions: pd.DataFrame | None,
     actuals: pd.DataFrame | None,
@@ -260,8 +244,6 @@ def update_model(
     ttl_seconds = max(effective_ttl_hours, 0.0) * 3600.0
     if isinstance(active_cache, CacheService):
         active_cache.set_ttl_override(ttl_seconds)
-
-    overall_start = time.perf_counter()
 
     batches = _build_prediction_batches(
         predictions,
@@ -376,13 +358,6 @@ def update_model(
             last_updated=cache_timestamp,
             ttl_hours=effective_ttl_hours,
         )
-
-    runtime_s = time.perf_counter() - overall_start
-    success_pct = float(successful_batches) / float(total_batches) * 100.0 if total_batches else 0.0
-    try:
-        _write_performance_metrics(runtime_s, success_pct)
-    except Exception:  # pragma: no cover - metrics should not break flow
-        LOGGER.debug("No se pudo actualizar performance_metrics_8.csv", exc_info=True)
 
     payload = update_result.to_dict()
     payload["cache_metadata"] = cache_metadata
