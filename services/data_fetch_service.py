@@ -138,7 +138,7 @@ def _available_types(df: pd.DataFrame) -> tuple[str, ...]:
     return tuple(sorted(collected))
 
 
-def _quote_pairs(df: pd.DataFrame) -> list[tuple[str, str]]:
+def normalize_quote_pairs(df: pd.DataFrame) -> list[tuple[str, str]]:
     if df.empty:
         return []
     cols = [col for col in ("mercado", "simbolo") if col in df.columns]
@@ -362,7 +362,7 @@ class PortfolioDataFetchService:
         else:
             symbols = ()
         types = _available_types(df_pos)
-        pairs = _quote_pairs(df_pos)
+        pairs = normalize_quote_pairs(df_pos)
         quotes = fetch_quotes_bulk(cli, pairs) if pairs else {}
         quotes_copy = {tuple(k): dict(v) for k, v in quotes.items()}
         quotes_hash = _compute_quotes_hash(quotes_copy)
@@ -400,4 +400,5 @@ __all__ = [
     "PortfolioDataset",
     "get_portfolio_data_fetch_service",
     "_compute_dataset_hash",
+    "normalize_quote_pairs",
 ]
