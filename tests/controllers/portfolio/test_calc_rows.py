@@ -189,3 +189,42 @@ def test_calc_rows_detects_bond_scale_from_portfolio_payload() -> None:
         symbol = row["simbolo"]
         assert symbol in decisions
         assert math.isclose(decisions[symbol], row["expected_scale"], rel_tol=1e-6)
+
+
+def test_calc_rows_rescales_bopreal_costs_when_payload_truncated() -> None:
+    df_pos = pd.DataFrame(
+        [
+            {
+                "simbolo": "BPOC7",
+                "mercado": "bcba",
+                "cantidad": 146.0,
+                "costo_unitario": 142_193.15,
+                # Clasificación neutra para evitar la revaluación forzada y emular el payload truncado.
+                "tipo": "Fondos",
+                "tipo_iol": "Fondos",
+                "tipo_estandar": "Fondos",
+                "moneda": "ARS",
+                "moneda_origen": "ARS",
+                "valorizado": 201_042.0,
+                "ultimoPrecio": 1_377.0,
+                "provider": "manual",
+            }
+        ]
+    )
+
+    def _quote_fn(_mercado: str, _simbolo: str) -> dict[str, object]:
+        return {}
+
+    result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
+    row = result.iloc[0]
+
+    expected_ppc = 1_421.9315
+    expected_cost = expected_ppc * 146.0
+    expected_value = 1_377.0 * 146.0
+    expected_pl = expected_value - expected_cost
+
+    assert math.isclose(row["ppc"], expected_ppc, rel_tol=1e-6)
+    assert math.isclose(row["costo"], expected_cost, rel_tol=1e-6)
+    assert math.isclose(row["valor_actual"], expected_value, rel_tol=1e-6)
+    assert math.isclose(row["pl"], expected_pl, rel_tol=1e-6)
+    assert math.isclose(row["pl_%"], (expected_pl / expected_cost) * 100.0, rel_tol=1e-6)
