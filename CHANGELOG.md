@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## 0.9.3.0 — Corrección integral de BOPREAL ARS
+### Fixed
+- Corrigimos la valuación de bonos BOPREAL en ARS reescalando `ultimo`, `valor_actual` y P/L dentro de `calc_rows`, registrando la auditoría del factor aplicado.
+- Ajustamos el post-merge del modelo de vista para detectar símbolos `BPO` en ARS con precios truncados, reescalar los totales y etiquetar la corrección en `audit` junto con un log `[Audit]` explícito.
+
+### Added
+- Pruebas dedicadas que cubren el reescalado runtime de BOPREAL y el parche post-merge de `PortfolioViewModelService`.
+
 ## 0.9.1 — Refactor estructural y linting global
 - Configurados linters Ruff, Flake8 y Black.
 - Limpieza y reordenamiento de imports.
