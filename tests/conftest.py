@@ -45,19 +45,71 @@ def disable_network(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(requests, "post", _deny)
 
 
+try:
+    cache_module: ModuleType = __import__("services.cache", fromlist=["__name__"])
+except Exception:  # pragma: no cover - compatibility shim when cache import fails
+    cache_module = ModuleType("services.cache")
+    sys.modules["services.cache"] = cache_module
+else:
+    sys.modules["services.cache"] = cache_module
+
+
+def _cache_noop(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+cache_module.st = {}
+cache_module.IOLAuth = lambda *a, **k: None  # type: ignore[assignment]
+cache_module.record_fx_api_response = _cache_noop  # type: ignore[assignment]
+cache_module.clear_all = lambda: None  # type: ignore[assignment]
+existing_all = set(getattr(cache_module, "__all__", ()))
+existing_all.update({"st", "IOLAuth", "record_fx_api_response", "clear_all"})
+cache_module.__all__ = tuple(sorted(existing_all))
+
+
 @pytest.fixture(autouse=True)
 def offline_iol_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     """Stub the IOL client with predictable offline responses."""
 
     from infrastructure import iol
 
-    client_stub = MagicMock(name="OfflineIOLClient")
-    client_stub.get_portfolio.return_value = {"activos": []}
-    client_stub.get_exchange_rates.return_value = {}
-    client_stub.get_notifications.return_value = {}
+    original_class = getattr(iol.client, "_OFFLINE_REAL_IOLCLIENT", None)
+    if original_class is None:
+        original_class = iol.client.IOLClient
 
-    monkeypatch.setattr(iol.client, "IOLClient", MagicMock(return_value=client_stub))
-    return client_stub
+    fake_cli = MagicMock(name="OfflineIOLClient")
+    fake_cli.get_portfolio.return_value = {
+        "activos": [
+            {
+                "simbolo": "AAPL",
+                "cantidad": 1,
+                "ultimoPrecio": 100.0,
+                "valorizado": 100.0,
+            }
+        ],
+        "total": 100.0,
+    }
+    fake_cli.get_exchange_rates.return_value = {"USD": 1000.0}
+    fake_cli.get_notifications.return_value = []
+    fake_cli.authenticated = True
+
+    monkeypatch.setattr(iol.client, "_OFFLINE_REAL_IOLCLIENT", original_class, raising=False)
+    monkeypatch.setattr(iol.client, "IOLClient", lambda *a, **k: fake_cli)
+    return fake_cli
+
+
+@pytest.fixture
+def restore_real_iol_client(monkeypatch: pytest.MonkeyPatch) -> type[Any]:
+    """Restore the real ``IOLClient`` implementation for specialised tests."""
+
+    from infrastructure import iol
+
+    original_class = getattr(iol.client, "_OFFLINE_REAL_IOLCLIENT", None)
+    if original_class is None:  # pragma: no cover - defensive guard
+        original_class = iol.client.IOLClient
+
+    monkeypatch.setattr(iol.client, "IOLClient", original_class)
+    return original_class
 
 
 @pytest.fixture(autouse=True)

@@ -13,6 +13,9 @@ from services import cache as cache_module
 from services import ohlc_adapter as ohlc_module
 from tests.fixtures.auth import FakeAuth
 
+# These tests exercise the real client implementation.
+pytestmark = pytest.mark.usefixtures("restore_real_iol_client")
+
 # Ensure the project root is importable regardless of pytest's invocation path.
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:

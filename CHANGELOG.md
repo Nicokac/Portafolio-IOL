@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurado pytest.ini con testpaths, norecursedirs y marcador "integration".
 - Entorno offline validado y suite libre de dependencias de red.
 
+## 0.9.0.1-patch4 — Stable Offline Fixtures & Deterministic Cache
+- Añadido stub coherente de IOLClient con datos simulados.
+- Reexportados atributos mínimos de cache para compatibilidad.
+- Normalizados asserts en tests de integración offline.
+
 ## 0.9.0.1-patch2 – Offline Fixtures & Stable Cache
 - Introducido stub global para aislar red durante pytest.
 - Eliminados fixtures obsoletos que invocaban API real.

@@ -14,6 +14,9 @@ from infrastructure.iol import client as iol_client_module
 from tests.fixtures.auth import FakeAuth
 
 
+pytestmark = pytest.mark.usefixtures("restore_real_iol_client")
+
+
 class _StreamlitStub:
     """Minimal Streamlit stub exposing a mutable ``session_state``."""
 
