@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from application.portfolio_service import calc_rows
+from application.portfolio_service import BOPREAL_FORCE_FACTOR, calc_rows
 
 
 def _make_positions(**overrides: object) -> pd.DataFrame:
@@ -139,7 +139,7 @@ def test_calc_rows_detects_bond_scale_from_portfolio_payload() -> None:
             "moneda": "ARS",
             "valorizado": 200_020.0,
             "ultimoPrecio": 137_000.0,
-            "expected_scale": 0.01,
+            "expected_scale": 1.0,
         },
         {
             "simbolo": "S10N5",
@@ -164,15 +164,22 @@ def test_calc_rows_detects_bond_scale_from_portfolio_payload() -> None:
     result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
 
     rows_by_symbol = {row["simbolo"]: row for row in bond_rows}
+
+    def _adjusted_valor(symbol: str, data: dict[str, object]) -> float:
+        valor = float(data["valorizado"])
+        if symbol.startswith("BPO"):
+            valor *= BOPREAL_FORCE_FACTOR
+        return valor
+
     expected_last = {
-        symbol: data["valorizado"] / (data["cantidad"] * data["expected_scale"])
+        symbol: _adjusted_valor(symbol, data) / (data["cantidad"] * data["expected_scale"])
         for symbol, data in rows_by_symbol.items()
     }
 
     for symbol, price in expected_last.items():
         match = result.loc[result["simbolo"] == symbol]
         assert not match.empty
-        expected_value = rows_by_symbol[symbol]["valorizado"]
+        expected_value = _adjusted_valor(symbol, rows_by_symbol[symbol])
         assert math.isclose(match.iloc[0]["valor_actual"], expected_value, rel_tol=1e-6)
         assert math.isclose(match.iloc[0]["ultimo"], price, rel_tol=1e-6)
 
@@ -218,9 +225,10 @@ def test_calc_rows_rescales_bopreal_costs_when_payload_truncated() -> None:
     result = calc_rows(_quote_fn, df_pos, exclude_syms=[])
     row = result.iloc[0]
 
-    expected_ppc = 1_421.9315
+    expected_ppc = 142_193.15
     expected_cost = expected_ppc * 146.0
-    expected_value = 1_377.0 * 146.0
+    expected_last = 1_377.0 * BOPREAL_FORCE_FACTOR
+    expected_value = expected_last * 146.0
     expected_pl = expected_value - expected_cost
 
     assert math.isclose(row["ppc"], expected_ppc, rel_tol=1e-6)
@@ -228,3 +236,44 @@ def test_calc_rows_rescales_bopreal_costs_when_payload_truncated() -> None:
     assert math.isclose(row["valor_actual"], expected_value, rel_tol=1e-6)
     assert math.isclose(row["pl"], expected_pl, rel_tol=1e-6)
     assert math.isclose(row["pl_%"], (expected_pl / expected_cost) * 100.0, rel_tol=1e-6)
+
+
+def test_calc_rows_corrects_bopreal_truncated_runtime() -> None:
+    df_pos = pd.DataFrame(
+        [
+            {
+                "simbolo": "BPOC7",
+                "mercado": "bcba",
+                "cantidad": 146.0,
+                "costo_unitario": 142_193.15,
+                "tipo": "Fondos",
+                "tipo_iol": "Fondos",
+                "tipo_estandar": "Fondos",
+                "moneda": "ARS",
+                "moneda_origen": "ARS",
+                "valorizado": 201_042.0,
+                "ultimoPrecio": 1_377.0,
+                "provider": "manual",
+            }
+        ]
+    )
+
+    result = calc_rows(lambda *_args, **_kwargs: {}, df_pos, exclude_syms=[])
+    row = result.iloc[0]
+
+    expected_last = 1_377.0 * BOPREAL_FORCE_FACTOR
+    expected_value = expected_last * 146.0
+    expected_cost = 142_193.15 * 146.0
+    expected_pl_pct = (expected_value - expected_cost) / expected_cost * 100.0
+
+    assert math.isclose(row["ultimo"], expected_last, rel_tol=1e-6)
+    assert math.isclose(row["valor_actual"], expected_value, rel_tol=1e-6)
+    assert math.isclose(row["ppc"], 142_193.15, rel_tol=1e-6)
+    assert math.isclose(row["pl_%"], expected_pl_pct, rel_tol=1e-6)
+
+    audit_section = result.attrs.get("audit", {})
+    assert isinstance(audit_section, dict)
+    rescale_entries = audit_section.get("bopreal_rescale")
+    assert rescale_entries
+    first_entry = rescale_entries[0]
+    assert first_entry.get("factor_aplicado") == BOPREAL_FORCE_FACTOR

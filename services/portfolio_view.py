@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from application.portfolio_service import (
+    BOPREAL_FORCE_FACTOR,
     PORTFOLIO_TOTALS_VERSION,
     PortfolioTotals,
     calculate_totals,
@@ -36,7 +37,7 @@ from shared.telemetry import log_default_telemetry
 
 logger = logging.getLogger(__name__)
 
-_BOPREAL_ARS_SYMBOLS = frozenset({"BPOA7", "BPOB7", "BPOC7", "BPOD7"})
+_BOPREAL_PREFIX = "BPO"
 
 try:  # pragma: no cover - optional dependency for Redis adapter
     import redis  # type: ignore[import-not-found]
@@ -2230,91 +2231,102 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
     if not isinstance(df_view, pd.DataFrame) or df_view.empty:
         return False
 
-    required = {"simbolo", "moneda_origen", "cantidad", "ultimoPrecio"}
-    if not required.issubset(df_view.columns):
+    if "simbolo" not in df_view.columns or "cantidad" not in df_view.columns:
         return False
 
     symbols = df_view["simbolo"].astype("string").fillna("").str.upper()
-    currency = df_view["moneda_origen"].astype("string").fillna("").str.upper()
-    pricing_series = (
-        df_view.get("pricing_source", pd.Series(index=df_view.index, dtype="object"))
-        .astype("string")
-        .str.lower()
-        .fillna("")
-    )
-    bopreal_mask = symbols.isin(_BOPREAL_ARS_SYMBOLS) & ~symbols.str.endswith("D")
-    mask = bopreal_mask & currency.eq("ARS")
-    guard_mask = pricing_series.eq("override_bopreal_forced")
-    mask = mask & ~guard_mask
-    if not bool(mask.any()):
+    currency_series = df_view.get("moneda")
+    if currency_series is None:
+        currency_series = df_view.get("moneda_origen", pd.Series(index=df_view.index, dtype="object"))
+    currency = currency_series.astype("string").fillna("").str.upper()
+
+    bopreal_mask = symbols.str.startswith(_BOPREAL_PREFIX)
+    ars_mask = currency.eq("ARS")
+    base_mask = bopreal_mask & ars_mask
+    if not base_mask.any():
         return False
 
-    quantity_series = pd.to_numeric(df_view["cantidad"], errors="coerce")
+    last_series = pd.to_numeric(
+        df_view.get("ultimo", pd.Series(index=df_view.index, dtype=float)),
+        errors="coerce",
+    )
+    ultimo_precio = pd.to_numeric(
+        df_view.get("ultimoPrecio", pd.Series(index=df_view.index, dtype=float)),
+        errors="coerce",
+    )
+    price_basis = ultimo_precio.where(ultimo_precio.notna(), last_series)
+
+    valor_actual_series = pd.to_numeric(
+        df_view.get("valor_actual", pd.Series(index=df_view.index, dtype=float)),
+        errors="coerce",
+    )
+    low_last_mask = last_series.notna() & (last_series < 10_000.0)
+    low_value_mask = valor_actual_series.notna() & (valor_actual_series < 10_000.0)
+    rescale_mask = base_mask & price_basis.notna() & (low_last_mask | low_value_mask)
+    if not rescale_mask.any():
+        return False
+
+    qty_series = pd.to_numeric(df_view["cantidad"], errors="coerce").fillna(0.0)
     if "scale" in df_view.columns:
         scale_series = pd.to_numeric(df_view["scale"], errors="coerce").fillna(1.0)
     else:
         scale_series = pd.Series(1.0, index=df_view.index, dtype=float)
+    qty_effective = qty_series.multiply(scale_series)
 
-    effective_qty = quantity_series.mul(scale_series)
-
-    last_series = pd.Series(np.nan, index=df_view.index, dtype=float)
-    if "ultimo" in df_view.columns:
-        last_series = pd.to_numeric(df_view["ultimo"], errors="coerce")
-    if "ultimoPrecio" in df_view.columns:
-        ultimo_series = pd.to_numeric(df_view["ultimoPrecio"], errors="coerce")
-        last_series = last_series.where(last_series.notna(), ultimo_series)
-
-    recalculated = last_series.mul(effective_qty)
+    forced_last = price_basis.loc[rescale_mask] * BOPREAL_FORCE_FACTOR
+    forced_last = forced_last.replace([np.inf, -np.inf], np.nan)
+    forced_value = forced_last * qty_effective.loc[rescale_mask]
 
     if "valor_actual" not in df_view.columns:
         df_view["valor_actual"] = np.nan
-    current_values = pd.to_numeric(df_view["valor_actual"], errors="coerce")
-    effective_values = recalculated.where(recalculated.notna(), current_values)
-    df_view.loc[mask, "valor_actual"] = effective_values.loc[mask]
+    df_view.loc[rescale_mask, "valor_actual"] = forced_value
     if "valorizado" in df_view.columns:
-        df_view.loc[mask, "valorizado"] = effective_values.loc[mask]
+        df_view.loc[rescale_mask, "valorizado"] = forced_value
     if "ultimo" in df_view.columns:
-        df_view.loc[mask, "ultimo"] = last_series.loc[mask]
+        df_view.loc[rescale_mask, "ultimo"] = forced_last
 
-    if "pl" not in df_view.columns:
-        df_view["pl"] = np.nan
-    if "pl_%" not in df_view.columns:
-        df_view["pl_%"] = np.nan
+    if "ultimoPrecio" in df_view.columns:
+        df_view.loc[rescale_mask, "ultimoPrecio"] = price_basis.loc[rescale_mask]
 
     costo_series = pd.to_numeric(
         df_view.get("costo", pd.Series(index=df_view.index, dtype=float)),
         errors="coerce",
     )
-    pl_values = effective_values.subtract(costo_series, fill_value=np.nan)
-    df_view.loc[mask, "pl"] = pl_values.loc[mask]
+    if "pl" not in df_view.columns:
+        df_view["pl"] = np.nan
+    if "pl_%" not in df_view.columns:
+        df_view["pl_%"] = np.nan
+
+    pl_values = forced_value.subtract(costo_series.loc[rescale_mask], fill_value=np.nan)
+    df_view.loc[rescale_mask, "pl"] = pl_values
     with np.errstate(divide="ignore", invalid="ignore"):
-        pl_pct = (pl_values.divide(costo_series)).multiply(100.0)
+        pl_pct = pl_values.divide(costo_series.loc[rescale_mask]).multiply(100.0)
     pl_pct = pl_pct.replace([np.inf, -np.inf], np.nan)
-    df_view.loc[mask, "pl_%"] = pl_pct.loc[mask]
+    df_view.loc[rescale_mask, "pl_%"] = pl_pct
 
-    df_view.loc[mask, "pricing_source"] = "override_bopreal_postmerge"
+    df_view.loc[rescale_mask, "pricing_source"] = "override_bopreal_postmerge"
 
-    if "audit" in df_view.columns:
-        decision_tag = "override_bopreal_postmerge"
+    if "audit" not in df_view.columns:
+        df_view["audit"] = np.nan
 
-        def _append_decision(audit_value: Any) -> dict[str, Any]:
-            if isinstance(audit_value, Mapping):
-                audit_dict = dict(audit_value)
-            else:
-                audit_dict = {}
-            existing = audit_dict.get("scale_decisions")
-            if isinstance(existing, list):
-                updated = list(existing)
-            elif existing is None:
-                updated = []
-            else:
-                updated = [existing]
-            if decision_tag not in updated:
-                updated.append(decision_tag)
-            audit_dict["scale_decisions"] = updated
-            return audit_dict
+    def _update_audit(value: Any) -> dict[str, Any]:
+        audit_dict: dict[str, Any]
+        if isinstance(value, Mapping):
+            audit_dict = dict(value)
+        else:
+            audit_dict = {}
+        audit_dict["bopreal_postmerge_fix"] = True
+        audit_dict["bopreal_postmerge_factor"] = BOPREAL_FORCE_FACTOR
+        return audit_dict
 
-        df_view.loc[mask, "audit"] = df_view.loc[mask, "audit"].apply(_append_decision)
+    df_view.loc[rescale_mask, "audit"] = df_view.loc[rescale_mask, "audit"].apply(_update_audit)
+
+    for symbol in symbols.loc[rescale_mask]:
+        logger.info(
+            "[Audit] BOPREAL ARS valuation rescaled (symbol=%s, factor=%.1f)",
+            symbol,
+            BOPREAL_FORCE_FACTOR,
+        )
 
     return True
 
