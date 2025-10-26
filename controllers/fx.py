@@ -1,3 +1,13 @@
+"""Render helpers for the FX section within the portfolio dashboard.
+
+Parte de la capa controllers. No ejecutar código en import.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
 import pandas as pd
 import streamlit as st  # Streamlit UI components
 
@@ -5,7 +15,7 @@ from shared.config import settings
 from ui.fx_panels import render_fx_history, render_spreads
 
 
-def render_fx_section(container, rates):
+def render_fx_section(container: Any, rates: Mapping[str, Any] | None) -> None:
     """Render FX information in the given container."""
     with container:
         rates = rates or {}

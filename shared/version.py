@@ -7,10 +7,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.9.0.1-patch4"
-RELEASE_NAME = "Portafolio IOL v0.9.0.1-patch4"
-RELEASE_DATE = "2026-06-01"
-CHANGELOG_REF = ("Fase 7.0 Codebase Cleanup",)
+VERSION = "0.9.1"
+RELEASE_NAME = "Portafolio IOL v0.9.1"
+RELEASE_DATE = "2026-07-01"
+CHANGELOG_REF = ("Fase 7.1.0 Structural Refactor",)
 
 
 def _resolve_build_signature() -> str:

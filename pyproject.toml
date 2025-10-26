@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portafolio-iol"
-version = "0.9.0.1-patch4"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.9.1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 readme = "README.md"
 dependencies = [
     "streamlit>=1.49.1",
@@ -58,17 +58,11 @@ omit = [
 exclude_dirs = ["tests", "docs", "infrastructure"]
 targets = ["application", "controllers", "services", "shared", "noxfile.py"]
 
-[tool.ruff]
-target-version = "py310"
-line-length = 120
 
-[tool.ruff.lint]
-select = ["E", "F", "I"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+skip-string-normalization = false
 
 [tool.mypy]
 files = [
