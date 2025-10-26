@@ -13,6 +13,9 @@ import requests
 from infrastructure.iol import client as iol_client_module
 
 
+pytestmark = pytest.mark.usefixtures("restore_real_iol_client")
+
+
 class _DummyAuth:
     """Authentication stub tracking token usage."""
 

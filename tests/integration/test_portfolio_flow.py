@@ -16,6 +16,11 @@ from services.portfolio_view import PortfolioViewModelService
 from tests.fixtures.streamlit import BaseFakeStreamlit
 from tests.ui.test_portfolio_ui import FakeStreamlit
 
+pytestmark = [
+    pytest.mark.usefixtures("restore_real_iol_client"),
+    pytest.mark.parametrize("fake_st", ["base"], indirect=True),
+]
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -24,9 +29,6 @@ if str(ROOT) not in sys.path:
 def _http_error(status: int) -> requests.HTTPError:
     response = SimpleNamespace(status_code=status)
     return requests.HTTPError(response=response)
-
-
-pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 
 
 @pytest.fixture
