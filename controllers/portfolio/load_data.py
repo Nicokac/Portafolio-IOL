@@ -20,6 +20,7 @@ from services.data_fetch_service import (
     DatasetMetadata,
     PortfolioDataset,
     get_portfolio_data_fetch_service,
+    normalize_quote_pairs,
 )
 from services.performance_timer import (
     QUOTES_BATCH_LATENCY_SECONDS,
@@ -134,20 +135,6 @@ def get_last_batch_context() -> dict[str, str]:
     return dict(_LAST_BATCH_CONTEXT)
 
 
-def _normalize_pairs(df_pos: pd.DataFrame) -> list[tuple[str, str]]:
-    if df_pos.empty:
-        return []
-    cols = [col for col in ("mercado", "simbolo") if col in df_pos.columns]
-    if len(cols) < 2:
-        return []
-    data = df_pos[cols].dropna(subset=["simbolo"]).astype({"mercado": str, "simbolo": str})
-    data["mercado"] = data["mercado"].str.lower()
-    data["mercado"] = data["mercado"].where(data["mercado"].str.strip().astype(bool), "bcba")
-    data["simbolo"] = data["simbolo"].str.upper()
-    data = data.drop_duplicates()
-    return list(data.itertuples(index=False, name=None))
-
-
 def _resolve_asset_groups(df_pos: pd.DataFrame) -> dict[str, str]:
     mapping: dict[str, str] = {}
     if "simbolo" not in df_pos.columns:
@@ -200,7 +187,7 @@ def build_quote_batches(
 
     dataset_hash = _hash_positions(df_pos)
     filters_key = _filters_signature(filters)
-    pairs = _normalize_pairs(df_pos)
+    pairs = normalize_quote_pairs(df_pos)
     if not pairs:
         _update_last_batch_context(dataset_hash, filters_key)
         return []

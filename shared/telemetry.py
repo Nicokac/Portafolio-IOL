@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Mapping, MutableMapping
+from typing import Any, Iterable, Mapping, MutableMapping
 
 try:  # pragma: no cover - optional in certain tests
     import streamlit as st  # type: ignore
@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - defensive fallback
 from shared.version import __build_signature__, __version__
 
 logger = logging.getLogger(__name__)
+_analysis_logger = logging.getLogger("analysis")
 
 
 _METRIC_COLUMNS = (
@@ -339,6 +340,34 @@ def log(event_name: str, **kwargs: object) -> None:
         logger.debug("Unable to append QA metrics", exc_info=True)
 
 
+def log_analysis_event(event: str, latest: Mapping[str, Any], metrics: Mapping[str, Any]) -> None:
+    """Emit a structured analysis log entry when metrics are updated."""
+
+    if not metrics:
+        return
+
+    try:
+        latest_payload = dict(latest)
+    except Exception:  # pragma: no cover - defensive fallback
+        latest_payload = {"value": latest}
+    try:
+        metrics_payload = dict(metrics)
+    except Exception:  # pragma: no cover - defensive fallback
+        metrics_payload = {"value": metrics}
+
+    _analysis_logger.info(
+        "%s updated",
+        event,
+        extra={
+            "analysis": {
+                "event": event,
+                "latest": latest_payload,
+                "metrics": metrics_payload,
+            }
+        },
+    )
+
+
 def _append_qa_metrics(event_name: str, metrics: Mapping[str, object]) -> None:
     path = _QA_METRICS_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,6 +389,7 @@ def _append_qa_metrics(event_name: str, metrics: Mapping[str, object]) -> None:
 __all__ = [
     "DEFAULT_TELEMETRY_FILES",
     "log",
+    "log_analysis_event",
     "is_hydration_locked",
     "log_default_telemetry",
     "log_telemetry",
