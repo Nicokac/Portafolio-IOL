@@ -338,18 +338,19 @@ Consulta `docs/dev_guide.md` para el procedimiento actualizado de ejecución y Q
    ```
    Si necesitás construirlo manualmente (por ejemplo, en scripts), usá
    `infrastructure.iol.client.IOLClientAdapter` para mantener el cache de portafolio y el manejo de
-   tokens consistentes.
+   tokens consistentes. El paquete `infrastructure.iol.compat` conserva los helpers extraídos del
+   árbol legacy y reemplaza al antiguo namespace.
 2. **Helpers de portfolio.** Los flujos que antes dependían de helpers duplicados en `tests/legacy/`
    deben migrar a `services.portfolio_view.PortfolioViewModelService` y a
    `application.portfolio_viewmodel.build_portfolio_viewmodel`. Estos componentes concentran la
    normalización de posiciones, la clasificación de activos y la materialización del view-model.
+   La carpeta `tests/legacy/` fue eliminada durante la limpieza 0.9.0.
 3. **Stub de Streamlit.** Las suites de UI utilizan el fixture `streamlit_stub` definido en
-   `tests/conftest.py`. Si mantenías stubs manuales en carpetas legacy, actualizá tus pruebas para
+   `tests/conftest.py`. Si mantenías stubs manuales en carpetas históricas, actualizá tus pruebas para
    consumir el fixture e interactuar con helpers como `streamlit_stub.get_records("header")` o
    `streamlit_stub.set_form_submit_result(...)`.
-4. **Ejecución de suites.** `pytest` ignora `tests/legacy/` gracias a `norecursedirs`, por lo que basta
-   con lanzar `pytest --maxfail=1 --disable-warnings -q` para cubrir la batería moderna. Ejecutá
-   `pytest tests/legacy` sólo cuando necesites auditar comparativas históricas.
+4. **Ejecución de suites.** La suite activa se valida con `pytest --maxfail=1 --disable-warnings -q`
+   sin banderas adicionales; ya no existen suites paralelas bajo `tests/legacy/`.
 
 Con estos pasos la base de código queda alineada a los servicios actuales y los pipelines de CI pueden
 validar escenarios sin depender de módulos obsoletos.
@@ -388,13 +389,13 @@ validar escenarios sin depender de módulos obsoletos.
 
 ### CI Checklist (0.3.4.4.3)
 
-1. **Ejecuta la suite determinista sin legacy.** Lanza `pytest --maxfail=1 --disable-warnings -q --ignore=tests/legacy`
-   (o confiá en el `norecursedirs` por defecto) y verificá que el resumen final no recolecte pruebas desde `tests/legacy/`.
+1. **Ejecuta la suite determinista completa.** Lanza `pytest --maxfail=1 --disable-warnings -q`
+   y verificá que el resumen final incluya `tests/test_cleanup_integrity.py` en verde.
 2. **Publica cobertura y bloquea regresiones de `/Cotizacion`.** Corre `pytest --cov=application --cov=controllers --cov-report=term-missing --cov-report=html --cov-report=xml`
    y confirma que el pipeline adjunte `coverage.xml` y el directorio `htmlcov/`, incluyendo los módulos
    vinculados al endpoint de cotizaciones dentro del reporte.
 3. **Audita importaciones legacy.** Incluye un paso que ejecute `rg "infrastructure\.iol\.legacy" application controllers services tests`
-   y falla el job si aparecen coincidencias fuera de `tests/legacy/`.
+   y falla el job si aparecen coincidencias; el namespace ahora es un alias de compatibilidad.
 4. **Valida exportaciones.** Ejecuta `python scripts/export_analysis.py --input ~/.portafolio_iol/snapshots --formats both --output exports/ci`
    o reutiliza los snapshots de `tmp_path`. Revisa que cada snapshot genere los CSV (`kpis.csv`,
    `positions.csv`, `history.csv`, `contribution_by_symbol.csv`, etc.), el ZIP `analysis.zip`, el Excel

@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import requests
 
 from infrastructure.iol.auth import InvalidCredentialsError, IOLAuth
-from infrastructure.iol.legacy.session import LegacySession
+from .session import LegacySession
 from services.quote_rate_limit import quote_rate_limiter
 from shared.config import settings
 from shared.settings import legacy_login_backoff_base, legacy_login_max_retries
