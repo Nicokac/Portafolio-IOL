@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## 0.9.1 — Refactor estructural y linting global
+- Configurados linters Ruff, Flake8 y Black.
+- Limpieza y reordenamiento de imports.
+- Unificación de typing y docstrings.
+- Eliminado código legacy y duplicado.
+- Resolución de warnings de deprecación.
+
 ## 0.9.0.1-patch3 — Test Discovery sin UI pesada
 - Añadidas guardas UNIT_TEST en módulos UI para prevenir render en import.
 - Se vació tests/__init__.py y se agregó stub de Streamlit.

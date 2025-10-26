@@ -1,8 +1,15 @@
+"""Render helpers for the risk analysis tab in the portfolio UI.
+
+Parte de la capa controllers. No ejecutar código en import.
+"""
+
+from __future__ import annotations
+
 import logging
 import time
 from collections import OrderedDict
 from io import BytesIO, StringIO
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
@@ -262,13 +269,13 @@ def compute_risk_metrics(returns_df, bench_ret, weights, *, var_confidence: floa
 
 
 def render_risk_analysis(
-    df_view,
-    tasvc,
+    df_view: pd.DataFrame,
+    tasvc: Any,
     favorites: FavoriteSymbols | None = None,
     *,
     notifications: NotificationFlags | None = None,
     available_types: Sequence[str] | None = None,
-):
+) -> None:
     """Render correlation and risk analysis for the portfolio."""
     stage_profiles: dict[str, dict[str, float | None]] = {}
 
@@ -933,7 +940,7 @@ def render_risk_analysis(
                         x="ticker",
                         y="weight",
                         sort="descending",
-                        use_container_width=True,
+                        width="stretch",
                     )
                     st.caption(
                         "Barras con la proporción que el modelo recomienda invertir en cada activo "

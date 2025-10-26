@@ -356,7 +356,7 @@ def render_table(
             _color_pl,
             subset=["pl_num", "pl_d_num", "pl_pct_num", "chg_pct_num"],
         ).apply(_highlight_totals, axis=1),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         height=420,
         column_config=column_config,
