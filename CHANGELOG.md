@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restored temporary exports (st, IOLAuth, record_fx_api_response) in services.cache.
 - Preserved backward compatibility for legacy modules pending refactor.
 
+## 0.9.0.1-patch2 – Offline Fixtures & Stable Cache
+- Introducido stub global para aislar red durante pytest.
+- Eliminados fixtures obsoletos que invocaban API real.
+- Estabilizado entorno de pruebas previo a linting.
+
 ## 0.9.0.1 – Hotfix: Detección y eliminación de código duplicado
 - Consolidación de funciones redundantes entre application, controllers y services.
 - Limpieza de constantes duplicadas y normalización de helpers.
