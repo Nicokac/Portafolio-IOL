@@ -11,7 +11,10 @@ from domain.models import Controls
 from services import cache as services_cache
 from tests.fixtures.streamlit import BaseFakeStreamlit
 
-pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.parametrize("fake_st", ["base"], indirect=True),
+]
 
 
 @pytest.fixture

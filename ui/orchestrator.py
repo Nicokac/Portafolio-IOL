@@ -6,6 +6,7 @@ import html
 import importlib.util
 import json
 import logging
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -38,6 +39,9 @@ from ui.header import render_header
 from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
 from ui.helpers.preload import ensure_scientific_preload_ready
 from ui.login import render_login_page
+
+
+IS_TEST = os.environ.get("UNIT_TEST", "0") == "1"
 
 logger = logging.getLogger("ui.orchestrator")
 
@@ -685,6 +689,12 @@ def render_main_ui() -> None:
         st.session_state["last_refresh"] = time.time()
         st.session_state["show_refresh_toast"] = True
         st.rerun()
+
+
+_IS_STREAMLIT_RUN = os.environ.get("STREAMLIT_RUN_MAIN") == "1"
+
+if (__name__ == "__main__" or _IS_STREAMLIT_RUN) and not IS_TEST:
+    render_main_ui()
 
 
 __all__ = ["render_main_ui"]

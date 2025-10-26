@@ -32,14 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
-## 0.9.0.1-patch1 – Compatibility Shim
-- Restored temporary exports (st, IOLAuth, record_fx_api_response) in services.cache.
-- Preserved backward compatibility for legacy modules pending refactor.
+## 0.9.0.1-patch3 — Test Discovery sin UI pesada
+- Añadidas guardas UNIT_TEST en módulos UI para prevenir render en import.
+- Se vació tests/__init__.py y se agregó stub de Streamlit.
+- Configurado pytest.ini con testpaths, norecursedirs y marcador "integration".
+- Entorno offline validado y suite libre de dependencias de red.
 
 ## 0.9.0.1-patch2 – Offline Fixtures & Stable Cache
 - Introducido stub global para aislar red durante pytest.
 - Eliminados fixtures obsoletos que invocaban API real.
 - Estabilizado entorno de pruebas previo a linting.
+
+## 0.9.0.1-patch1 – Compatibility Shim
+- Restored temporary exports (st, IOLAuth, record_fx_api_response) in services.cache.
+- Preserved backward compatibility for legacy modules pending refactor.
 
 ## 0.9.0.1 – Hotfix: Detección y eliminación de código duplicado
 - Consolidación de funciones redundantes entre application, controllers y services.

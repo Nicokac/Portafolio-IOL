@@ -8,6 +8,16 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+os.environ.setdefault("UNIT_TEST", "1")
+os.environ.setdefault("PYTEST_DISABLE_PLUGIN_AUTOLOAD", "1")
+os.environ.setdefault("STREAMLIT_SERVER_HEADLESS", "1")
+os.environ.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "0")
+
+if os.environ.get("UNIT_TEST") == "1":
+    from tests.stubs.streamlit_stub import st as _streamlit_stub
+
+    sys.modules.setdefault("streamlit", _streamlit_stub)
+
 import pytest
 import requests
 
