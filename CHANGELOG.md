@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## 0.9.0.1-patch1 – Compatibility Shim
+- Restored temporary exports (st, IOLAuth, record_fx_api_response) in services.cache.
+- Preserved backward compatibility for legacy modules pending refactor.
+
 ## 0.9.0.1 – Hotfix: Detección y eliminación de código duplicado
 - Consolidación de funciones redundantes entre application, controllers y services.
 - Limpieza de constantes duplicadas y normalización de helpers.
