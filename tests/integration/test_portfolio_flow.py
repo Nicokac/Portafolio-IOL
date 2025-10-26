@@ -33,7 +33,6 @@ pytestmark = pytest.mark.parametrize("fake_st", ["base"], indirect=True)
 def fake_streamlit(monkeypatch: pytest.MonkeyPatch, fake_st: BaseFakeStreamlit) -> BaseFakeStreamlit:
     for module in (filters, cache_module, iol_client_module):
         monkeypatch.setattr(module, "st", fake_st)
-    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
     return fake_st
 
 

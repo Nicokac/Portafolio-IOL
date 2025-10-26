@@ -261,7 +261,6 @@ def test_fetch_quotes_bulk_uses_persisted_price_when_bulk_returns_null(
 ) -> None:
     fake_st = SimpleNamespace(session_state={})
     monkeypatch.setattr(cache_module, "st", fake_st)
-    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
 
     recorded: list[tuple[str, dict[str, Any]]] = []
 
@@ -300,7 +299,6 @@ def test_fetch_quotes_bulk_uses_persisted_price_when_bulk_returns_null(
 def test_fetch_quotes_bulk_persists_and_rehydrates(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     fake_st = SimpleNamespace(session_state={})
     monkeypatch.setattr(cache_module, "st", fake_st)
-    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
 
     recorded: list[tuple[str, dict[str, Any]]] = []
 
@@ -390,7 +388,6 @@ def test_legacy_login_only_once_for_multiple_symbols(
     fake_st = SimpleNamespace(session_state={})
     monkeypatch.setattr(iol_client_module, "st", fake_st)
     monkeypatch.setattr(cache_module, "st", fake_st)
-    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
 
     class TrackingAuth:
         def __init__(self) -> None:

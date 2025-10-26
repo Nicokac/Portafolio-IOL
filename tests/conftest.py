@@ -6,8 +6,10 @@ import warnings
 from collections.abc import Iterable, Sequence
 from types import ModuleType, SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
+import requests
 
 from tests.fixtures.auth import FakeAuth
 from tests.fixtures.clock import FakeClock
@@ -20,6 +22,41 @@ warnings.filterwarnings(
     message="`infrastructure.iol.legacy` está deprecado",
     category=DeprecationWarning,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent outbound network calls during tests."""
+
+    def _deny(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("network disabled")
+
+    monkeypatch.setattr(requests, "get", _deny)
+    monkeypatch.setattr(requests, "post", _deny)
+
+
+@pytest.fixture(autouse=True)
+def offline_iol_client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    """Stub the IOL client with predictable offline responses."""
+
+    from infrastructure import iol
+
+    client_stub = MagicMock(name="OfflineIOLClient")
+    client_stub.get_portfolio.return_value = {"activos": []}
+    client_stub.get_exchange_rates.return_value = {}
+    client_stub.get_notifications.return_value = {}
+
+    monkeypatch.setattr(iol.client, "IOLClient", MagicMock(return_value=client_stub))
+    return client_stub
+
+
+@pytest.fixture(autouse=True)
+def streamlit_state_stub(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    """Provide a deterministic Streamlit state container for cache shims."""
+
+    fake_st = SimpleNamespace(session_state={})
+    monkeypatch.setattr("shared.cache.st", fake_st, raising=False)
+    return fake_st
 
 
 @pytest.fixture
