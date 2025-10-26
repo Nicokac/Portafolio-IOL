@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 from shared.time_provider import TIME_FORMAT, TimeProvider, TimeSnapshot
 from shared.version import __version__
 

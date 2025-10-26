@@ -13,6 +13,9 @@ from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.time_provider import TimeProvider
 
 
+IS_TEST = os.environ.get("UNIT_TEST", "0") == "1"
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,3 +139,7 @@ def render_login_page() -> None:
 
 
 __all__ = ["render_login_page", "settings"]
+
+
+if __name__ == "__main__" and not IS_TEST:
+    render_login_page()

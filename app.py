@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 import types
 from pathlib import Path
@@ -15,6 +16,9 @@ from bootstrap.startup import (
     start_preload_worker,
 )
 from shared.qa_profiler import track_ui_render
+
+
+IS_TEST = os.environ.get("UNIT_TEST", "0") == "1"
 
 
 def _get_startup_module():
@@ -90,5 +94,7 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(name)
 
 
-if __name__ == "__main__":
-    main(sys.argv[1:])
+_IS_STREAMLIT_RUN = os.environ.get("STREAMLIT_RUN_MAIN") == "1"
+
+if (__name__ == "__main__" or _IS_STREAMLIT_RUN) and not IS_TEST:
+    main(sys.argv[1:] if __name__ == "__main__" else None)
