@@ -1236,6 +1236,33 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             proveedor_utilizado.loc[fallback_mask].notna(),
             provider_series.loc[fallback_mask].where(provider_series.loc[fallback_mask] != "", "last"),
         )
+
+    if bopreal_ars_mask.any():
+        ppc_series = pd.to_numeric(df.get("ppc"), errors="coerce")
+        ultimo_series = pd.to_numeric(df.get("ultimo"), errors="coerce")
+        if "ultimoPrecio" in df.columns:
+            ultimo_precio_series = pd.to_numeric(df["ultimoPrecio"], errors="coerce")
+            price_basis = ultimo_precio_series.where(ultimo_precio_series.notna(), ultimo_series)
+        else:
+            price_basis = ultimo_series
+        ratio = ppc_series.divide(price_basis.replace(0.0, np.nan))
+        estimated_cost = ppc_series.multiply(qty_scale)
+        current_value = pd.to_numeric(df.get("valor_actual"), errors="coerce")
+        value_ratio = estimated_cost.divide(current_value.replace(0.0, np.nan))
+        rescale_mask = (
+            bopreal_ars_mask
+            & ppc_series.notna()
+            & price_basis.notna()
+            & (ratio > (BOPREAL_FORCE_FACTOR / 2.0))
+            & value_ratio.notna()
+            & (value_ratio > (BOPREAL_FORCE_FACTOR / 2.0))
+        )
+        if rescale_mask.any():
+            adjusted_ppc = ppc_series.loc[rescale_mask] / BOPREAL_FORCE_FACTOR
+            df.loc[rescale_mask, "ppc"] = adjusted_ppc
+            if "costo_unitario" in df.columns:
+                df.loc[rescale_mask, "costo_unitario"] = adjusted_ppc
+
     df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
     df["pl"] = df["valor_actual"] - df["costo"]
     df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
