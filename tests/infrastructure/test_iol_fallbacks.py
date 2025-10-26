@@ -121,7 +121,7 @@ def test_primary_endpoint_missing_last_triggers_legacy(
             }
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", missing_last_request)
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyStub)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", LegacyStub)
     monkeypatch.setattr(iol_client_module, "record_quote_provider_usage", record)
     monkeypatch.setattr(cache_module, "record_quote_provider_usage", record)
     monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
@@ -165,7 +165,7 @@ def test_get_quote_uses_legacy_on_primary_http_500(
             raise AssertionError("OHLC adapter should not be used when legacy succeeds")
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", failing_request)
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyStub)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", LegacyStub)
     monkeypatch.setattr("services.ohlc_adapter.OHLCAdapter", AdapterStub)
     monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
 
@@ -204,7 +204,7 @@ def test_get_quote_uses_ohlc_adapter_after_legacy_failure(
             return frame
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", failing_request)
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyStub)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", LegacyStub)
     monkeypatch.setattr("services.ohlc_adapter.OHLCAdapter", AdapterStub)
     monkeypatch.setattr(cache_module, "_load_persisted_entry", lambda key: None)
 
@@ -240,7 +240,7 @@ def test_get_quote_returns_stale_from_persistent_cache_when_all_fallbacks_fail(
             raise RuntimeError("adapter failure")
 
     monkeypatch.setattr(iol_client_module.IOLClient, "_request", failing_request)
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyStub)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", LegacyStub)
     monkeypatch.setattr("services.ohlc_adapter.OHLCAdapter", AdapterStub)
 
     stale_entry = (
@@ -438,7 +438,7 @@ def test_legacy_login_only_once_for_multiple_symbols(
                 "provider": "legacy",
             }
 
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", LegacyLoginSpy)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", LegacyLoginSpy)
     monkeypatch.setattr(
         ohlc_module,
         "OHLCAdapter",

@@ -229,7 +229,7 @@ def test_get_quote_falls_back_to_ohlc_adapter(monkeypatch: pytest.MonkeyPatch) -
     }
 
     legacy_module = types.SimpleNamespace(IOLClient=LegacyStubClient)
-    monkeypatch.setitem(sys.modules, "infrastructure.iol.legacy.iol_client", legacy_module)
+    monkeypatch.setitem(sys.modules, "infrastructure.iol.compat.iol_client", legacy_module)
     monkeypatch.setattr(iol_client_module.IOLClient, "_ensure_market_auth", lambda self: None)
     monkeypatch.setattr(
         iol_client_module.IOLClient,

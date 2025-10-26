@@ -74,7 +74,7 @@ def test_portfolio_flow_recovers_via_ohlc_after_legacy_429(
         def get_quote(self, *args, **kwargs):  # type: ignore[no-untyped-def]
             raise _http_error(429)
 
-    monkeypatch.setattr("infrastructure.iol.legacy.iol_client.IOLClient", Legacy429Stub)
+    monkeypatch.setattr("infrastructure.iol.compat.iol_client.IOLClient", Legacy429Stub)
 
     class OHLCStub:
         def __init__(self, *args, **kwargs) -> None:

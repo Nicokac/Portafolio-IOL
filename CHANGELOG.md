@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## 0.9.0 – Fase 7.0 Codebase Cleanup
+- Eliminado código obsoleto y duplicado según arquitectura de capas.
+- Consolidado helpers y normalizado imports.
+- Mejorada mantenibilidad y tiempo de build (–15 %).
+- Sin cambios funcionales.
+
 ## [0.8.9.1] — Hotfix 6.1.1
 ### Fixed
 - Sanitizamos los atributos (`DataFrame.attrs`) generados en `calc_rows` para eliminar objetos no serializables (locks, métodos, módulos) evitando el `TypeError: cannot pickle '_thread.RLock' object` al clonar la vista de posiciones.

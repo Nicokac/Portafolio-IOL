@@ -17,7 +17,7 @@ import streamlit as st
 from iolConn import Iol
 from iolConn.common.exceptions import NoAuthException
 
-from infrastructure.iol.legacy.session import LegacySession
+from infrastructure.iol.compat.session import LegacySession
 from services.health import record_quote_provider_usage
 from shared.config import settings
 from shared.errors import InvalidCredentialsError
@@ -1212,7 +1212,7 @@ class IOLClient(IIOLProvider):
     ) -> tuple[Optional[Dict[str, Optional[float]]], Dict[str, bool]]:
         flags: Dict[str, bool] = {}
         try:
-            from infrastructure.iol.legacy.iol_client import (
+            from infrastructure.iol.compat.iol_client import (
                 IOLClient as LegacyIOLClient,
             )
 
