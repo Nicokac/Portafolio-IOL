@@ -50,28 +50,24 @@ def render_portfolio_comparison_panel() -> None:
     column_factory = getattr(st, "column_config", None)
     if column_factory is not None:
         column_config = {
-            "Activo": column_factory.TextColumn("Activo", width="medium", alignment="left"),
-            "Cantidad": column_factory.TextColumn("Cantidad", width="small", alignment="right"),
+            "Activo": column_factory.TextColumn("Activo", width="medium"),
+            "Cantidad": column_factory.TextColumn("Cantidad", width="small"),
             "Variación diaria": column_factory.TextColumn(
                 "Variación diaria",
                 width="small",
-                alignment="right",
             ),
-            "Último precio": column_factory.TextColumn("Último precio", alignment="right"),
+            "Último precio": column_factory.TextColumn("Último precio"),
             "Precio promedio de compra": column_factory.TextColumn(
                 "Precio promedio de compra",
-                alignment="right",
             ),
             "Rendimiento Porcentaje": column_factory.TextColumn(
                 "Rendimiento Porcentaje",
                 width="small",
-                alignment="right",
             ),
             "Rendimiento Monto": column_factory.TextColumn(
                 "Rendimiento Monto",
-                alignment="right",
             ),
-            "Valorizado": column_factory.TextColumn("Valorizado", alignment="right"),
+            "Valorizado": column_factory.TextColumn("Valorizado"),
         }
 
     st.dataframe(
