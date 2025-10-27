@@ -14,7 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from services.health import get_health_metrics
-from shared.debug.rerun_trace import mark_event
+from shared.debug.rerun_trace import mark_event, safe_rerun
 from shared.telemetry import log_metric
 from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
@@ -2100,65 +2100,61 @@ def _render_active_monitoring_panel(selection: Mapping[str, str]) -> bool:
         return False
 
     panel_label = str(label or module_path or "Panel de monitoreo")
-    st.header(panel_label)
-    if st.button("⬅️ Volver al monitoreo", key="monitoring_back_button"):
-        _clear_active_monitoring_panel()
-        return False
+    shell = st.container()
+    with shell:
+        st.header(panel_label)
+        if st.button("⬅️ Volver al monitoreo", key="monitoring_back_button"):
+            _clear_active_monitoring_panel()
+            mark_event("rerun", "monitoring_exit")
+            safe_rerun("monitoring_exit")
+            return False
 
-    render_started = time.perf_counter()
-    try:
-        renderer()
-    except BaseException as exc:  # pragma: no cover - guard runtime errors
-        exc_name = exc.__class__.__name__
-        if exc_name in {"StopException", "RerunException"}:
-            raise
-        st.exception(exc)
-        logger.exception(
-            "[monitoring] error al renderizar panel label=%s module=%s attr=%s",
-            panel_label,
-            module_path,
-            attribute,
-        )
+        render_started = time.perf_counter()
         try:
-            log_metric(
-                "monitoring.renderer_error",
-                context={
-                    "module": module_path,
-                    "attr": attribute,
-                    "label": panel_label,
-                    "error": exc_name,
-                },
+            renderer()
+        except BaseException as exc:  # pragma: no cover - guard runtime errors
+            exc_name = exc.__class__.__name__
+            if exc_name in {"StopException", "RerunException"}:
+                raise
+            st.exception(exc)
+            logger.exception(
+                "[monitoring] error al renderizar panel label=%s module=%s attr=%s",
+                panel_label,
+                module_path,
+                attribute,
             )
-        except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo registrar monitoring.renderer_error", exc_info=True)
-    else:
-        duration_ms = max((time.perf_counter() - render_started) * 1000.0, 0.0)
-        try:
-            log_metric(
-                "monitoring.panel_render",
-                context={
-                    "module": module_path,
-                    "attr": attribute,
-                    "label": panel_label,
-                },
-                duration_ms=duration_ms,
-            )
-        except Exception:  # pragma: no cover - defensive safeguard
-            logger.debug("No se pudo registrar monitoring.panel_render", exc_info=True)
+            try:
+                log_metric(
+                    "monitoring.renderer_error",
+                    context={
+                        "module": module_path,
+                        "attr": attribute,
+                        "label": panel_label,
+                        "error": exc_name,
+                    },
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar monitoring.renderer_error", exc_info=True
+                )
+        else:
+            duration_ms = max((time.perf_counter() - render_started) * 1000.0, 0.0)
+            try:
+                log_metric(
+                    "monitoring.panel_render",
+                    context={
+                        "module": module_path,
+                        "attr": attribute,
+                        "label": panel_label,
+                    },
+                    duration_ms=duration_ms,
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo registrar monitoring.panel_render", exc_info=True
+                )
 
     state = getattr(st, "session_state", None)
-    stop_callable = getattr(st, "stop", None)
-    if callable(stop_callable):
-        try:
-            stop_callable()
-        except RuntimeError as exc:
-            message = str(exc)
-            if "streamlit.stop" not in message.lower():
-                raise
-        else:
-            if state is not None:
-                state[_MONITORING_RENDERED_FLAG] = True
-            return True
     if state is not None:
         state[_MONITORING_RENDERED_FLAG] = True
     return True
