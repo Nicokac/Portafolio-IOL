@@ -43,7 +43,7 @@ from services.portfolio_view import (
 )
 from shared import skeletons
 from shared.debug.rerun_trace import mark_event, safe_rerun
-from shared.debug.ui_flow import background_job, current_flow_id
+from shared.debug.ui_flow import background_job, current_flow_id, freeze_heavy_tasks
 from shared.cache import visual_cache_registry
 from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
@@ -2070,6 +2070,13 @@ def render_portfolio_section(
         visual_cache_cleared = _maybe_reset_visual_cache_state()
 
         def _schedule_lazy_metrics_refresh() -> None:
+            if is_monitoring_active() and freeze_heavy_tasks():
+                mark_event(
+                    "lazy_metrics_skip",
+                    "monitoring_freeze",
+                    {"flow_id": current_flow_id()},
+                )
+                return
             thread_key = "portfolio_extended_thread"
             dataset_key = view_model_service._hash_dataset(df_pos)
             entry = st.session_state.get(thread_key)
@@ -2133,6 +2140,7 @@ def render_portfolio_section(
                                 "No se pudo limpiar el estado del hilo de métricas extendidas",
                                 exc_info=True,
                             )
+                        mark_event("rerun", "portfolio.extended_metrics_ready")
                         safe_rerun("portfolio.extended_metrics_ready")
 
             worker = threading.Thread(

@@ -704,9 +704,14 @@ def render_main_ui() -> None:
     except (TypeError, ValueError) as e:
         logger.exception("refresh_secs inválido: %s", e)
         do_refresh = True
-    if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
+    if (
+        do_refresh
+        and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs))
+        and not (is_monitoring_active() and freeze_heavy_tasks())
+    ):
         st.session_state["last_refresh"] = time.time()
         st.session_state["show_refresh_toast"] = True
+        mark_event("rerun", "portfolio_autorefresh")
         safe_rerun("portfolio_autorefresh")
 
 
