@@ -16,6 +16,11 @@ from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
 import numpy as np
 import pandas as pd
 
+try:  # pragma: no cover - optional dependency in non-UI contexts
+    import streamlit as st  # type: ignore
+except Exception:  # pragma: no cover - streamlit may be absent in tests
+    st = None  # type: ignore
+
 from application.portfolio_service import (
     BOPREAL_FORCE_FACTOR,
     PORTFOLIO_TOTALS_VERSION,
@@ -35,6 +40,7 @@ from services.cache import CacheService
 from services.cache.market_data_cache import get_market_data_cache
 from shared import snapshot as snapshot_async
 from shared.telemetry import log_default_telemetry, log_metric
+from shared.ui.monitoring_guard import is_monitoring_active
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +66,9 @@ _DATASET_CACHE_TTL_SECONDS = 300.0
 _DATASET_CACHE_MAX_ENTRIES = 8
 _DATASET_CACHE_LOCK = threading.Lock()
 _DATASET_CACHE_ADAPTER: "PortfolioDatasetCacheAdapter | None" = None
+
+_MONITORING_REFRESH_TS_KEY = "_monitoring_last_refresh_ts"
+_MONITORING_REFRESH_DEBOUNCE_SECONDS = 60.0
 
 
 class PortfolioDatasetCacheAdapter:
@@ -1678,6 +1687,54 @@ class PortfolioViewModelService:
         if force_consistency:
             dataset_changed = True
 
+        monitoring_active = is_monitoring_active()
+        monitoring_state = getattr(st, "session_state", None) if st is not None else None
+        monitoring_refresh_allowed = True
+        monitoring_debounced = False
+        now_ts = time.time()
+        last_refresh_ts: float | None = None
+        if monitoring_active and monitoring_state is not None:
+            try:
+                raw_last = monitoring_state.get(_MONITORING_REFRESH_TS_KEY)
+                if raw_last is not None:
+                    last_refresh_ts = float(raw_last)
+            except (TypeError, ValueError):
+                last_refresh_ts = None
+            except Exception:  # pragma: no cover - defensive safeguard
+                last_refresh_ts = None
+
+        if (
+            monitoring_active
+            and last_refresh_ts is not None
+            and (now_ts - last_refresh_ts) < _MONITORING_REFRESH_DEBOUNCE_SECONDS
+        ):
+            monitoring_refresh_allowed = False
+
+        if monitoring_active and not monitoring_refresh_allowed:
+            if dataset_changed or quotes_changed or force_consistency:
+                monitoring_debounced = True
+                dataset_changed = False
+                raw_dataset_changed = False
+                quotes_changed = False
+                force_consistency = False
+                try:
+                    log_metric(
+                        "monitoring.refresh_debounced",
+                        context={
+                            "source": "portfolio_view",
+                            "cooldown_s": _MONITORING_REFRESH_DEBOUNCE_SECONDS,
+                        },
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo registrar telemetría monitoring.refresh_debounced",
+                        exc_info=True,
+                    )
+                logger.info(
+                    "[PortfolioViewModelService] Dataset refresh debounced por monitoreo activo",
+                    extra={"cooldown_s": _MONITORING_REFRESH_DEBOUNCE_SECONDS},
+                )
+
         should_invalidate_cache = self._should_invalidate_cache(dataset_key, effective_skip_invalidation)
         if totals_version_changed:
             should_invalidate_cache = True
@@ -1687,7 +1744,10 @@ class PortfolioViewModelService:
             should_invalidate_cache = True
             logger.info("[PortfolioViewModelService] Consistency guard forcing dataset refresh")
 
-        if quotes_changed:
+        if monitoring_debounced:
+            should_invalidate_cache = False
+
+        if quotes_changed and not monitoring_debounced:
             logger.info(
                 "[PortfolioView] Quotes hash changed; forcing dataset refresh",
                 extra={
@@ -1695,6 +1755,20 @@ class PortfolioViewModelService:
                     "current_quotes_hash": current_quotes_hash or "none",
                 },
             )
+
+        if (
+            monitoring_active
+            and monitoring_refresh_allowed
+            and monitoring_state is not None
+            and (dataset_changed or should_invalidate_cache or quotes_changed)
+        ):
+            try:
+                monitoring_state[_MONITORING_REFRESH_TS_KEY] = now_ts
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudo actualizar la marca de refresh de monitoreo",
+                    exc_info=True,
+                )
 
         if effective_skip_invalidation and dataset_key:
             logger.info(
@@ -1981,6 +2055,7 @@ class PortfolioViewModelService:
                     "inconsistencies": inconsistency_count,
                     "symbols": consistency_result.get("symbols", []),
                     "timestamp": consistency_result.get("timestamp"),
+                    "monitoring_active": monitoring_active,
                 },
             )
         except Exception:  # pragma: no cover - defensive safeguard

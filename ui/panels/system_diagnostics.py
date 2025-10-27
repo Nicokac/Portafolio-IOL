@@ -184,7 +184,7 @@ def _render_memory_diagnostics(frame: pd.DataFrame) -> None:
         title="Uso de memoria por evento QA",
     )
     fig.update_layout(margin=dict(t=60, l=10, r=10, b=10))
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, config={"responsive": True})
 
 
 def _render_qa_metrics_table(frame: pd.DataFrame) -> None:

@@ -518,6 +518,9 @@ class _DummyStreamlitCore:
     def error(self, text: object) -> None:
         self._record("error", text=str(text))
 
+    def exception(self, error: object) -> None:
+        self._record("exception", value=error)
+
     def success(self, text: object) -> None:
         self._record("success", text=str(text))
 

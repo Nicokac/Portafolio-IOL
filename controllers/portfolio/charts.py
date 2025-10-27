@@ -138,7 +138,6 @@ def render_charts(
         if fig is not None:
             st.plotly_chart(
                 fig,
-                width="stretch",
                 key="pl_topn",
                 config=PLOTLY_CONFIG,
             )
@@ -154,7 +153,6 @@ def render_charts(
         if fig is not None:
             st.plotly_chart(
                 fig,
-                width="stretch",
                 key="donut_tipo",
                 config=PLOTLY_CONFIG,
             )
@@ -170,7 +168,6 @@ def render_charts(
     if fig is not None:
         st.plotly_chart(
             fig,
-            width="stretch",
             key="pl_diario",
             config=PLOTLY_CONFIG,
         )
@@ -199,7 +196,6 @@ def render_charts(
         if heatmap_fig is not None:
             st.plotly_chart(
                 heatmap_fig,
-                width="stretch",
                 key="portfolio_contribution_heatmap",
                 config=PLOTLY_CONFIG,
             )
@@ -239,7 +235,6 @@ def render_charts(
         table_fig = _apply_layout(table_fig, show_legend=False)
         st.plotly_chart(
             table_fig,
-            width="stretch",
             key="portfolio_contribution_table",
             config=PLOTLY_CONFIG,
         )
@@ -426,7 +421,6 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                width="stretch",
                 key="bubble_chart",
                 config=PLOTLY_CONFIG,
             )
@@ -464,7 +458,6 @@ def render_advanced_analysis(df_view, tasvc, *, benchmark_choices=None):
         if fig is not None:
             st.plotly_chart(
                 fig,
-                width="stretch",
                 key="heatmap_chart",
                 config=PLOTLY_CONFIG,
             )

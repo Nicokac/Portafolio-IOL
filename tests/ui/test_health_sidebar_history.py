@@ -256,6 +256,35 @@ def test_monitoring_shortcut_activation_sets_state_and_renders_panel(
     assert not any("Centro de control" in text for text in markdowns)
 
 
+def test_monitoring_renderer_failure_displays_exception(
+    health_sidebar, streamlit_stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streamlit_stub.reset()
+    _patch_monitoring_dependencies(health_sidebar, streamlit_stub, monkeypatch)
+
+    def _failing_renderer() -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        health_sidebar,
+        "_import_renderer_callable",
+        lambda *_, **__: _failing_renderer,
+    )
+    streamlit_stub.session_state[health_sidebar._MONITORING_PANEL_STATE_KEY] = {
+        "module": "ui.panels.fake",
+        "attr": "render",
+        "label": "🔍 IOL RAW",
+    }
+
+    health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
+
+    headers = [entry["text"] for entry in streamlit_stub.get_records("header")]
+    assert any("IOL RAW" in text for text in headers)
+    exceptions = streamlit_stub.get_records("exception")
+    assert exceptions
+    assert isinstance(exceptions[0].get("value"), RuntimeError)
+
+
 def test_monitoring_shortcut_degrades_when_renderer_missing(
     health_sidebar, streamlit_stub, monkeypatch: pytest.MonkeyPatch, caplog
 ) -> None:

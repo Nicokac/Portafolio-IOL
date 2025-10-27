@@ -518,7 +518,6 @@ def render_risk_analysis(
                 if fig:
                     st.plotly_chart(
                         fig,
-                        width="stretch",
                         key=f"corr_heatmap_{type_name.lower().replace(' ', '_')}",
                         config=PLOTLY_CONFIG,
                     )
@@ -567,7 +566,6 @@ def render_risk_analysis(
                 )
                 st.plotly_chart(
                     roll_fig,
-                    width="stretch",
                     key="rolling_corr_chart",
                     config=PLOTLY_CONFIG,
                 )
@@ -797,7 +795,6 @@ def render_risk_analysis(
                     )
                     vol_draw_cols[0].plotly_chart(
                         fig_vol_dist,
-                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                 else:
@@ -822,7 +819,6 @@ def render_risk_analysis(
                     )
                     vol_draw_cols[1].plotly_chart(
                         fig_drawdown,
-                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                 else:
@@ -841,7 +837,6 @@ def render_risk_analysis(
                     )
                     st.plotly_chart(
                         fig_vol,
-                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(
@@ -867,7 +862,6 @@ def render_risk_analysis(
                     )
                     st.plotly_chart(
                         fig_var,
-                        width="stretch",
                         config=PLOTLY_CONFIG,
                     )
                     st.caption(
@@ -929,7 +923,6 @@ def render_risk_analysis(
                             )
                             scatter_cols[0].plotly_chart(
                                 fig_scatter,
-                                width="stretch",
                                 config=PLOTLY_CONFIG,
                             )
 
@@ -940,7 +933,6 @@ def render_risk_analysis(
                         x="ticker",
                         y="weight",
                         sort="descending",
-                        width="stretch",
                     )
                     st.caption(
                         "Barras con la proporción que el modelo recomienda invertir en cada activo "
@@ -1019,7 +1011,7 @@ def render_risk_analysis(
 
                 if betas:
                     fig_betas = plot_factor_betas(betas, r_squared)
-                    st.plotly_chart(fig_betas, width="stretch", config=PLOTLY_CONFIG)
+                    st.plotly_chart(fig_betas, config=PLOTLY_CONFIG)
                     if pd.notna(r_squared):
                         st.caption(f"R² del modelo: {r_squared:.2%}")
                 else:

@@ -19,8 +19,8 @@ from shared.portfolio_export import (
     create_excel_workbook,
 )
 
-# Configuración común de Plotly para habilitar captura a PNG desde la barra de herramientas
-PLOTLY_CONFIG = {"modeBarButtonsToAdd": ["toImage"]}
+# Configuración común de Plotly para habilitar captura a PNG y vistas responsivas
+PLOTLY_CONFIG = {"modeBarButtonsToAdd": ["toImage"], "responsive": True}
 
 
 logger = logging.getLogger(__name__)

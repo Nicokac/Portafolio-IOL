@@ -30,7 +30,7 @@ from infrastructure.iol.auth import get_current_user_id
 from services import snapshots as snapshot_service
 from services.cache import CacheService
 from services.data_fetch_service import get_portfolio_data_fetch_service
-from services.health import record_tab_latency
+from services.health import get_health_metrics, record_tab_latency
 from services.notifications import NotificationFlags, NotificationsService
 from services.performance_metrics import measure_execution
 from services.performance_timer import profile_block
@@ -51,7 +51,8 @@ from shared.fragment_state import (
     get_fragment_state_guardian,
     should_auto_load_fragment,
 )
-from shared.telemetry import log_default_telemetry, log_telemetry
+from shared.telemetry import log_default_telemetry, log_metric, log_telemetry
+from shared.ui.monitoring_guard import is_monitoring_active
 from shared.user_actions import log_user_action
 from ui.charts import plot_technical_analysis_chart
 from ui.export import PLOTLY_CONFIG
@@ -65,6 +66,7 @@ from ui.lazy import (
     table_fragment,
 )
 from ui.lazy.runtime import current_dataset_token
+from ui.health_sidebar import render_health_monitor_tab
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from ui.sidebar_controls import render_sidebar
 from ui.summary_metrics import get_active_summary_currency
@@ -1971,7 +1973,6 @@ def render_technical_tab(
         fig = plot_chart(df_ind, sma_fast, sma_slow)
         ui.plotly_chart(
             fig,
-            width="stretch",
             key="ta_chart",
             config=PLOTLY_CONFIG,
         )
@@ -2034,6 +2035,29 @@ def render_portfolio_section(
 ) -> Any:
     """Render the main portfolio section and return refresh interval."""
     with container:
+        if is_monitoring_active():
+            logger.info(
+                "[monitoring] Guard interceptó el render principal del portafolio",
+                extra={"monitoring_active": True},
+            )
+            try:
+                metrics = get_health_metrics()
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug(
+                    "No se pudieron obtener métricas de salud para el panel de monitoreo",
+                    exc_info=True,
+                )
+                metrics = None
+            render_health_monitor_tab(container, metrics=metrics)
+            try:
+                log_metric(
+                    "monitoring.refresh_skipped",
+                    context={"source": "portfolio_render"},
+                )
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo registrar telemetría monitoring.refresh_skipped", exc_info=True)
+            return None
+
         psvc = get_portfolio_service()
         tasvc = get_ta_service()
         guardian = get_fragment_state_guardian()
@@ -2280,17 +2304,30 @@ def render_portfolio_section(
             visual_entry["dataset_hash"] = dataset_hash
             visual_entry["last_seen"] = time.time()
 
+        monitoring_now_active = is_monitoring_active()
         if soft_refresh_guard:
-            if dataset_hash:
-                logger.info(
-                    "[Guardian] Soft refresh intercepted before UI reset",
-                    extra={"dataset_hash": dataset_hash},
-                )
-            fragment_state_soft_refresh(dataset_hash=dataset_hash)
-            try:
-                st.session_state["_soft_refresh_applied"] = True
-            except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo registrar el soft refresh activo", exc_info=True)
+            if monitoring_now_active:
+                try:
+                    log_metric(
+                        "monitoring.refresh_skipped",
+                        context={"source": "soft_refresh_guard"},
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo registrar telemetría monitoring.refresh_skipped",
+                        exc_info=True,
+                    )
+            else:
+                if dataset_hash:
+                    logger.info(
+                        "[Guardian] Soft refresh intercepted before UI reset",
+                        extra={"dataset_hash": dataset_hash},
+                    )
+                fragment_state_soft_refresh(dataset_hash=dataset_hash)
+                try:
+                    st.session_state["_soft_refresh_applied"] = True
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug("No se pudo registrar el soft refresh activo", exc_info=True)
         else:
             try:
                 st.session_state.pop("_soft_refresh_applied", None)

@@ -8,6 +8,9 @@ from contextlib import nullcontext
 from types import ModuleType
 from typing import Any, Callable, ContextManager
 
+from shared.telemetry import log_metric
+from shared.ui.monitoring_guard import is_monitoring_active
+
 try:  # pragma: no cover - defensive guard for optional dependency
     import streamlit as st
 except ModuleNotFoundError as exc:  # pragma: no cover - requires Streamlit runtime
@@ -181,6 +184,21 @@ def ensure_scientific_preload_ready(
     timeout_seconds: float | int | None = 10.0,
 ) -> bool:
     """Block the UI with a spinner until the preload worker finishes."""
+
+    if is_monitoring_active():
+        _LOGGER.info("[preload] monitoreo activo, se omite la precarga científica")
+        try:
+            log_metric(
+                "monitoring.refresh_skipped",
+                context={"source": "scientific_preload"},
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            _LOGGER.debug(
+                "[preload] no se pudo registrar telemetría de monitoreo",
+                exc_info=True,
+            )
+        _set_session_ready(False)
+        return False
 
     worker = _import_preload_worker()
     if worker is None:
