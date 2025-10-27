@@ -1920,6 +1920,7 @@ def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, 
         safe_page_link("ui.panels.diagnostics", label="🩺 Diagnóstico")
         safe_page_link("ui.panels.system_diagnostics", label="🔎 Diagnóstico del sistema")
         safe_page_link("ui.panels.system_status", label="🔍 Estado del Sistema")
+        safe_page_link("ui.panels.iol_raw_debug", label="🔍 IOL RAW")
         safe_page_link("ui.tabs.performance_dashboard", label="⏱️ Performance")
 
     if hasattr(container, "divider"):

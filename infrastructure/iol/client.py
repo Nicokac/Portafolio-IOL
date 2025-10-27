@@ -7,6 +7,7 @@ import logging
 import math
 import threading
 import time
+import uuid
 import warnings
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from infrastructure.iol.compat.session import LegacySession
 from services.health import record_quote_provider_usage
 from shared.config import settings
 from shared.errors import InvalidCredentialsError
+from shared.redact import redact_secrets
 from shared.time_provider import TimeProvider
 from shared.utils import _to_float
 
@@ -42,6 +44,8 @@ PORTFOLIO_CACHE = Path(".cache/last_portfolio.json")
 DEFAULT_COUNTRY = "argentina"
 PORTFOLIO_URL = f"{API_BASE_URL}/portafolio/{{pais}}"
 PROFILE_URL = f"{API_BASE_URL}/datos-perfil"
+QUOTE_URL = f"{API_BASE_URL}/{{mercado}}/Titulos/{{simbolo}}/Cotizacion"
+QUOTE_DETAIL_URL = f"{API_BASE_URL}/{{mercado}}/Titulos/{{simbolo}}/CotizacionDetalle"
 
 REQ_TIMEOUT = 30
 RETRIES = 3
@@ -471,6 +475,49 @@ class IOLClient(IIOLProvider):
     # ------------------------------------------------------------------
     # Portfolio
     # ------------------------------------------------------------------
+    @staticmethod
+    def _build_raw_meta(endpoint: str) -> dict[str, str]:
+        timestamp = TimeProvider.now_datetime().astimezone().isoformat()
+        return {
+            "timestamp": timestamp,
+            "request_id": str(uuid.uuid4()),
+            "endpoint": endpoint,
+        }
+
+    @staticmethod
+    def _attach_raw_meta(payload: Any, meta: dict[str, str]) -> dict[str, Any]:
+        if isinstance(payload, dict):
+            result = dict(payload)
+            result["_meta"] = meta
+            return result
+        return {"payload": payload, "_meta": meta}
+
+    def _log_raw_fetch(
+        self,
+        endpoint: str,
+        response: Optional[requests.Response],
+    ) -> None:
+        if not logger.isEnabledFor(logging.DEBUG) or response is None:
+            return
+
+        headers: Any = None
+        try:
+            request = getattr(response, "request", None)
+            if request is not None:
+                raw_headers = getattr(request, "headers", None) or {}
+                headers = redact_secrets(raw_headers)
+        except Exception:  # pragma: no cover - defensive logging guard
+            headers = None
+
+        logger.debug(
+            "IOLClient raw fetch completed",
+            extra={
+                "endpoint": endpoint,
+                "status": getattr(response, "status_code", None),
+                "request_headers": headers,
+            },
+        )
+
     def _fetch_portfolio_live(self, country: str) -> Dict[str, Any]:
         start = time.time()
         country_slug = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
@@ -527,6 +574,21 @@ class IOLClient(IIOLProvider):
                 data.setdefault("_cash_balances", cash_summary.to_payload())
             self._write_portfolio_cache(data)
             return data
+
+    def get_raw_portfolio(self, country: str = DEFAULT_COUNTRY) -> dict[str, Any]:
+        country_slug = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
+        base_url = getattr(self, "_base", self.api_base).rstrip("/")
+        endpoint = f"{base_url}/portafolio/{country_slug}"
+        response = self._request("GET", endpoint)
+        if response is None:
+            raise requests.RequestException("Respuesta vacía del endpoint de portafolio")
+        self._log_raw_fetch(endpoint, response)
+        try:
+            payload = response.json() or {}
+        except ValueError as exc:
+            raise requests.RequestException("Respuesta inválida de portafolio") from exc
+        meta = self._build_raw_meta(endpoint)
+        return self._attach_raw_meta(payload, meta)
 
     # ------------------------------------------------------------------
     # Market helpers
@@ -875,6 +937,36 @@ class IOLClient(IIOLProvider):
     # ------------------------------------------------------------------
     # Quotes
     # ------------------------------------------------------------------
+    def get_raw_quote(
+        self,
+        mercado: str,
+        simbolo: str,
+        *,
+        detalle: bool = False,
+    ) -> dict[str, Any]:
+        resolved_market = (mercado or "bcba").strip().lower() or "bcba"
+        resolved_symbol = (simbolo or "").strip().upper()
+        if not resolved_symbol:
+            raise ValueError("simbolo requerido para capturar la cotización RAW")
+
+        base_url = getattr(self, "_base", self.api_base).rstrip("/")
+        endpoint_suffix = "CotizacionDetalle" if detalle else "Cotizacion"
+        endpoint = (
+            f"{base_url}/{resolved_market}/Titulos/{resolved_symbol}/{endpoint_suffix}"
+        )
+
+        response = self._request("GET", endpoint)
+        if response is None:
+            raise requests.RequestException("Respuesta vacía del endpoint de cotización")
+        self._log_raw_fetch(endpoint, response)
+        try:
+            payload = response.json() or {}
+        except ValueError as exc:
+            raise requests.RequestException("Respuesta inválida de cotización") from exc
+
+        meta = self._build_raw_meta(endpoint)
+        return self._attach_raw_meta(payload, meta)
+
     def fetch_market_price(
         self,
         symbol: str,
