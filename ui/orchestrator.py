@@ -31,7 +31,8 @@ from services.cache import get_fx_rates_cached
 from services.health import get_health_metrics, record_dependency_status
 from services.startup_logger import log_ui_total_load_metric
 from shared import skeletons
-from shared.debug.rerun_trace import mark_event, safe_rerun, safe_stop
+from shared.debug.rerun_controller import request_rerun
+from shared.debug.rerun_trace import mark_event, safe_stop
 from shared.debug.ui_flow import freeze_heavy_tasks, start_ui_flow
 from shared.favorite_symbols import FavoriteSymbols
 from shared.telemetry import log_default_telemetry
@@ -696,7 +697,7 @@ def render_main_ui() -> None:
                 )
             st.session_state["iol_startup_metric_logged"] = True
             if should_request_rerun:
-                safe_rerun("hydration_unlock")
+                request_rerun("hydration_unlock")
 
     render_footer()
 
@@ -717,7 +718,7 @@ def render_main_ui() -> None:
         st.session_state["last_refresh"] = time.time()
         st.session_state["show_refresh_toast"] = True
         mark_event("rerun", "portfolio_autorefresh")
-        safe_rerun("portfolio_autorefresh")
+        request_rerun("portfolio_autorefresh")
 
 
 _IS_STREAMLIT_RUN = os.environ.get("STREAMLIT_RUN_MAIN") == "1"

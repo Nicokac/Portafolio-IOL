@@ -11,7 +11,8 @@ from services.auth import MAX_TOKEN_TTL_SECONDS, describe_active_token, generate
 from shared.config import settings  # Re-exported for backwards compatibility
 from shared.errors import AppError, InvalidCredentialsError, NetworkError
 from shared.time_provider import TimeProvider
-from shared.debug.rerun_trace import mark_event, safe_rerun
+from shared.debug.rerun_controller import request_rerun
+from shared.debug.rerun_trace import mark_event
 
 
 IS_TEST = os.environ.get("UNIT_TEST", "0") == "1"
@@ -87,7 +88,7 @@ def render_login_page() -> None:
             st.session_state["login_error"] = "Ingresá usuario y contraseña para continuar"
             clear_password_keys(st.session_state)
             mark_event("rerun", "login_missing_credentials")
-            safe_rerun("login_missing_credentials")
+            request_rerun("login_missing_credentials")
             return
         else:
             st.session_state["IOL_USERNAME"] = user
@@ -112,21 +113,21 @@ def render_login_page() -> None:
                 st.session_state.pop("shutdown_pending", None)
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_success")
-                safe_rerun("login_success")
+                request_rerun("login_success")
                 return
             except InvalidCredentialsError:
                 logger.warning("Fallo de autenticación")
                 st.session_state["login_error"] = "Usuario o contraseña inválidos"
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_invalid_credentials")
-                safe_rerun("login_invalid_credentials")
+                request_rerun("login_invalid_credentials")
                 return
             except NetworkError:
                 logger.warning("Error de conexión durante el login")
                 st.session_state["login_error"] = "Error de conexión"
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_network_error")
-                safe_rerun("login_network_error")
+                request_rerun("login_network_error")
                 return
             except AppError as err:
                 logger.warning("Error controlado durante el login: %s", err)
@@ -135,21 +136,21 @@ def render_login_page() -> None:
                 st.session_state["login_error"] = msg
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_app_error")
-                safe_rerun("login_app_error")
+                request_rerun("login_app_error")
                 return
             except RuntimeError as e:
                 logger.exception("Error durante el login: %s", e)
                 st.session_state["login_error"] = str(e)
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_runtime_error")
-                safe_rerun("login_runtime_error")
+                request_rerun("login_runtime_error")
                 return
             except Exception:
                 logger.exception("Error inesperado durante el login")
                 st.session_state["login_error"] = "Error inesperado, contacte soporte"
                 clear_password_keys(st.session_state)
                 mark_event("rerun", "login_unexpected_error")
-                safe_rerun("login_unexpected_error")
+                request_rerun("login_unexpected_error")
                 return
 
 
