@@ -759,6 +759,12 @@ def _trigger_fragment_context_rerun(dataset_hash: str) -> None:
         )
 
 
+def reset_fragment_context_rerun_tokens() -> None:
+    """Permite solicitar un nuevo rerun de fragmentos diferidos."""
+
+    _FRAGMENT_CONTEXT_RERUN_DATASETS.clear()
+
+
 def _record_fragment_visibility(*, component: str, dataset_hash: str, visible: bool) -> None:
     try:
         log_default_telemetry(
