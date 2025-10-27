@@ -21,6 +21,86 @@ from shared.pandas_attrs import unwrap_callable_attr
 from shared.utils import _to_float
 
 
+_IOL_EXPORT_COLUMNS = (
+    "Activo",
+    "Cantidad",
+    "Variación diaria",
+    "Último precio",
+    "Precio promedio de compra",
+    "Rendimiento Porcentaje",
+    "Rendimiento Monto",
+    "Valorizado",
+)
+
+
+def _format_currency_iol(value: Any) -> str:
+    amount = _to_float(value)
+    if amount is None or not np.isfinite(amount):
+        return ""
+    sign = "-" if float(amount) < 0 else ""
+    absolute = abs(float(amount))
+    formatted = f"{absolute:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"$ {sign}{formatted}"
+
+
+def _format_quantity_iol(value: Any) -> str:
+    quantity = _to_float(value)
+    if quantity is None or not np.isfinite(quantity):
+        return ""
+    if np.isclose(quantity, round(quantity)):
+        return f"{int(round(quantity)):,}".replace(",", ".")
+    formatted = f"{float(quantity):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return formatted
+
+
+def _normalize_percentage_value(value: Any) -> float | None:
+    if isinstance(value, str):
+        value = value.replace("%", "")
+    return _to_float(value)
+
+
+def _format_percentage_iol(
+    value: Any,
+    *,
+    decimals: int = 2,
+    include_sign: bool = False,
+    space_before_suffix: bool = False,
+) -> str:
+    pct_value = _normalize_percentage_value(value)
+    if pct_value is None or not np.isfinite(pct_value):
+        return ""
+    fmt = f"{{:{'+' if include_sign else ''}.{decimals}f}}"
+    formatted = fmt.format(float(pct_value)).replace(".", ",")
+    suffix = " %" if space_before_suffix else "%"
+    return f"{formatted}{suffix}"
+
+
+def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
+    """Convierte el DataFrame interno a la estructura de columnas y formato de InvertirOnline."""
+
+    if df is None or df.empty:
+        return pd.DataFrame(columns=_IOL_EXPORT_COLUMNS)
+
+    rows: list[dict[str, str]] = []
+    for _, row in df.iterrows():
+        rows.append(
+            {
+                "Activo": str(row.get("simbolo", "") or "").strip(),
+                "Cantidad": _format_quantity_iol(row.get("cantidad")),
+                "Variación diaria": _format_percentage_iol(
+                    row.get("pld_%"), decimals=3, include_sign=True, space_before_suffix=True
+                ),
+                "Último precio": _format_currency_iol(row.get("ultimo")),
+                "Precio promedio de compra": _format_currency_iol(row.get("ppc")),
+                "Rendimiento Porcentaje": _format_percentage_iol(row.get("pl_%")),
+                "Rendimiento Monto": _format_currency_iol(row.get("pl")),
+                "Valorizado": _format_currency_iol(row.get("valor_actual")),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=_IOL_EXPORT_COLUMNS)
+
+
 # Increment this value whenever the valuation or totals aggregation logic changes.
 # It is used to invalidate cached portfolio snapshots and UI summaries so that
 # new deployments propagate updated totals without requiring manual cache clears.

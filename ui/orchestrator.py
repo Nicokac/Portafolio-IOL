@@ -559,6 +559,9 @@ def render_main_ui() -> None:
     default_notifications_service_factory = getattr(portfolio_module, "default_notifications_service_factory")
     render_portfolio_ui = lazy_attr("ui.controllers.portfolio_ui", "render_portfolio_ui")
     render_recommendations_tab = lazy_attr("ui.tabs.recommendations", "render_recommendations_tab")
+    render_portfolio_comparison_panel = lazy_attr(
+        "ui.panels.portfolio_comparison", "render_portfolio_comparison_panel"
+    )
 
     portfolio_section_kwargs = {
         "view_model_service_factory": default_view_model_service_factory,
@@ -566,15 +569,17 @@ def render_main_ui() -> None:
     }
 
     monitoring_label = "Monitoreo"
+    comparison_label = "📊 Comparativa IOL"
 
     if hasattr(st, "tabs"):
         with main_col:
-            tab_labels = ["Portafolio", "Recomendaciones", monitoring_label]
-            portfolio_tab, recommendations_tab, monitoring_tab = st.tabs(tab_labels)
+            tab_labels = ["Portafolio", "Recomendaciones", comparison_label, monitoring_label]
+            portfolio_tab, recommendations_tab, comparison_tab, monitoring_tab = st.tabs(tab_labels)
             _inject_tab_animation_support()
     else:
         portfolio_tab = main_col
         recommendations_tab = main_col
+        comparison_tab = main_col
         monitoring_tab = main_col
 
     refresh_secs = render_portfolio_ui(
@@ -587,10 +592,13 @@ def render_main_ui() -> None:
     if hasattr(st, "tabs"):
         with recommendations_tab:
             render_recommendations_tab()
+        with comparison_tab:
+            render_portfolio_comparison_panel()
         with monitoring_tab:
             render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
     else:
         render_recommendations_tab()
+        render_portfolio_comparison_panel()
         render_health_monitor_tab(main_col, metrics=health_metrics)
 
     if st.session_state.pop("show_refresh_toast", False):

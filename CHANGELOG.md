@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## v0.9.5.0 — CSV Export Dashboard (Comparativa IOL)
+### Added
+- Panel "📊 Comparativa IOL" en la interfaz principal con tabla alineada al layout de InvertirOnline y botón de exportación directa en formato CSV oficial.
+- Helper `application.portfolio_service.to_iol_format` para mapear `calc_rows()` y `PortfolioViewModelService` al esquema IOL, reutilizable por otras integraciones y cubierto por pruebas dedicadas.
+- Suite de pruebas que valida estructura, codificación UTF-8 con BOM y la presencia del botón de descarga en el nuevo panel.
+
 ## v0.9.4.1 — UI Version Sync
 - Sincronizada la versión visible en toda la aplicación.
 - Actualizados metadatos de build y fecha de release.
