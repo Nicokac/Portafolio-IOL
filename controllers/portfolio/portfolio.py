@@ -2079,6 +2079,13 @@ def render_portfolio_section(
                 return
             thread_key = "portfolio_extended_thread"
             dataset_key = view_model_service._hash_dataset(df_pos)
+            if st.session_state.get("shutdown_pending"):
+                mark_event(
+                    "lazy_metrics_skip",
+                    "shutdown_pending",
+                    {"dataset": dataset_key, "flow_id": current_flow_id()},
+                )
+                return
             entry = st.session_state.get(thread_key)
             if isinstance(entry, Mapping):
                 active_thread = entry.get("thread")
@@ -2108,6 +2115,13 @@ def render_portfolio_section(
                     detail=str(dataset_key),
                 ):
                     try:
+                        if st.session_state.get("shutdown_pending"):
+                            mark_event(
+                                "lazy_metrics_cancel",
+                                "shutdown_pending",
+                                {"dataset": dataset_key, "flow_id": flow_id},
+                            )
+                            return
                         current_dataset = getattr(view_model_service, "_dataset_key", None)
                         if current_dataset != dataset_key:
                             mark_event(
@@ -2133,15 +2147,17 @@ def render_portfolio_section(
                             {"dataset": dataset_key, "flow_id": flow_id},
                         )
                     finally:
-                        try:
-                            st.session_state.pop(thread_key, None)
-                        except Exception:
-                            logger.debug(
-                                "No se pudo limpiar el estado del hilo de métricas extendidas",
-                                exc_info=True,
-                            )
+                        st.session_state.pop(thread_key, None)
+                if st.session_state.get("shutdown_pending"):
+                    mark_event(
+                        "lazy_metrics_cancel",
+                        "shutdown_pending_post_compute",
+                        {"dataset": dataset_key, "flow_id": flow_id},
+                    )
+                    return
                 mark_event("rerun", "portfolio.extended_metrics_ready")
                 safe_rerun("portfolio.extended_metrics_ready")
+                return
 
             worker = threading.Thread(
                 target=_compute_and_rerun,
