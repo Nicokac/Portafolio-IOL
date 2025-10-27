@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modo seguro de valorización (`SAFE_VALUATION_MODE`) con telemetría estructurada (proveedor, `fx_aplicado`, `ratioCEDEAR`) y tooltip de advertencia en la UI cuando se utilizan cotizaciones estimadas de proveedores externos.
 - feat: Introduced PORTFOLIO_TOTALS_VERSION to invalidate outdated portfolio summaries and enforce recalculation after valuation logic updates.
 
+## v0.9.6.0 — BOPREAL Consistency Hotfix
+- Reescalado forzado del campo “ultimo” para bonos BOPREAL ARS truncados.
+- P/L y porcentajes coherentes con los datos oficiales de InvertirOnline.
+
 ### Changed
 - UI: Human-readable asset type labels via shared formatter helper.
 - UI summary validation and FX consistency.

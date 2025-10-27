@@ -2328,8 +2328,12 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
     )
     low_last_mask = last_series.notna() & (last_series < 10_000.0)
     low_value_mask = valor_actual_series.notna() & (valor_actual_series < 10_000.0)
-    rescale_mask = base_mask & price_basis.notna() & (low_last_mask | low_value_mask)
-    if not rescale_mask.any():
+    high_value_mask = valor_actual_series.notna() & (valor_actual_series > 100_000.0)
+
+    truncated_last_mask = base_mask & price_basis.notna() & low_last_mask & high_value_mask & (last_series < 5_000.0)
+    rescale_mask = base_mask & price_basis.notna() & (low_last_mask | low_value_mask) & ~truncated_last_mask
+
+    if not (rescale_mask.any() or truncated_last_mask.any()):
         return False
 
     qty_series = pd.to_numeric(df_view["cantidad"], errors="coerce").fillna(0.0)
@@ -2343,16 +2347,25 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
     forced_last = forced_last.replace([np.inf, -np.inf], np.nan)
     forced_value = forced_last * qty_effective.loc[rescale_mask]
 
-    if "valor_actual" not in df_view.columns:
-        df_view["valor_actual"] = np.nan
-    df_view.loc[rescale_mask, "valor_actual"] = forced_value
-    if "valorizado" in df_view.columns:
-        df_view.loc[rescale_mask, "valorizado"] = forced_value
-    if "ultimo" in df_view.columns:
-        df_view.loc[rescale_mask, "ultimo"] = forced_last
+    if rescale_mask.any():
+        if "valor_actual" not in df_view.columns:
+            df_view["valor_actual"] = np.nan
+        df_view.loc[rescale_mask, "valor_actual"] = forced_value
+        if "valorizado" in df_view.columns:
+            df_view.loc[rescale_mask, "valorizado"] = forced_value
+        if "ultimo" in df_view.columns:
+            df_view.loc[rescale_mask, "ultimo"] = forced_last
 
-    if "ultimoPrecio" in df_view.columns:
-        df_view.loc[rescale_mask, "ultimoPrecio"] = price_basis.loc[rescale_mask]
+        if "ultimoPrecio" in df_view.columns:
+            df_view.loc[rescale_mask, "ultimoPrecio"] = price_basis.loc[rescale_mask]
+
+    if truncated_last_mask.any():
+        forced_last_truncated = price_basis.loc[truncated_last_mask] * BOPREAL_FORCE_FACTOR
+        forced_last_truncated = forced_last_truncated.replace([np.inf, -np.inf], np.nan)
+        if "ultimo" in df_view.columns:
+            df_view.loc[truncated_last_mask, "ultimo"] = forced_last_truncated
+        if "ultimoPrecio" in df_view.columns:
+            df_view.loc[truncated_last_mask, "ultimoPrecio"] = price_basis.loc[truncated_last_mask]
 
     costo_series = pd.to_numeric(
         df_view.get("costo", pd.Series(index=df_view.index, dtype=float)),
@@ -2363,14 +2376,25 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
     if "pl_%" not in df_view.columns:
         df_view["pl_%"] = np.nan
 
-    pl_values = forced_value.subtract(costo_series.loc[rescale_mask], fill_value=np.nan)
-    df_view.loc[rescale_mask, "pl"] = pl_values
-    with np.errstate(divide="ignore", invalid="ignore"):
-        pl_pct = pl_values.divide(costo_series.loc[rescale_mask]).multiply(100.0)
-    pl_pct = pl_pct.replace([np.inf, -np.inf], np.nan)
-    df_view.loc[rescale_mask, "pl_%"] = pl_pct
+    if rescale_mask.any():
+        pl_values = forced_value.subtract(costo_series.loc[rescale_mask], fill_value=np.nan)
+        df_view.loc[rescale_mask, "pl"] = pl_values
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pl_pct = pl_values.divide(costo_series.loc[rescale_mask]).multiply(100.0)
+        pl_pct = pl_pct.replace([np.inf, -np.inf], np.nan)
+        df_view.loc[rescale_mask, "pl_%"] = pl_pct
 
-    df_view.loc[rescale_mask, "pricing_source"] = "override_bopreal_postmerge"
+    if truncated_last_mask.any():
+        current_values = valor_actual_series.loc[truncated_last_mask]
+        pl_values_truncated = current_values.subtract(costo_series.loc[truncated_last_mask], fill_value=np.nan)
+        df_view.loc[truncated_last_mask, "pl"] = pl_values_truncated
+        with np.errstate(divide="ignore", invalid="ignore"):
+            pl_pct_truncated = pl_values_truncated.divide(costo_series.loc[truncated_last_mask]).multiply(100.0)
+        pl_pct_truncated = pl_pct_truncated.replace([np.inf, -np.inf], np.nan)
+        df_view.loc[truncated_last_mask, "pl_%"] = pl_pct_truncated
+
+    combined_mask = rescale_mask | truncated_last_mask
+    df_view.loc[combined_mask, "pricing_source"] = "override_bopreal_postmerge"
 
     if "audit" not in df_view.columns:
         df_view["audit"] = np.nan
@@ -2385,9 +2409,9 @@ def _apply_bopreal_postmerge_patch(df_view: pd.DataFrame) -> bool:
         audit_dict["bopreal_postmerge_factor"] = BOPREAL_FORCE_FACTOR
         return audit_dict
 
-    df_view.loc[rescale_mask, "audit"] = df_view.loc[rescale_mask, "audit"].apply(_update_audit)
+    df_view.loc[combined_mask, "audit"] = df_view.loc[combined_mask, "audit"].apply(_update_audit)
 
-    for symbol in symbols.loc[rescale_mask]:
+    for symbol in symbols.loc[combined_mask]:
         logger.info(
             "[Audit] BOPREAL ARS valuation rescaled (symbol=%s, factor=%.1f)",
             symbol,

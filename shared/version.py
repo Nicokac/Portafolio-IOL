@@ -7,10 +7,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.9.5.1"
-RELEASE_NAME = "Portafolio IOL v0.9.5.1-hotfix1"
+VERSION = "0.9.6.0"
+RELEASE_NAME = "Portafolio IOL v0.9.6.0 — BOPREAL Consistency Hotfix"
 RELEASE_DATE = "2025-10-29"
-CHANGELOG_REF = ("Fase 7.5.1-hotfix1 — Streamlit Compatibility",)
+CHANGELOG_REF = ("Fase 7.6.0 — Hotfix BOPREAL Consistency",)
 
 
 def _resolve_build_signature() -> str:
