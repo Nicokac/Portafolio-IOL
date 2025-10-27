@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## v0.9.5.1-hotfix1 — Streamlit Compatibility
+- Eliminado el uso directo del argumento `alignment` en `TextColumn` para compatibilidad con versiones previas de Streamlit.
+- No hay cambios funcionales en la exportación CSV.
+
 ## v0.9.5.0 — CSV Export Dashboard (Comparativa IOL)
 ### Added
 - Panel "📊 Comparativa IOL" en la interfaz principal con tabla alineada al layout de InvertirOnline y botón de exportación directa en formato CSV oficial.
