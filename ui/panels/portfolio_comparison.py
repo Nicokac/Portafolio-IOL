@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 
 import pandas as pd
@@ -54,26 +55,34 @@ def render_portfolio_comparison_panel() -> None:
         else None
     )
     if callable(text_column_factory):
-        column_config = {
-            "Activo": text_column_factory("Activo", width="medium"),
-            "Cantidad": text_column_factory("Cantidad", width="small"),
-            "Variación diaria": text_column_factory(
-                "Variación diaria",
-                width="small",
-            ),
-            "Último precio": text_column_factory("Último precio"),
-            "Precio promedio de compra": text_column_factory(
-                "Precio promedio de compra",
-            ),
-            "Rendimiento Porcentaje": text_column_factory(
-                "Rendimiento Porcentaje",
-                width="small",
-            ),
-            "Rendimiento Monto": text_column_factory(
-                "Rendimiento Monto",
-            ),
-            "Valorizado": text_column_factory("Valorizado"),
+        supports_alignment = False
+        try:
+            signature = inspect.signature(text_column_factory)
+        except (TypeError, ValueError):
+            signature = None
+        else:
+            supports_alignment = "alignment" in signature.parameters
+
+        column_options: dict[str, dict[str, str]] = {
+            "Activo": {"width": "medium", "alignment": "left"},
+            "Cantidad": {"width": "small", "alignment": "right"},
+            "Variación diaria": {"width": "small", "alignment": "right"},
+            "Último precio": {"alignment": "right"},
+            "Precio promedio de compra": {"alignment": "right"},
+            "Rendimiento Porcentaje": {"width": "small", "alignment": "right"},
+            "Rendimiento Monto": {"alignment": "right"},
+            "Valorizado": {"alignment": "right"},
         }
+
+        column_config = {}
+        for column_name, options in column_options.items():
+            config_kwargs = dict(options)
+            if not supports_alignment:
+                config_kwargs.pop("alignment", None)
+            column_config[column_name] = text_column_factory(
+                column_name,
+                **config_kwargs,
+            )
 
     st.dataframe(
         df_iol_format,
