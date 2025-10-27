@@ -744,7 +744,7 @@ def _trigger_fragment_context_rerun(dataset_hash: str) -> None:
         return
     _FRAGMENT_CONTEXT_RERUN_DATASETS.add(token)
     try:
-        mark_event("lazy_fragment_rerun", token)
+        mark_event("rerun", f"lazy_fragment_ready:{token}")
         safe_rerun("lazy_fragment_ready")
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug(
