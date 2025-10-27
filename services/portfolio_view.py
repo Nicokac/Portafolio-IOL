@@ -11,7 +11,7 @@ import time
 from collections import Counter, deque
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Deque, Dict, Mapping, MutableMapping, Sequence
+from typing import Any, Callable, Deque, Dict, Iterable, Mapping, MutableMapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -1153,6 +1153,7 @@ class PortfolioViewModelService:
         self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = _get_dataset_cache_adapter()
         self._soft_refresh_guard_active = False
         self._consistency_guard_active = False
+        self._pending_extended_start: dict[str, float] = {}
         if self._dataset_cache_adapter is not None:
             try:
                 self._dataset_cache_adapter.clear()
@@ -1607,8 +1608,44 @@ class PortfolioViewModelService:
                 include_extended=include_extended,
                 timestamp_bucket=timestamp_bucket,
             )
+            self._record_pending_extended_latency(dataset_key, pending_metrics)
         except Exception:  # pragma: no cover - cache errors should not break flow
             logger.debug("No se pudo almacenar la entrada del dataset cache", exc_info=True)
+
+    def _record_pending_extended_latency(
+        self, dataset_key: str, pending_metrics: Iterable[str]
+    ) -> None:
+        """Track wait times for extended metrics completion."""
+
+        try:
+            has_pending = "extended_metrics" in pending_metrics
+        except TypeError:  # pragma: no cover - defensive guard
+            return
+
+        now = time.perf_counter()
+        if has_pending:
+            with self._snapshot_lock:
+                self._pending_extended_start[dataset_key] = now
+            return
+
+        with self._snapshot_lock:
+            start = self._pending_extended_start.pop(dataset_key, None)
+        if start is None:
+            return
+
+        wait_ms = max((now - float(start)) * 1000.0, 0.0)
+        try:
+            log_metric(
+                "portfolio.pending_extended.wait_ms",
+                wait_ms,
+                context={"dataset": dataset_key},
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo registrar portfolio.pending_extended.wait_ms para %s",
+                dataset_key,
+                exc_info=True,
+            )
 
     def _compute_viewmodel_phase(
         self,
