@@ -1282,6 +1282,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
     bopreal_force_audit_entries: list[dict[str, Any]] = []
     bopreal_market_audit_entries: list[dict[str, Any]] = []
     bopreal_rescale_audit_entries: list[dict[str, Any]] = []
+    bopreal_rescale_applied_entries: list[dict[str, Any]] = []
     fallback_market_source: str | None = None
 
     if "valorizado" in df.columns:
@@ -1545,6 +1546,32 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                     }
                 )
 
+        ultimo_series = pd.to_numeric(df.get("ultimo"), errors="coerce")
+        current_value_series = pd.to_numeric(df.get("valor_actual"), errors="coerce")
+        truncated_last_mask = (
+            bopreal_ars_mask
+            & ultimo_series.notna()
+            & (ultimo_series < 5_000.0)
+            & current_value_series.notna()
+            & (current_value_series > 100_000.0)
+        )
+        if truncated_last_mask.any():
+            forced_last = ultimo_series.loc[truncated_last_mask] * BOPREAL_FORCE_FACTOR
+            forced_last = forced_last.replace([np.inf, -np.inf], np.nan)
+            df.loc[truncated_last_mask, "ultimo"] = forced_last
+            if "ultimoPrecio" in df.columns:
+                original_series = pd.to_numeric(df.get("ultimoPrecio"), errors="coerce")
+                updated_series = original_series.loc[truncated_last_mask]
+                updated_series = updated_series.where(updated_series.isna(), forced_last)
+                df.loc[truncated_last_mask, "ultimoPrecio"] = updated_series
+            for idx in df.index[truncated_last_mask]:
+                bopreal_rescale_applied_entries.append(
+                    {
+                        "simbolo": df.at[idx, "simbolo"],
+                        "factor": BOPREAL_FORCE_FACTOR,
+                    }
+                )
+
     df["costo"] = df["cantidad"] * df["ppc"] * df["scale"]
     df["pl"] = df["valor_actual"] - df["costo"]
     df["pl_%"] = np.where(df["costo"] != 0, df["pl"] / df["costo"] * 100.0, np.nan)
@@ -1623,7 +1650,13 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
                 else:
                     entry["tags"] = [BOPREAL_FORCED_REVALUATION_TAG]
                 entry["forced_revaluation"] = True
-    if scale_audit or bopreal_force_audit_entries or bopreal_market_audit_entries or bopreal_rescale_audit_entries:
+    if (
+        scale_audit
+        or bopreal_force_audit_entries
+        or bopreal_market_audit_entries
+        or bopreal_rescale_audit_entries
+        or bopreal_rescale_applied_entries
+    ):
         audit_section = attrs.get("audit")
         if isinstance(audit_section, Mapping):
             audit_data: dict[str, Any] = dict(audit_section)
@@ -1650,6 +1683,11 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             else:
                 audit_data["bopreal_rescale"] = bopreal_rescale_audit_entries
             audit_data["bopreal_rescale_factor"] = BOPREAL_FORCE_FACTOR
+        if bopreal_rescale_applied_entries:
+            if len(bopreal_rescale_applied_entries) == 1:
+                audit_data["bopreal_rescale_applied"] = bopreal_rescale_applied_entries[0]
+            else:
+                audit_data["bopreal_rescale_applied"] = bopreal_rescale_applied_entries
         if bopreal_market_audit_entries:
             existing_market = audit_data.get("bopreal_market")
             if isinstance(existing_market, list):
