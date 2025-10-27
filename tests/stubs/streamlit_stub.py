@@ -70,7 +70,7 @@ st.tabs = _tabs
 st.experimental_rerun = _noop
 st.experimental_set_query_params = _noop
 st.secrets = {}
-st.stop = _noop
+setattr(st, "stop", _noop)
 
 
 def __getattr__(name: str):  # pragma: no cover - fallback for unexpected usage

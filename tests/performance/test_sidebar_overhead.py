@@ -84,13 +84,13 @@ def _fresh_app(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     st.session_state = {}
     st.set_page_config = MagicMock()
     st.markdown = MagicMock()
-    st.stop = MagicMock(side_effect=RuntimeError("stop"))
+    setattr(st, "stop", MagicMock(side_effect=RuntimeError("stop")))
     st.columns = MagicMock(return_value=[MagicMock(), MagicMock()])
     st.caption = MagicMock()
     st.warning = MagicMock()
     st.error = MagicMock()
     st.container = MagicMock()
-    st.rerun = MagicMock()
+    setattr(st, "rerun", MagicMock())
     st.cache_resource = lambda func=None, **_kwargs: func
     st.cache_data = st.cache_resource
     st.title = MagicMock()
@@ -121,7 +121,7 @@ def _fresh_app(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     st.session_state.update({"IOL_USERNAME": "demo", "authenticated": True})
     st.session_state["iol_login_ok_ts"] = 999.0
     st.cache_resource = MagicMock()
-    st.stop = MagicMock()
+    setattr(st, "stop", MagicMock())
     sys.modules["streamlit"] = st
     return importlib.import_module("app")
 

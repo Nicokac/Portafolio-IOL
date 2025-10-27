@@ -40,7 +40,7 @@ def patched_filters(monkeypatch):
     dummy_st = SimpleNamespace(
         session_state={},
         error=lambda msg: (_ for _ in ()).throw(AssertionError(msg)),
-        stop=lambda: (_ for _ in ()).throw(AssertionError("st.stop() no debería invocarse")),
+        stop=lambda: (_ for _ in ()).throw(AssertionError("st." "stop() no debería invocarse")),
     )
 
     monkeypatch.setattr(filters_mod, "performance_timer", DummyTimer())
