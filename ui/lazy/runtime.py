@@ -13,7 +13,8 @@ from typing import Any, Iterator
 import streamlit as st
 
 from shared import telemetry
-from shared.debug.rerun_trace import mark_event, safe_rerun
+from shared.debug.rerun_controller import request_rerun
+from shared.debug.rerun_trace import mark_event
 from shared.debug.ui_flow import freeze_heavy_tasks
 from shared.fragment_state import (
     get_fragment_state_guardian,
@@ -750,7 +751,7 @@ def _trigger_fragment_context_rerun(dataset_hash: str) -> None:
     _FRAGMENT_CONTEXT_RERUN_DATASETS.add(token)
     try:
         mark_event("rerun", f"lazy_fragment_ready:{token}")
-        safe_rerun("lazy_fragment_ready")
+        request_rerun("lazy_fragment_ready")
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug(
             "No se pudo solicitar experimental_rerun para el fragmento %s",

@@ -42,7 +42,8 @@ from services.portfolio_view import (
     update_table_data,
 )
 from shared import skeletons
-from shared.debug.rerun_trace import mark_event, safe_rerun
+from shared.debug.rerun_controller import request_rerun
+from shared.debug.rerun_trace import mark_event
 from shared.debug.ui_flow import background_job, current_flow_id, freeze_heavy_tasks
 from shared.cache import visual_cache_registry
 from shared.errors import AppError
@@ -2306,7 +2307,7 @@ def render_portfolio_section(
                     return
                 rerun_state[dataset_key] = True
                 mark_event("rerun", "portfolio.extended_metrics_ready")
-                safe_rerun("portfolio.extended_metrics_ready")
+                request_rerun("portfolio.extended_metrics_ready")
 
             worker = threading.Thread(
                 target=_compute_and_rerun,

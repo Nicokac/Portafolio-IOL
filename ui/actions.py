@@ -5,7 +5,8 @@ import logging
 import streamlit as st
 
 from application import auth_service
-from shared.debug.rerun_trace import mark_event, safe_rerun, safe_stop
+from shared.debug.rerun_controller import request_rerun
+from shared.debug.rerun_trace import mark_event, safe_stop
 from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
         ):
             st.session_state["logout_pending"] = True
             mark_event("rerun", "logout_requested")
-            safe_rerun("logout_requested")
+            request_rerun("logout_requested")
             return
         st.markdown("</div>", unsafe_allow_html=True)
 
