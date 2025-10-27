@@ -32,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## v0.9.4.1 — UI Version Sync
+- Sincronizada la versión visible en toda la aplicación.
+- Actualizados metadatos de build y fecha de release.
+- Sin cambios funcionales ni en dependencias.
+
 ## 0.9.4.0 — Auditoría de consistencia y verificación cruzada
 ### Added
 - Helper `validate_portfolio_consistency` para contrastar `valor_actual`, `ppc`, `pl`, `pl_%` y `valorizado` entre `calc_rows` y el payload oficial, registrando desvíos `[Audit]` y adjuntando resultados en `df_view.attrs`.
