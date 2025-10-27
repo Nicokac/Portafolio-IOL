@@ -18,7 +18,11 @@ import requests
 
 from shared.config import get_config, settings
 from shared.pandas_attrs import unwrap_callable_attr
+from shared.telemetry import log_metric
 from shared.utils import _to_float
+
+
+logger = logging.getLogger(__name__)
 
 
 _IOL_EXPORT_COLUMNS = (
@@ -37,10 +41,11 @@ def _format_currency_iol(value: Any) -> str:
     amount = _to_float(value)
     if amount is None or not np.isfinite(amount):
         return ""
-    sign = "-" if float(amount) < 0 else ""
     absolute = abs(float(amount))
     formatted = f"{absolute:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
-    return f"$ {sign}{formatted}"
+    if float(amount) < 0:
+        return f"-$ {formatted}"
+    return f"$ {formatted}"
 
 
 def _format_quantity_iol(value: Any) -> str:
@@ -81,24 +86,127 @@ def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=_IOL_EXPORT_COLUMNS)
 
+    index = df.index
+
+    def _numeric_series(column: str) -> pd.Series:
+        if column not in df:
+            return pd.Series(index=index, dtype="float64")
+        series = df[column]
+        if isinstance(series, pd.Series):
+            return pd.to_numeric(series, errors="coerce")
+        return pd.Series(series, index=index, dtype="float64")
+
+    def _string_series(column_names: tuple[str, ...]) -> pd.Series:
+        for name in column_names:
+            if name in df:
+                series = df[name]
+                if isinstance(series, pd.Series):
+                    return series.astype("string").fillna("")
+                return pd.Series(series, index=index, dtype="string").fillna("")
+        return pd.Series("", index=index, dtype="string")
+
+    symbol_series = _string_series(("simbolo",)).str.strip()
+    symbol_upper = symbol_series.str.upper()
+    currency_series = _string_series(("moneda_origen", "moneda", "currency"))
+    currency_upper = currency_series.str.upper()
+
+    qty_series = _numeric_series("cantidad")
+    ultimo_series = _numeric_series("ultimo")
+    ppc_series = _numeric_series("ppc")
+    pl_series = _numeric_series("pl")
+    valor_actual_series = _numeric_series("valor_actual")
+    pl_pct_series = _numeric_series("pl_%")
+
+    pld_series = _numeric_series("pld_%")
+    chg_pct_series = _numeric_series("chg_pct")
+    variacion_series = pld_series
+    if not variacion_series.notna().any():
+        variacion_series = chg_pct_series
+    elif chg_pct_series.notna().any():
+        variacion_series = variacion_series.fillna(chg_pct_series)
+
+    bopreal_ars_mask = symbol_upper.isin(BOPREAL_SYMBOLS) & currency_upper.eq("ARS")
+
+    ultimo_display = ultimo_series.copy()
+    ppc_display = ppc_series.copy()
+    valorizado_display = valor_actual_series.copy()
+    pl_monto_display = pl_series.copy()
+    pl_pct_display = pl_pct_series.copy()
+
+    if bopreal_ars_mask.any():
+        ultimo_scaled = ultimo_series * 100.0
+        valorizado_override = qty_series * ultimo_series
+        pl_monto_override = (ultimo_scaled - ppc_series) * qty_series / 100.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ppc_nonzero = ppc_series.replace({0: np.nan})
+            pl_pct_override = ((ultimo_scaled - ppc_nonzero) / ppc_nonzero) * 100.0
+        pl_pct_override = pl_pct_override.replace([np.inf, -np.inf], np.nan)
+        pl_pct_override = np.trunc(pl_pct_override * 100.0) / 100.0
+
+        ultimo_display.loc[bopreal_ars_mask] = ultimo_scaled.loc[bopreal_ars_mask]
+        valorizado_display.loc[bopreal_ars_mask] = valorizado_override.loc[bopreal_ars_mask]
+        pl_monto_display.loc[bopreal_ars_mask] = pl_monto_override.loc[bopreal_ars_mask]
+        pl_pct_display.loc[bopreal_ars_mask] = pl_pct_override.loc[bopreal_ars_mask]
+
     rows: list[dict[str, str]] = []
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
+        is_bopreal = bool(bopreal_ars_mask.loc[idx]) if idx in bopreal_ars_mask.index else False
+        variacion_value = variacion_series.loc[idx] if idx in variacion_series.index else None
+
         rows.append(
             {
                 "Activo": str(row.get("simbolo", "") or "").strip(),
                 "Cantidad": _format_quantity_iol(row.get("cantidad")),
                 "Variación diaria": _format_percentage_iol(
-                    row.get("pld_%"), decimals=3, include_sign=True, space_before_suffix=True
+                    variacion_value,
+                    decimals=3,
+                    include_sign=not is_bopreal,
+                    space_before_suffix=True,
                 ),
-                "Último precio": _format_currency_iol(row.get("ultimo")),
-                "Precio promedio de compra": _format_currency_iol(row.get("ppc")),
-                "Rendimiento Porcentaje": _format_percentage_iol(row.get("pl_%")),
-                "Rendimiento Monto": _format_currency_iol(row.get("pl")),
-                "Valorizado": _format_currency_iol(row.get("valor_actual")),
+                "Último precio": _format_currency_iol(ultimo_display.loc[idx]),
+                "Precio promedio de compra": _format_currency_iol(ppc_display.loc[idx]),
+                "Rendimiento Porcentaje": _format_percentage_iol(pl_pct_display.loc[idx]),
+                "Rendimiento Monto": _format_currency_iol(pl_monto_display.loc[idx]),
+                "Valorizado": _format_currency_iol(valorizado_display.loc[idx]),
             }
         )
 
-    return pd.DataFrame(rows, columns=_IOL_EXPORT_COLUMNS)
+    result = pd.DataFrame(rows, columns=_IOL_EXPORT_COLUMNS)
+
+    if bopreal_ars_mask.any():
+        try:
+            log_metric(
+                "comparison_iol.bopreal_rescaled_count",
+                context={
+                    "rows": int(bopreal_ars_mask.sum()),
+                    "symbols": sorted(set(symbol_series.loc[bopreal_ars_mask].dropna().tolist())),
+                },
+            )
+        except Exception:  # pragma: no cover - telemetry failures should not break export
+            logger.debug("Unable to log bopreal overrides", exc_info=True)
+
+        attrs: dict[str, object] = {}
+        source_attrs = getattr(df, "attrs", None)
+        if isinstance(source_attrs, Mapping):
+            attrs.update(dict(source_attrs))
+        audit_block: dict[str, object]
+        existing_audit = attrs.get("audit")
+        if isinstance(existing_audit, Mapping):
+            audit_block = dict(existing_audit)
+        else:
+            audit_block = {}
+        overrides_obj = audit_block.get("iol_display_overrides")
+        if isinstance(overrides_obj, list):
+            overrides_list = list(overrides_obj)
+            if "bopreal_ars" not in overrides_list:
+                overrides_list.append("bopreal_ars")
+        else:
+            overrides_list = ["bopreal_ars"]
+        audit_block["iol_display_overrides"] = overrides_list
+        attrs["audit"] = audit_block
+        result.attrs.update(attrs)
+
+    return result
 
 
 # Increment this value whenever the valuation or totals aggregation logic changes.
@@ -386,9 +494,6 @@ def detect_currency(sym: str, tipo: str | None) -> str:
     """Determina la moneda en base al símbolo informado."""
 
     return "USD" if str(sym).upper() in {"PRPEDOB"} else "ARS"
-
-
-logger = logging.getLogger(__name__)
 
 
 # ---------- Helpers y configuración ----------

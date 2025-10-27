@@ -8,7 +8,7 @@ import importlib
 
 import pandas as pd
 
-from application.portfolio_service import to_iol_format
+from application.portfolio_service import _IOL_EXPORT_COLUMNS, to_iol_format
 
 
 def _sample_positions() -> pd.DataFrame:
@@ -17,6 +17,7 @@ def _sample_positions() -> pd.DataFrame:
             "simbolo": ["AAPL"],
             "cantidad": [64],
             "pld_%": [2.33],
+            "chg_pct": [2.33],
             "ultimo": [20620.0],
             "ppc": [13755.81],
             "pl_%": [49.9],
@@ -24,6 +25,24 @@ def _sample_positions() -> pd.DataFrame:
             "valor_actual": [1319680.0],
         }
     )
+
+
+def _sample_bopreal_positions() -> pd.DataFrame:
+    df = pd.DataFrame(
+        {
+            "simbolo": ["BPOC7"],
+            "cantidad": [146],
+            "pld_%": [0.51],
+            "ultimo": [1377.0],
+            "ppc": [142_193.15],
+            "pl_%": [0.0],
+            "pl": [0.0],
+            "valor_actual": [1.0],
+            "moneda_origen": ["ARS"],
+        }
+    )
+    df.attrs["audit"] = {"existing": True}
+    return df
 
 
 def test_to_iol_format_structure() -> None:
@@ -99,3 +118,36 @@ def test_ui_download_button_exists(monkeypatch, streamlit_stub) -> None:
     rendered_df = dataframes[0]["data"]
     assert isinstance(rendered_df, pd.DataFrame)
     assert rendered_df.equals(to_iol_format(_sample_positions()))
+
+
+def test_bopreal_display_rules(monkeypatch) -> None:
+    captured: list[tuple[str, dict[str, object] | None]] = []
+
+    def _fake_metric(metric_name: str, context: dict[str, object] | None = None, **_: object) -> None:
+        captured.append((metric_name, context))
+
+    monkeypatch.setattr("application.portfolio_service.log_metric", _fake_metric)
+
+    formatted = to_iol_format(_sample_bopreal_positions())
+
+    assert list(formatted.columns) == list(_IOL_EXPORT_COLUMNS)
+    row = formatted.iloc[0]
+    assert row["Activo"] == "BPOC7"
+    assert row["Cantidad"] == "146"
+    assert row["Variación diaria"] == "0,510 %"
+    assert row["Último precio"] == "$ 137.700,00"
+    assert row["Precio promedio de compra"] == "$ 142.193,15"
+    assert row["Rendimiento Porcentaje"] == "-3,15%"
+    assert row["Rendimiento Monto"] == "-$ 6.560,00"
+    assert row["Valorizado"] == "$ 201.042,00"
+
+    assert "audit" in formatted.attrs
+    overrides = formatted.attrs["audit"].get("iol_display_overrides")
+    assert overrides == ["bopreal_ars"]
+
+    assert captured
+    metric_name, context = captured[0]
+    assert metric_name == "comparison_iol.bopreal_rescaled_count"
+    assert context is not None
+    assert context.get("rows") == 1
+    assert context.get("symbols") == ["BPOC7"]
