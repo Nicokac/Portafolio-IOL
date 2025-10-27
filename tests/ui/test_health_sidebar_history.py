@@ -243,12 +243,17 @@ def test_monitoring_shortcut_activation_sets_state_and_renders_panel(
     assert selection.get("module") == "ui.panels.iol_raw_debug"
     assert selection.get("attr")
 
+    markdowns = [entry["text"] for entry in streamlit_stub.get_records("markdown")]
+    assert not any("Centro de control" in text for text in markdowns)
+
     # Simulate rerun without button click to render the panel inline
     streamlit_stub.set_button_result("🔍 IOL RAW", False)
     health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
 
     headers = [entry["text"] for entry in streamlit_stub.get_records("header")]
     assert any("🔍 IOL RAW" in text for text in headers)
+    markdowns = [entry["text"] for entry in streamlit_stub.get_records("markdown")]
+    assert not any("Centro de control" in text for text in markdowns)
 
 
 def test_monitoring_shortcut_degrades_when_renderer_missing(

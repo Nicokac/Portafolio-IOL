@@ -46,16 +46,20 @@ def safe_page_link(
         if registry is not None and page not in registry:
             _render_inline()
             return
-
-        if hasattr(st, "page_link") and render_fallback is None:
-            st.page_link(page, label=label)
-            return
-        if hasattr(st, "page_link") and not prefer_inline:
-            st.page_link(page, label=label)
-            return
     except KeyError:
         _render_inline()
         return
 
     if not hasattr(st, "page_link"):
         _render_inline()
+        return
+
+    if not prefer_inline and render_fallback is None:
+        st.page_link(page, label=label)
+        return
+
+    if not prefer_inline:
+        st.page_link(page, label=label)
+        return
+
+    _render_inline()
