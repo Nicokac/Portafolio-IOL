@@ -39,6 +39,7 @@ _MONITORING_SHORTCUTS: Sequence[tuple[str, str]] = (
     ("⏱️ Performance", "ui.tabs.performance_dashboard"),
 )
 _MISSING_PANELS_LOGGED: set[str] = set()
+_MONITORING_RENDERED_FLAG = "_monitoring_panel_rendered"
 
 
 _YFINANCE_PROVIDER_LABELS = {
@@ -2076,7 +2077,34 @@ def _render_active_monitoring_panel(selection: Mapping[str, str]) -> bool:
         return False
 
     renderer()
+
+    state = getattr(st, "session_state", None)
+    stop_callable = getattr(st, "stop", None)
+    if callable(stop_callable):
+        try:
+            stop_callable()
+        except RuntimeError as exc:
+            message = str(exc)
+            if "streamlit.stop" not in message.lower():
+                raise
+        else:
+            if state is not None:
+                state[_MONITORING_RENDERED_FLAG] = True
+            return True
+    if state is not None:
+        state[_MONITORING_RENDERED_FLAG] = True
     return True
+
+
+def _should_abort_after_monitoring_panel() -> bool:
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return False
+    try:
+        flag = state.pop(_MONITORING_RENDERED_FLAG)
+    except Exception:
+        return False
+    return bool(flag)
 
 
 def _render_monitoring_shortcuts() -> bool:
@@ -2109,6 +2137,29 @@ def _render_monitoring_shortcuts() -> bool:
 def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, Any]] = None) -> None:
     """Render the health summary within the provided tab container."""
 
+    selection = _get_active_monitoring_panel()
+    if selection is not None:
+        rendered = _render_active_monitoring_panel(selection)
+        if _should_abort_after_monitoring_panel():
+            return
+        if rendered:
+            return
+        selection = _get_active_monitoring_panel()
+
+    shortcuts_container = container.container(border=True)
+    with shortcuts_container:
+        st.markdown("### 🔗 Recursos de monitoreo")
+        st.caption("Accedé a paneles complementarios desde esta vista.")
+        activated = _render_monitoring_shortcuts()
+        if activated:
+            selection = _get_active_monitoring_panel()
+            if selection is not None:
+                rendered = _render_active_monitoring_panel(selection)
+                if _should_abort_after_monitoring_panel():
+                    return
+                if rendered:
+                    return
+
     resolved = _resolve_health_metrics(metrics)
     control_hub = container.container(border=True)
     with control_hub:
@@ -2119,23 +2170,6 @@ def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, 
 
     symbols, types = get_controls_reference_data()
     render_controls_panel(symbols, types, container=control_hub)
-
-    shortcuts_container = container.container(border=True)
-    with shortcuts_container:
-        st.markdown("### 🔗 Recursos de monitoreo")
-        st.caption("Accedé a paneles complementarios desde esta vista.")
-        selection = _get_active_monitoring_panel()
-        rendered = False
-        if selection is not None:
-            rendered = _render_active_monitoring_panel(selection)
-            if not rendered:
-                selection = _get_active_monitoring_panel()
-        if selection is None:
-            activated = _render_monitoring_shortcuts()
-            if activated:
-                selection = _get_active_monitoring_panel()
-                if selection is not None:
-                    _render_active_monitoring_panel(selection)
 
     if hasattr(container, "divider"):
         container.divider()

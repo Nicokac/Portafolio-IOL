@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modo seguro de valorización (`SAFE_VALUATION_MODE`) con telemetría estructurada (proveedor, `fx_aplicado`, `ratioCEDEAR`) y tooltip de advertencia en la UI cuando se utilizan cotizaciones estimadas de proveedores externos.
 - feat: Introduced PORTFOLIO_TOTALS_VERSION to invalidate outdated portfolio summaries and enforce recalculation after valuation logic updates.
 
+## v0.9.6.5 — Monitoring inline stability hotfix
+### Fixed
+- Evita navegación/reruns al abrir atajos de monitoreo inline; corte de flujo tras render del panel; preferencia estricta del fallback inline cuando se solicita.
+
 ## v0.9.6.4 — Monitoring shortcuts enabled
 ### Fixed
 - Habilitamos los accesos del monitor para detectar paneles disponibles, activarlos desde la misma pestaña y renderizarlos inline con control de regreso y trazas INFO.
