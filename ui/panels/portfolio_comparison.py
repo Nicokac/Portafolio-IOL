@@ -16,13 +16,30 @@ logger = logging.getLogger(__name__)
 _TAB_TITLE = "📊 Comparativa IOL"
 
 
+def _get_state_value(state: object, key: str) -> object:
+    if isinstance(state, dict):
+        return state.get(key)
+    getter = getattr(state, "get", None)
+    if callable(getter):
+        try:
+            return getter(key)
+        except Exception:  # pragma: no cover - defensive safeguard
+            return None
+    try:
+        return getattr(state, key)
+    except AttributeError:
+        return None
+
+
 def _get_positions_dataframe() -> pd.DataFrame:
     state = getattr(st, "session_state", None)
-    if isinstance(state, dict):
-        df = state.get("portfolio_last_positions")
-    else:
-        getter = getattr(state, "get", None)
-        df = getter("portfolio_last_positions") if callable(getter) else None
+    viewmodel = _get_state_value(state, "portfolio_last_viewmodel")
+    if viewmodel is not None:
+        positions = getattr(viewmodel, "positions", None)
+        if isinstance(positions, pd.DataFrame):
+            return positions
+
+    df = _get_state_value(state, "portfolio_last_positions")
     if isinstance(df, pd.DataFrame):
         return df
     return pd.DataFrame()
