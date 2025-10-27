@@ -9,10 +9,10 @@ import tomli
 from shared import version as version_module
 
 
-EXPECTED_VERSION = "0.9.5.1"
-EXPECTED_RELEASE_NAME = "Portafolio IOL v0.9.5.1-hotfix1"
-EXPECTED_CHANGELOG_REF = ("Fase 7.5.1-hotfix1 — Streamlit Compatibility",)
-EXPECTED_RELEASE_DATE = "2025-10-29"
+EXPECTED_VERSION = "0.9.6.2"
+EXPECTED_RELEASE_NAME = "Portafolio IOL v0.9.6.2 — Hotfix Comparativa IOL CSV"
+EXPECTED_CHANGELOG_REF = ("Hotfix v0.9.6.2 — Comparativa IOL CSV",)
+EXPECTED_RELEASE_DATE = "2025-10-31"
 
 
 def test_version_metadata_consistency() -> None:
