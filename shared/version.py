@@ -7,10 +7,10 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.9.6.3"
-RELEASE_NAME = "Portafolio IOL v0.9.6.3 — Raw IOL Capture"
-RELEASE_DATE = "2025-10-31"
-CHANGELOG_REF = ("v0.9.6.3 — Raw IOL Capture",)
+VERSION = "0.9.6.4"
+RELEASE_NAME = "Portafolio IOL v0.9.6.4 — Monitoring shortcuts enabled"
+RELEASE_DATE = "2025-11-07"
+CHANGELOG_REF = ("v0.9.6.4 — Monitoring shortcuts enabled",)
 
 
 def _resolve_build_signature() -> str:

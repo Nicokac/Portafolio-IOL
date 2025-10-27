@@ -99,6 +99,9 @@ def test_history_sidebar_renders_chart_and_annotations(history_module, streamlit
 
 
 def _render(module, metrics: dict[str, Any]) -> None:
+    reset = getattr(module.st, "reset", None)
+    if callable(reset):
+        reset()
     module.st.session_state["health_metrics"] = metrics
     module.render_health_sidebar()
 
@@ -108,6 +111,8 @@ def health_sidebar(streamlit_stub, monkeypatch: pytest.MonkeyPatch):
     import ui.health_sidebar as health_sidebar_module
 
     module = importlib.reload(health_sidebar_module)
+    monkeypatch.setattr(module, "st", streamlit_stub)
+    streamlit_stub.reset()
     monkeypatch.setattr(
         module,
         "get_health_metrics",
@@ -191,3 +196,74 @@ def test_recent_stats_section_handles_missing_samples(health_sidebar, streamlit_
     assert not [
         element for element in streamlit_stub.sidebar.elements if element["type"] in {"line_chart", "area_chart"}
     ]
+
+
+def _patch_monitoring_dependencies(
+    module, stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(module, "st", stub)
+    stub.reset()
+    monkeypatch.setattr(module, "render_action_menu", lambda *_, **__: None)
+    monkeypatch.setattr(module, "render_ui_controls", lambda *_, **__: None)
+    monkeypatch.setattr(module, "render_controls_panel", lambda *_, **__: None)
+    import ui.helpers.navigation as navigation
+
+    monkeypatch.setattr(navigation, "st", stub, raising=False)
+
+
+def test_monitoring_shortcut_shows_available_panels(
+    health_sidebar, streamlit_stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streamlit_stub.reset()
+    streamlit_stub.runtime._page_registry = {}
+    _patch_monitoring_dependencies(health_sidebar, streamlit_stub, monkeypatch)
+
+    health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
+
+    buttons = streamlit_stub.get_records("button")
+    assert any(entry["label"] == "🔍 IOL RAW" for entry in buttons)
+    captions = [entry["text"] for entry in streamlit_stub.get_records("caption")]
+    assert "(🔍 IOL RAW no disponible)" not in captions
+
+
+def test_monitoring_shortcut_activation_sets_state_and_renders_panel(
+    health_sidebar, streamlit_stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    streamlit_stub.reset()
+    streamlit_stub.runtime._page_registry = {}
+    streamlit_stub.set_button_result("🔍 IOL RAW", True)
+    _patch_monitoring_dependencies(health_sidebar, streamlit_stub, monkeypatch)
+
+    streamlit_stub.set_button_result("🔍 IOL RAW", True)
+
+    health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
+
+    selection = streamlit_stub.session_state.get(health_sidebar._MONITORING_PANEL_STATE_KEY)
+    assert isinstance(selection, dict)
+    assert selection.get("module") == "ui.panels.iol_raw_debug"
+    assert selection.get("attr")
+
+    # Simulate rerun without button click to render the panel inline
+    streamlit_stub.set_button_result("🔍 IOL RAW", False)
+    health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
+
+    headers = [entry["text"] for entry in streamlit_stub.get_records("header")]
+    assert any("🔍 IOL RAW" in text for text in headers)
+
+
+def test_monitoring_shortcut_degrades_when_renderer_missing(
+    health_sidebar, streamlit_stub, monkeypatch: pytest.MonkeyPatch, caplog
+) -> None:
+    streamlit_stub.reset()
+    streamlit_stub.runtime._page_registry = {}
+    _patch_monitoring_dependencies(health_sidebar, streamlit_stub, monkeypatch)
+    monkeypatch.setattr(health_sidebar, "_MONITORING_SHORTCUTS", (("🧪 Panel fake", "fake.module"),))
+
+    with caplog.at_level("INFO"):
+        health_sidebar.render_health_monitor_tab(streamlit_stub, metrics={})
+
+    captions = [entry["text"] for entry in streamlit_stub.get_records("caption")]
+    assert "(🧪 Panel fake no disponible)" in captions
+    buttons = streamlit_stub.get_records("button")
+    assert not any(entry["label"] == "🧪 Panel fake" for entry in buttons)
+    assert "acceso sin render disponible" in caplog.text

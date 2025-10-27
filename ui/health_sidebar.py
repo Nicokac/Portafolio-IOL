@@ -3,7 +3,11 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
+
+import importlib
+import logging
+from types import ModuleType
 
 import pandas as pd
 import streamlit as st
@@ -21,6 +25,20 @@ from ui.ui_settings import render_ui_controls
 
 
 format_note = shared_notes.format_note
+
+
+logger = logging.getLogger(__name__)
+
+_MONITORING_PANEL_STATE_KEY = "_monitoring_active_panel"
+_MONITORING_SHORTCUTS: Sequence[tuple[str, str]] = (
+    ("ℹ️ Acerca de", "ui.panels.about"),
+    ("🩺 Diagnóstico", "ui.panels.diagnostics"),
+    ("🔎 Diagnóstico del sistema", "ui.panels.system_diagnostics"),
+    ("🔍 Estado del Sistema", "ui.panels.system_status"),
+    ("🔍 IOL RAW", "ui.panels.iol_raw_debug"),
+    ("⏱️ Performance", "ui.tabs.performance_dashboard"),
+)
+_MISSING_PANELS_LOGGED: set[str] = set()
 
 
 _YFINANCE_PROVIDER_LABELS = {
@@ -436,22 +454,50 @@ def _format_recent_http_error(metrics: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
+def _mirror_sidebar_render(host: Any, method: str, *args: Any, **kwargs: Any) -> None:
+    sidebar_host = getattr(host, "_host", None)
+    if sidebar_host is None:
+        return
+    renderer = getattr(sidebar_host, method, None)
+    if not callable(renderer):
+        return
+    try:
+        renderer(*args, **kwargs)
+    except TypeError:
+        renderer(*args)
+
+
+def _render_chart(host: Any, method: str, *args: Any, **kwargs: Any) -> bool:
+    renderer = getattr(host, method, None)
+    if callable(renderer):
+        renderer(*args, **kwargs)
+        _mirror_sidebar_render(host, method, *args, **kwargs)
+        return True
+
+    fallback = getattr(st, method, None)
+    if callable(fallback):
+        fallback(*args, **kwargs)
+        return True
+
+    return False
+
+
 def _render_recent_stats(host: Any, metrics: Mapping[str, Any]) -> None:
+    st.markdown("#### 📈 Estadísticas recientes")
+
     charts_rendered = False
 
     latency_series = _collect_latency_series(metrics)
     latency_frame = _build_series_dataframe(latency_series)
     if latency_frame is not None:
-        host.line_chart(latency_frame)
-        charts_rendered = True
+        charts_rendered |= _render_chart(host, "line_chart", latency_frame)
 
     cache_samples = _extract_stat_samples(metrics.get("fx_cache"), "age")
     if cache_samples:
         cache_frame = pd.DataFrame({"Edad caché (s)": pd.Series(cache_samples, dtype="float64")})
         cache_frame.index = cache_frame.index + 1
         cache_frame.index.name = "Muestra"
-        host.area_chart(cache_frame)
-        charts_rendered = True
+        charts_rendered |= _render_chart(host, "area_chart", cache_frame)
 
     http_note = _format_recent_http_error(metrics)
     if http_note:
@@ -1898,6 +1944,168 @@ def render_health_sidebar(*, metrics: Optional[Mapping[str, Any]] = None) -> Non
     _render_health_panel(st.sidebar, resolved)
 
 
+def _log_missing_panel(label: str, module_path: str) -> None:
+    key = f"{module_path}:{label}"
+    if key in _MISSING_PANELS_LOGGED:
+        return
+    _MISSING_PANELS_LOGGED.add(key)
+    logger.info("[monitoring] acceso sin render disponible label=%s module=%s", label, module_path)
+
+
+def _find_render_attribute(module: ModuleType) -> str | None:
+    exports = getattr(module, "__all__", None)
+    candidates: list[str] = []
+    if isinstance(exports, (list, tuple, set)):
+        for name in exports:
+            if isinstance(name, str) and name.startswith("render_"):
+                candidates.append(name)
+    if not candidates:
+        candidates = [name for name in dir(module) if name.startswith("render_")]
+    for name in candidates:
+        attr = getattr(module, name, None)
+        if callable(attr):
+            return name
+    return None
+
+
+def _resolve_monitoring_renderer(module_path: str, label: str) -> tuple[str, str] | None:
+    try:
+        module = importlib.import_module(module_path)
+    except Exception:
+        _log_missing_panel(label, module_path)
+        return None
+
+    attribute = _find_render_attribute(module)
+    if attribute is None:
+        _log_missing_panel(label, module_path)
+        return None
+    return module.__name__, attribute
+
+
+def _activate_monitoring_panel(module_path: str, attribute: str, label: str) -> None:
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return
+    state[_MONITORING_PANEL_STATE_KEY] = {
+        "module": module_path,
+        "attr": attribute,
+        "label": label,
+    }
+    logger.info(
+        "[monitoring] panel activado label=%s module=%s attr=%s",
+        label,
+        module_path,
+        attribute,
+    )
+
+
+def _clear_active_monitoring_panel() -> None:
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return
+    payload = state.pop(_MONITORING_PANEL_STATE_KEY, None)
+    if isinstance(payload, Mapping):
+        module_path = payload.get("module")
+        label = payload.get("label") or module_path or ""
+        logger.info(
+            "[monitoring] panel cerrado label=%s module=%s",
+            label,
+            module_path,
+        )
+
+
+def _get_active_monitoring_panel() -> dict[str, str] | None:
+    state = getattr(st, "session_state", None)
+    if state is None:
+        return None
+    payload = state.get(_MONITORING_PANEL_STATE_KEY)
+    if isinstance(payload, Mapping):
+        module_path = payload.get("module")
+        attribute = payload.get("attr")
+        if isinstance(module_path, str) and isinstance(attribute, str):
+            label = str(payload.get("label") or module_path)
+            return {
+                "module": module_path,
+                "attr": attribute,
+                "label": label,
+            }
+    return None
+
+
+def _import_renderer_callable(module_path: str, attribute: str, label: str) -> Callable[[], None] | None:
+    try:
+        module = importlib.import_module(module_path)
+    except Exception:
+        _log_missing_panel(label, module_path)
+        return None
+
+    candidate = getattr(module, attribute, None)
+    if callable(candidate):
+        module_streamlit = getattr(module, "st", None)
+        if module_streamlit is not st:
+            try:
+                setattr(module, "st", st)
+            except Exception:
+                logger.debug(
+                    "[monitoring] no se pudo sincronizar streamlit en módulo label=%s module=%s",
+                    label,
+                    module_path,
+                )
+        return candidate
+
+    _log_missing_panel(label, module_path)
+    return None
+
+
+def _render_active_monitoring_panel(selection: Mapping[str, str]) -> bool:
+    module_path = selection.get("module")
+    attribute = selection.get("attr")
+    label = selection.get("label") or module_path or ""
+    if not isinstance(module_path, str) or not isinstance(attribute, str):
+        _clear_active_monitoring_panel()
+        return False
+
+    renderer = _import_renderer_callable(module_path, attribute, str(label))
+    if renderer is None:
+        st.warning("El panel seleccionado no está disponible actualmente.")
+        _clear_active_monitoring_panel()
+        return False
+
+    if st.button("⬅️ Volver al monitoreo", key="monitoring_back_button"):
+        _clear_active_monitoring_panel()
+        return False
+
+    renderer()
+    return True
+
+
+def _render_monitoring_shortcuts() -> bool:
+    had_selection = _get_active_monitoring_panel() is not None
+    for label, module_path in _MONITORING_SHORTCUTS:
+        resolved = _resolve_monitoring_renderer(module_path, label)
+        if resolved is None:
+            safe_page_link(module_path, label=label)
+            continue
+
+        module_name, attribute = resolved
+
+        def _activate(
+            module_name: str = module_name,
+            attribute: str = attribute,
+            link_label: str = label,
+        ) -> None:
+            _activate_monitoring_panel(module_name, attribute, link_label)
+
+        safe_page_link(
+            module_path,
+            label=label,
+            render_fallback=_activate,
+            prefer_inline=True,
+        )
+
+    return (not had_selection) and _get_active_monitoring_panel() is not None
+
+
 def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, Any]] = None) -> None:
     """Render the health summary within the provided tab container."""
 
@@ -1916,12 +2124,18 @@ def render_health_monitor_tab(container: Any, *, metrics: Optional[Mapping[str, 
     with shortcuts_container:
         st.markdown("### 🔗 Recursos de monitoreo")
         st.caption("Accedé a paneles complementarios desde esta vista.")
-        safe_page_link("ui.panels.about", label="ℹ️ Acerca de")
-        safe_page_link("ui.panels.diagnostics", label="🩺 Diagnóstico")
-        safe_page_link("ui.panels.system_diagnostics", label="🔎 Diagnóstico del sistema")
-        safe_page_link("ui.panels.system_status", label="🔍 Estado del Sistema")
-        safe_page_link("ui.panels.iol_raw_debug", label="🔍 IOL RAW")
-        safe_page_link("ui.tabs.performance_dashboard", label="⏱️ Performance")
+        selection = _get_active_monitoring_panel()
+        rendered = False
+        if selection is not None:
+            rendered = _render_active_monitoring_panel(selection)
+            if not rendered:
+                selection = _get_active_monitoring_panel()
+        if selection is None:
+            activated = _render_monitoring_shortcuts()
+            if activated:
+                selection = _get_active_monitoring_panel()
+                if selection is not None:
+                    _render_active_monitoring_panel(selection)
 
     if hasattr(container, "divider"):
         container.divider()
