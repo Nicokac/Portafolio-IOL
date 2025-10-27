@@ -56,6 +56,8 @@ def render_summary(
     historical_total=None,
     contribution_metrics=None,
     snapshot=None,
+    *,
+    include_exports: bool = True,
 ):
     """Render the summary controls, totals and exports for the portfolio."""
     favorites = favorites or get_persistent_favorites()
@@ -87,15 +89,16 @@ def render_summary(
         return False
 
     render_summary_metrics(df_view, totals=totals, ccl_rate=ccl_rate)
-    render_portfolio_exports(
-        snapshot=snapshot,
-        df_view=df_view,
-        totals=totals,
-        historical_total=historical_total,
-        contribution_metrics=contribution_metrics,
-        filename_prefix="portafolio",
-        ranking_limit=max(5, getattr(controls, "top_n", 10)),
-    )
+    if include_exports:
+        render_portfolio_exports(
+            snapshot=snapshot,
+            df_view=df_view,
+            totals=totals,
+            historical_total=historical_total,
+            contribution_metrics=contribution_metrics,
+            filename_prefix="portafolio",
+            ranking_limit=max(5, getattr(controls, "top_n", 10)),
+        )
     return True
 
 

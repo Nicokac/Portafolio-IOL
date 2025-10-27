@@ -88,6 +88,7 @@ def render_portfolio_ui(
                     view_model_service_factory=view_model_service_factory,
                     notifications_service_factory=notifications_service_factory,
                     timings=stage_timings,
+                    lazy_metrics=True,
                 )
         except Exception:
             telemetry["status"] = "error"

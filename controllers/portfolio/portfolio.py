@@ -57,7 +57,7 @@ from shared.telemetry import log_default_telemetry, log_metric, log_telemetry
 from shared.ui.monitoring_guard import is_monitoring_active
 from shared.user_actions import log_user_action
 from ui.charts import plot_technical_analysis_chart
-from ui.export import PLOTLY_CONFIG
+from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.fundamentals import render_fundamental_data
 from ui.lazy import (
@@ -125,6 +125,7 @@ _DATASET_REUSE_FLAG_KEY = "__portfolio_visual_cache_reused__"
 _PORTFOLIO_LAST_USER_STATE_KEY = "__portfolio_last_user_id__"
 _LAZY_BLOCKS_STATE_KEY = "lazy_blocks"
 _LAZY_FLAGS_STATE_KEY = "__portfolio_lazy_flag_tokens__"
+_LAZY_RERUN_FLAGS_KEY = "__portfolio_lazy_rerun_flags__"
 _VISUAL_CACHE_EVENT_STATE_KEY = "__portfolio_visual_cache_event__"
 _UI_PERSIST_STATE_KEY = "portfolio_ui_persist_ms"
 _CONTROLS_SNAPSHOT_STATE_KEY = "__portfolio_controls_snapshot__"
@@ -893,7 +894,7 @@ def _ensure_lazy_blocks(dataset_token: str) -> dict[str, dict[str, Any]]:
                 pass
 
         lazy_blocks: dict[str, dict[str, Any]] = {}
-        for name in ("table", "charts"):
+        for name in ("table", "charts", "exports"):
             block = state.get(name)
             if not isinstance(block, dict) or block.get("dataset_hash") != dataset_token:
                 block = {
@@ -1314,11 +1315,13 @@ def render_basic_tab(
     pending_metrics = tuple(getattr(viewmodel, "pending_metrics", ()) or ())
     pending_extended = "extended_metrics" in pending_metrics
     soft_refresh_guard = bool(getattr(snapshot, "soft_refresh_guard", False))
+    defer_heavy_components = lazy_metrics and pending_extended
 
-    if lazy_metrics and pending_extended:
+    if defer_heavy_components:
         with st.spinner("Calculando métricas extendidas del portafolio..."):
             time.sleep(0.05)
         st.caption("⏳ Calculando métricas extendidas del portafolio...")
+        exports_lazy["status"] = "pending"
 
     portfolio_id = _portfolio_dataset_key(viewmodel, df_view)
     summary_filters = _summary_filters_key(controls, metrics, favorites, snapshot)
@@ -1346,8 +1349,10 @@ def render_basic_tab(
     lazy_blocks = _ensure_lazy_blocks(dataset_token)
     table_lazy = lazy_blocks["table"]
     charts_lazy = lazy_blocks["charts"]
+    exports_lazy = lazy_blocks["exports"]
     table_lazy["placeholder"] = table_entry.get("trigger_placeholder", table_entry.get("placeholder"))
     charts_lazy["placeholder"] = charts_entry.get("trigger_placeholder", charts_entry.get("placeholder"))
+    exports_lazy["placeholder"] = exports_lazy.get("placeholder")
 
     summary_signature = (portfolio_id, summary_filters)
     summary_currency = get_active_summary_currency()
@@ -1387,6 +1392,7 @@ def render_basic_tab(
                 contribution_metrics=None if pending_extended else contributions,
                 snapshot=snapshot,
                 references=references,
+                include_exports=False,
             )
             summary_refs["references"] = updated_refs
             has_positions = bool(updated_refs.get("has_positions", has_positions))
@@ -1593,132 +1599,222 @@ def render_basic_tab(
     charts_entry_hash = charts_entry.get("dataset_hash")
     charts_entry_dataset = charts_entry.get("dataset_hash")
     charts_entry.setdefault("dataset_hash", charts_entry_hash or dataset_token)
-    charts_placeholder = charts_entry.get("body_placeholder") or charts_entry["placeholder"]
-    charts_trigger_placeholder = charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
-    charts_refs["placeholder"] = charts_placeholder
     previously_rendered_charts = bool(charts_entry.get("rendered"))
-    if _should_reset_rendered_flag(
-        charts_entry_dataset,
-        dataset_token,
-        charts_lazy.get("status"),
-        soft_refresh_guard=soft_refresh_guard,
-    ):
+    should_render_charts = False
+    charts_ready = False
+
+    heavy_label = "se cargan al finalizar las métricas extendidas"
+    heavy_container = st.expander(heavy_label, expanded=True)
+
+    if defer_heavy_components:
+        charts_lazy["status"] = "pending"
         charts_entry["rendered"] = False
         previously_rendered_charts = False
+        with heavy_container:
+            st.info("Las exportaciones y gráficos se habilitan al finalizar las métricas extendidas.")
+    else:
+        with heavy_container:
+            contributions_df = getattr(contributions, "by_symbol", None)
+            contributions_ready = isinstance(contributions_df, pd.DataFrame) and not contributions_df.empty
 
-    with charts_fragment(dataset_token=dataset_token) as charts_ctx:
-        charts_ready = _prompt_lazy_block(
-            charts_lazy,
-            placeholder=charts_trigger_placeholder,
-            button_label="📈 Cargar gráficos del portafolio",
-            info_message="Los gráficos intradía y el heatmap se cargarán bajo demanda.",
-            key=f"{tab_slug}_load_charts",
-            dataset_token=dataset_token,
-            fallback_key="load_charts",
-            force_ready=True,
-        )
+            exports_placeholder = exports_lazy.get("placeholder")
+            if not hasattr(exports_placeholder, "button"):
+                exports_placeholder = st.empty()
+                exports_lazy["placeholder"] = exports_placeholder
 
-        should_render_charts = False
-        if charts_ready:
-            with _record_stage("render_charts", timings):
-                should_render_charts = charts_entry.get("dataset_hash") != dataset_token or not charts_entry.get(
-                    "rendered"
+            exports_ready = _prompt_lazy_block(
+                exports_lazy,
+                placeholder=exports_placeholder,
+                button_label="📦 Generar exportaciones del portafolio",
+                info_message="Las exportaciones se generan bajo demanda al completar las métricas extendidas.",
+                key=f"{tab_slug}_load_exports",
+                dataset_token=dataset_token,
+                fallback_key="load_exports",
+                force_ready=False,
+            )
+
+            if exports_ready and contributions_ready:
+                start_trigger = exports_lazy.get("triggered_at")
+                spinner_factory = getattr(st, "spinner", None)
+                spinner_cm = (
+                    spinner_factory("Preparando exportaciones del portafolio…")
+                    if callable(spinner_factory)
+                    else nullcontext()
                 )
-                if should_render_charts:
-                    placeholder = charts_placeholder
-                    if not previously_rendered_charts:
-                        skeletons.mark_placeholder("charts", placeholder=placeholder)
-                        try:
-                            placeholder.write("⏳ Cargando gráficos del portafolio…")
-                        except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
-                            logger.debug(
-                                "No se pudo mostrar el placeholder de carga de gráficos",
-                                exc_info=True,
-                            )
-                    references = charts_refs.get("references")
-                    start_trigger = charts_lazy.get("triggered_at")
-                    spinner_factory = getattr(st, "spinner", None)
-                    spinner_cm = (
-                        spinner_factory("Procesando gráficos del portafolio…")
-                        if callable(spinner_factory)
-                        else nullcontext()
+                mount_start = time.perf_counter()
+                with spinner_cm:
+                    render_portfolio_exports(
+                        snapshot=snapshot,
+                        df_view=df_view,
+                        totals=totals,
+                        historical_total=historical_total,
+                        contribution_metrics=contributions,
+                        filename_prefix="portafolio",
+                        ranking_limit=max(5, getattr(controls, "top_n", 10)),
                     )
-                    mount_start = time.perf_counter()
-                    with spinner_cm:
-                        updated_refs = update_charts(
-                            placeholder,
-                            render_fn=render_charts_section,
-                            df_view=df_view,
-                            controls=controls,
-                            ccl_rate=ccl_rate,
-                            totals=totals,
-                            contribution_metrics=contributions,
-                            snapshot=snapshot,
-                            references=references,
-                        )
-                    mount_end = time.perf_counter()
-                    charts_refs["references"] = updated_refs
-                    charts_timestamp = time.time()
-                    mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
-                    elapsed_ms = mount_latency_ms
-                    if isinstance(start_trigger, (int, float)):
-                        elapsed_ms = max(
-                            (mount_end - float(start_trigger)) * 1000.0,
-                            mount_latency_ms,
-                        )
-                    charts_entry["signature"] = charts_signature
-                    charts_entry["rendered"] = True
-                    charts_entry["updated_at"] = charts_timestamp
-                    charts_entry["dataset_hash"] = dataset_token
-                    charts_entry["lazy_load_ms"] = elapsed_ms
-                    charts_entry["mount_latency_ms"] = mount_latency_ms
-                    charts_refs["dataset_hash"] = dataset_token
-                    with _VISUAL_STATE_LOCK:
-                        visual_cache_entry["charts_placeholder"] = placeholder
-                        visual_cache_entry["charts_rendered"] = True
-                        visual_cache_entry["charts_timestamp"] = charts_timestamp
-                        visual_cache_entry["charts_lazy_load_ms"] = elapsed_ms
-                        visual_cache_entry["charts_mount_latency_ms"] = mount_latency_ms
-                    _store_component_metadata(
-                        portfolio_id,
-                        chart_filters,
-                        tab_slug,
-                        "charts",
-                        charts_timestamp,
+                mount_end = time.perf_counter()
+                elapsed_ms = max((mount_end - mount_start) * 1000.0, 0.0)
+                if isinstance(start_trigger, (int, float)):
+                    elapsed_ms = max((mount_end - float(start_trigger)) * 1000.0, elapsed_ms)
+                exports_lazy["status"] = "loaded"
+                exports_lazy["dataset_hash"] = dataset_token
+                exports_lazy["loaded_at"] = time.time()
+                exports_lazy["lazy_load_ms"] = elapsed_ms
+                exports_lazy["mount_latency_ms"] = elapsed_ms
+                exports_lazy["triggered_at"] = None
+                _record_lazy_component_load(
+                    "exports",
+                    elapsed_ms,
+                    dataset_token,
+                    mount_latency_ms=elapsed_ms,
+                )
+            elif exports_ready and not contributions_ready:
+                try:
+                    exports_placeholder.info(
+                        "Las exportaciones se habilitan cuando las métricas extendidas aportan datos adicionales."
                     )
-                    completed_at = charts_timestamp
-                    charts_lazy["triggered_at"] = None
-                    charts_lazy["loaded_at"] = completed_at
-                    charts_lazy["lazy_load_ms"] = elapsed_ms
-                    charts_lazy["mount_latency_ms"] = mount_latency_ms
-                    if mount_latency_ms > 100.0:
-                        logger.warning(
-                            "La visualización 'charts' tardó %.1f ms en montarse (dataset=%s)",
-                            mount_latency_ms,
-                            dataset_token,
-                        )
-                    _record_lazy_component_load(
-                        "chart",
-                        elapsed_ms,
-                        dataset_token,
-                        mount_latency_ms=mount_latency_ms,
-                    )
-                elif charts_meta is not None:
-                    charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
-                    charts_entry.setdefault("signature", charts_signature)
-                    charts_refs.setdefault("dataset_hash", dataset_token)
-                    with _VISUAL_STATE_LOCK:
-                        visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
-                        visual_cache_entry.setdefault("charts_rendered", True)
-                        visual_cache_entry.setdefault("charts_lazy_load_ms", charts_entry.get("lazy_load_ms"))
-                        visual_cache_entry.setdefault(
-                            "charts_mount_latency_ms",
-                            charts_entry.get("mount_latency_ms"),
-                        )
-                        visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug("No se pudo renderizar el mensaje diferido de exportaciones", exc_info=True)
+                exports_lazy["status"] = "pending"
+                exports_lazy.setdefault("dataset_hash", dataset_token)
+            else:
+                exports_lazy.setdefault("dataset_hash", dataset_token)
 
-        if charts_ready:
-            charts_ctx.stop()
+            charts_placeholder = charts_entry.get("body_placeholder") or charts_entry["placeholder"]
+            charts_trigger_placeholder = charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
+            if not hasattr(charts_placeholder, "container"):
+                charts_placeholder = st.empty()
+                charts_entry["placeholder"] = charts_placeholder
+                charts_entry["body_placeholder"] = charts_placeholder
+            if not hasattr(charts_trigger_placeholder, "button"):
+                charts_trigger_placeholder = st.empty()
+                charts_entry["trigger_placeholder"] = charts_trigger_placeholder
+
+            charts_refs["placeholder"] = charts_entry["body_placeholder"]
+            charts_lazy["placeholder"] = charts_entry["trigger_placeholder"]
+
+            if _should_reset_rendered_flag(
+                charts_entry_dataset,
+                dataset_token,
+                charts_lazy.get("status"),
+                soft_refresh_guard=soft_refresh_guard,
+            ):
+                charts_entry["rendered"] = False
+                previously_rendered_charts = False
+
+            with charts_fragment(dataset_token=dataset_token) as charts_ctx:
+                charts_ready = _prompt_lazy_block(
+                    charts_lazy,
+                    placeholder=charts_entry["trigger_placeholder"],
+                    button_label="📈 Cargar gráficos del portafolio",
+                    info_message="Los gráficos intradía y el heatmap se cargarán bajo demanda.",
+                    key=f"{tab_slug}_load_charts",
+                    dataset_token=dataset_token,
+                    fallback_key="load_charts",
+                    force_ready=True,
+                )
+
+                if charts_ready:
+                    with _record_stage("render_charts", timings):
+                        should_render_charts = (
+                            charts_entry.get("dataset_hash") != dataset_token
+                            or not charts_entry.get("rendered")
+                        )
+                        if should_render_charts:
+                            placeholder = charts_entry["body_placeholder"]
+                            if not previously_rendered_charts:
+                                skeletons.mark_placeholder("charts", placeholder=placeholder)
+                                try:
+                                    placeholder.write("⏳ Cargando gráficos del portafolio…")
+                                except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+                                    logger.debug(
+                                        "No se pudo mostrar el placeholder de carga de gráficos",
+                                        exc_info=True,
+                                    )
+                            references = charts_refs.get("references")
+                            start_trigger = charts_lazy.get("triggered_at")
+                            spinner_factory = getattr(st, "spinner", None)
+                            spinner_cm = (
+                                spinner_factory("Procesando gráficos del portafolio…")
+                                if callable(spinner_factory)
+                                else nullcontext()
+                            )
+                            mount_start = time.perf_counter()
+                            with spinner_cm:
+                                updated_refs = update_charts(
+                                    placeholder,
+                                    render_fn=render_charts_section,
+                                    df_view=df_view,
+                                    controls=controls,
+                                    ccl_rate=ccl_rate,
+                                    totals=totals,
+                                    contribution_metrics=contributions,
+                                    snapshot=snapshot,
+                                    references=references,
+                                )
+                            mount_end = time.perf_counter()
+                            charts_refs["references"] = updated_refs
+                            charts_timestamp = time.time()
+                            mount_latency_ms = max((mount_end - mount_start) * 1000.0, 0.0)
+                            elapsed_ms = mount_latency_ms
+                            if isinstance(start_trigger, (int, float)):
+                                elapsed_ms = max(
+                                    (mount_end - float(start_trigger)) * 1000.0,
+                                    mount_latency_ms,
+                                )
+                            charts_entry["signature"] = charts_signature
+                            charts_entry["rendered"] = True
+                            charts_entry["updated_at"] = charts_timestamp
+                            charts_entry["dataset_hash"] = dataset_token
+                            charts_entry["lazy_load_ms"] = elapsed_ms
+                            charts_entry["mount_latency_ms"] = mount_latency_ms
+                            charts_refs["dataset_hash"] = dataset_token
+                            with _VISUAL_STATE_LOCK:
+                                visual_cache_entry["charts_placeholder"] = placeholder
+                                visual_cache_entry["charts_rendered"] = True
+                                visual_cache_entry["charts_timestamp"] = charts_timestamp
+                                visual_cache_entry["charts_lazy_load_ms"] = elapsed_ms
+                                visual_cache_entry["charts_mount_latency_ms"] = mount_latency_ms
+                            _store_component_metadata(
+                                portfolio_id,
+                                chart_filters,
+                                tab_slug,
+                                "charts",
+                                charts_timestamp,
+                            )
+                            completed_at = charts_timestamp
+                            charts_lazy["triggered_at"] = None
+                            charts_lazy["loaded_at"] = completed_at
+                            charts_lazy["lazy_load_ms"] = elapsed_ms
+                            charts_lazy["mount_latency_ms"] = mount_latency_ms
+                            if mount_latency_ms > 100.0:
+                                logger.warning(
+                                    "La visualización 'charts' tardó %.1f ms en montarse (dataset=%s)",
+                                    mount_latency_ms,
+                                    dataset_token,
+                                )
+                            _record_lazy_component_load(
+                                "chart",
+                                elapsed_ms,
+                                dataset_token,
+                                mount_latency_ms=mount_latency_ms,
+                            )
+                        elif charts_meta is not None:
+                            charts_entry.setdefault("updated_at", charts_meta.get("computed_at"))
+                            charts_entry.setdefault("signature", charts_signature)
+                            charts_refs.setdefault("dataset_hash", dataset_token)
+                            with _VISUAL_STATE_LOCK:
+                                visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
+                                visual_cache_entry.setdefault("charts_rendered", True)
+                                visual_cache_entry.setdefault("charts_lazy_load_ms", charts_entry.get("lazy_load_ms"))
+                                visual_cache_entry.setdefault(
+                                    "charts_mount_latency_ms",
+                                    charts_entry.get("mount_latency_ms"),
+                                )
+                                visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
+
+                if charts_ready:
+                    charts_ctx.stop()
 
     if charts_ready or charts_entry.get("rendered"):
         charts_reused = (
@@ -1736,7 +1832,11 @@ def render_basic_tab(
     partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
     incremental_render = not should_render_summary and not should_render_table and not should_render_charts
     if isinstance(tab_cache, dict):
-        tab_cache["lazy_pending"] = table_lazy.get("status") != "loaded" or charts_lazy.get("status") != "loaded"
+        tab_cache["lazy_pending"] = (
+            table_lazy.get("status") != "loaded"
+            or charts_lazy.get("status") != "loaded"
+            or exports_lazy.get("status") != "loaded"
+        )
     if not incremental_render:
         cached_dataset = render_refs.get("dataset_hash")
         if cached_dataset == dataset_token:
@@ -2070,15 +2170,39 @@ def render_portfolio_section(
         visual_cache_cleared = _maybe_reset_visual_cache_state()
 
         def _schedule_lazy_metrics_refresh() -> None:
-            if is_monitoring_active() and freeze_heavy_tasks():
+            freeze_requested = bool(freeze_heavy_tasks())
+            monitoring_active = bool(is_monitoring_active())
+            if freeze_requested and monitoring_active:
                 mark_event(
                     "lazy_metrics_skip",
                     "monitoring_freeze",
                     {"flow_id": current_flow_id()},
                 )
                 return
+            if freeze_requested and not monitoring_active:
+                mark_event(
+                    "lazy_metrics_skip",
+                    "freeze_active",
+                    {"flow_id": current_flow_id()},
+                )
+                return
+
             thread_key = "portfolio_extended_thread"
-            dataset_key = view_model_service._hash_dataset(df_pos)
+            dataset_key = str(view_model_service._hash_dataset(df_pos))
+            try:
+                rerun_flags = st.session_state.get(_LAZY_RERUN_FLAGS_KEY)
+            except Exception:  # pragma: no cover - defensive safeguard
+                rerun_flags = None
+            if not isinstance(rerun_flags, dict):
+                rerun_flags = {}
+                try:
+                    st.session_state[_LAZY_RERUN_FLAGS_KEY] = rerun_flags
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo inicializar el estado de rerun diferido",
+                        exc_info=True,
+                    )
+
             if st.session_state.get("shutdown_pending"):
                 mark_event(
                     "lazy_metrics_skip",
@@ -2101,6 +2225,9 @@ def render_portfolio_section(
                         {"dataset": dataset_key, "flow_id": current_flow_id()},
                     )
                     return
+
+            if isinstance(rerun_flags, dict):
+                rerun_flags.pop(dataset_key, None)
 
             flow_id = current_flow_id()
             mark_event(
@@ -2135,6 +2262,8 @@ def render_portfolio_section(
                             controls=controls,
                             cli=cli,
                             psvc=psvc,
+                            dataset_hash=dataset_key,
+                            skip_invalidation=True,
                         )
                     except Exception:  # pragma: no cover - defensive safeguard
                         logger.debug(
@@ -2155,9 +2284,29 @@ def render_portfolio_section(
                         {"dataset": dataset_key, "flow_id": flow_id},
                     )
                     return
+                try:
+                    rerun_state = st.session_state.get(_LAZY_RERUN_FLAGS_KEY)
+                except Exception:  # pragma: no cover - defensive safeguard
+                    rerun_state = None
+                if not isinstance(rerun_state, dict):
+                    rerun_state = {}
+                    try:
+                        st.session_state[_LAZY_RERUN_FLAGS_KEY] = rerun_state
+                    except Exception:  # pragma: no cover - defensive safeguard
+                        logger.debug(
+                            "No se pudo restablecer el estado de rerun diferido",
+                            exc_info=True,
+                        )
+                if rerun_state.get(dataset_key):
+                    mark_event(
+                        "lazy_metrics_skip",
+                        "rerun_coalesced",
+                        {"dataset": dataset_key, "flow_id": flow_id},
+                    )
+                    return
+                rerun_state[dataset_key] = True
                 mark_event("rerun", "portfolio.extended_metrics_ready")
                 safe_rerun("portfolio.extended_metrics_ready")
-                return
 
             worker = threading.Thread(
                 target=_compute_and_rerun,
