@@ -27,6 +27,7 @@ from services.performance_timer import (
     QUOTES_SWR_SERVED_TOTAL,
     performance_timer,
 )
+from shared.debug.rerun_trace import mark_event, safe_stop
 from shared.errors import AppError
 from shared.pandas_attrs import wrap_callable_attr
 from shared.settings import (
@@ -413,14 +414,16 @@ def load_portfolio_data(cli, psvc):
                         telemetry["source"] = metadata.source
             except AppError as err:
                 st.error(str(err))
-                st.stop()
+                mark_event("stop", "dataset_fetch_app_error", {"source": telemetry.get("source")})
+                safe_stop("dataset_fetch_app_error")
             except Exception:  # pragma: no cover - streamlit error path
                 logger.exception(
                     "Error al consultar portafolio",
                     extra={"tokens_file": tokens_path},
                 )
                 st.error("No se pudo cargar el portafolio, intente más tarde")
-                st.stop()
+                mark_event("stop", "dataset_fetch_exception", {"source": telemetry.get("source")})
+                safe_stop("dataset_fetch_exception")
         if silent_refresh:
             try:
                 st.session_state["last_refresh"] = time.time()
@@ -443,7 +446,8 @@ def load_portfolio_data(cli, psvc):
 
     if dataset is None or metadata is None:
         st.error("No se pudo cargar el portafolio")
-        st.stop()
+        mark_event("stop", "dataset_missing")
+        safe_stop("dataset_missing")
 
     payload = dataset.raw_payload
     auth_error = False
@@ -459,13 +463,15 @@ def load_portfolio_data(cli, psvc):
     if st.session_state.get("force_login") or auth_error:
         st.session_state["force_login"] = True
         st.error("No se pudo autenticar con IOL")
-        st.stop()
+        mark_event("stop", "auth_required")
+        safe_stop("auth_required")
     elif isinstance(payload, dict) and payload.get("_cached"):
         st.warning("No se pudo contactar a IOL; mostrando datos del portafolio en caché.")
 
     if isinstance(payload, dict) and "message" in payload:
         st.info(f'ℹ️ Mensaje de IOL: "{payload["message"]}"')
-        st.stop()
+        mark_event("stop", "iol_message")
+        safe_stop("iol_message")
 
     df_pos = dataset.positions.copy()
     market_fetcher = getattr(cli, "fetch_market_price", None)
@@ -498,7 +504,8 @@ def load_portfolio_data(cli, psvc):
         if isinstance(payload, dict) and "activos" in payload:
             st.dataframe(pd.DataFrame(payload["activos"]).head(20))
             st.caption("Ejemplo de datos recibidos del portafolio")
-        st.stop()
+        mark_event("stop", "empty_portfolio")
+        safe_stop("empty_portfolio")
 
     all_symbols = list(dataset.all_symbols)
     available_types = list(dataset.available_types)

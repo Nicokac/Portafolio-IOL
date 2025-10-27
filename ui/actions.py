@@ -5,6 +5,7 @@ import logging
 import streamlit as st
 
 from application import auth_service
+from shared.debug.rerun_trace import mark_event, safe_rerun, safe_stop
 from shared.errors import AppError
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
             type="secondary",
         ):
             st.session_state["logout_pending"] = True
-            st.rerun()
+            mark_event("rerun", "logout_button")
+            safe_rerun("logout_requested")
         st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("logout_pending", False):
@@ -54,17 +56,21 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
                 auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
         except AppError as err:
             st.error(str(err))
-            st.stop()
+            mark_event("stop", "logout_app_error")
+            safe_stop("logout_app_error")
         except Exception:
             logger.exception("Error inesperado al cerrar sesión")
             st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
-            st.stop()
+            mark_event("stop", "logout_exception")
+            safe_stop("logout_exception")
 
     if st.session_state.pop("logout_done", False):
         st.success("Sesión cerrada")
-        st.stop()
+        mark_event("stop", "logout_done")
+        safe_stop("logout_done")
 
     err = st.session_state.pop("logout_error", "")
     if err:
         st.error(f"No se pudo cerrar sesión: {err}")
-        st.stop()
+        mark_event("stop", "logout_error")
+        safe_stop("logout_error")

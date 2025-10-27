@@ -22,6 +22,8 @@ except Exception:  # pragma: no cover - defensive fallback
     st = None  # type: ignore
 
 from infrastructure.iol.auth import get_current_user_id
+from shared.debug.rerun_trace import mark_event
+from shared.debug.ui_flow import current_flow_id
 from shared.telemetry import is_hydration_locked, log_default_telemetry
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,7 @@ def _ensure_worker() -> None:
     with _WORKER_LOCK:
         if _WORKER and _WORKER.is_alive():
             return
+        mark_event("background_job_start", "user_actions.worker", {"flow_id": current_flow_id()})
         _WORKER = threading.Thread(target=_worker_loop, name="user-action-logger", daemon=True)
         _WORKER.start()
 
@@ -102,6 +105,7 @@ def _worker_loop() -> None:
             _QUEUE.task_done()
             if batch:
                 _flush_batch(batch)
+            mark_event("background_job_complete", "user_actions.worker", {"flow_id": current_flow_id()})
             break
         if isinstance(item, UserActionEvent):
             batch.append(item)

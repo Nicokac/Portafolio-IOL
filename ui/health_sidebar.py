@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from services.health import get_health_metrics
+from shared.debug.rerun_trace import mark_event
 from shared.telemetry import log_metric
 from shared.time_provider import TimeProvider
 from shared.ui import notes as shared_notes
@@ -1994,6 +1995,11 @@ def _activate_monitoring_panel(module_path: str, attribute: str, label: str) -> 
         "attr": attribute,
         "label": label,
     }
+    mark_event(
+        "monitoring_panel_activate",
+        label,
+        {"module": module_path, "attr": attribute},
+    )
     logger.info(
         "[monitoring] panel activado label=%s module=%s attr=%s",
         label,
@@ -2017,6 +2023,11 @@ def _clear_active_monitoring_panel() -> None:
     if isinstance(payload, Mapping):
         module_path = payload.get("module")
         label = payload.get("label") or module_path or ""
+        mark_event(
+            "monitoring_panel_clear",
+            label,
+            {"module": module_path, "payload": dict(payload)},
+        )
         logger.info(
             "[monitoring] panel cerrado label=%s module=%s",
             label,

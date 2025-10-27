@@ -8,6 +8,7 @@ from contextlib import nullcontext
 from types import ModuleType
 from typing import Any, Callable, ContextManager
 
+from shared.debug.timing import timeit
 from shared.telemetry import log_metric
 from shared.ui.monitoring_guard import is_monitoring_active
 
@@ -177,6 +178,7 @@ def _call_is_complete(func: Callable[[], bool]) -> bool:
         return False
 
 
+@timeit("preload.ensure_scientific_ready")
 def ensure_scientific_preload_ready(
     container: Any,
     *,

@@ -19,6 +19,7 @@ from services.performance_timer import (
     profile_block,
 )
 from shared.config import settings
+from shared.debug.rerun_trace import mark_event, safe_stop
 from shared.errors import AppError
 from shared.pandas_attrs import wrap_callable_attr
 
@@ -216,13 +217,19 @@ def apply_filters(
             telemetry["status"] = "error"
             telemetry["detail"] = err.__class__.__name__
             st.error(str(err))
-            st.stop()
+            mark_event(
+                "stop",
+                "fetch_quotes_app_error",
+                {"pairs": len(pairs)},
+            )
+            safe_stop("fetch_quotes_app_error")
         except Exception:
             telemetry["status"] = "error"
             telemetry["detail"] = "exception"
             logger.exception("Error al obtener cotizaciones")
             st.error("No se pudieron obtener cotizaciones, intente más tarde")
-            st.stop()
+            mark_event("stop", "fetch_quotes_exception", {"pairs": len(pairs)})
+            safe_stop("fetch_quotes_exception")
         else:
             if fetch_stage is not None:
                 _record_stage("fetch_quotes", fetch_stage)

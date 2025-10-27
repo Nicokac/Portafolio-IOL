@@ -19,6 +19,9 @@ except Exception:  # pragma: no cover - fallback when lz4 is unavailable
 
 import zlib
 
+from shared.debug.rerun_trace import mark_event
+from shared.debug.ui_flow import background_job, current_flow_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +67,7 @@ class _SnapshotTask:
     telemetry_fn: TelemetryCallable | None
     phase: str = "snapshot.persist_async"
     enqueued_at: float = field(default_factory=time.perf_counter)
+    flow_id: str | None = None
 
 
 _TASK_QUEUE: Deque[_SnapshotTask] = deque()
@@ -130,6 +134,7 @@ def persist_async(
         on_complete=on_complete,
         telemetry_fn=telemetry_fn,
         phase=phase,
+        flow_id=current_flow_id(),
     )
 
     batch_size = max_batch_size or _MAX_BATCH_SIZE
@@ -250,6 +255,11 @@ def _process_batch(tasks: Sequence[_SnapshotTask], started_at: float) -> None:
     if not tasks:
         return
 
+    mark_event(
+        "background_job_start",
+        "snapshot.batch",
+        {"count": len(tasks), "flow_id": tasks[0].flow_id if tasks else None},
+    )
     earliest = min(task.enqueued_at for task in tasks)
     batch_wait_ms = max((started_at - earliest) * 1000.0, 0.0)
     for task in tasks:
@@ -263,11 +273,13 @@ def _process_batch(tasks: Sequence[_SnapshotTask], started_at: float) -> None:
         write_start = time.perf_counter()
         saved: Mapping[str, Any] | None = None
         error: Exception | None = None
-        try:
-            saved = task.persist_fn(task.kind, compressed_payload, task.metadata)
-        except Exception as exc:  # pragma: no cover - defensive safeguard
-            error = exc
-            logger.exception("Failed to persist snapshot asynchronously")
+        job_detail = f"{task.kind}:{task.dataset_hash or 'unknown'}"
+        with background_job("snapshot.persist", detail=job_detail):
+            try:
+                saved = task.persist_fn(task.kind, compressed_payload, task.metadata)
+            except Exception as exc:  # pragma: no cover - defensive safeguard
+                error = exc
+                logger.exception("Failed to persist snapshot asynchronously")
         write_ms = (time.perf_counter() - write_start) * 1000.0
 
         if error is None and isinstance(saved, Mapping):
@@ -302,6 +314,11 @@ def _process_batch(tasks: Sequence[_SnapshotTask], started_at: float) -> None:
             write_ms=write_ms,
         )
         _deliver_result(task, result, batch_wait_ms)
+    mark_event(
+        "background_job_complete",
+        "snapshot.batch",
+        {"count": len(tasks), "flow_id": tasks[0].flow_id if tasks else None},
+    )
 
 
 def _deliver_result(task: _SnapshotTask, result: SnapshotResult, batch_wait_ms: float) -> None:

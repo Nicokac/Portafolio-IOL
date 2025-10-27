@@ -22,6 +22,7 @@ from services.performance_timer import performance_timer
 from services.quote_rate_limit import quote_rate_limiter
 from shared.cache import cache
 from shared.errors import NetworkError
+from shared.debug.timing import timeit
 from shared.settings import cache_ttl_quotes, max_quote_workers, quotes_ttl_seconds
 from shared.telemetry import log_default_telemetry
 
@@ -856,6 +857,7 @@ def _get_quote_cached(
 
 
 @cache.cache_data(ttl=cache_ttl_quotes)
+@timeit("quotes.fetch_bulk")
 def fetch_quotes_bulk(_cli: IIOLProvider, items):
     items = list(items or [])
     telemetry: dict[str, object] = {

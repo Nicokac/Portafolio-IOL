@@ -7,6 +7,8 @@ import time
 
 import streamlit as st
 
+from shared.debug.rerun_trace import mark_event, safe_rerun
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,8 @@ def record_auth_timestamp(key: str) -> None:
 def rerun() -> None:
     """Trigger a Streamlit rerun."""
 
-    st.rerun()
+    mark_event("rerun", "auth_adapter")
+    safe_rerun("auth_adapter")
 
 
 __all__ = [

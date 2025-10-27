@@ -3,6 +3,8 @@ from dataclasses import dataclass
 
 import streamlit as st
 
+from shared.debug.rerun_trace import safe_rerun
+
 from .palette import get_palette
 from .utils.bootstrap import ensure_bootstrap_assets
 
@@ -98,9 +100,9 @@ def _sync_setting(source_key: str, target_key: str) -> None:
         except Exception:  # pragma: no cover - defensive guard
             pass
     try:
-        st.rerun(False)
-    except TypeError:
-        st.rerun()
+        safe_rerun("ui_settings_sync", rerun_args=(False,))
+    except (RuntimeError, TypeError):
+        safe_rerun("ui_settings_sync")
     except Exception:  # pragma: no cover - defensive guard
         pass
 
