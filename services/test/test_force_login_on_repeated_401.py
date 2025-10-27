@@ -60,7 +60,7 @@ def test_repeated_401_forces_login(monkeypatch):
 
     def dummy_logout(user="", password=""):
         svc_cache.st.session_state["force_login"] = True
-        svc_cache.st.rerun()
+        getattr(svc_cache.st, "rerun")()
 
     monkeypatch.setattr("application.auth_service.logout", dummy_logout)
 

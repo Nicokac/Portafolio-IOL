@@ -51,7 +51,7 @@ def silence_streamlit_warnings(extra_loggers: Iterable[str] | None = None) -> No
         return
 
     if not hasattr(_st, "rerun"):
-        _st.rerun = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
+        setattr(_st, "rerun", lambda *_args, **_kwargs: None)
     try:
         _st.set_option("global.deprecation.use_container_width", False)
     except Exception:

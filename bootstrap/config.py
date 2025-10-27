@@ -31,7 +31,7 @@ def _patch_streamlit_runtime() -> None:
     """Provide compatibility helpers for environments with limited Streamlit APIs."""
 
     if not hasattr(st, "stop"):
-        st.stop = lambda: None  # type: ignore[attr-defined]
+        setattr(st, "stop", lambda: None)
 
     if not hasattr(st, "container"):
         st.container = lambda *_, **__: nullcontext()  # type: ignore[attr-defined]
