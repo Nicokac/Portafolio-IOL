@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cash-scale): normalize redundant USD→ARS conversion when consolidating cash totals from `/api/v2/estadocuenta`.
 - Fix: conditional bond scaling and USD cash display normalization.
 
+## 0.9.4.0 — Auditoría de consistencia y verificación cruzada
+### Added
+- Helper `validate_portfolio_consistency` para contrastar `valor_actual`, `ppc`, `pl`, `pl_%` y `valorizado` entre `calc_rows` y el payload oficial, registrando desvíos `[Audit]` y adjuntando resultados en `df_view.attrs`.
+- `PortfolioViewModelService` inyecta los chequeos de consistencia al finalizar `_compute_viewmodel_phase`, expone `inconsistency_count` en el snapshot, marca el dataset como `stale` cuando hay desvíos y publica telemetría `portfolio_consistency` vía `shared.telemetry.log_metric`.
+- Suite de pruebas `tests/services/test_portfolio_consistency.py` para validar la detección de desvíos, la ausencia de falsos positivos y la propagación del bloque de auditoría en el snapshot.
+
+### Changed
+- Se agregó `log_metric` al pipeline de telemetría compartida para emitir métricas simples reutilizando el backend CSV por defecto.
+
 ## 0.9.3.0 — Corrección integral de BOPREAL ARS
 ### Fixed
 - Corrigimos la valuación de bonos BOPREAL en ARS reescalando `ultimo`, `valor_actual` y P/L dentro de `calc_rows`, registrando la auditoría del factor aplicado.

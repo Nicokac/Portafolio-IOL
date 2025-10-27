@@ -21,6 +21,7 @@ from application.portfolio_service import (
     PORTFOLIO_TOTALS_VERSION,
     PortfolioTotals,
     calculate_totals,
+    validate_portfolio_consistency,
 )
 from application.risk_service import (
     annualized_volatility,
@@ -33,7 +34,7 @@ from services import snapshots as snapshot_service
 from services.cache import CacheService
 from services.cache.market_data_cache import get_market_data_cache
 from shared import snapshot as snapshot_async
-from shared.telemetry import log_default_telemetry
+from shared.telemetry import log_default_telemetry, log_metric
 
 logger = logging.getLogger(__name__)
 
@@ -1141,6 +1142,7 @@ class PortfolioViewModelService:
         self._snapshot_kind = "portfolio"
         self._dataset_cache_adapter: PortfolioDatasetCacheAdapter | None = _get_dataset_cache_adapter()
         self._soft_refresh_guard_active = False
+        self._consistency_guard_active = False
         if self._dataset_cache_adapter is not None:
             try:
                 self._dataset_cache_adapter.clear()
@@ -1611,6 +1613,22 @@ class PortfolioViewModelService:
         dataset_hash: str | None = None,
         skip_invalidation: bool = False,
     ) -> PortfolioViewSnapshot:
+        consistency_payload: dict[str, Any] | None = None
+        if isinstance(df_pos, pd.DataFrame) and not df_pos.empty:
+            try:
+                renamed = df_pos.rename(
+                    columns={
+                        "costo_unitario": "costoUnitario",
+                        "costo_total": "costoTotal",
+                        "ultimo_precio": "ultimoPrecio",
+                    }
+                )
+                consistency_payload = {"activos": renamed.to_dict(orient="records")}
+            except Exception:
+                consistency_payload = {}
+        else:
+            consistency_payload = {}
+
         dataset_base = str(dataset_hash) if dataset_hash else self._hash_dataset(df_pos)
         if not dataset_base:
             dataset_base = "empty"
@@ -1656,11 +1674,18 @@ class PortfolioViewModelService:
         dataset_changed = (raw_dataset_changed and not effective_skip_invalidation) or totals_version_changed
         filters_changed = filters_key != self._filters_key
 
+        force_consistency = bool(self._consistency_guard_active)
+        if force_consistency:
+            dataset_changed = True
+
         should_invalidate_cache = self._should_invalidate_cache(dataset_key, effective_skip_invalidation)
         if totals_version_changed:
             should_invalidate_cache = True
         elif not should_invalidate_cache:
             dataset_changed = False
+        if force_consistency:
+            should_invalidate_cache = True
+            logger.info("[PortfolioViewModelService] Consistency guard forcing dataset refresh")
 
         if quotes_changed:
             logger.info(
@@ -1929,6 +1954,41 @@ class PortfolioViewModelService:
                 contribution_metrics=updated_contributions,
             )
 
+        consistency_result = validate_portfolio_consistency(
+            incremental.df_view,
+            consistency_payload or {},
+        )
+        inconsistency_count = int(consistency_result.get("inconsistency_count", 0))
+        audit_attrs = getattr(incremental.df_view, "attrs", {})
+        audit_data: dict[str, Any]
+        if isinstance(audit_attrs, MutableMapping):
+            audit_section = audit_attrs.get("audit")
+            if isinstance(audit_section, Mapping):
+                audit_data = dict(audit_section)
+            elif audit_section:
+                audit_data = {"legacy": audit_section}
+            else:
+                audit_data = {}
+        else:
+            audit_data = {}
+        audit_data["consistency_checks"] = consistency_result
+        incremental.df_view.attrs["audit"] = audit_data
+        self._consistency_guard_active = bool(inconsistency_count)
+        try:
+            log_metric(
+                "portfolio_consistency",
+                {
+                    "inconsistencies": inconsistency_count,
+                    "symbols": consistency_result.get("symbols", []),
+                    "timestamp": consistency_result.get("timestamp"),
+                },
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug(
+                "No se pudo registrar la métrica portfolio_consistency",
+                exc_info=True,
+            )
+
         generated_ts = time.time()
         pending_metrics: tuple[str, ...] = ()
         if not incremental.extended_computed:
@@ -1952,6 +2012,12 @@ class PortfolioViewModelService:
         )
         if current_quotes_hash:
             snapshot_metadata["quotes_hash"] = current_quotes_hash
+        snapshot_metadata["inconsistency_count"] = inconsistency_count
+        if inconsistency_count:
+            snapshot_metadata["consistency_stale"] = True
+            snapshot_metadata["stale"] = True
+        else:
+            snapshot_metadata["consistency_stale"] = False
 
         snapshot = PortfolioViewSnapshot(
             df_view=incremental.df_view,
