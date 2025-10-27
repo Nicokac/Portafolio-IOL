@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "portafolio-iol"
-version = "0.9.4.1"  # Keep shared.version.DEFAULT_VERSION aligned with this value
+version = "0.9.5.0"  # Keep shared.version.DEFAULT_VERSION aligned with this value
 readme = "README.md"
 dependencies = [
     "streamlit>=1.49.1",
