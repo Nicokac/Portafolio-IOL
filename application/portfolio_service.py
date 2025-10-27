@@ -83,6 +83,11 @@ def _format_percentage_iol(
 def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
     """Convierte el DataFrame interno a la estructura de columnas y formato de InvertirOnline."""
 
+    try:
+        log_metric("comparison_iol.format_version", context={"version": "v2"})
+    except Exception:  # pragma: no cover - la telemetría no debe romper el render
+        logger.debug("Unable to log format version metric", exc_info=True)
+
     if df is None or df.empty:
         return pd.DataFrame(columns=_IOL_EXPORT_COLUMNS)
 
@@ -117,15 +122,53 @@ def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
     valor_actual_series = _numeric_series("valor_actual")
     pl_pct_series = _numeric_series("pl_%")
 
+    scale_series = _numeric_series("scale").replace({0.0: np.nan}).fillna(1.0)
+    cost_series = qty_series * ppc_series * scale_series
+
+    variacion_payload_series = _numeric_series("variacionDiaria")
     pld_series = _numeric_series("pld_%")
     chg_pct_series = _numeric_series("chg_pct")
-    variacion_series = pld_series
+    variacion_series = variacion_payload_series
+    if not variacion_series.notna().any():
+        variacion_series = pld_series
+    else:
+        variacion_series = variacion_series.fillna(pld_series)
     if not variacion_series.notna().any():
         variacion_series = chg_pct_series
-    elif chg_pct_series.notna().any():
+    else:
         variacion_series = variacion_series.fillna(chg_pct_series)
+    variacion_series = variacion_series.fillna(0.0)
+
+    source_attrs = getattr(df, "attrs", None)
+    attrs: dict[str, object] = {}
+    if isinstance(source_attrs, Mapping):
+        attrs.update(dict(source_attrs))
+
+    audit_block: dict[str, object]
+    existing_audit = attrs.get("audit")
+    if isinstance(existing_audit, Mapping):
+        audit_block = dict(existing_audit)
+    else:
+        audit_block = {}
+
+    overrides_obj = audit_block.get("iol_display_overrides")
+    overrides_list: list[str]
+    if isinstance(overrides_obj, (list, tuple, set)):
+        overrides_list = [str(item) for item in overrides_obj if isinstance(item, str)]
+    else:
+        overrides_list = []
+
+    skip_bopreal_override = "bopreal_ars" in overrides_list
 
     bopreal_ars_mask = symbol_upper.isin(BOPREAL_SYMBOLS) & currency_upper.eq("ARS")
+
+    safe_ultimo = ultimo_series.replace({0.0: np.nan})
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio_to_ppc = (ppc_series / safe_ultimo).abs()
+    truncation_mask = ratio_to_ppc >= 5.0
+    bopreal_candidates = bopreal_ars_mask & truncation_mask & safe_ultimo.notna()
+    if skip_bopreal_override:
+        bopreal_candidates &= False
 
     ultimo_display = ultimo_series.copy()
     ppc_display = ppc_series.copy()
@@ -133,20 +176,28 @@ def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
     pl_monto_display = pl_series.copy()
     pl_pct_display = pl_pct_series.copy()
 
-    if bopreal_ars_mask.any():
+    bopreal_rescaled_symbols: list[str] = []
+    if bopreal_candidates.any():
         ultimo_scaled = ultimo_series * 100.0
-        valorizado_override = qty_series * ultimo_series
-        pl_monto_override = (ultimo_scaled - ppc_series) * qty_series / 100.0
+        ultimo_display.loc[bopreal_candidates] = ultimo_scaled.loc[bopreal_candidates]
+
+        valorizado_override = (
+            qty_series * ultimo_scaled * scale_series
+        )
+        cost_override = cost_series
+        pl_monto_override = valorizado_override - cost_override
         with np.errstate(divide="ignore", invalid="ignore"):
-            ppc_nonzero = ppc_series.replace({0: np.nan})
-            pl_pct_override = ((ultimo_scaled - ppc_nonzero) / ppc_nonzero) * 100.0
+            pl_pct_override = (pl_monto_override / cost_override) * 100.0
         pl_pct_override = pl_pct_override.replace([np.inf, -np.inf], np.nan)
         pl_pct_override = np.trunc(pl_pct_override * 100.0) / 100.0
 
-        ultimo_display.loc[bopreal_ars_mask] = ultimo_scaled.loc[bopreal_ars_mask]
-        valorizado_display.loc[bopreal_ars_mask] = valorizado_override.loc[bopreal_ars_mask]
-        pl_monto_display.loc[bopreal_ars_mask] = pl_monto_override.loc[bopreal_ars_mask]
-        pl_pct_display.loc[bopreal_ars_mask] = pl_pct_override.loc[bopreal_ars_mask]
+        valorizado_display.loc[bopreal_candidates] = valorizado_override.loc[bopreal_candidates]
+        pl_monto_display.loc[bopreal_candidates] = pl_monto_override.loc[bopreal_candidates]
+        pl_pct_display.loc[bopreal_candidates] = pl_pct_override.loc[bopreal_candidates]
+
+        bopreal_rescaled_symbols = sorted(
+            set(symbol_series.loc[bopreal_candidates].dropna().tolist())
+        )
 
     rows: list[dict[str, str]] = []
     for idx, row in df.iterrows():
@@ -173,38 +224,41 @@ def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:
 
     result = pd.DataFrame(rows, columns=_IOL_EXPORT_COLUMNS)
 
-    if bopreal_ars_mask.any():
+    if bopreal_candidates.any():
         try:
             log_metric(
                 "comparison_iol.bopreal_rescaled_count",
                 context={
-                    "rows": int(bopreal_ars_mask.sum()),
-                    "symbols": sorted(set(symbol_series.loc[bopreal_ars_mask].dropna().tolist())),
+                    "rows": int(bopreal_candidates.sum()),
+                    "symbols": bopreal_rescaled_symbols,
                 },
             )
         except Exception:  # pragma: no cover - telemetry failures should not break export
             logger.debug("Unable to log bopreal overrides", exc_info=True)
 
-        attrs: dict[str, object] = {}
-        source_attrs = getattr(df, "attrs", None)
-        if isinstance(source_attrs, Mapping):
-            attrs.update(dict(source_attrs))
-        audit_block: dict[str, object]
-        existing_audit = attrs.get("audit")
-        if isinstance(existing_audit, Mapping):
-            audit_block = dict(existing_audit)
+        overrides_merged = list(dict.fromkeys(overrides_list + ["bopreal_ars"]))
+        audit_block["iol_display_overrides"] = overrides_merged
+
+        existing_rescaled = audit_block.get("bopreal_display_rescaled_rows")
+        if isinstance(existing_rescaled, (list, tuple, set)):
+            combined = {str(item) for item in existing_rescaled}
+            combined.update(bopreal_rescaled_symbols)
+            audit_block["bopreal_display_rescaled_rows"] = sorted(combined)
         else:
-            audit_block = {}
-        overrides_obj = audit_block.get("iol_display_overrides")
-        if isinstance(overrides_obj, list):
-            overrides_list = list(overrides_obj)
-            if "bopreal_ars" not in overrides_list:
-                overrides_list.append("bopreal_ars")
-        else:
-            overrides_list = ["bopreal_ars"]
-        audit_block["iol_display_overrides"] = overrides_list
-        attrs["audit"] = audit_block
-        result.attrs.update(attrs)
+            audit_block["bopreal_display_rescaled_rows"] = bopreal_rescaled_symbols
+
+    if bopreal_candidates.any():
+        attrs_to_apply = dict(attrs)
+        attrs_to_apply["audit"] = audit_block
+        result.attrs.update(attrs_to_apply)
+    else:
+        if attrs:
+            if isinstance(existing_audit, Mapping):
+                attrs = dict(attrs)
+                attrs["audit"] = audit_block
+            result.attrs.update(attrs)
+        elif audit_block:
+            result.attrs["audit"] = audit_block
 
     return result
 

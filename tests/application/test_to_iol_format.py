@@ -7,8 +7,14 @@ from types import SimpleNamespace
 import importlib
 
 import pandas as pd
+import pytest
 
 from application.portfolio_service import _IOL_EXPORT_COLUMNS, to_iol_format
+
+
+@pytest.fixture(autouse=True)
+def _mute_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("application.portfolio_service.log_metric", lambda *_, **__: None)
 
 
 def _sample_positions() -> pd.DataFrame:
@@ -32,13 +38,15 @@ def _sample_bopreal_positions() -> pd.DataFrame:
         {
             "simbolo": ["BPOC7"],
             "cantidad": [146],
+            "variacionDiaria": [0.51],
             "pld_%": [0.51],
             "ultimo": [1377.0],
             "ppc": [142_193.15],
             "pl_%": [0.0],
             "pl": [0.0],
-            "valor_actual": [1.0],
+            "valor_actual": [201_042.0],
             "moneda_origen": ["ARS"],
+            "scale": [0.01],
         }
     )
     df.attrs["audit"] = {"existing": True}
@@ -72,6 +80,28 @@ def test_to_iol_format_structure() -> None:
     assert row["Rendimiento Porcentaje"] == "49,90%"
     assert row["Rendimiento Monto"] == "$ 439.308,00"
     assert row["Valorizado"] == "$ 1.319.680,00"
+
+
+def test_variacion_priority_chain() -> None:
+    df = pd.DataFrame(
+        {
+            "simbolo": ["AAA", "BBB", "CCC", "DDD"],
+            "cantidad": [1, 1, 1, 1],
+            "variacionDiaria": [0.123, None, None, None],
+            "pld_%": [None, 4.56, None, None],
+            "chg_pct": [None, None, -7.89, None],
+            "ultimo": [10.0, 10.0, 10.0, 10.0],
+            "ppc": [10.0, 10.0, 10.0, 10.0],
+            "pl_%": [0.0, 0.0, 0.0, 0.0],
+            "pl": [0.0, 0.0, 0.0, 0.0],
+            "valor_actual": [10.0, 10.0, 10.0, 10.0],
+        }
+    )
+
+    formatted = to_iol_format(df)
+    variations = formatted["Variación diaria"].tolist()
+
+    assert variations == ["+0,123 %", "+4,560 %", "-7,890 %", "+0,000 %"]
 
 
 def test_export_csv_encoding() -> None:
@@ -146,8 +176,40 @@ def test_bopreal_display_rules(monkeypatch) -> None:
     assert overrides == ["bopreal_ars"]
 
     assert captured
-    metric_name, context = captured[0]
+    assert captured[0][0] == "comparison_iol.format_version"
+    assert captured[0][1] == {"version": "v2"}
+
+    assert len(captured) >= 2
+    metric_name, context = captured[1]
     assert metric_name == "comparison_iol.bopreal_rescaled_count"
     assert context is not None
     assert context.get("rows") == 1
     assert context.get("symbols") == ["BPOC7"]
+
+    audit_block = formatted.attrs.get("audit")
+    assert isinstance(audit_block, dict)
+    assert audit_block.get("existing") is True
+    assert audit_block.get("iol_display_overrides") == ["bopreal_ars"]
+    assert audit_block.get("bopreal_display_rescaled_rows") == ["BPOC7"]
+
+
+def test_bopreal_display_scaling_csv_exact_row(monkeypatch) -> None:
+    captured: list[tuple[str, dict[str, object] | None]] = []
+
+    def _fake_metric(metric_name: str, context: dict[str, object] | None = None, **_: object) -> None:
+        captured.append((metric_name, context))
+
+    monkeypatch.setattr("application.portfolio_service.log_metric", _fake_metric)
+
+    formatted = to_iol_format(_sample_bopreal_positions())
+
+    csv_text = formatted.to_csv(index=False, encoding="utf-8-sig")
+    expected_row = (
+        "BPOC7,146,\"0,510 %\",\"$ 137.700,00\",\"$ 142.193,15\","
+        "\"-3,15%\",\"-$ 6.560,00\",\"$ 201.042,00\"\n"
+    )
+    assert expected_row in csv_text
+    assert "$ 1.377,00" not in csv_text
+
+    assert captured[0][0] == "comparison_iol.format_version"
+    assert captured[0][1] == {"version": "v2"}

@@ -5,6 +5,12 @@ from datetime import datetime
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _mute_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("application.portfolio_service.log_metric", lambda *_, **__: None)
 
 
 def _sample_positions() -> pd.DataFrame:
@@ -28,13 +34,15 @@ def _bopreal_positions() -> pd.DataFrame:
         {
             "simbolo": ["BPOC7"],
             "cantidad": [146],
+            "variacionDiaria": [0.51],
             "pld_%": [0.51],
             "ultimo": [1377.0],
             "ppc": [142_193.15],
             "pl_%": [0.0],
             "pl": [0.0],
-            "valor_actual": [1.0],
+            "valor_actual": [201_042.0],
             "moneda_origen": ["ARS"],
+            "scale": [0.01],
         }
     )
 
@@ -179,3 +187,4 @@ def test_csv_contains_bopreal_expected_strings(monkeypatch, streamlit_stub) -> N
     assert "$ 142.193,15" in text
     assert "-$ 6.560,00" in text
     assert "$ 201.042,00" in text
+    assert "$ 1.377,00" not in text
