@@ -23,6 +23,7 @@ from ui.actions import render_action_menu
 from ui.helpers.navigation import safe_page_link
 from ui.sidebar_controls import get_controls_reference_data, render_controls_panel
 from ui.ui_settings import render_ui_controls
+from ui.lazy.runtime import reset_fragment_context_rerun_tokens
 
 """Sidebar panel summarising recent data source health."""
 
@@ -2106,6 +2107,7 @@ def _render_active_monitoring_panel(selection: Mapping[str, str]) -> bool:
         if st.button("⬅️ Volver al monitoreo", key="monitoring_back_button"):
             _clear_active_monitoring_panel()
             mark_event("rerun", "monitoring_exit")
+            reset_fragment_context_rerun_tokens()
             safe_rerun("monitoring_exit")
             return False
 
