@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ import requests
 from shared.config import get_config, settings
 from shared.pandas_attrs import unwrap_callable_attr
 from shared.telemetry import log_metric
+from shared.time_provider import TimeProvider
 from shared.utils import _to_float
 
 
@@ -78,6 +80,104 @@ def _format_percentage_iol(
     formatted = fmt.format(float(pct_value)).replace(".", ",")
     suffix = " %" if space_before_suffix else "%"
     return f"{formatted}{suffix}"
+
+
+def capture_iol_raw_snapshot(
+    cli: Any,
+    *,
+    symbol: str = "BPOC7",
+    mercado: str = "bcba",
+    country: str = "argentina",
+) -> dict[str, Any]:
+    """Capture raw payloads from IOL for diagnostic purposes."""
+
+    def _safe_log_metric(
+        metric_name: str,
+        *,
+        context: Mapping[str, object] | None = None,
+        status: object | None = None,
+    ) -> None:
+        kwargs: dict[str, object] = {}
+        if status is not None:
+            kwargs["status"] = status
+        try:
+            log_metric(metric_name, context=context, **kwargs)
+        except Exception:  # pragma: no cover - telemetry must not break flow
+            logger.debug("No se pudo registrar la métrica %s", metric_name, exc_info=True)
+
+    def _payload_size_bytes(data: Any) -> int | None:
+        try:
+            encoded = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return len(encoded)
+
+    symbol_key = (symbol or "").strip().upper() or "BPOC7"
+    market_key = (mercado or "").strip().lower() or "bcba"
+    country_key = (country or "").strip().lower() or "argentina"
+
+    try:
+        portfolio_raw = cli.get_raw_portfolio(country=country_key)
+        quote_raw = cli.get_raw_quote(mercado=market_key, simbolo=symbol_key)
+        quote_detail_raw = cli.get_raw_quote(
+            mercado=market_key,
+            simbolo=symbol_key,
+            detalle=True,
+        )
+    except Exception:
+        _safe_log_metric(
+            "debug_iol.raw_capture",
+            context={"symbol": symbol_key},
+            status="error",
+        )
+        raise
+
+    portfolio_row: dict[str, Any] | None = None
+    if isinstance(portfolio_raw, ABCMapping):
+        activos = portfolio_raw.get("activos")
+        if isinstance(activos, Sequence):
+            for entry in activos:
+                if not isinstance(entry, ABCMapping):
+                    continue
+                entry_symbol = str(entry.get("simbolo") or "").strip().upper()
+                if entry_symbol == symbol_key:
+                    portfolio_row = dict(entry)
+                    break
+
+    if portfolio_row is None:
+        _safe_log_metric(
+            "debug_iol.symbol_not_in_portfolio",
+            context={"symbol": symbol_key},
+        )
+
+    snapshot = {
+        "ts": TimeProvider.now_datetime().astimezone().isoformat(),
+        "portfolio_raw": portfolio_raw,
+        "portfolio_row": portfolio_row,
+        "quote_raw": quote_raw,
+        "quote_detail_raw": quote_detail_raw,
+    }
+
+    _safe_log_metric(
+        "debug_iol.raw_capture",
+        context={"symbol": symbol_key},
+        status="ok",
+    )
+
+    for block_name, data in (
+        ("portfolio", portfolio_raw),
+        ("quote", quote_raw),
+        ("quote_detail", quote_detail_raw),
+    ):
+        size = _payload_size_bytes(data)
+        if size is None:
+            continue
+        _safe_log_metric(
+            "debug_iol.payload_size_bytes",
+            context={"symbol": symbol_key, "block": block_name, "bytes": size},
+        )
+
+    return snapshot
 
 
 def to_iol_format(df: pd.DataFrame | None) -> pd.DataFrame:

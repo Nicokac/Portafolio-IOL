@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modo seguro de valorización (`SAFE_VALUATION_MODE`) con telemetría estructurada (proveedor, `fx_aplicado`, `ratioCEDEAR`) y tooltip de advertencia en la UI cuando se utilizan cotizaciones estimadas de proveedores externos.
 - feat: Introduced PORTFOLIO_TOTALS_VERSION to invalidate outdated portfolio summaries and enforce recalculation after valuation logic updates.
 
+## v0.9.6.3 — Raw IOL Capture
+### Added
+- Instrumentación de cliente IOL para exponer los endpoints crudos de portafolio y cotizaciones (`get_raw_portfolio` / `get_raw_quote`) incluyendo metadatos y redacción de headers sensibles.
+- Servicio `capture_iol_raw_snapshot` para combinar las respuestas crudas con métricas de telemetría y aislar la fila BPOC7.
+- Panel Streamlit "🔍 IOL RAW" con captura on-demand, vista de JSON crudo, descarga auditada y comparación rápida contra la vista formateada del portafolio.
+- Utilidad `shared.redact.redact_secrets` y suite de pruebas dedicadas para garantizar compatibilidad offline/UNIT_TEST.
+
 ## v0.9.6.2 — Hotfix Comparativa IOL CSV
 ### Fixed
 - Hotfix: Comparativa IOL — CSV/Tabla unificadas, reescalado display BOPREAL ARS, variación diaria y formateo ES-AR.
