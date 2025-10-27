@@ -549,6 +549,11 @@ def render_main_ui() -> None:
 
     load_time_placeholder = getattr(st, "empty", lambda: None)()
 
+    if is_monitoring_active():
+        render_footer()
+        _render_total_load_indicator(load_time_placeholder)
+        return
+
     main_col = st.container()
 
     preload_ready = ensure_scientific_preload_ready(main_col)
