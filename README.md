@@ -144,6 +144,11 @@ La guía [docs/cache_management.md](docs/cache_management.md) documenta procedim
 
 Los endpoints `/engine/predict`, `/engine/forecast/adaptive` y `/engine/history` requieren cabecera `Authorization: Bearer <token>` emitida desde la pantalla de login. `/engine/info` permanece público y devuelve el estado del microservicio.
 
+#### Modo Monitoreo inline (≥ v0.9.6.6)
+- Cuando un panel de monitoreo se muestra inline (por ejemplo "🔍 IOL RAW"), la aplicación pausa precargas científicas, refrescos suaves y recomputos de datasets para evitar reruns costosos.
+- Los forzados de consistencia y refresh se aplican con debouncing de 60 segundos (`st.session_state["_monitoring_last_refresh_ts"]`) registrando telemetría `monitoring.refresh_debounced`/`monitoring.refresh_skipped`.
+- El panel "🔍 IOL RAW" pagina el JSON, expone métricas de tamaño/latencia y captura excepciones mediante `st.exception` para evitar pantallas en blanco.
+
 #### Ejemplos autenticados
 
 ```bash

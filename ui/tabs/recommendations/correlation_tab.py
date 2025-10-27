@@ -148,7 +148,7 @@ def _render_correlation_tab(payload: Mapping[str, object] | None) -> None:
         beta_shift=beta_shift if isinstance(beta_shift, pd.Series) else None,
         title="Correlaciones sectoriales β-shift",
     )
-    st.plotly_chart(figure, width="stretch", config={"responsive": True})
+    st.plotly_chart(figure, config={"responsive": True})
 
     mae = float(summary.get("mae", 0.0))
     rmse = float(summary.get("rmse", 0.0))

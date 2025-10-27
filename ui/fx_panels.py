@@ -53,5 +53,5 @@ def render_fx_history(history: pd.DataFrame):
     df_long = hist[["ts_dt"] + cols].melt("ts_dt", var_name="Tipo", value_name="ARS")
     fig = px.line(df_long, x="ts_dt", y="ARS", color="Tipo", hover_name="Tipo")
     fig.update_layout(xaxis_title="", yaxis_title="ARS / USD", legend_title_text="Tipo")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, config={"responsive": True})
     st.caption("Línea que refleja cómo cambian las cotizaciones del dólar a lo largo del día.")

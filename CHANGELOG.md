@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Modo seguro de valorización (`SAFE_VALUATION_MODE`) con telemetría estructurada (proveedor, `fx_aplicado`, `ratioCEDEAR`) y tooltip de advertencia en la UI cuando se utilizan cotizaciones estimadas de proveedores externos.
 - feat: Introduced PORTFOLIO_TOTALS_VERSION to invalidate outdated portfolio summaries and enforce recalculation after valuation logic updates.
 
+## v0.9.6.6 — Monitoring inline hard guard
+### Fixed
+- Se añadió un guardia global para paneles de monitoreo inline que detiene precargas, soft refresh y recomputos pesados mientras están activos, debouncing de refrescos y telemetría dedicada.
+- El panel "🔍 IOL RAW" ahora pagina el JSON crudo, ofrece descarga directa, métricas de tamaño/latencia y captura errores sin pantallas en blanco.
+- Se corrigieron advertencias de Plotly migrando a `config` responsivo y encapsulando los parámetros depreciados.
+
 ## v0.9.6.5 — Monitoring inline stability hotfix
 ### Fixed
 - Evita navegación/reruns al abrir atajos de monitoreo inline; corte de flujo tras render del panel; preferencia estricta del fallback inline cuando se solicita.

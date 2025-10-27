@@ -6,6 +6,8 @@ import logging
 from typing import Any
 
 from services.data_fetch_service import get_portfolio_data_fetch_service
+from shared.telemetry import log_metric
+from shared.ui.monitoring_guard import is_monitoring_active
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +16,20 @@ def force_portfolio_refresh_after_login(client: Any) -> None:
     """Force a portfolio dataset refresh immediately after authentication."""
 
     if client is None:
+        return
+
+    if is_monitoring_active():
+        logger.info(
+            "auth.login_refresh omitted: monitoring guard active",
+            extra={"monitoring_active": True},
+        )
+        try:
+            log_metric(
+                "monitoring.refresh_skipped",
+                context={"source": "login_refresh"},
+            )
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo registrar telemetría de monitoreo", exc_info=True)
         return
 
     try:

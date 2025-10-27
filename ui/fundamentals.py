@@ -235,5 +235,5 @@ def render_sector_comparison(df: pd.DataFrame):
         annotation_text="Promedio sector",
         annotation_position="top left",
     )
-    st.plotly_chart(fig, width="stretch", config=PLOTLY_CONFIG)
+    st.plotly_chart(fig, config=PLOTLY_CONFIG)
     st.caption("Valores mayores a 1 indican métricas por encima del promedio del sector (posible sobrevaluación).")
