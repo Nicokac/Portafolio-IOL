@@ -48,26 +48,31 @@ def render_portfolio_comparison_panel() -> None:
 
     column_config = None
     column_factory = getattr(st, "column_config", None)
-    if column_factory is not None:
+    text_column_factory = (
+        getattr(column_factory, "TextColumn", None)
+        if column_factory is not None
+        else None
+    )
+    if callable(text_column_factory):
         column_config = {
-            "Activo": column_factory.TextColumn("Activo", width="medium"),
-            "Cantidad": column_factory.TextColumn("Cantidad", width="small"),
-            "Variación diaria": column_factory.TextColumn(
+            "Activo": text_column_factory("Activo", width="medium"),
+            "Cantidad": text_column_factory("Cantidad", width="small"),
+            "Variación diaria": text_column_factory(
                 "Variación diaria",
                 width="small",
             ),
-            "Último precio": column_factory.TextColumn("Último precio"),
-            "Precio promedio de compra": column_factory.TextColumn(
+            "Último precio": text_column_factory("Último precio"),
+            "Precio promedio de compra": text_column_factory(
                 "Precio promedio de compra",
             ),
-            "Rendimiento Porcentaje": column_factory.TextColumn(
+            "Rendimiento Porcentaje": text_column_factory(
                 "Rendimiento Porcentaje",
                 width="small",
             ),
-            "Rendimiento Monto": column_factory.TextColumn(
+            "Rendimiento Monto": text_column_factory(
                 "Rendimiento Monto",
             ),
-            "Valorizado": column_factory.TextColumn("Valorizado"),
+            "Valorizado": text_column_factory("Valorizado"),
         }
 
     st.dataframe(
