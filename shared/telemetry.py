@@ -325,6 +325,24 @@ def log_default_telemetry(**kwargs) -> None:
     log_telemetry(DEFAULT_TELEMETRY_FILES, **kwargs)
 
 
+def log_metric(
+    metric_name: str,
+    context: Mapping[str, object] | None = None,
+    *,
+    status: object | None = "ok",
+    duration_ms: float | None = None,
+) -> None:
+    """Log a simple metric row with the provided context payload."""
+
+    log_telemetry(
+        DEFAULT_TELEMETRY_FILES,
+        metric_name=metric_name,
+        duration_ms=duration_ms,
+        status=status,
+        context=context,
+    )
+
+
 def log(event_name: str, **kwargs: object) -> None:
     """Emit a simple structured telemetry event to the logger."""
 

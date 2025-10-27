@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Dict, Iterable, List, Mapping
@@ -725,6 +725,194 @@ def normalize_positions(payload: Dict[str, Any]) -> pd.DataFrame:
     return df
 
 
+# ---------- Auditoría de consistencia ----------
+
+
+def _coerce_float(value: Any) -> float | None:
+    parsed = _to_float(value, log=False)
+    if parsed is None:
+        return None
+    if not np.isfinite(parsed):
+        return None
+    return float(parsed)
+
+
+def _diff_percentage(calc_value: float | None, reference_value: float | None) -> float | None:
+    if calc_value is None or reference_value is None:
+        return None
+    baseline = max(abs(reference_value), 1.0)
+    if baseline == 0.0:
+        baseline = 1.0
+    diff = ((calc_value - reference_value) / baseline) * 100.0
+    if not np.isfinite(diff):
+        return None
+    return float(diff)
+
+
+def validate_portfolio_consistency(
+    df_calc: pd.DataFrame, payload: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """Compara métricas calculadas con el payload oficial y detecta desvíos relevantes."""
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+    summary: dict[str, Any] = {
+        "timestamp": timestamp,
+        "checked": [],
+        "checked_symbols": [],
+        "inconsistencies": [],
+        "inconsistency_count": 0,
+        "symbols": [],
+        "thresholds": {"default_pct": 1.0, "fixed_income_pct": 0.5},
+    }
+
+    try:
+        if not isinstance(df_calc, pd.DataFrame) or df_calc.empty:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+
+        try:
+            payload_df = normalize_positions(payload or {})
+        except Exception:
+            payload_df = pd.DataFrame()
+
+        if not isinstance(payload_df, pd.DataFrame) or payload_df.empty:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+
+        calc_df = df_calc.copy()
+        calc_symbols = calc_df.get("simbolo")
+        if calc_symbols is None:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+        calc_df["simbolo"] = calc_symbols.astype("string").fillna("").str.upper()
+        calc_df = calc_df[calc_df["simbolo"].astype(bool)]
+        if calc_df.empty:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+        calc_df = calc_df.drop_duplicates("simbolo").set_index("simbolo")
+
+        payload_df = payload_df.copy()
+        payload_df["simbolo"] = payload_df["simbolo"].astype("string").fillna("").str.upper()
+        payload_df = payload_df[payload_df["simbolo"].astype(bool)]
+        if payload_df.empty:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+        payload_df = payload_df.drop_duplicates("simbolo").set_index("simbolo")
+
+        common_symbols = [sym for sym in calc_df.index.intersection(payload_df.index)]
+        if not common_symbols:
+            logger.info("[Audit] portfolio_consistency completed — 0 issues")
+            summary["summary"] = "portfolio_consistency completed — 0 issues"
+            return summary
+
+        flagged_symbols: set[str] = set()
+        for symbol in common_symbols:
+            calc_row = calc_df.loc[symbol]
+            payload_row = payload_df.loc[symbol]
+
+            qty = _coerce_float(payload_row.get("cantidad"))
+            ppc_official = _coerce_float(payload_row.get("costo_unitario"))
+            valorizado_official = _coerce_float(payload_row.get("valorizado"))
+            if valorizado_official is None and qty is not None:
+                last_official = _coerce_float(payload_row.get("ultimoPrecio"))
+                if last_official is not None:
+                    valorizado_official = last_official * qty
+            valor_actual_official = valorizado_official
+            cost_official = None
+            if qty is not None and ppc_official is not None:
+                cost_official = qty * ppc_official
+            pl_official = None
+            if valor_actual_official is not None and cost_official is not None:
+                pl_official = valor_actual_official - cost_official
+            pl_pct_official = None
+            if pl_official is not None and cost_official not in (None, 0.0):
+                pl_pct_official = (pl_official / cost_official) * 100.0
+
+            asset_type_raw = str(payload_row.get("tipo") or "").strip()
+            asset_type_upper = asset_type_raw.upper()
+            threshold = 1.0
+            if "BONO" in asset_type_upper or "LETRA" in asset_type_upper:
+                threshold = 0.5
+
+            diff_map: dict[str, dict[str, float | None]] = {}
+            flagged_fields: list[str] = []
+
+            def _calc_value(column: str) -> float | None:
+                value = calc_row.get(column)
+                if column == "valorizado" and _coerce_float(value) is None:
+                    value = calc_row.get("valor_actual")
+                return _coerce_float(value)
+
+            comparisons = {
+                "valor_actual": (valor_actual_official, _calc_value("valor_actual")),
+                "ppc": (ppc_official, _calc_value("ppc")),
+                "pl": (pl_official, _calc_value("pl")),
+                "pl_%": (pl_pct_official, _calc_value("pl_%")),
+                "valorizado": (valorizado_official, _calc_value("valorizado")),
+            }
+
+            for field, (official_value, calc_value) in comparisons.items():
+                if official_value is None or calc_value is None:
+                    continue
+                diff_pct = _diff_percentage(calc_value, official_value)
+                if diff_pct is None:
+                    continue
+                diff_entry = {
+                    "calc": calc_value,
+                    "official": official_value,
+                    "diff_pct": round(diff_pct, 4),
+                }
+                diff_map[field] = diff_entry
+                if abs(diff_pct) > threshold:
+                    flagged_fields.append(field)
+                    logger.warning(
+                        "[Audit] Inconsistency detected: %s %s diff %+0.1f %% (cache vs endpoint)",
+                        symbol,
+                        field,
+                        diff_pct,
+                    )
+
+            entry = {
+                "simbolo": symbol,
+                "tipo": asset_type_raw,
+                "threshold_pct": threshold,
+                "differences": diff_map,
+                "flags": flagged_fields,
+            }
+            summary["checked"].append(entry)
+            summary["checked_symbols"].append(symbol)
+
+            if flagged_fields:
+                summary["inconsistencies"].append(
+                    {
+                        "simbolo": symbol,
+                        "tipo": asset_type_raw,
+                        "fields": flagged_fields,
+                        "threshold_pct": threshold,
+                        "differences": {field: diff_map[field] for field in flagged_fields},
+                    }
+                )
+                flagged_symbols.add(symbol)
+
+        inconsistency_count = len(flagged_symbols)
+        summary["inconsistency_count"] = inconsistency_count
+        summary["symbols"] = sorted(flagged_symbols)
+        summary["summary"] = f"portfolio_consistency completed — {inconsistency_count} issues"
+
+        logger.info("[Audit] %s", summary["summary"])
+        return summary
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.exception("portfolio_consistency validation failed")
+        summary["summary"] = "portfolio_consistency validation failed"
+        summary["error"] = "validation_failed"
+        return summary
+
+
 # ---------- Cálculo de métricas ----------
 
 
@@ -1396,7 +1584,7 @@ def calc_rows(get_quote_fn, df_pos: pd.DataFrame, exclude_syms: Iterable[str]) -
             audit_data["override_bopreal_market"] = True
             if fallback_market_source:
                 audit_data["market_price_source"] = fallback_market_source
-            audit_data["timestamp_fallback"] = datetime.utcnow()
+            audit_data["timestamp_fallback"] = datetime.now(timezone.utc)
             quotes_hash_value = attrs.get("quotes_hash")
             if quotes_hash_value is not None:
                 audit_data["quotes_hash"] = quotes_hash_value
