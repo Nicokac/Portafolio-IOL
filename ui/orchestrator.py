@@ -496,6 +496,7 @@ def render_main_ui() -> None:
     if not st.session_state.get("authenticated"):
         _render_login_phase()
 
+    schedule_scientific_preload_resume()
     if freeze_heavy_tasks() and is_monitoring_active():
         mark_event(
             "monitoring_freeze",
@@ -503,7 +504,6 @@ def render_main_ui() -> None:
             {"flow_id": flow_id},
         )
     else:
-        schedule_scientific_preload_resume()
         schedule_post_login_initialization()
 
     if FavoriteSymbols.STATE_KEY not in st.session_state:

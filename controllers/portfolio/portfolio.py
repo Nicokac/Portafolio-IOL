@@ -2140,8 +2140,8 @@ def render_portfolio_section(
                                 "No se pudo limpiar el estado del hilo de métricas extendidas",
                                 exc_info=True,
                             )
-                        mark_event("rerun", "portfolio.extended_metrics_ready")
-                        safe_rerun("portfolio.extended_metrics_ready")
+                mark_event("rerun", "portfolio.extended_metrics_ready")
+                safe_rerun("portfolio.extended_metrics_ready")
 
             worker = threading.Thread(
                 target=_compute_and_rerun,
