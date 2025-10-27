@@ -88,62 +88,61 @@ def render_login_page() -> None:
             clear_password_keys(st.session_state)
             mark_event("rerun", "login_missing_credentials")
             safe_rerun("login_missing_credentials")
-            return
+        else:
+            st.session_state["IOL_USERNAME"] = user
+            st.session_state.pop("cli", None)
 
-        st.session_state["IOL_USERNAME"] = user
-        st.session_state.pop("cli", None)
-
-        try:
-            provider.login(user, password)
-            token = generate_token(
-                user,
-                _get_auth_token_ttl(),
-            )
-            st.session_state["auth_token"] = token
-            snapshot = describe_active_token(token)
-            if snapshot and isinstance(snapshot.get("claims"), dict):
-                st.session_state["auth_token_claims"] = dict(snapshot["claims"])
-            else:
-                st.session_state.pop("auth_token_claims", None)
-            st.session_state["auth_token_refreshed_at"] = TimeProvider.now()
-            st.session_state["authenticated"] = True
-            st.session_state.pop("force_login", None)
-            st.session_state.pop("login_error", None)
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_success")
-            safe_rerun("login_success")
-        except InvalidCredentialsError:
-            logger.warning("Fallo de autenticación")
-            st.session_state["login_error"] = "Usuario o contraseña inválidos"
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_invalid_credentials")
-            safe_rerun("login_invalid_credentials")
-        except NetworkError:
-            logger.warning("Error de conexión durante el login")
-            st.session_state["login_error"] = "Error de conexión"
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_network_error")
-            safe_rerun("login_network_error")
-        except AppError as err:
-            logger.warning("Error controlado durante el login: %s", err)
-            msg = str(err)
-            st.error(msg)
-            st.session_state["login_error"] = msg
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_app_error")
-            safe_rerun("login_app_error")
-        except RuntimeError as e:
-            logger.exception("Error durante el login: %s", e)
-            st.session_state["login_error"] = str(e)
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_runtime_error")
-            safe_rerun("login_runtime_error")
-        except Exception:
-            logger.exception("Error inesperado durante el login")
-            st.session_state["login_error"] = "Error inesperado, contacte soporte"
-            clear_password_keys(st.session_state)
-            mark_event("rerun", "login_unexpected_error")
-            safe_rerun("login_unexpected_error")
+            try:
+                provider.login(user, password)
+                token = generate_token(
+                    user,
+                    _get_auth_token_ttl(),
+                )
+                st.session_state["auth_token"] = token
+                snapshot = describe_active_token(token)
+                if snapshot and isinstance(snapshot.get("claims"), dict):
+                    st.session_state["auth_token_claims"] = dict(snapshot["claims"])
+                else:
+                    st.session_state.pop("auth_token_claims", None)
+                st.session_state["auth_token_refreshed_at"] = TimeProvider.now()
+                st.session_state["authenticated"] = True
+                st.session_state.pop("force_login", None)
+                st.session_state.pop("login_error", None)
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_success")
+                safe_rerun("login_success")
+            except InvalidCredentialsError:
+                logger.warning("Fallo de autenticación")
+                st.session_state["login_error"] = "Usuario o contraseña inválidos"
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_invalid_credentials")
+                safe_rerun("login_invalid_credentials")
+            except NetworkError:
+                logger.warning("Error de conexión durante el login")
+                st.session_state["login_error"] = "Error de conexión"
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_network_error")
+                safe_rerun("login_network_error")
+            except AppError as err:
+                logger.warning("Error controlado durante el login: %s", err)
+                msg = str(err)
+                st.error(msg)
+                st.session_state["login_error"] = msg
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_app_error")
+                safe_rerun("login_app_error")
+            except RuntimeError as e:
+                logger.exception("Error durante el login: %s", e)
+                st.session_state["login_error"] = str(e)
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_runtime_error")
+                safe_rerun("login_runtime_error")
+            except Exception:
+                logger.exception("Error inesperado durante el login")
+                st.session_state["login_error"] = "Error inesperado, contacte soporte"
+                clear_password_keys(st.session_state)
+                mark_event("rerun", "login_unexpected_error")
+                safe_rerun("login_unexpected_error")
 
 
 __all__ = ["render_login_page", "settings"]

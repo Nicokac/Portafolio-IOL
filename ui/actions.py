@@ -39,7 +39,7 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
             type="secondary",
         ):
             st.session_state["logout_pending"] = True
-            mark_event("rerun", "logout_button")
+            mark_event("rerun", "logout_requested")
             safe_rerun("logout_requested")
         st.markdown("</div>", unsafe_allow_html=True)
 
