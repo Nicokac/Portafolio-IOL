@@ -15,6 +15,7 @@ from services.performance_timer import performance_timer
 from shared.cache import cache
 from shared.config import settings
 from shared.fragment_state import persist_fragment_state_snapshot
+from shared.debug.rerun_trace import mark_event, safe_rerun
 
 """Servicios de autenticación para la aplicación."""
 
@@ -186,4 +187,5 @@ def logout(user: str = "", password: str = "") -> None:
         st.session_state["logout_done"] = True
     finally:
         st.session_state["force_login"] = True
-        st.rerun()
+        mark_event("rerun", "auth_logout_force_login")
+        safe_rerun("auth_logout_force_login")

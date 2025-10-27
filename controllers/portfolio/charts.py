@@ -5,6 +5,7 @@ import streamlit as st
 
 from services.portfolio_view import compute_symbol_risk_metrics
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
+from shared.debug.timing import timeit
 from ui.charts import (
     _apply_layout,
     plot_bubble_pl_vs_costo,
@@ -45,6 +46,7 @@ def generate_basic_charts(df_view, top_n):
     }
 
 
+@timeit("portfolio.render_summary")
 def render_summary(
     df_view,
     controls,
@@ -97,6 +99,7 @@ def render_summary(
     return True
 
 
+@timeit("portfolio.render_table")
 def render_table(
     df_view,
     controls,
@@ -116,6 +119,7 @@ def render_table(
     )
 
 
+@timeit("portfolio.render_charts")
 def render_charts(
     df_view,
     controls,

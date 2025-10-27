@@ -42,6 +42,8 @@ from services.portfolio_view import (
     update_table_data,
 )
 from shared import skeletons
+from shared.debug.rerun_trace import mark_event, safe_rerun
+from shared.debug.ui_flow import background_job, current_flow_id
 from shared.cache import visual_cache_registry
 from shared.errors import AppError
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
@@ -2079,39 +2081,59 @@ def render_portfolio_section(
                     and active_thread.is_alive()
                     and active_dataset == dataset_key
                 ):
+                    mark_event(
+                        "lazy_metrics_skip",
+                        "active_thread",
+                        {"dataset": dataset_key, "flow_id": current_flow_id()},
+                    )
                     return
 
+            flow_id = current_flow_id()
+            mark_event(
+                "lazy_metrics_schedule",
+                "extended_metrics",
+                {"dataset": dataset_key, "flow_id": flow_id},
+            )
+
             def _compute_and_rerun() -> None:
-                try:
-                    current_dataset = getattr(view_model_service, "_dataset_key", None)
-                    if current_dataset != dataset_key:
-                        return
-                    view_model_service.compute_extended_metrics(
-                        df_pos=df_pos,
-                        controls=controls,
-                        cli=cli,
-                        psvc=psvc,
-                    )
-                except Exception:  # pragma: no cover - defensive safeguard
-                    logger.debug(
-                        "No se pudo calcular métricas extendidas del portafolio",
-                        exc_info=True,
-                    )
-                finally:
+                with background_job(
+                    "portfolio.extended_metrics",
+                    detail=str(dataset_key),
+                ):
                     try:
-                        st.session_state.pop(thread_key, None)
-                    except Exception:
+                        current_dataset = getattr(view_model_service, "_dataset_key", None)
+                        if current_dataset != dataset_key:
+                            mark_event(
+                                "lazy_metrics_cancel",
+                                "dataset_mismatch",
+                                {"expected": dataset_key, "found": current_dataset, "flow_id": flow_id},
+                            )
+                            return
+                        view_model_service.compute_extended_metrics(
+                            df_pos=df_pos,
+                            controls=controls,
+                            cli=cli,
+                            psvc=psvc,
+                        )
+                    except Exception:  # pragma: no cover - defensive safeguard
                         logger.debug(
-                            "No se pudo limpiar el estado del hilo de métricas extendidas",
+                            "No se pudo calcular métricas extendidas del portafolio",
                             exc_info=True,
                         )
-                    try:
-                        st.experimental_rerun()
-                    except Exception:
-                        logger.debug(
-                            "No se pudo solicitar rerun tras completar métricas extendidas",
-                            exc_info=True,
+                        mark_event(
+                            "lazy_metrics_error",
+                            "extended_metrics",
+                            {"dataset": dataset_key, "flow_id": flow_id},
                         )
+                    finally:
+                        try:
+                            st.session_state.pop(thread_key, None)
+                        except Exception:
+                            logger.debug(
+                                "No se pudo limpiar el estado del hilo de métricas extendidas",
+                                exc_info=True,
+                            )
+                        safe_rerun("portfolio.extended_metrics_ready")
 
             worker = threading.Thread(
                 target=_compute_and_rerun,

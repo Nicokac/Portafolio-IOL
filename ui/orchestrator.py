@@ -31,9 +31,12 @@ from services.cache import get_fx_rates_cached
 from services.health import get_health_metrics, record_dependency_status
 from services.startup_logger import log_ui_total_load_metric
 from shared import skeletons
+from shared.debug.rerun_trace import mark_event, safe_rerun, safe_stop
+from shared.debug.ui_flow import freeze_heavy_tasks, start_ui_flow
 from shared.favorite_symbols import FavoriteSymbols
 from shared.telemetry import log_default_telemetry
 from shared.time_provider import TimeProvider
+from shared.ui.monitoring_guard import is_monitoring_active
 from ui.footer import render_footer
 from ui.header import render_header
 from ui.health_sidebar import render_health_monitor_tab, summarize_health_status
@@ -100,7 +103,7 @@ def _render_login_phase() -> None:
         render_login_page()
     finally:
         record_ui_startup_metric()
-    st.stop()
+    safe_stop("login_phase")
 
 
 def _record_login_preload_timings(preload_ready: bool) -> None:
@@ -453,6 +456,8 @@ def _check_critical_dependencies() -> dict[str, dict[str, str | None]]:
 
 
 def render_main_ui() -> None:
+    flow_id = start_ui_flow("render_main_ui", force_new=True)
+    mark_event("ui_render_start", "render_main_ui", {"flow_id": flow_id})
     first_frame_placeholder = getattr(st, "empty", lambda: None)()
     already_rendered = False
     try:
@@ -491,9 +496,15 @@ def render_main_ui() -> None:
     if not st.session_state.get("authenticated"):
         _render_login_phase()
 
-    schedule_scientific_preload_resume()
-
-    schedule_post_login_initialization()
+    if freeze_heavy_tasks() and is_monitoring_active():
+        mark_event(
+            "monitoring_freeze",
+            "skip_post_login_init",
+            {"flow_id": flow_id},
+        )
+    else:
+        schedule_scientific_preload_resume()
+        schedule_post_login_initialization()
 
     if FavoriteSymbols.STATE_KEY not in st.session_state:
         st.session_state[FavoriteSymbols.STATE_KEY] = set()
@@ -679,8 +690,8 @@ def render_main_ui() -> None:
                     exc_info=True,
                 )
             st.session_state["iol_startup_metric_logged"] = True
-            if should_request_rerun and hasattr(st, "experimental_rerun"):
-                st.experimental_rerun()
+            if should_request_rerun:
+                safe_rerun("hydration_unlock")
 
     render_footer()
 
@@ -696,7 +707,7 @@ def render_main_ui() -> None:
     if do_refresh and (time.time() - st.session_state["last_refresh"] >= float(refresh_secs)):
         st.session_state["last_refresh"] = time.time()
         st.session_state["show_refresh_toast"] = True
-        st.rerun()
+        safe_rerun("portfolio_autorefresh")
 
 
 _IS_STREAMLIT_RUN = os.environ.get("STREAMLIT_RUN_MAIN") == "1"

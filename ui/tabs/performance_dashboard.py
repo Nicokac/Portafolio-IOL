@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from services.performance_timer import LOG_PATH, read_recent_entries
+from shared.debug.rerun_trace import safe_rerun
 
 _ALERT_DURATION_SECONDS = 5.0
 _ALERT_CPU_PERCENT = 80.0
@@ -215,7 +216,7 @@ def render_performance_dashboard_tab(limit: int = 200) -> None:
     st.caption("Analizá la telemetría instrumentada para detectar cuellos de botella.")
 
     if st.button("🔄 Actualizar métricas", key="refresh_performance_dashboard"):
-        st.experimental_rerun()
+        safe_rerun("performance_dashboard_refresh")
 
     entries = read_recent_entries(limit=limit)
     if not entries:

@@ -63,6 +63,10 @@ class BaseFakeStreamlit:
     def caption(self, *args: Any, **kwargs: Any) -> None:  # pragma: no cover - noop
         return None
 
+    def code(self, value: Any, **_: Any) -> None:  # pragma: no cover - diagnostics helper
+        text = str(value)
+        self.messages.append(("code", text))
+
     def rerun(self) -> None:  # pragma: no cover - defensive
         self._rerun_called = True
 

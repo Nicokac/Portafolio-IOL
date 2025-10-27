@@ -8,6 +8,7 @@ from typing import Sequence
 import pandas as pd
 import streamlit as st
 
+from shared.debug.timing import timeit
 from shared.export import df_to_csv_bytes
 from shared.portfolio_export import (
     CHART_LOOKUP,
@@ -31,6 +32,7 @@ def download_csv(df: pd.DataFrame, filename: str, *, label: str = "⬇️ Export
     st.download_button(label, df_to_csv_bytes(df), file_name=filename, mime="text/csv")
 
 
+@timeit("portfolio.export")
 def render_portfolio_exports(
     *,
     snapshot,

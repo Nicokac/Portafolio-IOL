@@ -12,6 +12,7 @@ import streamlit as st
 from domain.models import Controls
 from ui.actions import render_action_menu
 from ui.utils.formatters import format_asset_type
+from shared.debug.rerun_trace import safe_rerun
 
 _FLASH_FLAG_KEY = "_sidebar_controls_flash_flag"
 _SYMBOLS_STATE_KEY = "_sidebar_all_symbols"
@@ -338,7 +339,7 @@ def render_controls_panel(
             st.session_state.pop(key, None)
         st.session_state["controls_snapshot"] = None
         st.session_state.pop("selected_asset_types", None)
-        st.rerun()
+        safe_rerun("sidebar_reset")
 
     if apply_btn:
         snapshot = asdict(controls)

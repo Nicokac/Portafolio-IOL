@@ -39,6 +39,7 @@ from services import snapshots as snapshot_service
 from services.cache import CacheService
 from services.cache.market_data_cache import get_market_data_cache
 from shared import snapshot as snapshot_async
+from shared.debug.timing import timeit
 from shared.telemetry import log_default_telemetry, log_metric
 from shared.ui.monitoring_guard import is_monitoring_active
 
@@ -2258,6 +2259,7 @@ class PortfolioViewModelService:
             skip_invalidation=skip_invalidation,
         )
 
+    @timeit("portfolio_view.apply_basic")
     def build_minimal_viewmodel(
         self,
         df_pos,
@@ -2280,6 +2282,7 @@ class PortfolioViewModelService:
             skip_invalidation=skip_invalidation,
         )
 
+    @timeit("portfolio_view.apply_extended")
     def compute_extended_metrics(
         self,
         df_pos,
