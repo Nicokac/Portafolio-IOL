@@ -14,12 +14,14 @@ import streamlit as st
 
 from shared import telemetry
 from shared.debug.rerun_trace import mark_event, safe_rerun
+from shared.debug.ui_flow import freeze_heavy_tasks
 from shared.fragment_state import (
     get_fragment_state_guardian,
     register_fragment_auto_load_context,
     reset_fragment_auto_load_context,
 )
 from shared.telemetry import log_default_telemetry
+from shared.ui.monitoring_guard import is_monitoring_active
 
 _js_import_error: Exception | None = None
 
@@ -739,6 +741,9 @@ def _wait_for_fragment_context_ready(
 
 
 def _trigger_fragment_context_rerun(dataset_hash: str) -> None:
+    if is_monitoring_active() and freeze_heavy_tasks():
+        mark_event("lazy_fragment_skip", dataset_hash)
+        return
     token = dataset_hash or "__default__"
     if token in _FRAGMENT_CONTEXT_RERUN_DATASETS:
         return
