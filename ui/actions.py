@@ -41,6 +41,7 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
             st.session_state["logout_pending"] = True
             mark_event("rerun", "logout_requested")
             safe_rerun("logout_requested")
+            return
         st.markdown("</div>", unsafe_allow_html=True)
 
     if st.session_state.get("logout_pending", False):
@@ -51,6 +52,7 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
             unsafe_allow_html=True,
         )
         st.session_state.pop("logout_pending", None)
+        st.session_state["shutdown_pending"] = True
         try:
             with st.spinner("Cerrando sesión..."):
                 auth_service.logout(st.session_state.get("IOL_USERNAME", ""))
@@ -58,19 +60,23 @@ def render_action_menu(container=None, *, show_refresh: bool = True) -> None:
             st.error(str(err))
             mark_event("stop", "logout_app_error")
             safe_stop("logout_app_error")
+            return
         except Exception:
             logger.exception("Error inesperado al cerrar sesión")
             st.error("No se pudo cerrar sesión, intente nuevamente más tarde")
             mark_event("stop", "logout_exception")
             safe_stop("logout_exception")
+            return
 
     if st.session_state.pop("logout_done", False):
         st.success("Sesión cerrada")
         mark_event("stop", "logout_done")
         safe_stop("logout_done")
+        return
 
     err = st.session_state.pop("logout_error", "")
     if err:
         st.error(f"No se pudo cerrar sesión: {err}")
         mark_event("stop", "logout_error")
         safe_stop("logout_error")
+        return
