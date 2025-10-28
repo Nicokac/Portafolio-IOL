@@ -1514,9 +1514,42 @@ def render_basic_tab(
     dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
     dataset_token = str(dataset_hash or "none")
     lazy_blocks = _ensure_lazy_blocks(dataset_token)
-    table_lazy = lazy_blocks["table"]
-    charts_lazy = lazy_blocks["charts"]
-    exports_lazy = lazy_blocks["exports"]
+
+    table_lazy = lazy_blocks.get("table")
+    charts_lazy = lazy_blocks.get("charts")
+    exports_lazy = lazy_blocks.get("exports")
+
+    if not isinstance(table_lazy, dict) or not isinstance(charts_lazy, dict) or not isinstance(
+        exports_lazy, dict
+    ):
+        # Algunos usuarios conservan estado anterior al soporte de exportaciones
+        # diferidas. En ese caso regeneramos el andamiaje para garantizar que las
+        # referencias existan antes de continuar con el renderizado perezoso.
+        lazy_blocks = _ensure_lazy_blocks(dataset_token)
+        table_lazy = lazy_blocks.get("table")
+        charts_lazy = lazy_blocks.get("charts")
+        exports_lazy = lazy_blocks.get("exports")
+
+    # Salvaguarda final para evitar referencias a `None` en escenarios de pruebas y
+    # mantener sincronizado el estado compartido cuando regeneramos bloques.
+    def _sync_lazy_block(name: str, block: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(block, dict):
+            block = {"status": "pending", "dataset_hash": dataset_token}
+        else:
+            block.setdefault("status", "pending")
+            block.setdefault("dataset_hash", dataset_token)
+        lazy_blocks[name] = block
+        try:
+            state = st.session_state.get(_LAZY_BLOCKS_STATE_KEY)
+            if isinstance(state, dict):
+                state[name] = block
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.debug("No se pudo sincronizar el bloque perezoso %s", name, exc_info=True)
+        return block
+
+    table_lazy = _sync_lazy_block("table", table_lazy)
+    charts_lazy = _sync_lazy_block("charts", charts_lazy)
+    exports_lazy = _sync_lazy_block("exports", exports_lazy)
 
     if defer_heavy_components:
         with st.spinner("Calculando métricas extendidas del portafolio..."):
