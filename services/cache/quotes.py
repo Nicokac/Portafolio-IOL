@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import dataclass
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any, Dict, Mapping, Tuple
+from typing import Any
 
 import requests
 
@@ -21,10 +25,10 @@ from services.health import record_quote_load, record_quote_provider_usage
 from services.performance_timer import performance_timer
 from services.quote_rate_limit import quote_rate_limiter
 from shared.cache import cache
-from shared.errors import NetworkError
 from shared.debug.timing import timeit
+from shared.errors import NetworkError
 from shared.settings import cache_ttl_quotes, max_quote_workers, quotes_ttl_seconds
-from shared.telemetry import log_default_telemetry
+from shared.telemetry import log_default_telemetry, log_metric
 
 from .ui_adapter import _trigger_logout
 
@@ -32,10 +36,10 @@ logger = logging.getLogger(__name__)
 
 
 # In-memory quote cache
-_QUOTE_CACHE: Dict[Tuple[str, str, str | None], Dict[str, Any]] = {}
+_QUOTE_CACHE: dict[tuple[str, str, str | None], dict[str, Any]] = {}
 _QUOTE_LOCK = Lock()
 _QUOTE_PERSIST_LOCK = Lock()
-_QUOTE_PERSIST_CACHE: Dict[str, Any] | None = None
+_QUOTE_PERSIST_CACHE: dict[str, Any] | None = None
 _QUOTE_WARM_START_APPLIED = False
 
 QUOTE_STALE_TTL_SECONDS = float(quotes_ttl_seconds or 0)
@@ -60,9 +64,15 @@ def get_active_dataset_hash() -> str | None:
 
 _MAX_RATE_LIMIT_RETRIES = 2
 
-_THREADPOOL_SUBLOT_TARGET = 6
-_THREADPOOL_SUBLOT_MIN = 4
-_THREADPOOL_SUBLOT_MAX = 10
+_THREADPOOL_SUBLOT_TARGET = 10
+_THREADPOOL_SUBLOT_MIN = 8
+_THREADPOOL_SUBLOT_MAX = 12
+
+_FALLBACK_CPU_MULTIPLIER = 4
+_FALLBACK_MAX_WORKERS = 16
+_REQUEST_TIMEOUT_SECONDS = 1.8
+_MAX_TRANSIENT_RETRIES = 2
+_TRANSIENT_BACKOFF_BASE = 0.2
 
 
 class AdaptiveBatchController:
@@ -125,6 +135,17 @@ _ADAPTIVE_BATCH_CONTROLLER = AdaptiveBatchController(
     min_size=_THREADPOOL_SUBLOT_MIN,
     max_size=_THREADPOOL_SUBLOT_MAX,
 )
+
+
+@dataclass(frozen=True)
+class QuoteRequest:
+    market: str
+    symbol: str
+    panel: str | None
+    asset_type: str
+
+    def cache_key(self) -> tuple[str, str, str | None]:
+        return self.market, self.symbol, self.panel
 
 
 class QuoteBatchStats:
@@ -218,10 +239,10 @@ class QuoteBatchStats:
                 self.errors = max(self.errors, error_value)
 
             elapsed_value = stats.get("elapsed_ms_total")
-            if isinstance(elapsed_value, (int, float)):
+            if isinstance(elapsed_value, int | float):
                 self.elapsed_ms_total = max(self.elapsed_ms_total, float(elapsed_value))
 
-    def summary(self, elapsed: float) -> Dict[str, Any]:
+    def summary(self, elapsed: float) -> dict[str, Any]:
         with self._lock:
             count = self.count
             total_elapsed = max(float(elapsed), 0.0)
@@ -245,6 +266,126 @@ def _quote_cache_key(market: str, symbol: str, panel: str | None) -> str:
     return "|".join([market, symbol, panel_token])
 
 
+def _extract_asset_type(raw: Any) -> str:
+    candidates: Iterable[object] = ()
+    if isinstance(raw, Mapping):
+        candidates = (
+            raw.get("asset_type"),
+            raw.get("tipo"),
+            raw.get("type"),
+            raw.get("assetType"),
+            raw.get("grupo"),
+            raw.get("group"),
+        )
+    elif isinstance(raw, list | tuple):
+        candidates = ()
+    else:
+        values: list[object] = []
+        for attr in ("asset_type", "tipo", "type", "assetType", "grupo", "group"):
+            if hasattr(raw, attr):
+                values.append(getattr(raw, attr))
+        candidates = values
+
+    for candidate in candidates:
+        if candidate in (None, ""):
+            continue
+        try:
+            normalized = str(candidate).strip()
+        except Exception:
+            normalized = str(candidate)
+        if normalized:
+            return normalized.upper()
+    return "UNKNOWN"
+
+
+def _chunk_requests_balanced(
+    entries: list[QuoteRequest],
+    base_size: int,
+) -> list[list[QuoteRequest]]:
+    if not entries:
+        return []
+    size = max(
+        min(int(base_size or _THREADPOOL_SUBLOT_TARGET), _THREADPOOL_SUBLOT_MAX),
+        _THREADPOOL_SUBLOT_MIN,
+    )
+    chunks: list[list[QuoteRequest]] = []
+    current: list[QuoteRequest] = []
+    for entry in entries:
+        current.append(entry)
+        if len(current) >= size:
+            chunks.append(current)
+            current = []
+    if current:
+        chunks.append(current)
+    if len(chunks) <= 1:
+        return chunks
+    tail = chunks[-1]
+    if len(tail) >= _THREADPOOL_SUBLOT_MIN:
+        return chunks
+    deficit = _THREADPOOL_SUBLOT_MIN - len(tail)
+    for idx in range(len(chunks) - 2, -1, -1):
+        if deficit <= 0:
+            break
+        available = len(chunks[idx]) - _THREADPOOL_SUBLOT_MIN
+        if available <= 0:
+            continue
+        transfer = min(available, deficit)
+        moved = chunks[idx][-transfer:]
+        chunks[idx] = chunks[idx][:-transfer]
+        tail = moved + tail
+        deficit -= transfer
+    chunks[-1] = tail
+    return [chunk for chunk in chunks if chunk]
+
+
+def _group_requests_by_asset_and_market(requests: list[QuoteRequest]) -> list[list[QuoteRequest]]:
+    grouped: dict[tuple[str, str], list[QuoteRequest]] = defaultdict(list)
+    for entry in requests:
+        grouped[(entry.asset_type, entry.market)].append(entry)
+    batches: list[list[QuoteRequest]] = []
+    adaptive_size = (
+        _ADAPTIVE_BATCH_CONTROLLER.current(len(requests))
+        if requests
+        else _THREADPOOL_SUBLOT_TARGET
+    )
+    for key in sorted(grouped):
+        group_entries = grouped[key]
+        chunks = _chunk_requests_balanced(group_entries, adaptive_size)
+        batches.extend(chunks)
+    return batches
+
+
+def _is_transient_error(payload: Any) -> bool:
+    if not isinstance(payload, Mapping):
+        return True
+    provider = str(payload.get("provider") or "").strip().lower()
+    if provider != "error":
+        return False
+    detail_tokens = []
+    for key in ("reason", "detail", "message", "error", "status"):
+        value = payload.get(key)
+        if value:
+            try:
+                detail_tokens.append(str(value).lower())
+            except Exception:
+                detail_tokens.append(str(value))
+    if not detail_tokens:
+        return True
+    joined = " ".join(detail_tokens)
+    transient_keywords = (
+        "timeout",
+        "tempor",
+        "retry",
+        "again",
+        "network",
+        "conexion",
+        "connection",
+        "rate",
+        "limit",
+    )
+    return any(keyword in joined for keyword in transient_keywords)
+
+
 def _normalize_bulk_key_components(key: Any) -> tuple[str, str, str | None] | None:
     """Try to extract (market, symbol, panel) information from bulk keys."""
 
@@ -252,7 +393,7 @@ def _normalize_bulk_key_components(key: Any) -> tuple[str, str, str | None] | No
     symbol: str | None = None
     panel_value: str | None = None
 
-    if isinstance(key, (list, tuple)):
+    if isinstance(key, list | tuple):
         if len(key) >= 1 and key[0] is not None:
             market = str(key[0]).lower()
         if len(key) >= 2 and key[1] is not None:
@@ -335,8 +476,8 @@ def _parse_retry_after_seconds(response) -> float | None:
         if dt is None:
             return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
+            dt = dt.replace(tzinfo=datetime.UTC)
+        now = datetime.now(datetime.UTC)
         delta = (dt - now).total_seconds()
         return max(0.0, delta)
 
@@ -359,7 +500,7 @@ def _as_optional_int(value: Any) -> int | None:
         return None
 
 
-def _load_persisted_quotes() -> Dict[str, Any]:
+def _load_persisted_quotes() -> dict[str, Any]:
     global _QUOTE_PERSIST_CACHE
     with _QUOTE_PERSIST_LOCK:
         if _QUOTE_PERSIST_CACHE is not None:
@@ -375,7 +516,7 @@ def _load_persisted_quotes() -> Dict[str, Any]:
         return dict(raw)
 
 
-def _store_persisted_quotes(cache: Dict[str, Any]) -> None:
+def _store_persisted_quotes(cache: dict[str, Any]) -> None:
     global _QUOTE_PERSIST_CACHE
     with _QUOTE_PERSIST_LOCK:
         _QUOTE_PERSIST_CACHE = dict(cache)
@@ -501,7 +642,7 @@ def _persist_quote(cache_key: str, payload: dict[str, Any], ts: float) -> None:
             fx_candidate = payload.get("fx_aplicado")
             if fx_candidate is None:
                 fx_candidate = payload.get("fx_applied")
-            if isinstance(fx_candidate, (int, float)):
+            if isinstance(fx_candidate, int | float):
                 normalized["fx_aplicado"] = float(fx_candidate)
             elif isinstance(fx_candidate, str):
                 normalized["fx_aplicado"] = fx_candidate.strip() or None
@@ -617,7 +758,7 @@ def _normalize_quote(raw: dict | None) -> dict:
     fx_raw = raw.get("fx_aplicado")
     if fx_raw is None:
         fx_raw = raw.get("fx_applied")
-    if isinstance(fx_raw, (int, float)):
+    if isinstance(fx_raw, int | float):
         fx_value: Any = float(fx_raw)
     elif isinstance(fx_raw, str):
         fx_value = fx_raw.strip() or None
@@ -634,7 +775,7 @@ def _normalize_quote(raw: dict | None) -> dict:
                 break
     if hasattr(asof_value, "isoformat"):
         data["asof"] = asof_value.isoformat()
-    elif isinstance(asof_value, (int, float)):
+    elif isinstance(asof_value, int | float):
         data["asof"] = str(float(asof_value))
     elif isinstance(asof_value, str):
         text = asof_value.strip()
@@ -653,7 +794,7 @@ def _normalize_quote(raw: dict | None) -> dict:
     data["last"] = last_value
 
     raw_chg = raw.get("chg_pct")
-    if isinstance(raw_chg, (int, float)):
+    if isinstance(raw_chg, int | float):
         chg_pct = float(raw_chg)
     elif isinstance(raw_chg, str):
         try:
@@ -869,7 +1010,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
     fallback_mode = not callable(get_bulk)
     telemetry["fallback_mode"] = fallback_mode
 
-    normalized: list[tuple[str, str, str | None]] = []
+    normalized: list[QuoteRequest] = []
 
     global _QUOTE_WARM_START_APPLIED
     if not _QUOTE_WARM_START_APPLIED:
@@ -900,6 +1041,53 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             )
         return value
 
+    def _emit_quote_metrics(summary: Mapping[str, Any], *, elapsed_ms: float, mode: str) -> None:
+        try:
+            count = int(summary.get("count", 0))
+        except (TypeError, ValueError):
+            count = 0
+        try:
+            qps = float(summary.get("qps", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            qps = 0.0
+        try:
+            errors = int(summary.get("errors", 0))
+        except (TypeError, ValueError):
+            errors = 0
+        try:
+            rate_limited = int(summary.get("rate_limited", 0))
+        except (TypeError, ValueError):
+            rate_limited = 0
+        context_base = {
+            "mode": mode,
+            "count": count,
+            "fallback_mode": fallback_mode,
+            "dataset_hash": get_active_dataset_hash(),
+        }
+        try:
+            log_metric(
+                "quotes.qps",
+                {**context_base, "qps": qps},
+                duration_ms=elapsed_ms,
+            )
+            log_metric(
+                "quotes.batch_latency_ms",
+                {**context_base, "latency_ms": elapsed_ms},
+                duration_ms=elapsed_ms,
+            )
+            log_metric(
+                "quotes.errors",
+                {**context_base, "errors": errors},
+                status="error" if errors else "ok",
+            )
+            log_metric(
+                "quotes.rate_limited",
+                {**context_base, "rate_limited": rate_limited},
+                status="limited" if rate_limited else "ok",
+            )
+        except Exception:  # pragma: no cover - telemetry backend optional
+            logger.debug("No se pudo registrar métricas de cotizaciones", exc_info=True)
+
     with performance_timer("quotes_refresh", extra=telemetry):
         for raw in items:
             market: str | None = None
@@ -909,7 +1097,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                 market = raw.get("market", raw.get("mercado"))
                 symbol = raw.get("symbol", raw.get("simbolo"))
                 panel = raw.get("panel")
-            elif isinstance(raw, (list, tuple)):
+            elif isinstance(raw, list | tuple):
                 if len(raw) >= 2:
                     market = raw[0]
                     symbol = raw[1]
@@ -923,7 +1111,15 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             panel_value = None if panel is None else str(panel)
             norm_market = str(market or "bcba").lower()
             norm_symbol = str(symbol or "").upper()
-            normalized.append((norm_market, norm_symbol, panel_value))
+            asset_type_value = _extract_asset_type(raw)
+            normalized.append(
+                QuoteRequest(
+                    market=norm_market,
+                    symbol=norm_symbol,
+                    panel=panel_value,
+                    asset_type=asset_type_value,
+                )
+            )
 
         batch_stats = QuoteBatchStats(total_expected=len(normalized))
 
@@ -966,13 +1162,15 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
 
                             key_components = _normalize_bulk_key_components(k)
                             if key_components is None and len(normalized) == 1:
-                                key_components = normalized[0]
+                                key_components = normalized[0].cache_key()
                             if key_components is None:
                                 normalized_bulk[k] = quote
                                 provider_name = quote.get("provider") or "unknown"
                                 record_quote_provider_usage(
                                     provider_name,
-                                    elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
+                                    elapsed_ms=(
+                                        elapsed_ms if quote.get("last") is not None else None
+                                    ),
                                     stale=stale_flag or quote.get("last") is None,
                                     source="bulk" if ttl_seconds > 0 else "live",
                                 )
@@ -1002,7 +1200,9 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                             provider_name = quote.get("provider") or "unknown"
                             record_quote_provider_usage(
                                 provider_name,
-                                elapsed_ms=elapsed_ms if quote.get("last") is not None else None,
+                                elapsed_ms=(
+                                    elapsed_ms if quote.get("last") is not None else None
+                                ),
                                 stale=stale_flag or quote.get("last") is None,
                                 source="bulk" if ttl_seconds > 0 else "live",
                             )
@@ -1030,12 +1230,17 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
                     source="bulk" if not fallback_mode else "per-symbol",
                     count=len(items),
                 )
+                _emit_quote_metrics(summary, elapsed_ms=elapsed_ms, mode="bulk")
                 subbatch_avg = summary.get("avg") if isinstance(summary, Mapping) else None
                 try:
                     subbatch_avg_value = float(subbatch_avg) if subbatch_avg is not None else None
                 except (TypeError, ValueError):
                     subbatch_avg_value = None
-                return _log_and_return(data, elapsed=elapsed_seconds, subbatch_avg=subbatch_avg_value)
+                return _log_and_return(
+                    data,
+                    elapsed=elapsed_seconds,
+                    subbatch_avg=subbatch_avg_value,
+                )
         except InvalidCredentialsError:
             telemetry["status"] = "error"
             telemetry["detail"] = "auth"
@@ -1066,67 +1271,143 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
 
         telemetry["mode"] = "threadpool"
         ttl = cache_ttl_quotes
-        max_workers = max_quote_workers
-
-        def _resolve_chunk_size() -> int:
-            if not normalized:
-                return _THREADPOOL_SUBLOT_MIN
-            adaptive_size = _ADAPTIVE_BATCH_CONTROLLER.current(len(normalized))
-            return max(1, min(adaptive_size, len(normalized)))
-
-        chunk_size = _resolve_chunk_size()
-        telemetry["sublot_size"] = chunk_size
-        telemetry["adaptive_batch_size"] = chunk_size
-        sublots = (
-            [normalized[idx : idx + chunk_size] for idx in range(0, len(normalized), chunk_size)] if normalized else []
+        adaptive_size = (
+            _ADAPTIVE_BATCH_CONTROLLER.current(len(normalized))
+            if normalized
+            else _THREADPOOL_SUBLOT_TARGET
         )
+        telemetry["adaptive_batch_size"] = adaptive_size
+        sublots = _group_requests_by_asset_and_market(normalized)
+        telemetry["sublot_count"] = len(sublots)
 
-        def _fetch_sublot(entries: list[tuple[str, str, str | None]]):
+        cpu_count = os.cpu_count() or 1
+        computed_worker_limit = max(
+            1,
+            min(cpu_count * _FALLBACK_CPU_MULTIPLIER, _FALLBACK_MAX_WORKERS, len(sublots) or 1),
+        )
+        try:
+            configured_limit = int(max_quote_workers)
+        except (TypeError, ValueError):
+            configured_limit = None
+        if configured_limit is not None and configured_limit > 0:
+            worker_count = max(1, min(configured_limit, computed_worker_limit, len(sublots) or 1))
+        else:
+            worker_count = computed_worker_limit
+        telemetry["worker_count"] = worker_count
+
+        def _fetch_sublot(entries: list[QuoteRequest]):
             started = time.perf_counter()
             results: dict[tuple[str, str], dict] = {}
             errors: list[tuple[str, str, Exception]] = []
-            for market, symbol, panel in entries:
-                try:
-                    quote = _get_quote_cached(_cli, market, symbol, panel, ttl, batch_stats)
-                except Exception as exc:  # pragma: no cover - network dependent
-                    errors.append((market, symbol, exc))
+            for req in entries:
+                backoff = _TRANSIENT_BACKOFF_BASE
+                quote: dict[str, Any] | None = None
+                for attempt in range(_MAX_TRANSIENT_RETRIES + 1):
+                    try:
+                        candidate = _get_quote_cached(
+                            _cli,
+                            req.market,
+                            req.symbol,
+                            req.panel,
+                            ttl,
+                            batch_stats,
+                        )
+                    except Exception as exc:  # pragma: no cover - network dependent
+                        errors.append((req.market, req.symbol, exc))
+                        quote = _normalize_quote({"provider": "error"})
+                        batch_stats.record_payload(quote)
+                        break
+                    if _is_transient_error(candidate) and attempt < _MAX_TRANSIENT_RETRIES:
+                        time.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    quote = candidate
+                    if _is_transient_error(candidate):
+                        errors.append((req.market, req.symbol, RuntimeError("transient error")))
+                    break
+                if quote is None:
                     quote = _normalize_quote({"provider": "error"})
                     batch_stats.record_payload(quote)
-                else:
-                    if isinstance(quote, dict):
-                        logger.debug("quote %s:%s -> %s", market, symbol, quote)
-            results[(market, symbol)] = quote
+                if isinstance(quote, dict):
+                    logger.debug("quote %s:%s -> %s", req.market, req.symbol, quote)
+                results[(req.market, req.symbol)] = quote
             duration = time.perf_counter() - started
             return results, errors, duration
 
+        def _register_sublot_failure(
+            entries: list[QuoteRequest],
+            exc: Exception | None = None,
+        ) -> None:
+            telemetry.setdefault("errors", 0)
+            telemetry["errors"] = int(telemetry["errors"]) + len(entries)
+            if exc is not None:
+                logger.exception(
+                    "get_quote failed for sublote %s -> %s",
+                    [(req.market, req.symbol) for req in entries],
+                    exc,
+                )
+            for req in entries:
+                quote = _normalize_quote({"provider": "error"})
+                out[(req.market, req.symbol)] = quote
+                batch_stats.record_payload(quote)
+
         out: dict[tuple[str, str], dict] = {}
-        worker_count = min(max_workers, len(sublots) or 1)
         batch_durations: list[float] = []
+        failure_threshold = max(3, len(normalized) // 2) if normalized else 0
+        failures = 0
+        fast_failed = False
         with ThreadPoolExecutor(max_workers=worker_count) as ex:
             futures = {ex.submit(_fetch_sublot, sublot): sublot for sublot in sublots}
-            for fut in as_completed(futures):
+            pending = set(futures.keys())
+            while pending:
+                done, pending = wait(pending, timeout=_REQUEST_TIMEOUT_SECONDS)
+                if not done:
+                    for fut in list(pending):
+                        sublot = futures[fut]
+                        fut.cancel()
+                        fast_failed = True
+                        failures += len(sublot)
+                        _register_sublot_failure(sublot, RuntimeError("timeout"))
+                    pending = set()
+                    break
+                for fut in done:
+                    sublot = futures[fut]
+                    try:
+                        chunk_result, chunk_errors, duration = fut.result()
+                    except Exception as exc:  # pragma: no cover - defensive safeguard
+                        failures += len(sublot)
+                        _register_sublot_failure(sublot, exc)
+                        continue
+                    batch_durations.append(duration)
+                    out.update(chunk_result)
+                    if chunk_errors:
+                        failures += len(chunk_errors)
+                        for market, symbol, err in chunk_errors:
+                            telemetry.setdefault("errors", 0)
+                            telemetry["errors"] = int(telemetry["errors"]) + 1
+                            logger.exception(
+                                "get_quote failed for %s:%s -> %s",
+                                market,
+                                symbol,
+                                err,
+                            )
+                    if failure_threshold and failures >= failure_threshold:
+                        fast_failed = True
+                        for pending_future in pending:
+                            pending_future.cancel()
+                            sublot_pending = futures[pending_future]
+                            failures += len(sublot_pending)
+                            _register_sublot_failure(sublot_pending, RuntimeError("fast-fail"))
+                        pending = set()
+                        break
+                if fast_failed:
+                    break
+            for fut in pending:
                 sublot = futures[fut]
-                try:
-                    chunk_result, chunk_errors, duration = fut.result()
-                except Exception as exc:  # pragma: no cover - defensive safeguard
-                    telemetry.setdefault("errors", 0)
-                    telemetry["errors"] = int(telemetry["errors"]) + len(sublot)
-                    logger.exception(
-                        "get_quote failed for sublote %s -> %s",
-                        [(m, s) for m, s, _ in sublot],
-                        exc,
-                    )
-                    for market, symbol, _panel in sublot:
-                        quote = _normalize_quote({"provider": "error"})
-                        out[(market, symbol)] = quote
-                        batch_stats.record_payload(quote)
-                    continue
-                batch_durations.append(duration)
-                out.update(chunk_result)
-                for market, symbol, err in chunk_errors:
-                    telemetry.setdefault("errors", 0)
-                    telemetry["errors"] = int(telemetry["errors"]) + 1
-                    logger.exception("get_quote failed for %s:%s -> %s", market, symbol, err)
+                if not fut.cancelled():
+                    fut.cancel()
+                failures += len(sublot)
+                _register_sublot_failure(sublot, RuntimeError("cancelled"))
         elapsed_seconds = time.time() - start
         elapsed_ms = elapsed_seconds * 1000.0
         summary = batch_stats.summary(elapsed_seconds)
@@ -1138,7 +1419,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             telemetry["next_adaptive_batch_size"] = next_size
             logger.info(
                 "quotes_refresh adaptive batch -> current=%s next=%s avg=%.2fms",
-                chunk_size,
+                telemetry.get("adaptive_batch_size", adaptive_size),
                 next_size,
                 avg_batch_time_ms,
             )
@@ -1156,6 +1437,7 @@ def fetch_quotes_bulk(_cli: IIOLProvider, items):
             source="fallback" if fallback_mode else "per-symbol",
             count=len(items),
         )
+        _emit_quote_metrics(summary, elapsed_ms=elapsed_ms, mode="threadpool")
         subbatch_avg = None
         if batch_durations:
             try:
