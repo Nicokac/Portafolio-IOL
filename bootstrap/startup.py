@@ -23,6 +23,44 @@ from shared.settings import (
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_streamlit_singleton():
+    if hasattr(st, "singleton"):
+        return st.singleton
+
+    if hasattr(st, "cache_resource"):
+        logger.debug("Streamlit.singleton no disponible; usando cache_resource como reemplazo")
+
+        def _cache_resource_singleton(*, show_spinner: bool = False):
+            return st.cache_resource(show_spinner=show_spinner)
+
+        return _cache_resource_singleton
+
+    if hasattr(st, "experimental_singleton"):
+        logger.debug(
+            "Streamlit.singleton no disponible; usando experimental_singleton como reemplazo"
+        )
+
+        def _experimental_singleton(*, show_spinner: bool = False):
+            return st.experimental_singleton(show_spinner=show_spinner)
+
+        return _experimental_singleton
+
+    logger.warning(
+        "Streamlit no expone decoradores singleton compatibles; se usará un passthrough"
+    )
+
+    def _passthrough(*, show_spinner: bool = False):  # pragma: no cover - fallback
+        def _decorator(function):
+            return function
+
+        return _decorator
+
+    return _passthrough
+
+
+_streamlit_singleton = _resolve_streamlit_singleton()
+
 _PRELOAD_WORKER: ModuleType | None
 try:
     _PRELOAD_WORKER = importlib.import_module("services.preload_worker")
@@ -107,7 +145,7 @@ def lazy_attr(module: str, attr: str):
 
 def startup_singleton(name: str, *, show_spinner: bool = False):
     def _decorator(factory):
-        @st.singleton(show_spinner=show_spinner)
+        @_streamlit_singleton(show_spinner=show_spinner)
         def _wrapper(*args, **kwargs):
             start = time.perf_counter()
             result = factory(*args, **kwargs)
