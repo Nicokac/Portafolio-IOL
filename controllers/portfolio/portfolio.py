@@ -1511,6 +1511,13 @@ def render_basic_tab(
     soft_refresh_guard = bool(getattr(snapshot, "soft_refresh_guard", False))
     defer_heavy_components = lazy_metrics and pending_extended
 
+    dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
+    dataset_token = str(dataset_hash or "none")
+    lazy_blocks = _ensure_lazy_blocks(dataset_token)
+    table_lazy = lazy_blocks["table"]
+    charts_lazy = lazy_blocks["charts"]
+    exports_lazy = lazy_blocks["exports"]
+
     if defer_heavy_components:
         with st.spinner("Calculando métricas extendidas del portafolio..."):
             time.sleep(0.05)
@@ -1536,14 +1543,7 @@ def render_basic_tab(
     if hasattr(table_container, "empty"):
         table_refs.setdefault("container", table_container)
 
-    dataset_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
     visual_cache_entry = _get_visual_cache_entry(dataset_hash)
-    dataset_token = str(dataset_hash or "none")
-
-    lazy_blocks = _ensure_lazy_blocks(dataset_token)
-    table_lazy = lazy_blocks["table"]
-    charts_lazy = lazy_blocks["charts"]
-    exports_lazy = lazy_blocks["exports"]
     table_lazy["placeholder"] = table_entry.get(
         "trigger_placeholder", table_entry.get("placeholder")
     )
