@@ -1,0 +1,7 @@
+timestamp,metric_name,duration_ms,status,context
+2025-10-28T01:49:19.243780+00:00,audit.duration_ms,180.01,ok,"{""dataset_key"": ""55b4c5e3882aef98ef5da8f35a6bd12ce90cff5f|payload:1"", ""issues"": 0}"
+2025-10-28T01:49:19.245855+00:00,audit.issues_count,,ok,"{""dataset_key"": ""55b4c5e3882aef98ef5da8f35a6bd12ce90cff5f|payload:1"", ""issues"": 0}"
+2025-10-28T01:49:19.493065+00:00,audit.duration_ms,158.21,ok,"{""dataset_key"": ""8b850f92e14e04c72a32350f897591fe49a558c5|payload:1"", ""issues"": 1}"
+2025-10-28T01:49:19.495082+00:00,audit.issues_count,,ok,"{""dataset_key"": ""8b850f92e14e04c72a32350f897591fe49a558c5|payload:1"", ""issues"": 1}"
+2025-10-28T01:49:20.327384+00:00,audit.duration_ms,303.75,ok,"{""dataset_key"": ""aec6b8711eadc583d9220830d58ea433ba123305|payload:1"", ""issues"": 0}"
+2025-10-28T01:49:20.331571+00:00,audit.issues_count,,ok,"{""dataset_key"": ""aec6b8711eadc583d9220830d58ea433ba123305|payload:1"", ""issues"": 0}"
