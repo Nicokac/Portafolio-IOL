@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+import csv
+import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timezone
+import time
+from collections import OrderedDict
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Any, Dict, Iterable, List, Mapping
 from collections.abc import Mapping as ABCMapping, Sequence
@@ -17,7 +22,10 @@ import numpy as np
 import pandas as pd
 import requests
 
+from pathlib import Path
+
 from shared.config import get_config, settings
+from shared.debug.rerun_controller import request_rerun
 from shared.pandas_attrs import unwrap_callable_attr
 from shared.telemetry import log_metric
 from shared.time_provider import TimeProvider
@@ -25,6 +33,13 @@ from shared.utils import _to_float
 
 
 logger = logging.getLogger(__name__)
+
+
+_AUDIT_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="portfolio-consistency")
+_AUDIT_RESULTS_MAX = 8
+_AUDIT_CSV_COLUMNS = ("timestamp", "metric_name", "duration_ms", "status", "context")
+_AUDIT_CSV_PATH = Path("performance_metrics_audit.csv")
+_AUDIT_CSV_LOCK = RLock()
 
 
 _IOL_EXPORT_COLUMNS = (
@@ -1088,7 +1103,7 @@ def _diff_percentage(calc_value: float | None, reference_value: float | None) ->
     return float(diff)
 
 
-def validate_portfolio_consistency(
+def _compute_consistency_summary(
     df_calc: pd.DataFrame, payload: Mapping[str, Any] | None
 ) -> dict[str, Any]:
     """Compara métricas calculadas con el payload oficial y detecta desvíos relevantes."""
@@ -1250,6 +1265,237 @@ def validate_portfolio_consistency(
         summary["summary"] = "portfolio_consistency validation failed"
         summary["error"] = "validation_failed"
         return summary
+
+
+def _consistency_background_enabled() -> bool:
+    try:
+        flag = getattr(settings, "portfolio_consistency_background", True)
+    except Exception:  # pragma: no cover - defensive safeguard
+        flag = True
+    return bool(flag)
+
+
+def _empty_consistency_summary(
+    *, dataset_key: str | None = None, status: str = "pending"
+) -> dict[str, Any]:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    summary = {
+        "timestamp": timestamp,
+        "checked": [],
+        "checked_symbols": [],
+        "inconsistencies": [],
+        "inconsistency_count": 0,
+        "symbols": [],
+        "thresholds": {"default_pct": 1.0, "fixed_income_pct": 0.5},
+        "summary": "portfolio_consistency pending",
+    }
+    summary["dataset_key"] = dataset_key
+    summary["status"] = status
+    summary["pending"] = status not in {"completed", "error"}
+    return summary
+
+
+def _build_consistency_dataset_key(
+    df_calc: pd.DataFrame | None, payload: Mapping[str, Any] | None
+) -> str:
+    attrs = getattr(df_calc, "attrs", None)
+    if isinstance(attrs, Mapping):
+        for candidate in ("dataset_hash", "dataset_key", "hash"):
+            value = attrs.get(candidate)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+    base = "none"
+    if isinstance(df_calc, pd.DataFrame):
+        if df_calc.empty:
+            base = "empty"
+        else:
+            try:
+                hashed = pd.util.hash_pandas_object(df_calc, index=True, categorize=True)
+                base = hashlib.sha1(hashed.values.tobytes()).hexdigest()
+            except Exception:  # pragma: no cover - defensive safeguard
+                base = f"rows:{len(df_calc)}"
+
+    payload_size = 0
+    dataset_ref: str | None = None
+    if isinstance(payload, Mapping):
+        activos = payload.get("activos")
+        if isinstance(activos, Sequence):
+            payload_size = len(activos)
+        raw_ref = payload.get("dataset_hash") or payload.get("hash")
+        if isinstance(raw_ref, str) and raw_ref.strip():
+            dataset_ref = raw_ref.strip()
+
+    parts = [base, f"payload:{payload_size}"]
+    if dataset_ref:
+        parts.append(dataset_ref)
+    return "|".join(parts)
+
+
+def _append_audit_metric_row(
+    metric_name: str,
+    duration_ms: float | None,
+    status: str,
+    context: Mapping[str, object],
+) -> None:
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "metric_name": metric_name,
+        "duration_ms": "" if duration_ms is None else f"{max(float(duration_ms), 0.0):.2f}",
+        "status": status or "ok",
+        "context": json.dumps(dict(context), ensure_ascii=False, sort_keys=True),
+    }
+    with _AUDIT_CSV_LOCK:
+        file_exists = _AUDIT_CSV_PATH.exists()
+        with _AUDIT_CSV_PATH.open("a", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=_AUDIT_CSV_COLUMNS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(payload)
+
+
+def _emit_audit_metrics(
+    dataset_key: str,
+    duration_ms: float | None,
+    issues: int,
+    *,
+    status: str,
+    error: str | None = None,
+) -> None:
+    context: dict[str, object] = {"dataset_key": dataset_key, "issues": issues}
+    if error:
+        context["error"] = error
+    try:
+        log_metric(
+            "audit.duration_ms",
+            context=context,
+            duration_ms=duration_ms,
+            status=status,
+        )
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo registrar audit.duration_ms", exc_info=True)
+    try:
+        log_metric("audit.issues_count", context=context, status=status)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo registrar audit.issues_count", exc_info=True)
+    try:
+        _append_audit_metric_row("audit.duration_ms", duration_ms, status, context)
+        _append_audit_metric_row("audit.issues_count", None, status, context)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo persistir métricas de auditoría", exc_info=True)
+
+
+def _run_consistency_job(
+    dataset_key: str,
+    df_calc: pd.DataFrame | None,
+    payload: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    start = time.perf_counter()
+    summary = _compute_consistency_summary(df_calc, payload)
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    result = dict(summary)
+    issues_raw = result.get("inconsistency_count", 0)
+    try:
+        issues = int(issues_raw)
+    except (TypeError, ValueError):
+        issues = 0
+    status = "completed"
+    error_code = None
+    if result.get("error"):
+        status = "error"
+        error_code = str(result.get("error"))
+    result["dataset_key"] = dataset_key
+    result["pending"] = False
+    result["status"] = status
+    result["duration_ms"] = round(duration_ms, 3)
+    _emit_audit_metrics(dataset_key, duration_ms, issues, status=status if status != "completed" else "ok", error=error_code)
+    return result
+
+
+class _ConsistencyAuditManager:
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._pending: set[str] = set()
+        self._results: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._latest_requested: str | None = None
+
+    def schedule(
+        self,
+        dataset_key: str,
+        df_calc: pd.DataFrame | None,
+        payload: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            self._latest_requested = dataset_key
+            pending = dataset_key in self._pending
+            stored = self._results.get(dataset_key)
+            if stored is None:
+                summary = _empty_consistency_summary(dataset_key=dataset_key)
+            else:
+                summary = dict(stored)
+            if not pending and stored is None:
+                self._pending.add(dataset_key)
+                job_df = df_calc.copy(deep=True) if isinstance(df_calc, pd.DataFrame) else df_calc
+                future = _AUDIT_EXECUTOR.submit(_run_consistency_job, dataset_key, job_df, payload)
+                future.add_done_callback(_audit_job_complete(dataset_key))
+                summary["status"] = "pending"
+            summary["dataset_key"] = dataset_key
+            summary["pending"] = dataset_key in self._pending
+            if summary["pending"] and summary.get("status") not in {"error"}:
+                summary["status"] = "pending"
+            return summary
+
+    def store_result(self, dataset_key: str, summary: Mapping[str, Any]) -> None:
+        normalized = dict(summary)
+        normalized["dataset_key"] = dataset_key
+        normalized["pending"] = False
+        with self._lock:
+            self._pending.discard(dataset_key)
+            if dataset_key in self._results:
+                self._results.pop(dataset_key)
+            self._results[dataset_key] = normalized
+            while len(self._results) > _AUDIT_RESULTS_MAX:
+                self._results.popitem(last=False)
+            latest = self._latest_requested
+        if latest == dataset_key:
+            try:
+                request_rerun("portfolio.consistency.ready")
+            except Exception:  # pragma: no cover - defensive safeguard
+                logger.debug("No se pudo solicitar rerun tras auditoría", exc_info=True)
+
+
+def _audit_job_complete(dataset_key: str):
+    def _callback(future: Future) -> None:
+        try:
+            summary = future.result()
+        except Exception:  # pragma: no cover - defensive safeguard
+            logger.exception("Fallo el futuro de auditoría de consistencia")
+            summary = _empty_consistency_summary(dataset_key=dataset_key, status="error")
+            summary["summary"] = "portfolio_consistency background job failed"
+            summary["error"] = "background_failure"
+        _CONSISTENCY_AUDIT_MANAGER.store_result(dataset_key, summary)
+
+    return _callback
+
+
+_CONSISTENCY_AUDIT_MANAGER = _ConsistencyAuditManager()
+
+
+def validate_portfolio_consistency(
+    df_calc: pd.DataFrame,
+    payload: Mapping[str, Any] | None,
+    *,
+    background: bool | None = None,
+) -> dict[str, Any]:
+    """Compara métricas calculadas con el payload oficial y detecta desvíos relevantes."""
+
+    if background is None:
+        background = _consistency_background_enabled()
+
+    dataset_key = _build_consistency_dataset_key(df_calc, payload)
+    if not background:
+        return _run_consistency_job(dataset_key, df_calc, payload)
+    return _CONSISTENCY_AUDIT_MANAGER.schedule(dataset_key, df_calc, payload)
 
 
 # ---------- Cálculo de métricas ----------

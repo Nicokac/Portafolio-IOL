@@ -441,6 +441,127 @@ def _apply_tab_badges(tab_labels: list[str], flags: NotificationFlags) -> list[s
     return updated
 
 
+def _extract_consistency_audit(df_view: Any) -> dict[str, Any] | None:
+    attrs = getattr(df_view, "attrs", None)
+    if not isinstance(attrs, Mapping):
+        return None
+    audit_section = attrs.get("audit")
+    if not isinstance(audit_section, Mapping):
+        return None
+    audit_data = audit_section.get("consistency_checks")
+    if isinstance(audit_data, Mapping):
+        return dict(audit_data)
+    return None
+
+
+def _render_consistency_audit_badge(
+    df_view: Any,
+    dataset_key: str,
+    *,
+    ui: Any = st,
+) -> None:
+    audit = _extract_consistency_audit(df_view)
+    if not audit:
+        return
+
+    pending = bool(audit.get("pending"))
+    status = str(audit.get("status") or ("pending" if pending else "completed"))
+    summary_text = str(audit.get("summary") or "Auditoría de consistencia")
+    try:
+        count = int(audit.get("inconsistency_count", 0) or 0)
+    except (TypeError, ValueError):
+        count = 0
+    try:
+        duration_ms = float(audit.get("duration_ms", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        duration_ms = 0.0
+    timestamp = str(audit.get("timestamp") or "")
+    detail_key = f"consistency_detail_open_{dataset_key or 'current'}"
+
+    if status == "error":
+        icon = "⚠️"
+        badge_bg = "#fdecea"
+        badge_fg = "#972f1b"
+        counter = "!"
+        helper = summary_text or "Auditoría fallida"
+    elif pending:
+        icon = "⏳"
+        badge_bg = "#fff4d5"
+        badge_fg = "#8a5b00"
+        counter = "…"
+        helper = "Auditoría en ejecución"
+    elif count > 0:
+        icon = "🚨"
+        badge_bg = "#fdecea"
+        badge_fg = "#972f1b"
+        counter = str(count)
+        helper = f"{count} hallazgos detectados"
+    else:
+        icon = "✅"
+        badge_bg = "#e6f4ea"
+        badge_fg = "#1f6f43"
+        counter = "0"
+        helper = "Sin hallazgos pendientes"
+
+    badge_html = f"""
+    <div style="display:flex;align-items:center;gap:0.6rem;padding:0.4rem 0.85rem;border-radius:999px;font-weight:600;background:{badge_bg};color:{badge_fg};">
+        <span>{icon}</span>
+        <span>Auditoría de consistencia</span>
+        <span style="background:rgba(255,255,255,0.25);padding:0.1rem 0.6rem;border-radius:999px;min-width:2rem;text-align:center;">{counter}</span>
+    </div>
+    """
+
+    ui.markdown(badge_html, unsafe_allow_html=True)
+    caption_parts: list[str] = []
+    if timestamp:
+        caption_parts.append(f"Actualizado: {timestamp}")
+    if duration_ms:
+        caption_parts.append(f"Duración: {duration_ms:.0f} ms")
+    if pending:
+        caption_parts.append("Se actualizará automáticamente al completar.")
+    elif status == "error":
+        caption_parts.append("Reintentá la auditoría luego de refrescar.")
+    if caption_parts:
+        ui.caption(" · ".join(caption_parts))
+
+    if helper:
+        ui.caption(helper)
+
+    state = False
+    try:
+        if st.session_state.get(detail_key) and st.session_state.get(f"{detail_key}_dataset") == dataset_key:
+            state = True
+        elif st.session_state.get(f"{detail_key}_dataset") != dataset_key:
+            st.session_state[detail_key] = False
+    except Exception:  # pragma: no cover - defensive safeguard
+        state = False
+
+    try:
+        st.session_state[f"{detail_key}_dataset"] = dataset_key
+    except Exception:  # pragma: no cover - defensive safeguard
+        pass
+
+    button_label = "Ocultar detalle" if state else "Ver detalle"
+    if ui.button(button_label, key=f"{detail_key}_toggle"):
+        state = not state
+        try:
+            st.session_state[detail_key] = state
+        except Exception:  # pragma: no cover - defensive safeguard
+            pass
+
+    if state:
+        detail_payload = {
+            "summary": summary_text,
+            "inconsistency_count": count,
+            "symbols": audit.get("symbols", []),
+            "inconsistencies": audit.get("inconsistencies", []),
+            "checked_symbols": audit.get("checked_symbols", []),
+            "timestamp": timestamp,
+            "status": status,
+        }
+        ui.json(detail_payload)
+
+
 def _hash_dataframe(df: Any) -> str:
     """Return a stable hash for the provided DataFrame-like object."""
 
@@ -2557,13 +2678,6 @@ def render_portfolio_section(
             notifications = notifications_service.get_flags()
         tab_labels = _apply_tab_badges(list(viewmodel.tab_options), notifications)
 
-        tab_idx = st.radio(
-            "Secciones",
-            options=range(len(tab_labels)),
-            format_func=lambda i: tab_labels[i],
-            horizontal=True,
-            key="portfolio_tab",
-        )
         df_view = viewmodel.positions
 
         dataset_hash = snapshot.dataset_hash or precomputed_dataset_hash
@@ -2576,6 +2690,16 @@ def render_portfolio_section(
                     exc_info=True,
                 )
                 dataset_hash = ""
+        _render_consistency_audit_badge(df_view, dataset_hash)
+
+        tab_idx = st.radio(
+            "Secciones",
+            options=range(len(tab_labels)),
+            format_func=lambda i: tab_labels[i],
+            horizontal=True,
+            key="portfolio_tab",
+        )
+
         dataset_hash = str(dataset_hash or "")
         hydration_wait_start = time.perf_counter()
         guardian_hydrated = guardian.wait_for_hydration(dataset_hash)

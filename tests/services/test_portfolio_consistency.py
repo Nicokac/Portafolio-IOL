@@ -45,7 +45,7 @@ def test_portfolio_consistency_no_diff() -> None:
         ]
     }
 
-    result = validate_portfolio_consistency(df_calc, payload)
+    result = validate_portfolio_consistency(df_calc, payload, background=False)
 
     assert result["inconsistency_count"] == 0
     assert result["symbols"] == []
@@ -79,7 +79,7 @@ def test_portfolio_consistency_detects_diff(caplog: pytest.LogCaptureFixture) ->
     }
 
     with caplog.at_level(logging.WARNING):
-        result = validate_portfolio_consistency(df_calc, payload)
+        result = validate_portfolio_consistency(df_calc, payload, background=False)
 
     assert result["inconsistency_count"] == 1
     assert result["symbols"] == ["GD30"]
@@ -87,6 +87,10 @@ def test_portfolio_consistency_detects_diff(caplog: pytest.LogCaptureFixture) ->
 
 
 def test_viewmodel_injects_audit_consistency(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "application.portfolio_service._consistency_background_enabled",
+        lambda: False,
+    )
     service = PortfolioViewModelService()
 
     df_pos = pd.DataFrame(
