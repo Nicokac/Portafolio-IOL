@@ -72,6 +72,96 @@ _MONITORING_REFRESH_TS_KEY = "_monitoring_last_refresh_ts"
 _MONITORING_REFRESH_DEBOUNCE_SECONDS = 60.0
 
 
+def _normalize_top_n(value: Any, default: int = 20) -> int:
+    """Return a sanitized ``top_n`` ensuring a positive integer."""
+
+    try:
+        candidate = int(value)
+    except (TypeError, ValueError):
+        return max(int(default), 1)
+    return max(candidate, 1)
+
+
+def _compute_basic_chart_frames(
+    df_view: pd.DataFrame | None,
+    *,
+    top_n: int,
+) -> dict[str, pd.DataFrame]:
+    """Pre-compute lightweight dataframes used by the portfolio charts."""
+
+    frames: dict[str, pd.DataFrame] = {
+        "pl_topn": pd.DataFrame(),
+        "by_type": pd.DataFrame(),
+        "pl_daily": pd.DataFrame(),
+    }
+    if df_view is None or df_view.empty:
+        return frames
+
+    limit = _normalize_top_n(top_n)
+    df = df_view.copy()
+
+    if "pl" in df.columns and "simbolo" in df.columns:
+        columns = [c for c in ("simbolo", "tipo", "pl") if c in df.columns]
+        pl_frame = df[columns].copy()
+        pl_frame["pl"] = pd.to_numeric(pl_frame["pl"], errors="coerce")
+        pl_frame = pl_frame.dropna(subset=["pl"]).sort_values("pl", ascending=False).head(limit)
+        frames["pl_topn"] = pl_frame
+
+    if "valor_actual" in df.columns and "tipo" in df.columns:
+        donut_df = df[["tipo", "valor_actual"]].copy()
+        donut_df["valor_actual"] = pd.to_numeric(donut_df["valor_actual"], errors="coerce")
+        donut_df = donut_df.dropna(subset=["valor_actual"])
+        if not donut_df.empty:
+            grouped = (
+                donut_df.groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
+            )
+            frames["by_type"] = grouped.sort_values("valor_actual", ascending=False)
+
+    if "pl_d" in df.columns and "simbolo" in df.columns:
+        columns = [c for c in ("simbolo", "tipo", "pl_d", "chg_%", "pld_%") if c in df.columns]
+        daily_df = df[columns].copy()
+        daily_df["pl_d"] = pd.to_numeric(daily_df["pl_d"], errors="coerce")
+        if "chg_%" in daily_df.columns:
+            daily_df["chg_%"] = pd.to_numeric(daily_df["chg_%"], errors="coerce")
+        if "pld_%" in daily_df.columns:
+            daily_df["pld_%"] = pd.to_numeric(daily_df["pld_%"], errors="coerce")
+            if "chg_%" in daily_df.columns:
+                daily_df["chg_%"] = daily_df["chg_%"].fillna(daily_df["pld_%"])
+        daily_df = daily_df.dropna(subset=["pl_d"]).sort_values("pl_d", ascending=False).head(limit)
+        frames["pl_daily"] = daily_df
+
+    return frames
+
+
+def _prepare_basic_chart_frames(
+    df_view: pd.DataFrame | None,
+    *,
+    top_n: int,
+) -> dict[str, pd.DataFrame]:
+    return _compute_basic_chart_frames(df_view, top_n=top_n)
+
+
+if st is not None:
+
+    @st.cache_data(show_spinner=False)
+    def prepare_basic_chart_frames(
+        df_view: pd.DataFrame | None,
+        *,
+        top_n: int,
+    ) -> dict[str, pd.DataFrame]:
+        return _prepare_basic_chart_frames(df_view, top_n=top_n)
+
+
+else:  # pragma: no cover - executed when Streamlit is not available
+
+    def prepare_basic_chart_frames(
+        df_view: pd.DataFrame | None,
+        *,
+        top_n: int,
+    ) -> dict[str, pd.DataFrame]:
+        return _prepare_basic_chart_frames(df_view, top_n=top_n)
+
+
 class PortfolioDatasetCacheAdapter:
     """Abstract adapter used to persist dataset-level aggregates."""
 
