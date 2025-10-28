@@ -162,6 +162,39 @@ else:  # pragma: no cover - executed when Streamlit is not available
         return _prepare_basic_chart_frames(df_view, top_n=top_n)
 
 
+def _compute_visible_symbols_hash(df_view: pd.DataFrame | None) -> str:
+    """Return a hash representing the currently visible subset of positions."""
+
+    if df_view is None or df_view.empty:
+        return "empty"
+
+    columns = [
+        col
+        for col in (
+            "simbolo",
+            "mercado",
+            "tipo",
+            "valor_actual",
+            "costo",
+            "cantidad",
+            "moneda",
+            "moneda_origen",
+        )
+        if col in df_view.columns
+    ]
+    if not columns:
+        columns = ["simbolo"]
+
+    subset = df_view.loc[:, columns].copy(deep=False)
+    try:
+        hashed = pd.util.hash_pandas_object(subset, index=True, categorize=True)
+        return hashlib.sha1(hashed.values.tobytes()).hexdigest()
+    except TypeError:
+        payload = subset.to_dict(orient="list")
+        serialized = json.dumps(payload, sort_keys=True, default=_coerce_json)
+        return hashlib.sha1(serialized.encode("utf-8")).hexdigest()
+
+
 class PortfolioDatasetCacheAdapter:
     """Abstract adapter used to persist dataset-level aggregates."""
 
@@ -426,9 +459,16 @@ def _dataset_cache_key(
     fingerprints: Mapping[str, str],
     timestamp_bucket: str | None,
 ) -> str:
-    components = [str(dataset_key or "empty"), str(filters_key or "none")]
+    base_dataset = _extract_positions_fingerprint(dataset_key) or str(dataset_key or "empty")
+    components = [base_dataset, str(filters_key or "none")]
     components.append(fingerprints.get("filters.time", "none"))
     components.append(fingerprints.get("filters.fx", "none"))
+    visible_hash = fingerprints.get("visible.hash")
+    if visible_hash:
+        components.append(str(visible_hash))
+    totals_version = _extract_totals_version(dataset_key)
+    if totals_version:
+        components.append(f"totals:{totals_version}")
     if timestamp_bucket:
         components.append(str(timestamp_bucket))
     return "|".join(components)
@@ -1805,6 +1845,10 @@ class PortfolioViewModelService:
         previous_quotes_hash = _extract_quotes_hash(self._dataset_key)
         quotes_changed = bool(current_quotes_hash != previous_quotes_hash)
 
+        current_positions_key = _extract_positions_fingerprint(dataset_key) or dataset_key
+        previous_positions_key = _extract_positions_fingerprint(self._dataset_key)
+        positions_changed = current_positions_key != previous_positions_key
+
         effective_skip_invalidation = skip_invalidation and not totals_version_changed and not quotes_changed
         self._soft_refresh_guard_active = False
         raw_dataset_changed = dataset_key != self._dataset_key or quotes_changed
@@ -1914,8 +1958,34 @@ class PortfolioViewModelService:
 
         with self._snapshot_lock:
             current_snapshot = self._snapshot
+            cached_state = (
+                dict(self._incremental_cache)
+                if isinstance(self._incremental_cache, Mapping)
+                else {}
+            )
+
+        visible_hint: str | None = None
+        current_metadata = getattr(current_snapshot, "metadata", None)
+        if isinstance(current_metadata, Mapping):
+            raw_visible = current_metadata.get("visible_symbols_hash")
+            if isinstance(raw_visible, str) and raw_visible:
+                visible_hint = raw_visible
+        if not visible_hint:
+            cached_visible = cached_state.get("visible.hash")
+            if isinstance(cached_visible, str) and cached_visible:
+                visible_hint = cached_visible
+
+        reuse_visible_safe = bool(
+            visible_hint
+            and quotes_changed
+            and not positions_changed
+            and not filters_changed
+        )
 
         fingerprints = _build_incremental_fingerprints(dataset_key, controls, filters_key)
+        if visible_hint:
+            fingerprints = dict(fingerprints)
+            fingerprints["visible.hash"] = visible_hint
 
         cache_adapter = self._dataset_cache_adapter
         cached_entry: PortfolioDatasetCacheEntry | None = None
@@ -2051,13 +2121,13 @@ class PortfolioViewModelService:
                     cached_fingerprints["dataset"] = dataset_key
                     cached_blocks["fingerprints"] = dict(cached_fingerprints)
 
-        if quotes_changed:
+        if quotes_changed and not reuse_visible_safe:
             cached_blocks = {}
             cached_fingerprints = {}
 
         incremental_changed = any(
             fingerprints.get(key) != cached_fingerprints.get(key)
-            for key in ("filters.time", "filters.fx", "filters.misc")
+            for key in ("filters.time", "filters.fx", "filters.misc", "visible.hash")
         )
         effective_filters_changed = filters_changed or incremental_changed
 
@@ -2141,7 +2211,7 @@ class PortfolioViewModelService:
             update_history_fn=self._update_history,
             include_extended=include_extended,
             force_totals_recompute=totals_version_changed,
-            allow_dataset_reuse=version_only_change,
+            allow_dataset_reuse=version_only_change or reuse_visible_safe,
         )
 
         patch_applied = _apply_bopreal_postmerge_patch(incremental.df_view)
@@ -2155,6 +2225,10 @@ class PortfolioViewModelService:
                 totals=updated_totals,
                 contribution_metrics=updated_contributions,
             )
+
+        visible_symbols_hash = _compute_visible_symbols_hash(incremental.df_view)
+        fingerprints = dict(fingerprints)
+        fingerprints["visible.hash"] = visible_symbols_hash
 
         consistency_result = validate_portfolio_consistency(
             incremental.df_view,
@@ -2215,6 +2289,7 @@ class PortfolioViewModelService:
         )
         if current_quotes_hash:
             snapshot_metadata["quotes_hash"] = current_quotes_hash
+        snapshot_metadata["visible_symbols_hash"] = visible_symbols_hash
         snapshot_metadata["inconsistency_count"] = inconsistency_count
         if inconsistency_count:
             snapshot_metadata["consistency_stale"] = True
@@ -2250,6 +2325,7 @@ class PortfolioViewModelService:
                 "positions_df": incremental.df_view,
                 "returns_df": incremental.returns_df,
                 "fingerprints": dict(fingerprints),
+                "visible.hash": visible_symbols_hash,
                 "dataset_key": dataset_key,
                 "filters_key": filters_key,
                 "generated_at": generated_ts,
