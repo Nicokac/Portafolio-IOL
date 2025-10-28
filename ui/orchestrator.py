@@ -36,7 +36,7 @@ from shared.debug.rerun_controller import request_rerun
 from shared.debug.rerun_trace import mark_event, safe_stop
 from shared.debug.ui_flow import freeze_heavy_tasks, start_ui_flow
 from shared.favorite_symbols import FavoriteSymbols
-from shared.telemetry import log_default_telemetry
+from shared.telemetry import log_default_telemetry, log_metric
 from shared.time_provider import TimeProvider
 from shared.ui.monitoring_guard import is_monitoring_active
 from ui.footer import render_footer
@@ -640,6 +640,7 @@ def render_main_ui() -> None:
             login_ts = None
         if login_ts is not None:
             render_ts = time.time()
+            render_counter = time.perf_counter()
             elapsed_ms = max(int((render_ts - login_ts) * 1000), 0)
             event_name = "startup.render_portfolio_complete"
             hydration_was_locked = bool(st.session_state.get("_hydration_lock"))
@@ -657,6 +658,44 @@ def render_main_ui() -> None:
             except Exception:  # pragma: no cover - defensive safeguard
                 soft_refresh = False
 
+            hydration_latency_ms: float | None = None
+            last_fragment_id: str | None = None
+            last_mount_snapshot = None
+            mount_payload = None
+            try:
+                mount_payload = st.session_state.get("_lazy_fragment_mount_end")
+            except Exception:  # pragma: no cover - defensive safeguard
+                mount_payload = None
+
+            mount_counter_value: float | None = None
+            if isinstance(mount_payload, dict):
+                raw_counter = mount_payload.get("perf_counter")
+                if isinstance(raw_counter, (int, float)):
+                    mount_counter_value = float(raw_counter)
+                else:
+                    try:
+                        mount_counter_value = float(raw_counter)
+                    except (TypeError, ValueError):
+                        mount_counter_value = None
+                raw_fragment = mount_payload.get("fragment_id")
+                if isinstance(raw_fragment, str) and raw_fragment:
+                    last_fragment_id = raw_fragment
+                wall_clock_raw = mount_payload.get("wall_clock")
+                if isinstance(wall_clock_raw, (int, float)):
+                    last_mount_snapshot = TimeProvider.from_timestamp(wall_clock_raw)
+            if mount_counter_value is None:
+                try:
+                    fallback_counter = st.session_state.get("_lazy_fragment_mount_end_counter")
+                except Exception:  # pragma: no cover - defensive safeguard
+                    fallback_counter = None
+                try:
+                    mount_counter_value = float(fallback_counter) if fallback_counter is not None else None
+                except (TypeError, ValueError):
+                    mount_counter_value = None
+
+            if mount_counter_value is not None:
+                hydration_latency_ms = max((render_counter - mount_counter_value) * 1000.0, 0.0)
+
             payload = {
                 "event": event_name,
                 "elapsed_ms": elapsed_ms,
@@ -665,6 +704,10 @@ def render_main_ui() -> None:
                 "session_id": st.session_state.get("session_id"),
                 "soft_refresh": soft_refresh,
             }
+            if hydration_latency_ms is not None:
+                payload["render_complete_latency_ms"] = round(hydration_latency_ms, 2)
+            if last_fragment_id:
+                payload["render_complete_last_fragment"] = last_fragment_id
             logger.info(event_name, extra=payload)
             analysis_entry = dict(payload)
             analysis_entry["logged_at"] = TimeProvider.now()
@@ -674,6 +717,8 @@ def render_main_ui() -> None:
                 analysis_entry["login_at"] = login_snapshot.text
             if render_snapshot:
                 analysis_entry["render_at"] = render_snapshot.text
+            if last_mount_snapshot:
+                analysis_entry["last_fragment_mount_at"] = last_mount_snapshot.text
             try:
                 with ANALYSIS_LOG_PATH.open("a", encoding="utf-8") as fh:
                     fh.write(json.dumps(analysis_entry, ensure_ascii=False) + "\n")
@@ -694,6 +739,25 @@ def render_main_ui() -> None:
             if skeleton_ms is not None:
                 telemetry_extra["skeleton_render_ms"] = round(float(skeleton_ms), 2)
                 telemetry_extra["ui_first_paint_ms"] = round(float(skeleton_ms), 2)
+            if hydration_latency_ms is not None:
+                telemetry_extra["render_complete_latency_ms"] = round(hydration_latency_ms, 2)
+            metric_context: dict[str, object] = {}
+            if last_fragment_id:
+                metric_context["last_fragment_id"] = last_fragment_id
+            if last_mount_snapshot:
+                metric_context["last_fragment_mount_at"] = last_mount_snapshot.text
+            if hydration_latency_ms is not None:
+                try:
+                    log_metric(
+                        "ui.orchestrator.render_complete_latency",
+                        duration_ms=hydration_latency_ms,
+                        context=metric_context or None,
+                    )
+                except Exception:  # pragma: no cover - defensive safeguard
+                    logger.debug(
+                        "No se pudo registrar ui.orchestrator.render_complete_latency",
+                        exc_info=True,
+                    )
             try:
                 log_default_telemetry(
                     phase=event_name,

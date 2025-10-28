@@ -41,6 +41,8 @@ fragment_context_ready: bool = True
 
 _FRAGMENT_READY_MAP_KEY = "_fragment_ready"
 _FRAGMENT_READY_EMITTED_KEY = "_fragment_ready_emitted"
+_FRAGMENT_MOUNT_END_STATE_KEY = "_lazy_fragment_mount_end"
+_FRAGMENT_MOUNT_END_COUNTER_KEY = "_lazy_fragment_mount_end_counter"
 
 
 def _get_or_init_session_dict(key: str) -> tuple[dict[str, Any], bool]:
@@ -146,6 +148,55 @@ def mark_fragment_ready(fragment_id: str, source: str = "backend_optimistic") ->
         source,
         fragment_id,
     )
+
+
+def register_fragment_mount_end(
+    fragment_id: str, *, timestamp: float | None = None
+) -> None:
+    """Record the last time a fragment finished mounting on the frontend."""
+
+    if not fragment_id:
+        return
+
+    try:
+        state = getattr(st, "session_state", None)
+    except Exception:  # pragma: no cover - defensive safeguard when stubs lack state
+        state = None
+
+    if state is None:
+        return
+
+    try:
+        counter_value = (
+            float(timestamp) if timestamp is not None else time.perf_counter()
+        )
+    except (TypeError, ValueError):
+        counter_value = time.perf_counter()
+
+    wall_clock = time.time()
+    payload = {
+        "fragment_id": fragment_id,
+        "perf_counter": counter_value,
+        "wall_clock": wall_clock,
+    }
+
+    try:
+        state[_FRAGMENT_MOUNT_END_STATE_KEY] = payload
+    except Exception:  # pragma: no cover - defensive safeguard for immutable state
+        logger.debug(
+            "[LazyRuntime] failed_to_store_mount_end fragment=%s",
+            fragment_id,
+            exc_info=True,
+        )
+
+    try:
+        state[_FRAGMENT_MOUNT_END_COUNTER_KEY] = counter_value
+    except Exception:  # pragma: no cover - defensive safeguard for immutable state
+        logger.debug(
+            "[LazyRuntime] failed_to_store_mount_counter fragment=%s",
+            fragment_id,
+            exc_info=True,
+        )
 
 
 def emit_fragment_ready(fragment_id: str) -> None:
@@ -800,6 +851,7 @@ def register_fragment_ready(
 
     if visible:
         mark_fragment_ready(fragment_id, source="frontend_js")
+        register_fragment_mount_end(fragment_id)
     else:
         state_changed = _update_fragment_ready_state(fragment_id, False)
         if state_changed:
