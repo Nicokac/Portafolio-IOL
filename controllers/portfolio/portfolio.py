@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
@@ -11,20 +13,14 @@ from collections import OrderedDict
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Iterator, Mapping, Sequence, cast
 
 import pandas as pd
 import streamlit as st
 
-from application.portfolio_service import (
-    PORTFOLIO_TOTALS_VERSION,
-    PortfolioService,
-    PortfolioTotals,
-    map_to_us_ticker,
-)
-from application.portfolio_viewmodel import build_portfolio_viewmodel
-from application.ta_service import TAService
+from bootstrap.startup import lazy_attr, startup_singleton
 from domain.models import Controls
 from infrastructure.iol.auth import get_current_user_id
 from services import snapshots as snapshot_service
@@ -58,7 +54,6 @@ from shared.telemetry import log_default_telemetry, log_metric, log_telemetry
 from shared.ui.monitoring_guard import is_monitoring_active
 from shared.user_actions import log_user_action
 from ui.charts import plot_technical_analysis_chart
-from ui.export import PLOTLY_CONFIG, render_portfolio_exports
 from ui.favorites import render_favorite_badges, render_favorite_toggle
 from ui.fundamentals import render_fundamental_data
 from ui.lazy import (
@@ -89,8 +84,75 @@ from .charts import (
 from .fundamentals import render_fundamental_analysis
 from .load_data import load_portfolio_data
 
+if TYPE_CHECKING:
+    from application.portfolio_service import PortfolioService, PortfolioTotals
+    from application.ta_service import TAService
+
 logger = logging.getLogger(__name__)
 session_logger = logging.getLogger("controllers.portfolio.session")
+
+
+@startup_singleton("PortfolioService")
+def _portfolio_service_singleton() -> "PortfolioService":
+    factory = globals().get("PortfolioService")
+    if callable(factory):
+        return factory()
+    service_cls = lazy_attr("application.portfolio_service", "PortfolioService")
+    return service_cls()
+
+
+@startup_singleton("TAService")
+def _ta_service_singleton() -> "TAService":
+    factory = globals().get("TAService")
+    if callable(factory):
+        return factory()
+    service_cls = lazy_attr("application.ta_service", "TAService")
+    return service_cls()
+
+
+@startup_singleton("portfolio_incremental_cache")
+def _incremental_cache_singleton() -> CacheService:
+    return CacheService(namespace="portfolio_incremental")
+
+
+@lru_cache(maxsize=1)
+def _portfolio_totals_type():
+    return lazy_attr("application.portfolio_service", "PortfolioTotals")
+
+
+@lru_cache(maxsize=1)
+def _portfolio_totals_version() -> str:
+    return cast(str, lazy_attr("application.portfolio_service", "PORTFOLIO_TOTALS_VERSION"))
+
+
+def _map_to_us_ticker(symbol: str) -> str:
+    mapper = lazy_attr("application.portfolio_service", "map_to_us_ticker")
+    return mapper(symbol)
+
+
+def build_portfolio_viewmodel(*args, **kwargs):
+    builder = lazy_attr("application.portfolio_viewmodel", "build_portfolio_viewmodel")
+    return builder(*args, **kwargs)
+
+
+def render_portfolio_exports(*args, **kwargs):
+    renderer = lazy_attr("ui.export", "render_portfolio_exports")
+    return renderer(*args, **kwargs)
+
+
+@lru_cache(maxsize=1)
+def _get_plotly_config() -> dict[str, Any]:
+    config = lazy_attr("ui.export", "PLOTLY_CONFIG")
+    return cast(dict[str, Any], config)
+
+
+class _CacheAccessor:
+    def __call__(self) -> CacheService:
+        return _incremental_cache_singleton()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(_incremental_cache_singleton(), name)
+
 
 _SERVICE_REGISTRY_KEY = "__portfolio_services__"
 _VIEW_MODEL_SERVICE_KEY = "view_model_service"
@@ -102,7 +164,10 @@ _PORTFOLIO_SERVICE_KEY = "portfolio_service"
 _TA_SERVICE_KEY = "ta_service"
 
 _CACHE_TTL_SECONDS = 300.0
-_INCREMENTAL_CACHE = CacheService(namespace="portfolio_incremental")
+_INCREMENTAL_CACHE = _CacheAccessor()
+
+PortfolioService = None  # type: ignore[assignment]
+TAService = None  # type: ignore[assignment]
 
 _RENDER_REFS_STATE_KEY = "render_refs"
 
@@ -232,16 +297,16 @@ def default_notifications_service_factory() -> NotificationsService:
     return NotificationsService()
 
 
-def default_portfolio_service_factory() -> PortfolioService:
+def default_portfolio_service_factory() -> "PortfolioService":
     """Return a fresh portfolio service instance."""
 
-    return PortfolioService()
+    return _portfolio_service_singleton()
 
 
-def default_ta_service_factory() -> TAService:
+def default_ta_service_factory() -> "TAService":
     """Return a fresh technical-analysis service instance."""
 
-    return TAService()
+    return _ta_service_singleton()
 
 
 def _get_or_create_service(
@@ -297,8 +362,8 @@ def get_notifications_service(
 
 
 def get_portfolio_service(
-    factory: Callable[[], PortfolioService] | None = None,
-) -> PortfolioService:
+    factory: Callable[[], "PortfolioService"] | None = None,
+) -> "PortfolioService":
     """Return the cached portfolio service instance."""
 
     service = _get_or_create_service(
@@ -306,10 +371,10 @@ def get_portfolio_service(
         default_factory=default_portfolio_service_factory,
         override_factory=factory,
     )
-    return cast(PortfolioService, service)
+    return cast("PortfolioService", service)
 
 
-def get_ta_service(factory: Callable[[], TAService] | None = None) -> TAService:
+def get_ta_service(factory: Callable[[], "TAService"] | None = None) -> "TAService":
     """Return the cached technical-analysis service instance."""
 
     service = _get_or_create_service(
@@ -317,7 +382,7 @@ def get_ta_service(factory: Callable[[], TAService] | None = None) -> TAService:
         default_factory=default_ta_service_factory,
         override_factory=factory,
     )
-    return cast(TAService, service)
+    return cast("TAService", service)
 
 
 def reset_portfolio_services() -> None:
@@ -550,7 +615,8 @@ def _compute_portfolio_dataset_key(viewmodel: Any, df_view: Any) -> str:
 
     totals = getattr(viewmodel, "totals", None)
     totals_sig = "|".join(
-        str(getattr(totals, attr, "")) for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
+        str(getattr(totals, attr, ""))
+        for attr in ("total_value", "total_cost", "total_pl", "total_pl_pct")
     )
     history = _hash_dataframe(getattr(viewmodel, "historical_total", None))
     contributions = getattr(viewmodel, "contributions", None)
@@ -617,7 +683,9 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
         "ccl_rate": getattr(metrics, "ccl_rate", None),
         "snapshot": getattr(snapshot, "storage_id", None) or getattr(snapshot, "id", None),
         "favorites": _favorites_signature(favorites),
-        "pending": ";".join(sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())),
+        "pending": ";".join(
+            sorted(str(item) for item in getattr(snapshot, "pending_metrics", ()) or ())
+        ),
     }
     return json.dumps(payload, sort_keys=True, default=str)
 
@@ -625,7 +693,7 @@ def _summary_filters_key(controls: Any, metrics: Any, favorites: Any, snapshot: 
 def _summary_totals_hash(totals: Any) -> str:
     """Return a compact hash based on the visible portfolio totals."""
 
-    if not isinstance(totals, PortfolioTotals):
+    if not isinstance(totals, _portfolio_totals_type()):
         return "none"
 
     values = (
@@ -1149,9 +1217,13 @@ def _prompt_lazy_block(
 
     trigger_state = False
     has_loaded_flag = block.get("status") == "loaded" or "loaded_at" in block
-    should_render_trigger = (not ready or block.get("auto_loaded") is True or has_loaded_flag) and not force_ready
+    should_render_trigger = (
+        not ready or block.get("auto_loaded") is True or has_loaded_flag
+    ) and not force_ready
     if should_render_trigger:
-        trigger_state = _render_lazy_trigger(placeholder, label=button_label, session_key=session_key)
+        trigger_state = _render_lazy_trigger(
+            placeholder, label=button_label, session_key=session_key
+        )
         if trigger_state and not session_ready:
             action = "lazy_block_trigger"
             if "load_table" in (key or ""):
@@ -1351,14 +1423,18 @@ def render_basic_tab(
     table_lazy = lazy_blocks["table"]
     charts_lazy = lazy_blocks["charts"]
     exports_lazy = lazy_blocks["exports"]
-    table_lazy["placeholder"] = table_entry.get("trigger_placeholder", table_entry.get("placeholder"))
-    charts_lazy["placeholder"] = charts_entry.get("trigger_placeholder", charts_entry.get("placeholder"))
+    table_lazy["placeholder"] = table_entry.get(
+        "trigger_placeholder", table_entry.get("placeholder")
+    )
+    charts_lazy["placeholder"] = charts_entry.get(
+        "trigger_placeholder", charts_entry.get("placeholder")
+    )
     exports_lazy["placeholder"] = exports_lazy.get("placeholder")
 
     summary_signature = (portfolio_id, summary_filters)
     summary_currency = get_active_summary_currency()
     summary_hash = (
-        f"{_summary_totals_hash(totals)}|currency:{summary_currency}|v{PORTFOLIO_TOTALS_VERSION}"
+        f"{_summary_totals_hash(totals)}|currency:{summary_currency}|v{_portfolio_totals_version()}"
     )
     summary_meta = _get_component_metadata(portfolio_id, summary_filters, tab_slug, "summary")
     summary_entry_hash = summary_entry.get("dataset_hash")
@@ -1428,7 +1504,9 @@ def render_basic_tab(
                 summary_timestamp = summary_meta.get("computed_at")
                 summary_entry.setdefault("updated_at", summary_timestamp)
             with _VISUAL_STATE_LOCK:
-                visual_cache_entry.setdefault("summary_placeholder", summary_entry.get("placeholder"))
+                visual_cache_entry.setdefault(
+                    "summary_placeholder", summary_entry.get("placeholder")
+                )
                 visual_cache_entry.setdefault("summary_rendered", True)
                 if summary_timestamp is not None:
                     visual_cache_entry.setdefault("summary_timestamp", summary_timestamp)
@@ -1494,9 +1572,9 @@ def render_basic_tab(
         should_render_table = False
         if table_ready:
             with _record_stage("render_table", timings):
-                should_render_table = table_entry.get("dataset_hash") != dataset_token or not table_entry.get(
-                    "rendered"
-                )
+                should_render_table = table_entry.get(
+                    "dataset_hash"
+                ) != dataset_token or not table_entry.get("rendered")
                 if should_render_table:
                     placeholder = table_placeholder
                     references = table_refs.get("references")
@@ -1572,12 +1650,16 @@ def render_basic_tab(
                     with _VISUAL_STATE_LOCK:
                         visual_cache_entry.setdefault("table_placeholder", table_placeholder)
                         visual_cache_entry.setdefault("table_rendered", True)
-                        visual_cache_entry.setdefault("table_lazy_load_ms", table_entry.get("lazy_load_ms"))
+                        visual_cache_entry.setdefault(
+                            "table_lazy_load_ms", table_entry.get("lazy_load_ms")
+                        )
                         visual_cache_entry.setdefault(
                             "table_mount_latency_ms",
                             table_entry.get("mount_latency_ms"),
                         )
-                        visual_cache_entry.setdefault("table_timestamp", table_entry.get("updated_at"))
+                        visual_cache_entry.setdefault(
+                            "table_timestamp", table_entry.get("updated_at")
+                        )
 
         if table_ready:
             table_ctx.stop()
@@ -1612,11 +1694,15 @@ def render_basic_tab(
         charts_entry["rendered"] = False
         previously_rendered_charts = False
         with heavy_container:
-            st.info("Las exportaciones y gráficos se habilitan al finalizar las métricas extendidas.")
+            st.info(
+                "Las exportaciones y gráficos se habilitan al finalizar las métricas extendidas."
+            )
     else:
         with heavy_container:
             contributions_df = getattr(contributions, "by_symbol", None)
-            contributions_ready = isinstance(contributions_df, pd.DataFrame) and not contributions_df.empty
+            contributions_ready = (
+                isinstance(contributions_df, pd.DataFrame) and not contributions_df.empty
+            )
 
             exports_placeholder = exports_lazy.get("placeholder")
             if not hasattr(exports_placeholder, "button"):
@@ -1675,14 +1761,18 @@ def render_basic_tab(
                         "Las exportaciones se habilitan cuando las métricas extendidas aportan datos adicionales."
                     )
                 except Exception:  # pragma: no cover - defensive safeguard
-                    logger.debug("No se pudo renderizar el mensaje diferido de exportaciones", exc_info=True)
+                    logger.debug(
+                        "No se pudo renderizar el mensaje diferido de exportaciones", exc_info=True
+                    )
                 exports_lazy["status"] = "pending"
                 exports_lazy.setdefault("dataset_hash", dataset_token)
             else:
                 exports_lazy.setdefault("dataset_hash", dataset_token)
 
             charts_placeholder = charts_entry.get("body_placeholder") or charts_entry["placeholder"]
-            charts_trigger_placeholder = charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
+            charts_trigger_placeholder = (
+                charts_entry.get("trigger_placeholder") or charts_entry["placeholder"]
+            )
             if not hasattr(charts_placeholder, "container"):
                 charts_placeholder = st.empty()
                 charts_entry["placeholder"] = charts_placeholder
@@ -1717,17 +1807,18 @@ def render_basic_tab(
 
                 if charts_ready:
                     with _record_stage("render_charts", timings):
-                        should_render_charts = (
-                            charts_entry.get("dataset_hash") != dataset_token
-                            or not charts_entry.get("rendered")
-                        )
+                        should_render_charts = charts_entry.get(
+                            "dataset_hash"
+                        ) != dataset_token or not charts_entry.get("rendered")
                         if should_render_charts:
                             placeholder = charts_entry["body_placeholder"]
                             if not previously_rendered_charts:
                                 skeletons.mark_placeholder("charts", placeholder=placeholder)
                                 try:
                                     placeholder.write("⏳ Cargando gráficos del portafolio…")
-                                except Exception:  # pragma: no cover - defensive guard for Streamlit stubs
+                                except (
+                                    Exception
+                                ):  # pragma: no cover - defensive guard for Streamlit stubs
                                     logger.debug(
                                         "No se pudo mostrar el placeholder de carga de gráficos",
                                         exc_info=True,
@@ -1805,14 +1896,20 @@ def render_basic_tab(
                             charts_entry.setdefault("signature", charts_signature)
                             charts_refs.setdefault("dataset_hash", dataset_token)
                             with _VISUAL_STATE_LOCK:
-                                visual_cache_entry.setdefault("charts_placeholder", charts_entry.get("placeholder"))
+                                visual_cache_entry.setdefault(
+                                    "charts_placeholder", charts_entry.get("placeholder")
+                                )
                                 visual_cache_entry.setdefault("charts_rendered", True)
-                                visual_cache_entry.setdefault("charts_lazy_load_ms", charts_entry.get("lazy_load_ms"))
+                                visual_cache_entry.setdefault(
+                                    "charts_lazy_load_ms", charts_entry.get("lazy_load_ms")
+                                )
                                 visual_cache_entry.setdefault(
                                     "charts_mount_latency_ms",
                                     charts_entry.get("mount_latency_ms"),
                                 )
-                                visual_cache_entry.setdefault("charts_timestamp", charts_entry.get("updated_at"))
+                                visual_cache_entry.setdefault(
+                                    "charts_timestamp", charts_entry.get("updated_at")
+                                )
 
                 if charts_ready:
                     charts_ctx.stop()
@@ -1831,7 +1928,9 @@ def render_basic_tab(
         )
 
     partial_update_ms = (time.perf_counter() - partial_update_start) * 1000.0
-    incremental_render = not should_render_summary and not should_render_table and not should_render_charts
+    incremental_render = (
+        not should_render_summary and not should_render_table and not should_render_charts
+    )
     if isinstance(tab_cache, dict):
         tab_cache["lazy_pending"] = (
             table_lazy.get("status") != "loaded"
@@ -1943,7 +2042,7 @@ def render_technical_tab(
     """Render the technical indicators tab for a specific symbol selection."""
 
     if map_symbol is None:
-        map_symbol = map_to_us_ticker
+        map_symbol = _map_to_us_ticker
     if ui is None:
         ui = st
     if plot_chart is None:
@@ -2029,8 +2128,12 @@ def render_technical_tab(
         macd_signal = c3.number_input("MACD señal", min_value=5, max_value=50, value=9, step=1)
         c4, c5, c6 = ui.columns(3)
         atr_win = c4.number_input("ATR ventana", min_value=5, max_value=200, value=14, step=1)
-        stoch_win = c5.number_input("Estocástico ventana", min_value=5, max_value=200, value=14, step=1)
-        stoch_smooth = c6.number_input("Estocástico suavizado", min_value=1, max_value=50, value=3, step=1)
+        stoch_win = c5.number_input(
+            "Estocástico ventana", min_value=5, max_value=200, value=14, step=1
+        )
+        stoch_smooth = c6.number_input(
+            "Estocástico suavizado", min_value=1, max_value=50, value=3, step=1
+        )
         c7, c8, c9 = ui.columns(3)
         ichi_conv = c7.number_input("Ichimoku conv.", min_value=1, max_value=50, value=9, step=1)
         ichi_base = c8.number_input("Ichimoku base", min_value=2, max_value=100, value=26, step=1)
@@ -2077,7 +2180,7 @@ def render_technical_tab(
         ui.plotly_chart(
             fig,
             key="ta_chart",
-            config=PLOTLY_CONFIG,
+            config=_get_plotly_config(),
         )
         ui.caption(
             "Gráfico de precio con indicadores técnicos como "
@@ -2122,7 +2225,9 @@ def render_technical_tab(
             ui.info("Sin datos suficientes para el backtesting.")
         else:
             ui.line_chart(bt["equity"])
-            ui.caption("La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada.")
+            ui.caption(
+                "La línea muestra cómo habría crecido la inversión usando la estrategia seleccionada."
+            )
             ui.metric("Retorno acumulado", f"{bt['equity'].iloc[-1] - 1:.2%}")
 
 
@@ -2158,7 +2263,9 @@ def render_portfolio_section(
                     context={"source": "portfolio_render"},
                 )
             except Exception:  # pragma: no cover - defensive safeguard
-                logger.debug("No se pudo registrar telemetría monitoring.refresh_skipped", exc_info=True)
+                logger.debug(
+                    "No se pudo registrar telemetría monitoring.refresh_skipped", exc_info=True
+                )
             return None
 
         psvc = get_portfolio_service()
@@ -2255,7 +2362,11 @@ def render_portfolio_section(
                             mark_event(
                                 "lazy_metrics_cancel",
                                 "dataset_mismatch",
-                                {"expected": dataset_key, "found": current_dataset, "flow_id": flow_id},
+                                {
+                                    "expected": dataset_key,
+                                    "found": current_dataset,
+                                    "flow_id": flow_id,
+                                },
                             )
                             return
                         view_model_service.compute_extended_metrics(
@@ -2481,7 +2592,12 @@ def render_portfolio_section(
             log_user_action("filter_change", controls_snapshot, dataset_hash=dataset_hash)
         manual_refresh_flag = bool(st.session_state.pop("refresh_pending", False))
         previous_hash = st.session_state.get(_DATASET_HASH_STATE_KEY)
-        if previous_hash and dataset_hash and previous_hash != dataset_hash and not skip_invalidation_flag:
+        if (
+            previous_hash
+            and dataset_hash
+            and previous_hash != dataset_hash
+            and not skip_invalidation_flag
+        ):
             visual_cache_registry.invalidate_dataset(previous_hash, reason="dataset_hash_changed")
             _log_quotes_refresh_event(
                 dataset_hash,
@@ -2573,7 +2689,9 @@ def render_portfolio_section(
             first_visit = not bool(tab_loaded.get(tab_slug))
             lazy_pending = bool(cache_entry.get("lazy_pending"))
             should_render = (
-                cache_entry.get("signature") != tab_signature or not cache_entry.get("rendered") or lazy_pending
+                cache_entry.get("signature") != tab_signature
+                or not cache_entry.get("rendered")
+                or lazy_pending
             )
             source = "fresh" if not cache_entry.get("rendered") else "cache"
             latency_ms: float | None = cache_entry.get("latency_ms")
@@ -2971,8 +3089,12 @@ def _tab_signature(viewmodel: Any, df_view: Any, tab_slug: str) -> tuple[Any, ..
         desc = getattr(controls, "desc", None)
         show_usd = getattr(controls, "show_usd", None)
         top_n = getattr(controls, "top_n", None)
-        selected_syms = tuple(sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ()))
-        selected_types = tuple(sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ()))
+        selected_syms = tuple(
+            sorted(str(sym) for sym in getattr(controls, "selected_syms", []) or ())
+        )
+        selected_types = tuple(
+            sorted(str(tp) for tp in getattr(controls, "selected_types", []) or ())
+        )
         symbol_query = (getattr(controls, "symbol_query", "") or "").strip()
     except Exception:  # pragma: no cover - defensive safeguard
         logger.debug("No se pudo calcular la firma de la pestaña %s", tab_slug, exc_info=True)
@@ -3051,7 +3173,9 @@ _SOURCE_LABELS = {
 }
 
 
-def _update_status_message(placeholder, base_label: str, latency_ms: float | None, source: str) -> None:
+def _update_status_message(
+    placeholder, base_label: str, latency_ms: float | None, source: str
+) -> None:
     """Render a status line with latency metadata for the active tab."""
 
     label = base_label.strip() or "Sección"
