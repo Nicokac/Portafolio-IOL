@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 _QA_EVENT_NAME = "qa_profiler"
 _METRIC_FIELDS = (
     "startup_time_ms",
+    "startup.singleton_init_ms",
+    "startup.lazy_imports_ms",
     "ui_render_time_ms",
     "cache_load_time_ms",
     "auth_latency_ms",
@@ -49,6 +51,16 @@ def _record_metric(name: str, duration_ms: float) -> None:
     coerced = max(float(duration_ms), 0.0)
     _metrics[name] = coerced
     logger.debug("QA metric recorded %s=%.3f", name, coerced)
+
+
+def record_startup_metric(name: str, duration_ms: float) -> None:
+    """Record an additional startup metric exposed during instrumentation."""
+
+    coerced = max(float(duration_ms), 0.0)
+    _metrics[name] = coerced
+    logger.debug("QA startup metric updated %s=%.3f", name, coerced)
+    event_name = f"{_QA_EVENT_NAME}_{name.replace('.', '_')}"
+    _snapshot(event_name)
 
 
 def record_startup_complete() -> None:
@@ -185,6 +197,7 @@ def _resolve_cached_objects() -> int:
 
 
 __all__ = [
+    "record_startup_metric",
     "record_startup_complete",
     "track_ui_render",
     "track_cache_load",

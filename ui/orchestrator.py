@@ -16,6 +16,7 @@ import streamlit as st
 from bootstrap.config import TOTAL_LOAD_START
 from bootstrap.startup import (
     flush_ui_startup_metric,
+    flush_startup_instrumentation_metrics,
     lazy_attr,
     lazy_module,
     record_post_lazy_checkpoint,
@@ -271,6 +272,7 @@ def _render_total_load_indicator(placeholder) -> None:
             exc_info=True,
         )
     record_post_lazy_checkpoint(elapsed_ms)
+    flush_startup_instrumentation_metrics()
 
 
 def _inject_tab_animation_support() -> None:
@@ -466,7 +468,9 @@ def render_main_ui() -> None:
     except Exception:
         logger.debug("No se pudo comprobar el estado del skeleton inicial", exc_info=True)
     if not already_rendered:
-        shell_container = skeletons.mark_placeholder("app_shell", placeholder=first_frame_placeholder)
+        shell_container = skeletons.mark_placeholder(
+            "app_shell", placeholder=first_frame_placeholder
+        )
         if shell_container is not None:
             try:
                 shell_container.markdown("⌛ Preparando tu portafolio…")
@@ -523,7 +527,9 @@ def render_main_ui() -> None:
         status_severity,
         last_failure_ts,
     ) = summarize_health_status(metrics=health_metrics)
-    detail_html = f"<span class='health-status-badge__detail'>{status_detail}</span>" if status_detail else ""
+    detail_html = (
+        f"<span class='health-status-badge__detail'>{status_detail}</span>" if status_detail else ""
+    )
     tooltip_text = _format_failure_tooltip_text(last_failure_ts)
     tooltip_attr = ""
     if tooltip_text:
@@ -560,7 +566,9 @@ def render_main_ui() -> None:
     preload_ready = ensure_scientific_preload_ready(main_col)
     _record_login_preload_timings(preload_ready)
     if not preload_ready:
-        st.warning("No se pudieron precargar las librerías científicas. Continuamos con una carga diferida.")
+        st.warning(
+            "No se pudieron precargar las librerías científicas. Continuamos con una carga diferida."
+        )
 
     cli = build_iol_client()
     try:
@@ -572,8 +580,12 @@ def render_main_ui() -> None:
         logger.debug("No se pudo actualizar el cliente activo en session_state", exc_info=True)
 
     portfolio_module = lazy_module("controllers.portfolio.portfolio")
-    default_view_model_service_factory = getattr(portfolio_module, "default_view_model_service_factory")
-    default_notifications_service_factory = getattr(portfolio_module, "default_notifications_service_factory")
+    default_view_model_service_factory = getattr(
+        portfolio_module, "default_view_model_service_factory"
+    )
+    default_notifications_service_factory = getattr(
+        portfolio_module, "default_notifications_service_factory"
+    )
     render_portfolio_ui = lazy_attr("ui.controllers.portfolio_ui", "render_portfolio_ui")
     render_recommendations_tab = lazy_attr("ui.tabs.recommendations", "render_recommendations_tab")
     render_portfolio_comparison_panel = lazy_attr(

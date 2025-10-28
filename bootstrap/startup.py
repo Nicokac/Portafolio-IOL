@@ -37,16 +37,87 @@ _UI_STARTUP_METRIC_KEY = "ui_startup_load_ms"
 _UI_STARTUP_LOGGED_KEY = "_ui_startup_logged"
 _UI_STARTUP_REPORTED_KEY = "_ui_startup_metric_reported"
 _SCIENTIFIC_PRELOAD_RESUMED_KEY = "_scientific_preload_resumed"
+_SINGLETON_METRIC_KEY = "startup.singleton_init_ms"
+_LAZY_IMPORTS_METRIC_KEY = "startup.lazy_imports_ms"
+
+_singleton_total_ms = 0.0
+_lazy_imports_total_ms = 0.0
+_instrumentation_flushed = False
+
+
+def _update_session_metric(key: str, value: float) -> None:
+    try:
+        st.session_state[key] = float(value)
+    except Exception:  # pragma: no cover - defensive safeguard
+        logger.debug("No se pudo actualizar la métrica de startup %s", key, exc_info=True)
+
+
+def _record_startup_metric(field: str, value: float) -> None:
+    try:
+        from shared import qa_profiler  # type: ignore
+    except Exception:  # pragma: no cover - qa profiler puede no estar disponible
+        return
+    recorder = getattr(qa_profiler, "record_startup_metric", None)
+    if callable(recorder):
+        try:
+            recorder(field, float(value))
+        except Exception:  # pragma: no cover - la telemetría no debe romper el flujo
+            logger.debug("No se pudo registrar la métrica %s en QA", field, exc_info=True)
+
+
+def record_singleton_initialization(label: str, duration_ms: float) -> None:
+    global _singleton_total_ms
+    elapsed = max(float(duration_ms), 0.0)
+    if elapsed <= 0.0:
+        return
+    _singleton_total_ms += elapsed
+    log_startup_event(
+        f"startup.singleton_init | name={label} | duration_ms={elapsed:.2f} | total_ms={_singleton_total_ms:.2f}"
+    )
+    _update_session_metric(_SINGLETON_METRIC_KEY, _singleton_total_ms)
+    _record_startup_metric(_SINGLETON_METRIC_KEY, _singleton_total_ms)
+
+
+def _record_lazy_import(label: str, duration_ms: float) -> None:
+    global _lazy_imports_total_ms
+    elapsed = max(float(duration_ms), 0.0)
+    if elapsed <= 0.0:
+        return
+    _lazy_imports_total_ms += elapsed
+    log_startup_event(
+        f"startup.lazy_import | module={label} | duration_ms={elapsed:.2f} | total_ms={_lazy_imports_total_ms:.2f}"
+    )
+    _update_session_metric(_LAZY_IMPORTS_METRIC_KEY, _lazy_imports_total_ms)
+    _record_startup_metric(_LAZY_IMPORTS_METRIC_KEY, _lazy_imports_total_ms)
 
 
 @lru_cache(maxsize=None)
 def lazy_module(name: str):
-    return importlib.import_module(name)
+    start = time.perf_counter()
+    module = importlib.import_module(name)
+    duration_ms = (time.perf_counter() - start) * 1000.0
+    _record_lazy_import(name, duration_ms)
+    return module
 
 
 @lru_cache(maxsize=None)
 def lazy_attr(module: str, attr: str):
     return getattr(lazy_module(module), attr)
+
+
+def startup_singleton(name: str, *, show_spinner: bool = False):
+    def _decorator(factory):
+        @st.singleton(show_spinner=show_spinner)
+        def _wrapper(*args, **kwargs):
+            start = time.perf_counter()
+            result = factory(*args, **kwargs)
+            duration_ms = (time.perf_counter() - start) * 1000.0
+            record_singleton_initialization(name, duration_ms)
+            return result
+
+        return _wrapper
+
+    return _decorator
 
 
 def start_preload_worker(*, paused: bool = False, libraries: Iterable[str] | None = None) -> bool:
@@ -59,11 +130,15 @@ def start_preload_worker(*, paused: bool = False, libraries: Iterable[str] | Non
         return False
 
 
-def resume_preload_worker(*, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None) -> bool:
+def resume_preload_worker(
+    *, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None
+) -> bool:
     if _PRELOAD_WORKER is None:
         return False
     try:
-        return _PRELOAD_WORKER.resume_preload_worker(delay_seconds=delay_seconds, libraries=libraries)
+        return _PRELOAD_WORKER.resume_preload_worker(
+            delay_seconds=delay_seconds, libraries=libraries
+        )
     except Exception:  # pragma: no cover - defensive guard
         logger.debug("No se pudo reanudar el preload worker", exc_info=True)
         return False
@@ -103,7 +178,9 @@ def record_post_lazy_checkpoint(total_ms: float) -> None:
             return
     except Exception:
         pass
-    log_startup_event(f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}")
+    log_startup_event(
+        f"startup_checkpoint | label=post_lazy_imports | startup_load_ms={float(total_ms):.2f}"
+    )
     try:
         st.session_state[_POST_LAZY_LOGGED_KEY] = True
     except Exception:
@@ -180,6 +257,29 @@ def record_ui_startup_metric() -> None:
         )
 
 
+def flush_startup_instrumentation_metrics() -> None:
+    global _instrumentation_flushed
+    if _instrumentation_flushed:
+        return
+    _instrumentation_flushed = True
+
+    if _singleton_total_ms > 0.0:
+        record_stage_lazy(
+            "startup.singleton_init",
+            total_ms=_singleton_total_ms,
+            status="success",
+        )
+        log_startup_event(f"startup.singleton_init_total | value_ms={_singleton_total_ms:.2f}")
+
+    if _lazy_imports_total_ms > 0.0:
+        record_stage_lazy(
+            "startup.lazy_imports",
+            total_ms=_lazy_imports_total_ms,
+            status="success",
+        )
+        log_startup_event(f"startup.lazy_imports_total | value_ms={_lazy_imports_total_ms:.2f}")
+
+
 def flush_ui_startup_metric(startup_ms: float | int | None) -> None:
     if startup_ms is None:
         return
@@ -214,7 +314,9 @@ def _run_initialization_stage(label: str, action: Callable[[], None]) -> None:
         logger.debug("Post login init stage %s failed", label, exc_info=True)
     else:
         elapsed = (time.perf_counter() - start) * 1000.0
-        log_startup_event(f"post_login_init | stage={label} | status=success | duration_ms={elapsed:.2f}")
+        log_startup_event(
+            f"post_login_init | stage={label} | status=success | duration_ms={elapsed:.2f}"
+        )
 
 
 def _post_login_initialization_worker() -> None:
@@ -278,16 +380,19 @@ def schedule_post_login_initialization() -> None:
 
 __all__ = [
     "flush_ui_startup_metric",
+    "flush_startup_instrumentation_metrics",
     "is_preload_complete",
     "lazy_attr",
     "lazy_module",
     "record_post_lazy_checkpoint",
     "record_stage_lazy",
     "record_startup_checkpoint",
+    "record_singleton_initialization",
     "record_ui_startup_metric",
     "resume_preload_worker",
     "schedule_post_login_initialization",
     "schedule_scientific_preload_resume",
+    "startup_singleton",
     "start_preload_worker",
     "update_ui_startup_metric_lazy",
     "update_ui_total_load_metric_lazy",
