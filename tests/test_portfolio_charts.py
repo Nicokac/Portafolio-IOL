@@ -41,7 +41,11 @@ def test_generate_basic_charts_produces_figures():
         ]
     )
 
-    charts = generate_basic_charts(df, top_n=2)
+    pl_topn = df.sort_values("pl", ascending=False).head(2)[["simbolo", "tipo", "pl"]]
+    donut_df = df.groupby("tipo", dropna=False)["valor_actual"].sum().reset_index()
+    daily_df = df.sort_values("pl_d", ascending=False).head(2)[["simbolo", "tipo", "pl_d", "chg_%"]]
+
+    charts = generate_basic_charts(pl_topn, donut_df, daily_df, top_n=2)
 
     assert set(charts.keys()) == {"pl_topn", "donut_tipo", "pl_diario"}
     for name, fig in charts.items():

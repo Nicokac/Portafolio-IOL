@@ -1,11 +1,14 @@
+from time import perf_counter
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from services.portfolio_view import compute_symbol_risk_metrics
+from services.portfolio_view import compute_symbol_risk_metrics, prepare_basic_chart_frames
 from shared.favorite_symbols import FavoriteSymbols, get_persistent_favorites
 from shared.debug.timing import timeit
+from shared.telemetry import log_metric
 from ui.charts import (
     _apply_layout,
     plot_bubble_pl_vs_costo,
@@ -24,10 +27,10 @@ _HEAVY_DATA_THRESHOLD = 250
 
 
 @st.cache_data(show_spinner=False)
-def _cached_basic_charts(df_view, top_n):
+def _cached_basic_charts(pl_topn_df, donut_df, daily_df, top_n):
     """Cache generation of the basic charts to avoid recomputation."""
 
-    return generate_basic_charts(df_view, top_n)
+    return generate_basic_charts(pl_topn_df, donut_df, daily_df, top_n)
 
 
 @st.cache_data(show_spinner=False)
@@ -37,12 +40,12 @@ def _cached_contribution_heatmap(by_symbol):
     return plot_contribution_heatmap(by_symbol)
 
 
-def generate_basic_charts(df_view, top_n):
+def generate_basic_charts(pl_topn_df, donut_df, daily_df, top_n):
     """Generate basic portfolio charts."""
     return {
-        "pl_topn": plot_pl_topn(df_view, n=top_n),
-        "donut_tipo": plot_donut_tipo(df_view),
-        "pl_diario": plot_pl_daily_topn(df_view, n=top_n),
+        "pl_topn": plot_pl_topn(pl_topn_df, n=top_n),
+        "donut_tipo": plot_donut_tipo(donut_df),
+        "pl_diario": plot_pl_daily_topn(daily_df, n=top_n),
     }
 
 
@@ -119,6 +122,7 @@ def render_table(
         ccl_rate=ccl_rate,
         show_usd=controls.show_usd,
         favorites=favorites,
+        initial_limit=getattr(controls, "top_n", None),
     )
 
 
@@ -133,15 +137,41 @@ def render_charts(
     snapshot=None,
 ):
     """Render the chart section for the portfolio."""
+    render_start = perf_counter()
+    row_count = int(getattr(df_view, "shape", (0, 0))[0]) if df_view is not None else 0
+    dataset_hash = ""
+    if snapshot is not None:
+        dataset_hash = str(getattr(snapshot, "dataset_hash", "") or "")
+    top_n = getattr(controls, "top_n", 20)
+    base_context = {
+        "dataset_hash": dataset_hash,
+        "rows": row_count,
+        "top_n": top_n,
+    }
+
     if df_view is None or df_view.empty:
         st.info("No hay datos del portafolio para mostrar.")
+        log_metric(
+            "portfolio.charts.mount_ms",
+            base_context,
+            status="no_data",
+            duration_ms=(perf_counter() - render_start) * 1000.0,
+        )
         return
 
-    charts = _cached_basic_charts(df_view, controls.top_n)
+    aggregations = prepare_basic_chart_frames(df_view, top_n=top_n)
+    charts = _cached_basic_charts(
+        aggregations.get("pl_topn", pd.DataFrame()),
+        aggregations.get("by_type", pd.DataFrame()),
+        aggregations.get("pl_daily", pd.DataFrame()),
+        top_n,
+    )
+
     colA, colB = st.columns(2)
     with colA:
         st.subheader("P/L por símbolo (Top N)")
         fig = charts["pl_topn"]
+        chart_start = perf_counter()
         if fig is not None:
             st.plotly_chart(
                 fig,
@@ -152,11 +182,23 @@ def render_charts(
                 "Barras que muestran qué activos ganan o pierden más. "
                 "Las más altas son las que más afectan tu resultado."
             )
+            log_metric(
+                "portfolio.chart.pl_topn_ms",
+                base_context | {"chart": "pl_topn"},
+                duration_ms=(perf_counter() - chart_start) * 1000.0,
+            )
         else:
             st.info("Sin datos para graficar P/L Top N.")
+            log_metric(
+                "portfolio.chart.pl_topn_ms",
+                base_context | {"chart": "pl_topn"},
+                status="no_data",
+                duration_ms=0.0,
+            )
     with colB:
         st.subheader("Composición por tipo (Donut)")
         fig = charts["donut_tipo"]
+        chart_start = perf_counter()
         if fig is not None:
             st.plotly_chart(
                 fig,
@@ -167,11 +209,23 @@ def render_charts(
                 "Indica qué porcentaje de tu inversión está en cada tipo de activo "
                 "para ver si estás diversificando bien."
             )
+            log_metric(
+                "portfolio.chart.donut_tipo_ms",
+                base_context | {"chart": "donut_tipo"},
+                duration_ms=(perf_counter() - chart_start) * 1000.0,
+            )
         else:
             st.info("No hay datos para el donut por tipo.")
+            log_metric(
+                "portfolio.chart.donut_tipo_ms",
+                base_context | {"chart": "donut_tipo"},
+                status="no_data",
+                duration_ms=0.0,
+            )
 
     st.subheader("P/L diario por símbolo (Top N)")
     fig = charts["pl_diario"]
+    chart_start = perf_counter()
     if fig is not None:
         st.plotly_chart(
             fig,
@@ -179,74 +233,150 @@ def render_charts(
             config=PLOTLY_CONFIG,
         )
         st.caption("Muestra las ganancias o pérdidas del día para los activos con mayor movimiento.")
+        log_metric(
+            "portfolio.chart.pl_diario_ms",
+            base_context | {"chart": "pl_diario"},
+            duration_ms=(perf_counter() - chart_start) * 1000.0,
+        )
     else:
         st.info("Aún no hay datos de P/L diario.")
+        log_metric(
+            "portfolio.chart.pl_diario_ms",
+            base_context | {"chart": "pl_diario"},
+            status="no_data",
+            duration_ms=0.0,
+        )
 
-    st.subheader("Contribución por símbolo y tipo")
-    by_symbol = getattr(contribution_metrics, "by_symbol", None)
-    heatmap_rows = len(by_symbol) if isinstance(by_symbol, pd.DataFrame) else 0
-    heatmap_ready_key = "portfolio_heatmap_ready"
-    requires_lazy_heatmap = heatmap_rows > _HEAVY_DATA_THRESHOLD
-    heatmap_ready = not requires_lazy_heatmap or st.session_state.get(heatmap_ready_key, False)
-    if requires_lazy_heatmap and not heatmap_ready and heatmap_rows:
-        if st.button(
-            "Generar mapa de calor",
-            key="portfolio_generate_heatmap",
-        ):
-            st.session_state[heatmap_ready_key] = True
-            heatmap_ready = True
-        else:
-            st.info("El mapa de calor se calcula cuando lo necesitás para reducir recomputaciones pesadas.")
-    if heatmap_ready:
-        with st.spinner("Generando análisis avanzado…"):
-            heatmap_fig = _cached_contribution_heatmap(by_symbol)
-        if heatmap_fig is not None:
-            st.plotly_chart(
-                heatmap_fig,
-                key="portfolio_contribution_heatmap",
-                config=PLOTLY_CONFIG,
-            )
-            st.caption("Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera.")
-        else:
-            st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
+    advanced_toggle_key = (
+        f"portfolio_load_advanced_charts_{dataset_hash}" if dataset_hash else "portfolio_load_advanced_charts"
+    )
+    load_advanced = st.toggle(
+        "Cargar gráficos avanzados",
+        key=advanced_toggle_key,
+        help="Calcula mapas de calor y tablas avanzadas solo cuando los necesitás.",
+    )
 
-    by_type = getattr(contribution_metrics, "by_type", None)
-    if isinstance(by_type, pd.DataFrame) and not by_type.empty:
-        display_cols = [
-            col for col in ["tipo", "valor_actual", "valor_actual_pct", "pl", "pl_pct"] if col in by_type.columns
-        ]
-        df_table = by_type[display_cols].copy()
-        for col in df_table.columns:
-            if col == "tipo":
-                df_table[col] = df_table[col].astype(str)
-            elif col.endswith("_pct"):
-                df_table[col] = df_table[col].apply(lambda v: f"{float(v):.2f}%" if pd.notna(v) else "—")
+    if load_advanced:
+        with st.expander("Gráficos avanzados", expanded=True):
+            st.subheader("Contribución por símbolo y tipo")
+            by_symbol = getattr(contribution_metrics, "by_symbol", None)
+            heatmap_rows = len(by_symbol) if isinstance(by_symbol, pd.DataFrame) else 0
+            heatmap_ready_key = "portfolio_heatmap_ready"
+            requires_lazy_heatmap = heatmap_rows > _HEAVY_DATA_THRESHOLD
+            heatmap_ready = not requires_lazy_heatmap or st.session_state.get(heatmap_ready_key, False)
+            if requires_lazy_heatmap and not heatmap_ready and heatmap_rows:
+                if st.button(
+                    "Generar mapa de calor",
+                    key="portfolio_generate_heatmap",
+                ):
+                    st.session_state[heatmap_ready_key] = True
+                    heatmap_ready = True
+                else:
+                    st.info(
+                        "El mapa de calor se calcula cuando lo necesitás para reducir recomputaciones pesadas."
+                    )
+            if heatmap_ready:
+                with st.spinner("Generando análisis avanzado…"):
+                    heatmap_start = perf_counter()
+                    heatmap_fig = _cached_contribution_heatmap(by_symbol)
+                if heatmap_fig is not None:
+                    st.plotly_chart(
+                        heatmap_fig,
+                        key="portfolio_contribution_heatmap",
+                        config=PLOTLY_CONFIG,
+                    )
+                    st.caption("Visualiza qué combinaciones de tipo y símbolo concentran mayor peso en tu cartera.")
+                    log_metric(
+                        "portfolio.chart.contribution_heatmap_ms",
+                        base_context | {"chart": "contribution_heatmap", "rows": heatmap_rows},
+                        duration_ms=(perf_counter() - heatmap_start) * 1000.0,
+                    )
+                else:
+                    st.info("Sin datos de contribución por símbolo para mostrar el mapa de calor.")
+                    log_metric(
+                        "portfolio.chart.contribution_heatmap_ms",
+                        base_context | {"chart": "contribution_heatmap", "rows": heatmap_rows},
+                        status="no_data",
+                        duration_ms=0.0,
+                    )
             else:
-                df_table[col] = df_table[col].apply(lambda v: f"{float(v):,.0f}" if pd.notna(v) else "—")
-
-        table_fig = go.Figure(
-            data=[
-                go.Table(
-                    header=dict(
-                        values=[col.replace("_", " ").title() for col in df_table.columns],
-                        fill_color="rgba(0,0,0,0)",
-                        align="left",
-                    ),
-                    cells=dict(
-                        values=[df_table[col].tolist() for col in df_table.columns],
-                        align="left",
-                    ),
+                log_metric(
+                    "portfolio.chart.contribution_heatmap_ms",
+                    base_context | {"chart": "contribution_heatmap", "rows": heatmap_rows},
+                    status="deferred",
+                    duration_ms=0.0,
                 )
-            ]
-        )
-        table_fig = _apply_layout(table_fig, show_legend=False)
-        st.plotly_chart(
-            table_fig,
-            key="portfolio_contribution_table",
-            config=PLOTLY_CONFIG,
-        )
+
+            by_type = getattr(contribution_metrics, "by_type", None)
+            if isinstance(by_type, pd.DataFrame) and not by_type.empty:
+                display_cols = [
+                    col
+                    for col in ["tipo", "valor_actual", "valor_actual_pct", "pl", "pl_pct"]
+                    if col in by_type.columns
+                ]
+                df_table = by_type[display_cols].copy()
+                for col in df_table.columns:
+                    if col == "tipo":
+                        df_table[col] = df_table[col].astype(str)
+                    elif col.endswith("_pct"):
+                        df_table[col] = df_table[col].apply(lambda v: f"{float(v):.2f}%" if pd.notna(v) else "—")
+                    else:
+                        df_table[col] = df_table[col].apply(lambda v: f"{float(v):,.0f}" if pd.notna(v) else "—")
+
+                table_fig = go.Figure(
+                    data=[
+                        go.Table(
+                            header=dict(
+                                values=[col.replace("_", " ").title() for col in df_table.columns],
+                                fill_color="rgba(0,0,0,0)",
+                                align="left",
+                            ),
+                            cells=dict(
+                                values=[df_table[col].tolist() for col in df_table.columns],
+                                align="left",
+                            ),
+                        )
+                    ]
+                )
+                table_fig = _apply_layout(table_fig, show_legend=False)
+                table_start = perf_counter()
+                st.plotly_chart(
+                    table_fig,
+                    key="portfolio_contribution_table",
+                    config=PLOTLY_CONFIG,
+                )
+                log_metric(
+                    "portfolio.chart.contribution_table_ms",
+                    base_context | {"chart": "contribution_table", "rows": len(df_table)},
+                    duration_ms=(perf_counter() - table_start) * 1000.0,
+                )
+            else:
+                st.info("No hay datos agregados por tipo para mostrar en tabla.")
+                log_metric(
+                    "portfolio.chart.contribution_table_ms",
+                    base_context | {"chart": "contribution_table"},
+                    status="no_data",
+                    duration_ms=0.0,
+                )
     else:
-        st.info("No hay datos agregados por tipo para mostrar en tabla.")
+        log_metric(
+            "portfolio.chart.contribution_heatmap_ms",
+            base_context | {"chart": "contribution_heatmap"},
+            status="skipped",
+            duration_ms=0.0,
+        )
+        log_metric(
+            "portfolio.chart.contribution_table_ms",
+            base_context | {"chart": "contribution_table"},
+            status="skipped",
+            duration_ms=0.0,
+        )
+
+    log_metric(
+        "portfolio.charts.mount_ms",
+        base_context,
+        duration_ms=(perf_counter() - render_start) * 1000.0,
+    )
 
 
 def render_basic_section(

@@ -26,7 +26,7 @@ def test_render_basic_section_captions(monkeypatch):
     monkeypatch.setattr(
         charts_mod,
         "generate_basic_charts",
-        lambda df, top_n: {k: object() for k in ["pl_topn", "donut_tipo", "pl_diario"]},
+        lambda *_, **__: {k: object() for k in ["pl_topn", "donut_tipo", "pl_diario"]},
     )
     monkeypatch.setattr(charts_mod.st, "subheader", lambda *a, **k: None)
     monkeypatch.setattr(charts_mod.st, "selectbox", lambda *a, **k: None, raising=False)
@@ -110,7 +110,8 @@ def test_render_table_caption(monkeypatch):
     monkeypatch.setattr(tables_mod.st, "text_input", lambda *a, **k: "")
     monkeypatch.setattr(tables_mod.st, "info", lambda *a, **k: None)
     monkeypatch.setattr(tables_mod.st, "dataframe", lambda *a, **k: None)
-    monkeypatch.setattr(tables_mod.st, "number_input", lambda *a, **k: 20)
+    monkeypatch.setattr(tables_mod.st, "toggle", lambda *a, **k: False)
+    monkeypatch.setattr(tables_mod.st, "checkbox", lambda *a, **k: False)
     mock_caption = MagicMock()
     monkeypatch.setattr(tables_mod.st, "caption", mock_caption)
     monkeypatch.setattr(tables_mod.st, "subheader", lambda *a, **k: None)
