@@ -14,19 +14,36 @@ from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha1
 from pathlib import Path
-from typing import Deque, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Deque, Iterable, Mapping, Sequence
 
-from application.predictive_service import (
-    PredictiveCacheSnapshot,
-    PredictiveSnapshot,
-    get_cache_stats,
-)
 from services.performance_metrics import MetricSummary, get_recent_metrics
+from shared.lazy_import import lazy_import
 from shared.settings import app_env
 from shared.time_provider import TimeProvider
 from shared.version import __build_signature__, __version__, get_version_info
 
 """Background diagnostics runner aggregating latency and environment health."""
+
+
+if TYPE_CHECKING:
+    from application.predictive_service import PredictiveCacheSnapshot, PredictiveSnapshot
+else:  # pragma: no cover - only resolved during type checking
+    PredictiveCacheSnapshot = PredictiveSnapshot = object
+
+
+def _predictive_service():
+    return lazy_import("application.predictive_service")
+
+
+def _predictive_classes():
+    module = _predictive_service()
+    cache_cls = getattr(module, "PredictiveCacheSnapshot", PredictiveCacheSnapshot)
+    snapshot_cls = getattr(module, "PredictiveSnapshot", PredictiveSnapshot)
+    return cache_cls, snapshot_cls
+
+
+def _predictive_cache_stats():
+    return _predictive_service().get_cache_stats()
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,10 +111,13 @@ class CacheHealthSnapshot:
 
     @classmethod
     def from_predictive(cls, snapshot: PredictiveSnapshot | PredictiveCacheSnapshot) -> "CacheHealthSnapshot":
-        if isinstance(snapshot, PredictiveCacheSnapshot):
+        cache_cls, snapshot_cls = _predictive_classes()
+        if isinstance(snapshot, cache_cls):
             base = snapshot.as_predictive_snapshot()
         else:
             base = snapshot
+        if not isinstance(base, snapshot_cls):
+            raise TypeError("Snapshot does not match predictive service schemas")
         return cls(
             hits=int(base.hits),
             misses=int(base.misses),
@@ -381,11 +401,12 @@ def _collect_metrics() -> dict[str, MetricSummary]:
 
 
 def _collect_cache_snapshot() -> CacheHealthSnapshot | None:
+    cache_cls, snapshot_cls = _predictive_classes()
     try:
-        snapshot = get_cache_stats()
+        snapshot = _predictive_cache_stats()
     except Exception:
         return None
-    if not isinstance(snapshot, PredictiveSnapshot):
+    if not isinstance(snapshot, (snapshot_cls, cache_cls)):
         return None
     return CacheHealthSnapshot.from_predictive(snapshot)
 

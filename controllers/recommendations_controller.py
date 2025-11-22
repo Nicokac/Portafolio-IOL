@@ -4,20 +4,26 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
 
 import pandas as pd
 
-from application.adaptive_predictive_service import simulate_adaptive_forecast
-from application.predictive_service import (
-    PredictiveCacheSnapshot,
-    PredictiveSnapshot,
-    build_adaptive_history,
-    get_cache_stats,
-    predict_sector_performance,
-    predictive_job_status,
-)
+from shared.lazy_import import lazy_import
 from ui.utils.formatters import normalise_hit_ratio, resolve_badge_state
+
+if TYPE_CHECKING:
+    from application.predictive_service import PredictiveCacheSnapshot, PredictiveSnapshot
+else:  # pragma: no cover - used only for type checking
+    PredictiveCacheSnapshot = PredictiveSnapshot = object
+
+
+def _predictive_service():
+    return lazy_import("application.predictive_service")
+
+
+def _adaptive_predictive_service():
+    return lazy_import("application.adaptive_predictive_service")
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -80,11 +86,15 @@ class AdaptiveForecastViewModel:
 def _snapshot_to_view(
     snapshot: PredictiveCacheSnapshot | PredictiveSnapshot | Mapping[str, Any] | None,
 ) -> PredictiveCacheViewModel:
+    predictive_service = _predictive_service()
+    cache_cls = getattr(predictive_service, "PredictiveCacheSnapshot", PredictiveCacheSnapshot)
+    snapshot_cls = getattr(predictive_service, "PredictiveSnapshot", PredictiveSnapshot)
+
     if snapshot is None:
         return PredictiveCacheViewModel()
-    if isinstance(snapshot, PredictiveCacheSnapshot):
+    if isinstance(snapshot, cache_cls):
         data = snapshot.to_dict()
-    elif isinstance(snapshot, PredictiveSnapshot):
+    elif isinstance(snapshot, snapshot_cls):
         data = snapshot.as_dict()
     elif isinstance(snapshot, Mapping):
         data = dict(snapshot)
@@ -125,7 +135,8 @@ def build_adaptive_history_view(
     if isinstance(profile, Mapping):
         context["profile"] = dict(profile)
 
-    history = build_adaptive_history(
+    predictive_service = _predictive_service()
+    history = predictive_service.build_adaptive_history(
         opportunities,
         mode="real",
         span=span,
@@ -169,7 +180,7 @@ def build_adaptive_history_view(
         },
     )
 
-    synthetic = build_adaptive_history(
+    synthetic = predictive_service.build_adaptive_history(
         recommendations,
         mode="synthetic",
         periods=periods,
@@ -184,7 +195,8 @@ def load_sector_performance_view(
     span: int = 10,
     ttl_hours: float | None = None,
 ) -> SectorPerformanceViewModel:
-    predictions = predict_sector_performance(
+    predictive_service = _predictive_service()
+    predictions = predictive_service.predict_sector_performance(
         opportunities,
         span=span,
         ttl_hours=ttl_hours,
@@ -198,11 +210,11 @@ def load_sector_performance_view(
         predictions = predictions.copy()
         if isinstance(metadata, Mapping):
             job_status = dict(metadata)
-            snapshot = predictive_job_status(job_status.get("job_id"))
+            snapshot = predictive_service.predictive_job_status(job_status.get("job_id"))
             if isinstance(snapshot, Mapping):
                 for key, value in snapshot.items():
                     job_status.setdefault(key, value)
-    cache_view = _snapshot_to_view(get_cache_stats())
+    cache_view = _snapshot_to_view(predictive_service.get_cache_stats())
     return SectorPerformanceViewModel(
         predictions=predictions,
         cache=cache_view,
@@ -227,7 +239,7 @@ def resolve_predictive_spinner(job_status: Mapping[str, Any] | None) -> str | No
 
 
 def get_predictive_cache_view() -> PredictiveCacheViewModel:
-    snapshot = get_cache_stats()
+    snapshot = _predictive_service().get_cache_stats()
     return _snapshot_to_view(snapshot)
 
 
@@ -242,7 +254,7 @@ def run_adaptive_forecast_view(
     context: Mapping[str, Any] | None = None,
 ) -> AdaptiveForecastViewModel:
     try:
-        payload = simulate_adaptive_forecast(
+        payload = _adaptive_predictive_service().simulate_adaptive_forecast(
             history,
             ema_span=ema_span,
             cache=cache,

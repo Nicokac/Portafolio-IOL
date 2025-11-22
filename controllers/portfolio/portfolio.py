@@ -68,19 +68,7 @@ from ui.health_sidebar import render_health_monitor_tab
 from ui.notifications import render_technical_badge, tab_badge_label, tab_badge_suffix
 from ui.sidebar_controls import render_sidebar
 from ui.summary_metrics import get_active_summary_currency
-
-from .charts import (
-    render_advanced_analysis,
-)
-from .charts import (
-    render_charts as render_charts_section,
-)
-from .charts import (
-    render_summary as render_summary_section,
-)
-from .charts import (
-    render_table as render_table_section,
-)
+from shared.lazy_import import lazy_import
 from .fundamentals import render_fundamental_analysis
 from .load_data import load_portfolio_data
 
@@ -212,6 +200,30 @@ def _load_risk_module() -> Any:
             return None
         _RISK_MODULE = risk_module
     return _RISK_MODULE
+
+
+def _portfolio_charts_module() -> Any:
+    return lazy_import("controllers.portfolio.charts")
+
+
+def render_summary_section(*args, **kwargs):
+    charts_module = _portfolio_charts_module()
+    return charts_module.render_summary(*args, **kwargs)
+
+
+def render_table_section(*args, **kwargs):
+    charts_module = _portfolio_charts_module()
+    return charts_module.render_table(*args, **kwargs)
+
+
+def render_charts_section(*args, **kwargs):
+    charts_module = _portfolio_charts_module()
+    return charts_module.render_charts(*args, **kwargs)
+
+
+def render_advanced_analysis(*args, **kwargs):
+    charts_module = _portfolio_charts_module()
+    return charts_module.render_advanced_analysis(*args, **kwargs)
 
 
 def _append_tab_metric(
