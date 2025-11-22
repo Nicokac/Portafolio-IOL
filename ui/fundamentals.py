@@ -1,13 +1,29 @@
 # ui\fundamentals.py
 from __future__ import annotations
 
+import os
+from functools import lru_cache
+from types import SimpleNamespace
+
 import pandas as pd
-import plotly.express as px
 import streamlit as st
 
 from shared.utils import _is_none_nan_inf, format_number, format_percent
 
 from .export import PLOTLY_CONFIG
+
+@lru_cache(maxsize=1)
+def _get_plotly_express() -> SimpleNamespace:
+    """Return Plotly Express lazily, stubbing it in headless modes."""
+
+    if os.environ.get("UNIT_TEST") == "1" or os.environ.get("RUN_LIVE_YF") == "1":
+        figure = SimpleNamespace(add_hline=lambda *_, **__: None)
+        return SimpleNamespace(bar=lambda *_, **__: figure)
+
+    import plotly.express as px
+
+    return px
+
 
 # Meta información de indicadores: etiqueta, formato, descripción y fuente
 INDICATORS = {
@@ -227,6 +243,7 @@ def render_sector_comparison(df: pd.DataFrame):
         return
     dfm["sector_avg"] = dfm.groupby("sector")[metric].transform("mean")
     dfm["rel"] = dfm[metric] / dfm["sector_avg"]
+    px = _get_plotly_express()
     fig = px.bar(dfm, x="symbol", y="rel", color="sector", labels={"rel": "Ratio vs sector"})
     fig.add_hline(
         y=1,

@@ -4,26 +4,62 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import sys
 import time
 from collections.abc import Sequence
 from contextlib import nullcontext
+from types import ModuleType, SimpleNamespace
 from uuid import uuid4
 
-import streamlit as st
+def _is_headless_mode() -> bool:
+    """Return True when running under the light-weight UNIT_TEST profile."""
 
-from services.startup_logger import log_startup_event
-from shared import skeletons
-from shared.config import configure_logging, ensure_tokens_key
-from shared.qa_profiler import record_startup_complete
-from shared.security_env_validator import validate_security_environment
-from shared.version import __build_signature__, __version__
-from ui.ui_settings import init_ui
+    return os.environ.get("UNIT_TEST") == "1"
+
+
+def _load_streamlit_module() -> ModuleType:
+    """Load the Streamlit module or a minimal stub for headless tests."""
+
+    if not _is_headless_mode():
+        import streamlit as real_streamlit
+
+        return real_streamlit
+
+    stub = ModuleType("streamlit")
+    stub.session_state = {}
+    stub.secrets = {}
+    noop = lambda *_, **__: None  # noqa: E731 - simple stub helpers
+    stub.warning = noop
+    stub.info = noop
+    stub.caption = noop
+    stub.write = noop
+    stub.divider = noop
+    stub.plotly_chart = noop
+    stub.selectbox = lambda *_, **__: None
+    stub.subheader = noop
+    stub.dataframe = noop
+    stub.table = noop
+    stub.container = lambda *_, **__: nullcontext()
+    stub.columns = lambda spec=None, *_, **__: tuple(nullcontext() for _ in range((spec or 2) if isinstance(spec, int) else 2))
+    stub.set_page_config = noop
+    stub.markdown = noop
+    stub.sidebar = SimpleNamespace(markdown=noop, radio=noop)
+    stub.stop = lambda: None
+    stub.__getattr__ = lambda _name: noop
+    sys.modules["streamlit"] = stub
+    return stub
+
+
+st = _load_streamlit_module()
+
+from shared import skeletons  # noqa: E402 - ensure Streamlit stub is registered first
 
 logger = logging.getLogger(__name__)
 
 
 TOTAL_LOAD_START = time.perf_counter()
-if skeletons.initialize(TOTAL_LOAD_START):
+if not _is_headless_mode() and skeletons.initialize(TOTAL_LOAD_START):
     logger.info("🧩 Skeleton system initialized at %.2f", TOTAL_LOAD_START)
 
 
@@ -63,6 +99,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def init_app(argv: list[str] | None = None) -> argparse.Namespace:
     """Bootstrap logging, environment validation and Streamlit session state."""
 
+    from services.startup_logger import log_startup_event
+    from shared.config import configure_logging, ensure_tokens_key
+    from shared.qa_profiler import record_startup_complete
+    from shared.security_env_validator import validate_security_environment
+    from shared.version import __build_signature__, __version__
+
     _patch_streamlit_runtime()
 
     args = _parse_args(argv or [])
@@ -95,7 +137,13 @@ def init_app(argv: list[str] | None = None) -> argparse.Namespace:
             st.warning(warning_msg)
         except Exception:  # pragma: no cover - defensive UI hook
             logger.debug("No se pudo mostrar el aviso de claves faltantes en la UI.")
-    init_ui()
+
+    if _is_headless_mode():
+        logger.info("UNIT_TEST=1 detectado — inicialización de UI omitida.")
+    else:
+        from ui.ui_settings import init_ui
+
+        init_ui()
 
     message = f"App initialized — version={__version__} — build={__build_signature__}"
     log_startup_event(message)
