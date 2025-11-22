@@ -136,10 +136,10 @@ científicas:
    UI liviana, lanza `start_preload_worker(paused=True)` y persiste
    `scientific_preload_ready=False` en `st.session_state`. No se importan
    dependencias pesadas hasta que el usuario se autentica.
-2. **Fase B — Reanudación post-login.** Una vez validado el primer usuario,
-   `_schedule_scientific_preload_resume()` despierta al worker tras ~500 ms
-   (`resume_preload_worker(delay_seconds=0.5)`). Las vistas que dependen de
-   `pandas`, `plotly` o `statsmodels` invocan
+2. **Fase B — Reanudación post-login.** Inmediatamente después de renderizar el
+   login, `_schedule_scientific_preload_resume(delay_seconds=0.0)` despierta al
+   worker mientras el usuario visualiza el formulario. Las vistas que dependen
+   de `pandas`, `plotly` o `statsmodels` invocan
    `ui.helpers.preload.ensure_scientific_preload_ready` antes de importar los
    controladores, mostrando un *spinner* breve hasta que el worker completa la
    precarga.

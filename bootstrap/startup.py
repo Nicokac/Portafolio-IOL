@@ -249,13 +249,13 @@ def update_ui_startup_metric_lazy(total_ms: float | int | None) -> None:
         logger.debug("No se pudo actualizar ui_startup_load_ms", exc_info=True)
 
 
-def schedule_scientific_preload_resume() -> None:
+def schedule_scientific_preload_resume(*, delay_seconds: float = 0.0) -> None:
     try:
         if st.session_state.get(_SCIENTIFIC_PRELOAD_RESUMED_KEY):
             return
     except Exception:
         logger.debug("No se pudo verificar _scientific_preload_resumed", exc_info=True)
-    resumed = resume_preload_worker(delay_seconds=0.5)
+    resumed = resume_preload_worker(delay_seconds=delay_seconds)
     if not resumed and not is_preload_complete():
         return
     try:

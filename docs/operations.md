@@ -61,9 +61,9 @@ El arranque inicial sigue un orden estricto para maximizar el *time-to*
    muestra la pantalla de login sin dependencias pesadas.
 3. **Login interactivo:** `ui.login.render_login_page` registra
    `ui_startup_load_ms` al quedar visible la pantalla.
-4. **Reanudación científica:** `_schedule_scientific_preload_resume()` activa
-   `resume_preload_worker(delay_seconds=0.5)` tras la primera autenticación.
-   Las vistas de análisis llaman a
+4. **Reanudación científica:** `_schedule_scientific_preload_resume()` se invoca
+   inmediatamente después de renderizar el login para reanudar el worker con
+   `resume_preload_worker(delay_seconds=0.0)`. Las vistas de análisis llaman a
    `ui.helpers.preload.ensure_scientific_preload_ready`, que muestra un *spinner*
    corto hasta que el worker termina.
 5. **Inicialización post-auth:** `app._schedule_post_login_initialization`
@@ -81,9 +81,10 @@ Para consultarlo manualmente:
 
 **Configurar la lista científica:** el worker lee `APP_PRELOAD_LIBS` (coma
 separada) si se necesita ampliar o acotar la precarga; de lo contrario usa el
-trío `pandas`, `plotly`, `statsmodels`. Evitá añadir `application.predictive_service`
-o `controllers.portfolio.charts`, que continúan importándose bajo demanda vía
-`importlib.import_module`.
+trío `pandas`, `plotly`, `statsmodels`. En despliegue se fuerza
+`APP_PRELOAD_LIBS=pandas,plotly` para reducir la precarga científica. Evitá
+añadir `application.predictive_service` o `controllers.portfolio.charts`, que
+continúan importándose bajo demanda vía `importlib.import_module`.
 
 **Snapshot de bytecode:** durante el arranque `scripts/start.sh` ejecuta
 `scripts/warmup_bytecode.py` (controlado por `ENABLE_BYTECODE_WARMUP`, habilitado

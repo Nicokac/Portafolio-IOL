@@ -1,1 +1,1 @@
-web: PYTHONDONTWRITEBYTECODE=0 UV_USE_REQUIREMENTS=true streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
+web: ENABLE_BYTECODE_WARMUP=1 APP_PRELOAD_LIBS=pandas,plotly PYTHONDONTWRITEBYTECODE=0 UV_USE_REQUIREMENTS=true ./scripts/start.sh
