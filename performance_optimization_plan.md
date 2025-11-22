@@ -74,3 +74,17 @@
 - Explorar precálculo incremental vía servicio dedicado para cotizaciones de alta frecuencia, almacenando resultados en Redis/S3 y cargándolos en caliente. Impacto esperado: llevar `quotes_refresh` a ~2.5 s.
 
 La combinación de los cambios rápidos y medios debería dejar la carga inicial por debajo de los 10 s (6.9 s → ~4.5 s en lógica + 1.8 s UI ≈ 6.3 s totales), mientras que las iniciativas de alto impacto consolidan el margen para crecer sin degradar tiempos.
+
+## Fase 6 – Testing y riesgos
+### Pruebas funcionales
+- **Usuario lento:** validar que el login tardío no rompe la precarga ni bloquea el render inicial.
+- **Usuario rápido:** confirmar que hacer clic en el dashboard apenas aparece el botón no causa fallos ni saltos de estado.
+- **Múltiples logins concurrentes (si aplica):** asegurar que la sesión y la precarga se aíslan correctamente.
+
+### Pruebas de concurrencia
+- Garantizar que se mantenga **un único worker activo** para la precarga y que los eventos estén bien sincronizados.
+- Revisar que **ningún import pesado** se ejecute fuera del worker y que no existan condiciones de carrera.
+
+### Plan de rollback
+- Documentar cómo desactivar la precarga o volver a la versión anterior vía **feature flag**.
+- Exponer una **variable de entorno** que permita deshabilitar el worker si se detectan regresiones.
