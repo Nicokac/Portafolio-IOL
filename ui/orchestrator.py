@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 import streamlit as st
@@ -29,7 +30,7 @@ from bootstrap.startup import (
 )
 from services.cache import get_fx_rates_cached
 from services.health import get_health_metrics, record_dependency_status
-from services.startup_logger import log_ui_total_load_metric
+from services.startup_logger import log_startup_event, log_ui_total_load_metric
 from shared import skeletons
 from shared.debug.rerun_controller import request_rerun
 from shared.debug.rerun_trace import mark_event, safe_stop
@@ -64,10 +65,52 @@ ANALYSIS_LOG_PATH = Path(__file__).resolve().parent.parent / "analysis.log"
 
 _LOGIN_PHASE_START_KEY = "_login_phase_started_at"
 _LOGIN_PRELOAD_RECORDED_KEY = "_login_preload_recorded"
+_LOGIN_SCREEN_RECORDED_KEY = "_login_screen_rendered"
+_LOGIN_SCREEN_MS_KEY = "_login_screen_load_ms"
 _PRE_LAZY_LOGGED_KEY = "_startup_logged_pre_lazy"
 _UI_STARTUP_METRIC_KEY = "ui_startup_load_ms"
 _UI_STARTUP_REPORTED_KEY = "_ui_startup_metric_reported"
 _SCIENTIFIC_PRELOAD_READY_KEY = "scientific_preload_ready"
+_ANALYSIS_RENDER_KEY = "_analysis_screens_rendered"
+
+PHASE_A_TARGET_MS = 500.0
+PHASE_B_TARGET_MS = 1000.0
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _phase_status(duration_ms: float | None, *, target_ms: float) -> str:
+    if duration_ms is None:
+        return "unknown"
+    return "ok" if duration_ms <= target_ms else "alert"
+
+
+def _log_analysis_render(screen: str) -> None:
+    try:
+        rendered: set[str] = st.session_state.get(_ANALYSIS_RENDER_KEY, set())
+    except Exception:  # pragma: no cover - defensive guard
+        rendered = set()
+    if screen in rendered:
+        return
+    rendered.add(screen)
+    try:
+        st.session_state[_ANALYSIS_RENDER_KEY] = rendered
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo persistir el registro de renders de análisis", exc_info=True)
+    try:
+        startup_ms = max((time.perf_counter() - TOTAL_LOAD_START) * 1000.0, 0.0)
+    except Exception:
+        startup_ms = None
+    payload = {
+        "event": "analysis_screen_rendered",
+        "screen": screen,
+        "timestamp": _now_iso(),
+    }
+    if startup_ms is not None:
+        payload["startup_ms"] = round(startup_ms, 2)
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
 
 
 def _maybe_log_pre_login_checkpoint() -> None:
@@ -91,6 +134,33 @@ def _mark_scientific_preload_pending() -> None:
         logger.debug("No se pudo marcar scientific_preload_ready", exc_info=True)
 
 
+def _log_login_screen_render() -> None:
+    try:
+        if st.session_state.get(_LOGIN_SCREEN_RECORDED_KEY):
+            return
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo leer el estado de login render", exc_info=True)
+
+    try:
+        startup_ms = max((time.perf_counter() - TOTAL_LOAD_START) * 1000.0, 0.0)
+    except Exception:
+        startup_ms = None
+    payload = {
+        "event": "login_screen_rendered",
+        "timestamp": _now_iso(),
+        "status": _phase_status(startup_ms, target_ms=PHASE_A_TARGET_MS),
+    }
+    if startup_ms is not None:
+        payload["startup_ms"] = round(startup_ms, 2)
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
+
+    try:
+        st.session_state[_LOGIN_SCREEN_MS_KEY] = startup_ms
+        st.session_state[_LOGIN_SCREEN_RECORDED_KEY] = True
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo persistir métricas de login", exc_info=True)
+
+
 def _render_login_phase() -> None:
     _maybe_log_pre_login_checkpoint()
     _mark_scientific_preload_pending()
@@ -101,6 +171,7 @@ def _render_login_phase() -> None:
         logger.debug("No se pudo inicializar el seguimiento de login", exc_info=True)
     try:
         render_login_page()
+        _log_login_screen_render()
         schedule_scientific_preload_resume(delay_seconds=0.0)
     finally:
         record_ui_startup_metric()
@@ -152,6 +223,37 @@ def _record_login_preload_timings(preload_ready: bool) -> None:
             total_ms=preload_ms,
             status="success",
         )
+
+    phase_a_ms: float | None = None
+    try:
+        phase_a_candidate = st.session_state.get(_LOGIN_SCREEN_MS_KEY)
+        if isinstance(phase_a_candidate, (int, float)):
+            phase_a_ms = float(phase_a_candidate)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.debug("No se pudo obtener la métrica de Fase A", exc_info=True)
+
+    phase_b_ms: float | None = None
+    if preload_ready and isinstance(auth_ts, (int, float)):
+        try:
+            phase_b_ms = max((end - float(auth_ts)) * 1000.0, 0.0)
+        except Exception:  # pragma: no cover - defensive guard
+            logger.debug("No se pudo calcular la métrica de Fase B", exc_info=True)
+
+    payload = {
+        "event": "startup_phase_timings",
+        "timestamp": _now_iso(),
+        "login_phase_ms": round(total_ms, 2),
+        "preload_ready": bool(preload_ready),
+        "phase_a_status": _phase_status(phase_a_ms, target_ms=PHASE_A_TARGET_MS),
+        "phase_b_status": _phase_status(phase_b_ms, target_ms=PHASE_B_TARGET_MS),
+    }
+    if phase_a_ms is not None:
+        payload["phase_a_ms"] = round(phase_a_ms, 2)
+    if login_ms is not None:
+        payload["login_ms"] = round(login_ms, 2)
+    if phase_b_ms is not None:
+        payload["phase_b_ms"] = round(phase_b_ms, 2)
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
 
     try:
         st.session_state[_LOGIN_PRELOAD_RECORDED_KEY] = True
@@ -616,18 +718,25 @@ def render_main_ui() -> None:
         fx_rates,
         **portfolio_section_kwargs,
     )
+    _log_analysis_render("portafolio")
 
     if hasattr(st, "tabs"):
         with recommendations_tab:
             render_recommendations_tab()
+            _log_analysis_render("recomendaciones")
         with comparison_tab:
             render_portfolio_comparison_panel()
+            _log_analysis_render("comparativa_iol")
         with monitoring_tab:
             render_health_monitor_tab(monitoring_tab, metrics=health_metrics)
+            _log_analysis_render("monitoreo")
     else:
         render_recommendations_tab()
+        _log_analysis_render("recomendaciones")
         render_portfolio_comparison_panel()
+        _log_analysis_render("comparativa_iol")
         render_health_monitor_tab(main_col, metrics=health_metrics)
+        _log_analysis_render("monitoreo")
 
     if st.session_state.pop("show_refresh_toast", False):
         st.toast("Datos actualizados", icon="✅")

@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
+import time
 import types
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from bootstrap import init_app
 from bootstrap.startup import (
+    TOTAL_LOAD_START,
     is_preload_complete,
     resume_preload_worker,
     start_preload_worker,
 )
+from services.startup_logger import log_startup_event
 from shared.qa_profiler import track_ui_render
 
 
@@ -67,6 +72,20 @@ def _run_pre_login_startup(argv: list[str] | None) -> None:
 def main(argv: list[str] | None = None) -> None:
     """Initialize the application and render the main UI."""
 
+    try:
+        startup_ms = max((time.perf_counter() - TOTAL_LOAD_START) * 1000.0, 0.0)
+    except Exception:
+        startup_ms = None
+    log_startup_event(
+        json.dumps(
+            {
+                "event": "app_start",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "startup_ms": None if startup_ms is None else round(startup_ms, 2),
+            },
+            ensure_ascii=False,
+        )
+    )
     _run_pre_login_startup(argv)
     render_main_ui()
 
