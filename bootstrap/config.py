@@ -79,7 +79,22 @@ def init_app(argv: list[str] | None = None) -> argparse.Namespace:
         st.session_state["session_id"] = uuid4().hex
 
     ensure_tokens_key()
-    validate_security_environment()
+    validation = validate_security_environment()
+    if validation.relaxed:
+        missing_items = "\n- " + "\n- ".join(validation.errors) if validation.errors else ""
+        guidance = (
+            "Faltan claves obligatorias (FASTAPI_TOKENS_KEY / IOL_TOKENS_KEY). "
+            "Generá nuevas con `python generate_key.py` y exportalas en tu entorno."
+        )
+        warning_msg = (
+            "Modo relajado habilitado en Streamlit (APP_ENV=%s). %s%s"
+            % (validation.app_env or "desconocido", guidance, missing_items)
+        )
+        logger.warning(warning_msg)
+        try:
+            st.warning(warning_msg)
+        except Exception:  # pragma: no cover - defensive UI hook
+            logger.debug("No se pudo mostrar el aviso de claves faltantes en la UI.")
     init_ui()
 
     message = f"App initialized — version={__version__} — build={__build_signature__}"

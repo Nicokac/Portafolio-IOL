@@ -803,13 +803,15 @@ FASTAPI_TOKENS_KEY = "otra_clave"
 
 `LOG_LEVEL` controla la verbosidad de los mensajes (`DEBUG`, `INFO`, etc.). Evita usar `DEBUG` u otros niveles muy verbosos en producción, ya que pueden revelar información sensible y generar un volumen excesivo de datos. `LOG_FORMAT` puede ser `plain` para un formato legible o `json` para registros estructurados, útil cuando se integran sistemas de logging centralizado o se requiere auditoría. Si `LOG_LEVEL` o `LOG_FORMAT` no están definidos, la aplicación utiliza `INFO` y `plain` como valores por defecto. El valor de `LOG_USER` se incluye en los registros si está definido.
 
-Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`, pero en `APP_ENV=prod` se abortará igualmente para impedir configuraciones inseguras. Puedes generar una clave con:
+Las credenciales de IOL se utilizan para generar un token de acceso que se guarda en `tokens_iol.json` (o en la ruta indicada por `IOL_TOKENS_FILE`). Si `IOL_TOKENS_KEY` no está configurada y `IOL_ALLOW_PLAIN_TOKENS` no está habilitado, la aplicación registrará un error y se cerrará con código 1 para evitar guardar el archivo sin cifrar. Se puede forzar este comportamiento (solo para entornos de prueba) estableciendo `IOL_ALLOW_PLAIN_TOKENS=1`, pero en `APP_ENV=prod` se abortará igualmente para impedir configuraciones inseguras. Podés generar una clave con el helper incluido:
 
 ```bash
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+python generate_key.py
 ```
 
 Este archivo es sensible: **manténlo fuera del control de versiones** (ya está incluido en `.gitignore`) y con permisos restringidos, por ejemplo `chmod 600`. Si el token expira o se desea forzar una nueva autenticación, borra dicho archivo. La clave `FASTAPI_TOKENS_KEY` cifra exclusivamente los tokens internos del backend y debe ser distinta a `IOL_TOKENS_KEY` para evitar que una brecha en un servicio comprometa al otro.
+
+En entornos de desarrollo (`APP_ENV=dev`, `development` o `local`), el validador puede degradar a un modo relajado y permitir el arranque aun sin claves, registrando un aviso en consola/UI. En producción (`APP_ENV=prod`) se mantiene el bloqueo duro para evitar configuraciones inseguras. Consultá `docs/security_validation.md` para más detalles.
 
 ## Ejecución local
 
