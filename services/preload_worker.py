@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import logging
 import os
 import threading
@@ -11,6 +12,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import lru_cache
 from typing import Iterable
+
+from datetime import datetime, timezone
 
 from services.startup_logger import log_startup_event
 
@@ -33,6 +36,7 @@ class PreloadTelemetry:
     total_ms: float | None = None
     status: PreloadPhase = PreloadPhase.IDLE
     error: str | None = None
+    timestamp: str | None = None
 
 
 _DEFAULT_LIBRARIES: tuple[str, ...] = ("pandas", "plotly", "statsmodels")
@@ -49,8 +53,8 @@ _TELEMETRY = PreloadTelemetry()
 _PHASE: PreloadPhase = PreloadPhase.IDLE
 
 
-def _format_duration_ms(duration: float) -> str:
-    return f"{duration * 1000.0:.2f}"
+def _format_duration_ms(duration: float) -> float:
+    return round(duration * 1000.0, 2)
 
 
 @lru_cache(maxsize=1)
@@ -77,6 +81,7 @@ def _iter_libraries(custom_libraries: Iterable[str] | None = None) -> tuple[str,
 def _set_phase(phase: PreloadPhase) -> None:
     global _PHASE
     _PHASE = phase
+    _TELEMETRY.status = phase
 
 
 def _reset_events() -> None:
@@ -85,10 +90,33 @@ def _reset_events() -> None:
 
 
 def _log_preload_metric(library: str, duration: float, status: str, error: str | None = None) -> None:
-    message = f"preload | library={library} | status={status} | duration_ms={_format_duration_ms(duration)}"
+    payload: dict[str, object] = {
+        "event": "preload_library",
+        "module_name": library,
+        "status": status,
+        "duration_ms": _format_duration_ms(duration),
+        "timestamp": _now_iso(),
+    }
     if error:
-        message += f" | error={error}"
-    log_startup_event(message)
+        payload["error"] = error
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
+
+
+def _log_preload_total(
+    *, status: str, total_ms: float, libraries: tuple[str, ...], resume_delay_ms: float, error: str | None
+) -> None:
+    payload: dict[str, object] = {
+        "event": "preload_total",
+        "module_name": "all",
+        "status": status,
+        "duration_ms": round(total_ms, 2),
+        "resume_delay_ms": round(resume_delay_ms, 2),
+        "libraries": list(libraries),
+        "timestamp": _now_iso(),
+    }
+    if error:
+        payload["error"] = error
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
 
 
 def _update_library_metric(library: str, duration_ms: float | None) -> None:
@@ -113,17 +141,39 @@ def _update_total_metric(total_ms: float | None) -> None:
         _logger.debug("No se pudo actualizar la métrica preload_total_ms", exc_info=True)
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _preload_target(libraries: Iterable[str] | None = None) -> None:
     global _WORKER_THREAD
     libraries_tuple = _iter_libraries(tuple(libraries) if libraries is not None else None)
-    requested = ",".join(libraries_tuple)
-    log_startup_event(f"preload | status=waiting_resume | libraries={requested}")
+    _TELEMETRY.timestamp = _now_iso()
+    log_startup_event(
+        json.dumps(
+            {
+                "event": "preload_waiting_resume",
+                "libraries": list(libraries_tuple),
+                "timestamp": _TELEMETRY.timestamp,
+            }
+        )
+    )
     _set_phase(PreloadPhase.PAUSED)
     resume_started = time.perf_counter()
     _RESUME_EVENT.wait()
     resume_delay_ms = (time.perf_counter() - resume_started) * 1000.0
     _set_phase(PreloadPhase.RUNNING)
-    log_startup_event(f"preload | status=running | libraries={requested} | resume_delay_ms={resume_delay_ms:.2f}")
+    log_startup_event(
+        json.dumps(
+            {
+                "event": "preload_running",
+                "libraries": list(libraries_tuple),
+                "resume_delay_ms": round(resume_delay_ms, 2),
+                "timestamp": _now_iso(),
+            },
+            ensure_ascii=False,
+        )
+    )
     start_total = time.perf_counter()
     durations: dict[str, float | None] = {}
     first_error: str | None = None
@@ -150,17 +200,22 @@ def _preload_target(libraries: Iterable[str] | None = None) -> None:
         total_ms = (time.perf_counter() - start_total) * 1000.0
         first_error = first_error or repr(exc)
         _logger.debug("El worker de precarga finalizó con error inesperado", exc_info=True)
-        log_startup_event(f"preload | status=error | error={first_error}")
         _set_phase(PreloadPhase.FAILED)
     else:
         status_value = "completed" if first_error is None else "completed_with_errors"
-        log_startup_event(f"preload | status={status_value} | total_ms={total_ms:.2f} | libraries={requested}")
         _set_phase(PreloadPhase.COMPLETED if first_error is None else PreloadPhase.FAILED)
     finally:
         _TELEMETRY.durations_ms = durations
         _TELEMETRY.total_ms = total_ms
         _TELEMETRY.status = _PHASE
         _TELEMETRY.error = first_error
+        _log_preload_total(
+            status=_PHASE.value,
+            total_ms=total_ms,
+            libraries=libraries_tuple,
+            resume_delay_ms=resume_delay_ms,
+            error=first_error,
+        )
         _update_total_metric(total_ms)
         _FINISHED_EVENT.set()
         _WORKER_THREAD = None
@@ -169,7 +224,7 @@ def _preload_target(libraries: Iterable[str] | None = None) -> None:
 def start_preload_worker(
     libraries: Iterable[str] | None = None,
     *,
-    paused: bool = False,
+    paused: bool = True,
 ) -> bool:
     """Start the preload worker thread once."""
 
@@ -187,8 +242,9 @@ def start_preload_worker(
         _reset_events()
         _TELEMETRY.durations_ms = {}
         _TELEMETRY.total_ms = None
-        _TELEMETRY.status = PreloadPhase.IDLE
+        _TELEMETRY.status = PreloadPhase.PAUSED
         _TELEMETRY.error = None
+        _TELEMETRY.timestamp = None
         _set_phase(PreloadPhase.PAUSED if paused else PreloadPhase.RUNNING)
 
         thread = threading.Thread(
@@ -208,18 +264,30 @@ def start_preload_worker(
         return True
 
 
-def resume_preload_worker(*, delay_seconds: float = 0.0, libraries: Iterable[str] | None = None) -> bool:
-    """Signal the worker to resume the import sequence."""
+def resume_preload_worker(
+    *,
+    delay_seconds: float = 0.0,
+    libs_override: Iterable[str] | None = None,
+    libraries: Iterable[str] | None = None,
+) -> bool:
+    """Signal the worker to resume the import sequence.
+
+    ``libs_override`` allows callers to customize the modules to import at resume time
+    without blocking the main thread. The optional ``libraries`` parameter is kept for
+    backwards compatibility with older call sites.
+    """
 
     global _LIBRARY_OVERRIDE
 
+    override = libs_override if libs_override is not None else libraries
+
     with _WORKER_LOCK:
         if _WORKER_THREAD is None or not _WORKER_THREAD.is_alive():
-            started = start_preload_worker(libraries=libraries, paused=True)
+            started = start_preload_worker(libraries=override, paused=True)
             if not started:
                 return False
-        elif libraries is not None:
-            _LIBRARY_OVERRIDE = tuple(libraries)
+        elif override is not None:
+            _LIBRARY_OVERRIDE = tuple(override)
 
         if _RESUME_EVENT.is_set():
             return False
@@ -254,6 +322,7 @@ def get_preload_metrics() -> PreloadTelemetry:
         total_ms=_TELEMETRY.total_ms,
         status=_TELEMETRY.status,
         error=_TELEMETRY.error,
+        timestamp=_TELEMETRY.timestamp,
     )
 
 

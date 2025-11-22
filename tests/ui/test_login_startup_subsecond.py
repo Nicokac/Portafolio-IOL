@@ -205,8 +205,14 @@ def test_render_login_phase_marks_preload_pending(main_app, monkeypatch: pytest.
 def test_main_schedules_preload_resume_after_auth(main_app, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     resume_calls: list[dict[str, object]] = []
 
-    def fake_resume_preload_worker(*, delay_seconds: float, libraries=None) -> bool:  # type: ignore[override]
-        resume_calls.append({"delay_seconds": delay_seconds, "libraries": libraries})
+    def fake_resume_preload_worker(
+        *, delay_seconds: float, libs_override=None, libraries=None
+    ) -> bool:  # type: ignore[override]
+        resume_calls.append({
+            "delay_seconds": delay_seconds,
+            "libraries": libraries,
+            "libs_override": libs_override,
+        })
         return True
 
     monkeypatch.setattr(main_app, "resume_preload_worker", fake_resume_preload_worker)

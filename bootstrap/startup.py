@@ -158,7 +158,7 @@ def startup_singleton(name: str, *, show_spinner: bool = False):
     return _decorator
 
 
-def start_preload_worker(*, paused: bool = False, libraries: Iterable[str] | None = None) -> bool:
+def start_preload_worker(*, paused: bool = True, libraries: Iterable[str] | None = None) -> bool:
     if _PRELOAD_WORKER is None:
         return False
     try:
