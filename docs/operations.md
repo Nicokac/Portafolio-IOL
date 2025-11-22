@@ -109,6 +109,45 @@ timestamp}` y un resumen final `{event:"preload_total", resume_delay_ms,
 libraries}`. Estas líneas permiten auditar cuánto demoró cada módulo y cuándo se
 disparó la reanudación desde la UI.
 
+### Fase A / Fase B y alarmas
+
+* **Fase A:** va desde `TOTAL_LOAD_START` hasta que se renderiza el login.
+  El evento `login_screen_rendered` agrega `startup_ms` y `phase_a_status`
+  (`ok` si < 500 ms, `alert` en caso contrario).
+* **Fase B:** va desde la validación de credenciales hasta que el worker de
+  precarga marca `preload_ready=True`. El evento `startup_phase_timings` incluye
+  `phase_b_ms` y `phase_b_status` (`ok` si < 1 s tras el login).
+* **Inicio y fin del preload:** el evento `preload_worker_started` registra
+  timestamp, librerías y si quedó pausado; el cierre se refleja en
+  `preload_total` con `status` y `resume_delay_ms`.
+* **Análisis renderizados:** `analysis_screen_rendered` se emite una sola vez
+  por pestaña (portafolio, recomendaciones, comparativa, monitoreo) con el
+  tiempo de arranque acumulado.
+* **Arranque de la app:** `app_start` agrega una marca de tiempo inicial para
+  correlacionar Fase A con el tiempo de proceso.
+
+**Objetivos operativos:** Fase A < 500 ms y Fase B < 1000 ms tras el login. Si
+se usan métricas centralizadas (Prometheus o logs parseados), sugerimos:
+
+* Panel: gráfico de barras apilado por `phase_a_ms` y `phase_b_ms` filtrando
+  por `phase_*_status="alert"` para detectar regresiones.
+* Alerta: en Prometheus, un `alert` sobre `max_over_time(ui_startup_load_ms[5m])`
+  > 500 o `max_over_time(preload_total_ms[5m]) > 1000` puede encender una
+  notificación (Slack/Email). Con logs estructurados, agregá una regla que
+  cuente eventos `phase_*_status=alert` en ventanas de 15 minutos.
+
+**Extender `APP_PRELOAD_LIBS`:**
+
+1. Editá la variable de entorno (Procfile o deployment) y añadí los módulos
+   separados por coma: `APP_PRELOAD_LIBS=pandas,plotly,statsmodels,seaborn`.
+2. Confirmá que los nuevos imports son **puros** (sin side-effects de red) para
+   que el worker no se bloquee. Si son pesados, inicializalos vía
+   `importlib.import_module` dentro de `services/preload_worker.py` para que
+   queden instrumentados.
+3. Documentá el motivo en `docs/operations.md` y, si aplica, actualizá las
+   pantallas científicas que dependan de la librería para mantener la lista
+   sincronizada.
+
 **Snapshot de bytecode:** durante el arranque `scripts/start.sh` ejecuta
 `scripts/warmup_bytecode.py` (controlado por `ENABLE_BYTECODE_WARMUP`, habilitado
 por defecto) para generar `.pyc` y reducir los costos de importación en frío.

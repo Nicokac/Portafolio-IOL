@@ -146,6 +146,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _log_worker_status(event: str, *, paused: bool, libraries: tuple[str, ...]) -> None:
+    payload = {
+        "event": event,
+        "timestamp": _now_iso(),
+        "paused": paused,
+        "libraries": list(libraries),
+    }
+    log_startup_event(json.dumps(payload, ensure_ascii=False))
+
+
 def _preload_target(libraries: Iterable[str] | None = None) -> None:
     global _WORKER_THREAD
     libraries_tuple = _iter_libraries(tuple(libraries) if libraries is not None else None)
@@ -249,6 +259,9 @@ def start_preload_worker(
         _TELEMETRY.error = None
         _TELEMETRY.timestamp = None
         _set_phase(PreloadPhase.PAUSED if paused else PreloadPhase.RUNNING)
+
+        libraries_tuple = _iter_libraries(tuple(libraries) if libraries is not None else None)
+        _log_worker_status("preload_worker_started", paused=paused, libraries=libraries_tuple)
 
         thread = threading.Thread(
             target=_preload_target,
