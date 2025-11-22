@@ -9,6 +9,7 @@ import streamlit as st
 
 from services.performance_timer import LOG_PATH, read_recent_entries
 from shared.debug.rerun_trace import safe_rerun
+from ui.helpers.preload import gate_scientific_view
 
 _ALERT_DURATION_SECONDS = 5.0
 _ALERT_CPU_PERCENT = 80.0
@@ -211,6 +212,9 @@ def _export_payload(df: pd.DataFrame) -> list[dict[str, object]]:
 
 def render_performance_dashboard_tab(limit: int = 200) -> None:
     """Render the performance telemetry dashboard for QA and diagnostics."""
+
+    if not gate_scientific_view(st, view_id="performance_dashboard"):
+        return
 
     st.header("⏱️ Observabilidad de performance")
     st.caption("Analizá la telemetría instrumentada para detectar cuellos de botella.")

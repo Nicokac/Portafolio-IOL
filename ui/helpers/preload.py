@@ -8,6 +8,12 @@ from contextlib import nullcontext
 from types import ModuleType
 from typing import Any, Callable, ContextManager
 
+from services.preload_state import (
+    is_preload_done,
+    subscribe_preload_completion,
+    wait_for_preload_ready,
+)
+from shared.debug.rerun_trace import safe_rerun
 from shared.debug.timing import timeit
 from shared.telemetry import log_metric
 from shared.ui.monitoring_guard import is_monitoring_active
@@ -178,6 +184,48 @@ def _call_is_complete(func: Callable[[], bool]) -> bool:
         return False
 
 
+def gate_scientific_view(
+    container: Any, *, view_id: str, message: str = "Cargando análisis…"
+) -> bool:
+    """Return early when the scientific preload is still running.
+
+    When the preload is incomplete the view renders a short spinner/message and
+    subscribes to the shared future so the UI refreshes automatically once the
+    worker completes.
+    """
+
+    if is_preload_done():
+        return True
+
+    if wait_for_preload_ready(timeout=0.2):
+        return True
+
+    placeholder = _resolve_placeholder(container)
+    placeholder_cm = _resolve_placeholder_cm(placeholder)
+    spinner_cm = _resolve_spinner(message)
+
+    with placeholder_cm:
+        with spinner_cm:
+            try:
+                if placeholder is not None:
+                    placeholder.caption(message)
+            except Exception:  # pragma: no cover - best-effort feedback
+                _LOGGER.debug("[preload] No se pudo mostrar el mensaje de carga", exc_info=True)
+
+    def _trigger_refresh(_: bool) -> None:
+        try:
+            safe_rerun(f"scientific_preload_ready:{view_id}")
+        except Exception:  # pragma: no cover - defensive guard for Streamlit runtime
+            _LOGGER.debug(
+                "[preload] No se pudo solicitar rerun tras la precarga para %s",
+                view_id,
+                exc_info=True,
+            )
+
+    subscribe_preload_completion(_trigger_refresh)
+    return False
+
+
 @timeit("preload.ensure_scientific_ready")
 def ensure_scientific_preload_ready(
     container: Any,
@@ -277,5 +325,4 @@ def ensure_scientific_preload_ready(
     _set_session_ready(ready)
     return ready
 
-
-__all__ = ["ensure_scientific_preload_ready"]
+__all__ = ["ensure_scientific_preload_ready", "gate_scientific_view"]

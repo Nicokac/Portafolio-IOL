@@ -11,6 +11,7 @@ from services.environment import mark_portfolio_ui_render_complete
 from services.performance_metrics import measure_execution
 from shared.fragment_state import get_fragment_state_guardian
 from shared.user_actions import log_user_action
+from ui.helpers.preload import gate_scientific_view
 
 
 @lru_cache(maxsize=1)
@@ -34,6 +35,9 @@ def render_portfolio_ui(
     notifications_service_factory: Callable[[], Any] | None = None,
 ) -> Any:
     """Render the portfolio tab while measuring UI latency."""
+
+    if not gate_scientific_view(container, view_id="portfolio_ui"):
+        return 0.0
 
     telemetry: dict[str, object] = {
         "status": "success",
