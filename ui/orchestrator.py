@@ -103,6 +103,7 @@ def _render_login_phase() -> None:
     start_preload_worker(paused=True)
     try:
         render_login_page()
+        schedule_scientific_preload_resume(delay_seconds=0.0)
     finally:
         record_ui_startup_metric()
     safe_stop("login_phase")
