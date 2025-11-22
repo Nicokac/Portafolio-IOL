@@ -25,7 +25,6 @@ from bootstrap.startup import (
     record_ui_startup_metric,
     schedule_post_login_initialization,
     schedule_scientific_preload_resume,
-    start_preload_worker,
     update_ui_total_load_metric_lazy,
 )
 from services.cache import get_fx_rates_cached
@@ -100,7 +99,6 @@ def _render_login_phase() -> None:
         st.session_state.pop(_LOGIN_PRELOAD_RECORDED_KEY, None)
     except Exception:  # pragma: no cover - defensive guard
         logger.debug("No se pudo inicializar el seguimiento de login", exc_info=True)
-    start_preload_worker(paused=True)
     try:
         render_login_page()
         schedule_scientific_preload_resume(delay_seconds=0.0)
