@@ -10,6 +10,7 @@ import streamlit as st
 
 from application.portfolio_service import to_iol_format
 from shared.time_provider import TimeProvider
+from ui.helpers.preload import gate_scientific_view
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ def render_portfolio_comparison_panel() -> None:
     """Render the comparison dashboard and expose the CSV export helper."""
 
     st.header(_TAB_TITLE)
+
+    if not gate_scientific_view(st, view_id="portfolio_comparison"):
+        return
 
     df_positions = _get_positions_dataframe()
     if df_positions.empty:

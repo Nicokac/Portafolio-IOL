@@ -12,6 +12,7 @@ from services.system_status import (
     get_system_status_snapshot,
 )
 from shared.time_provider import TimeProvider
+from ui.helpers.preload import gate_scientific_view
 
 """Render the system status dashboard with observability insights."""
 
@@ -167,6 +168,9 @@ def _render_cache_tab(prometheus: PrometheusSnapshot) -> None:
 
 def render_system_status_panel() -> None:
     """Render the system observability dashboard."""
+
+    if not gate_scientific_view(st, view_id="system_status"):
+        return
 
     snapshot = get_system_status_snapshot()
     st.header("🔍 Estado del Sistema")

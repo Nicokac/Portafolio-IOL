@@ -16,6 +16,7 @@ from typing import Iterable
 from datetime import datetime, timezone
 
 from services.startup_logger import log_startup_event
+from services.preload_state import mark_preload_done, mark_preload_pending
 
 
 class PreloadPhase(str, Enum):
@@ -217,6 +218,7 @@ def _preload_target(libraries: Iterable[str] | None = None) -> None:
             error=first_error,
         )
         _update_total_metric(total_ms)
+        mark_preload_done(_PHASE == PreloadPhase.COMPLETED)
         _FINISHED_EVENT.set()
         _WORKER_THREAD = None
 
@@ -240,6 +242,7 @@ def start_preload_worker(
 
         _LIBRARY_OVERRIDE = tuple(libraries) if libraries is not None else None
         _reset_events()
+        mark_preload_pending()
         _TELEMETRY.durations_ms = {}
         _TELEMETRY.total_ms = None
         _TELEMETRY.status = PreloadPhase.PAUSED
@@ -336,6 +339,7 @@ def reset_worker_for_tests() -> None:
             raise RuntimeError("Cannot reset preload worker while it is running")
         _LIBRARY_OVERRIDE = None
         _reset_events()
+        mark_preload_pending()
         _TELEMETRY.durations_ms = {}
         _TELEMETRY.total_ms = None
         _TELEMETRY.status = PreloadPhase.IDLE

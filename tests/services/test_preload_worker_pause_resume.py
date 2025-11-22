@@ -1,24 +1,27 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import time
-import json
 import types
 
 import pytest
 
 import services.preload_worker as preload
+from services import preload_state
 
 
 @pytest.fixture(autouse=True)
 def reset_worker_state():
+    preload_state.reset_preload_state_for_tests()
     preload.reset_worker_for_tests()
     yield
     try:
         preload.wait_for_preload_completion(timeout=0.1)
     except Exception:
         pass
+    preload_state.reset_preload_state_for_tests()
     preload.reset_worker_for_tests()
 
 
@@ -45,12 +48,14 @@ def test_preload_worker_pauses_and_resumes(monkeypatch: pytest.MonkeyPatch) -> N
 
     started = preload.start_preload_worker(libraries=("lib_a", "lib_b"), paused=True)
     assert started is True
+    assert preload_state.is_preload_done() is False
     assert imported == []  # still paused
 
     resumed = preload.resume_preload_worker(delay_seconds=0.0)
     assert resumed is True
     assert preload.wait_for_preload_completion(timeout=1.0) is True
     assert imported == ["lib_a", "lib_b"]
+    assert preload_state.is_preload_done() is True
 
     metrics = preload.get_preload_metrics()
     assert metrics.status == preload.PreloadPhase.COMPLETED
@@ -58,6 +63,31 @@ def test_preload_worker_pauses_and_resumes(monkeypatch: pytest.MonkeyPatch) -> N
     assert metrics.durations_ms["lib_a"] is not None
     payloads = [json.loads(entry) for entry in events]
     assert any(event["event"] == "preload_total" for event in payloads)
+
+
+def test_preload_future_notifies_subscribers(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        preload,
+        "importlib",
+        types.SimpleNamespace(import_module=lambda name: None),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        preload,
+        "_get_metric_updaters",
+        lambda: (lambda *_args, **_kwargs: None, lambda *_a, **_k: None),
+    )
+
+    preload_state.reset_preload_state_for_tests()
+    preload.start_preload_worker(libraries=("lib_ready",), paused=True)
+
+    results: list[bool] = []
+    preload_state.subscribe_preload_completion(results.append)
+
+    preload.resume_preload_worker(delay_seconds=0.0)
+    assert preload.wait_for_preload_completion(timeout=1.0) is True
+
+    assert results and results[-1] is True
 
 
 def test_resume_ignored_when_worker_already_running(
