@@ -24,7 +24,18 @@ logger.info(
     __build_signature__,
 )
 
-validate_security_environment()
+validation = validate_security_environment()
+if validation.relaxed:
+    guidance = (
+        "Faltan claves obligatorias (FASTAPI_TOKENS_KEY / IOL_TOKENS_KEY). "
+        "Generá nuevas con `python generate_key.py` y expórtalas en el entorno."
+    )
+    logger.warning(
+        "Modo relajado habilitado en FastAPI (APP_ENV=%s). %s Detalles: %s",
+        validation.app_env or "desconocido",
+        guidance,
+        "; ".join(validation.errors) if validation.errors else "sin detalles adicionales",
+    )
 ensure_sqlite_maintenance_started()
 configure_system_diagnostics(SystemDiagnosticsConfiguration())
 ensure_system_diagnostics_started()

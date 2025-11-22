@@ -31,6 +31,7 @@ def test_validate_security_environment_accepts_valid_keys(
 
 
 def test_missing_key_raises_error(valid_env: dict[str, str]) -> None:
+    valid_env["APP_ENV"] = "prod"
     valid_env.pop("FASTAPI_TOKENS_KEY")
 
     with pytest.raises(SecurityValidationError) as exc_info:
@@ -40,6 +41,7 @@ def test_missing_key_raises_error(valid_env: dict[str, str]) -> None:
 
 
 def test_equal_keys_raise_error(valid_env: dict[str, str]) -> None:
+    valid_env["APP_ENV"] = "prod"
     valid_env["FASTAPI_TOKENS_KEY"] = valid_env["IOL_TOKENS_KEY"]
 
     with pytest.raises(SecurityValidationError) as exc_info:
@@ -61,3 +63,13 @@ def test_weak_keys_warn_in_prod(valid_env: dict[str, str], caplog: pytest.LogCap
         validate_security_environment(valid_env)
 
     assert any("parece débil" in message for message in caplog.messages)
+
+
+def test_relaxed_mode_in_dev(valid_env: dict[str, str], caplog: pytest.LogCaptureFixture) -> None:
+    valid_env.pop("FASTAPI_TOKENS_KEY")
+
+    with caplog.at_level("WARNING"):
+        report = validate_security_environment(valid_env)
+
+    assert report.relaxed is True
+    assert any("modo relajado" in message.lower() for message in caplog.messages)

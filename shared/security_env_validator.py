@@ -22,6 +22,20 @@ class SecurityValidationError(RuntimeError):
 
 
 @dataclass
+class ValidationReport:
+    """Summarize the outcome of the security environment validation."""
+
+    app_env: str | None
+    errors: list[str]
+    warnings: list[str]
+    relaxed: bool = False
+
+    @property
+    def is_valid(self) -> bool:
+        return not self.errors
+
+
+@dataclass
 class _KeyValidationResult:
     name: str
     value: str
@@ -67,6 +81,13 @@ def _log_warnings(app_env: str | None, warnings: Iterable[str]) -> None:
 EnvMapping = Mapping[str, str] | MutableMapping[str, str]
 
 
+def _is_development_env(app_env: str | None) -> bool:
+    if not app_env:
+        return False
+    normalized = app_env.strip().lower()
+    return normalized in {"dev", "development", "local"}
+
+
 def _get_session_state(
     explicit_state: MutableMapping[str, object] | None = None,
 ):
@@ -84,14 +105,16 @@ def validate_security_environment(
     environ: EnvMapping | None = None,
     *,
     session_state: MutableMapping[str, object] | None = None,
-) -> None:
+) -> ValidationReport:
     """Validate mandatory secrets before the application starts once per session."""
 
     state = _get_session_state(session_state)
-    if state is not None:
+    use_cache = environ is None
+    if use_cache and state is not None:
         try:
-            if state.get("_security_validated"):
-                return
+            cached_report = state.get("_security_validation_report")
+            if cached_report is not None:
+                return cached_report
         except Exception:  # pragma: no cover - custom state implementations
             pass
 
@@ -137,15 +160,34 @@ def validate_security_environment(
     if errors:
         error_text = "\n".join(errors)
         _log_warnings(app_env, warnings)
+        if _is_development_env(app_env):
+            fallback_notice = (
+                "APP_ENV=%s detectado como entorno de desarrollo; se habilita modo "
+                "relajado sin claves obligatorias." % (app_env or "desconocido")
+            )
+            warnings.append(fallback_notice)
+            for warning in warnings:
+                logger.warning(warning)
+            report = ValidationReport(app_env, errors, warnings, relaxed=True)
+            if use_cache and state is not None:
+                try:
+                    state["_security_validation_report"] = report
+                except Exception:  # pragma: no cover - custom state implementations
+                    pass
+            return report
+
         raise SecurityValidationError(f"Configuración de seguridad inválida:\n{error_text}")
 
     _log_warnings(app_env, warnings)
 
-    if state is not None:
+    report = ValidationReport(app_env, errors, warnings, relaxed=False)
+    if use_cache and state is not None:
         try:
-            state["_security_validated"] = True
+            state["_security_validation_report"] = report
         except Exception:  # pragma: no cover - custom state implementations
             pass
+
+    return report
 
 
 def main() -> None:
