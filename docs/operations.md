@@ -86,6 +86,29 @@ trío `pandas`, `plotly`, `statsmodels`. En despliegue se fuerza
 añadir `application.predictive_service` o `controllers.portfolio.charts`, que
 continúan importándose bajo demanda vía `importlib.import_module`.
 
+**API de reanudación (`resume_preload_worker`):**
+
+* **Firma:** `resume_preload_worker(delay_seconds=0.0, libs_override=None)`.
+* **Quién la llama:** `ui.orchestrator._schedule_scientific_preload_resume` al
+  terminar de renderizar la pantalla de login. Otros orquestadores pueden
+  reusarla si necesitan repetir la precarga con un conjunto custom.
+* **Cuándo:** inmediatamente después del login exitoso o con un `delay_seconds`
+  acotado cuando se desea posponer la reanudación sin bloquear la UI.
+* **Parámetros:**
+  * `libs_override`: lista opcional de módulos a precargar (ej. `("pandas",)`);
+    si no se indica, se usa `APP_PRELOAD_LIBS` o el trío por defecto.
+  * `delay_seconds`: demora opcional antes de disparar el `Event` que despierta
+    al hilo. Útil para coordinar con otras tareas de arranque.
+* **Invariantes:** el hilo `preload_worker` es el único responsable de importar
+  librerías pesadas; el hilo principal solo programa la reanudación y consulta
+  `get_preload_metrics()` para leer el último resultado.
+
+**Métricas estructuradas de precarga:** cada import registra en
+`logs/app_startup.log` un JSON con `{event, module_name, duration_ms, status,
+timestamp}` y un resumen final `{event:"preload_total", resume_delay_ms,
+libraries}`. Estas líneas permiten auditar cuánto demoró cada módulo y cuándo se
+disparó la reanudación desde la UI.
+
 **Snapshot de bytecode:** durante el arranque `scripts/start.sh` ejecuta
 `scripts/warmup_bytecode.py` (controlado por `ENABLE_BYTECODE_WARMUP`, habilitado
 por defecto) para generar `.pyc` y reducir los costos de importación en frío.

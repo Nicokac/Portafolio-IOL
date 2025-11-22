@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import sys
 import time
+import json
 import types
 
 import pytest
@@ -55,7 +56,8 @@ def test_preload_worker_pauses_and_resumes(monkeypatch: pytest.MonkeyPatch) -> N
     assert metrics.status == preload.PreloadPhase.COMPLETED
     assert metrics.total_ms is not None and metrics.total_ms >= 0.0
     assert metrics.durations_ms["lib_a"] is not None
-    assert any(entry.startswith("preload") for entry in events)
+    payloads = [json.loads(entry) for entry in events]
+    assert any(event["event"] == "preload_total" for event in payloads)
 
 
 def test_resume_ignored_when_worker_already_running(
@@ -87,6 +89,9 @@ def test_wait_for_completion_returns_false_when_timeout(
     class BlockingEvent:
         def wait(self, timeout: float | None = None) -> bool:
             return False
+
+        def clear(self) -> None:
+            return None
 
     monkeypatch.setattr(preload, "_FINISHED_EVENT", BlockingEvent(), raising=False)
     assert preload.wait_for_preload_completion(timeout=0.01) is False
