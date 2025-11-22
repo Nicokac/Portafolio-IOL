@@ -255,13 +255,26 @@ def schedule_scientific_preload_resume(*, delay_seconds: float = 0.0) -> None:
             return
     except Exception:
         logger.debug("No se pudo verificar _scientific_preload_resumed", exc_info=True)
-    resumed = resume_preload_worker(delay_seconds=delay_seconds)
-    if not resumed and not is_preload_complete():
-        return
-    try:
-        st.session_state[_SCIENTIFIC_PRELOAD_RESUMED_KEY] = True
-    except Exception:
-        logger.debug("No se pudo marcar _scientific_preload_resumed", exc_info=True)
+    resumed = False
+    if is_preload_complete():
+        resumed = True
+    else:
+        try:
+            thread = threading.Thread(
+                target=resume_preload_worker,
+                kwargs={"delay_seconds": delay_seconds},
+                name="resume-preload-worker",
+                daemon=True,
+            )
+            thread.start()
+            resumed = True
+        except Exception:
+            logger.debug("No se pudo lanzar la reanudación del preload", exc_info=True)
+    if resumed:
+        try:
+            st.session_state[_SCIENTIFIC_PRELOAD_RESUMED_KEY] = True
+        except Exception:
+            logger.debug("No se pudo marcar _scientific_preload_resumed", exc_info=True)
 
 
 def record_ui_startup_metric() -> None:

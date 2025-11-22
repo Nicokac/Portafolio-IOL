@@ -57,10 +57,17 @@ def _render_total_load_indicator(placeholder: Any) -> None:
     _get_orchestrator_module()._render_total_load_indicator(placeholder)
 
 
+def _run_pre_login_startup(argv: list[str] | None) -> None:
+    """Prepare the minimal environment required for the login screen."""
+
+    init_app(argv)
+    start_preload_worker(paused=True)
+
+
 def main(argv: list[str] | None = None) -> None:
     """Initialize the application and render the main UI."""
 
-    init_app(argv)
+    _run_pre_login_startup(argv)
     render_main_ui()
 
 
